@@ -19,25 +19,9 @@ import ServicosView from './components/views/ServicosView';
 import ProdutosView from './components/views/ProdutosView';
 import LoginView from './components/views/LoginView';
 import { mockTransactions } from './data/mockData';
-import { FinancialTransaction } from './types';
+import { FinancialTransaction, ViewState } from './types';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-
-export type ViewState = 
-  | 'dashboard' 
-  | 'agenda' 
-  | 'agenda_online'
-  | 'clientes' 
-  | 'financeiro' 
-  | 'configuracoes'
-  | 'whatsapp'
-  | 'relatorios'
-  | 'remuneracoes'
-  | 'vendas'
-  | 'comandas'
-  | 'caixa'
-  | 'servicos'
-  | 'produtos'
-  | 'public_preview'; 
+import { hasAccess } from './utils/permissions';
 
 // Internal component to handle routing logic after AuthProvider context is available
 const AppContent = () => {
@@ -97,6 +81,23 @@ const AppContent = () => {
   }
 
   const renderView = () => {
+    // Permission Guard
+    if (!hasAccess(user.papel, currentView)) {
+        return (
+            <div className="flex flex-col items-center justify-center h-full text-slate-500">
+                <div className="text-4xl mb-2">🚫</div>
+                <h2 className="text-xl font-bold text-slate-700">Acesso Negado</h2>
+                <p>Seu perfil ({user.papel}) não tem permissão para acessar esta área.</p>
+                <button 
+                    onClick={() => setCurrentView('dashboard')}
+                    className="mt-4 text-orange-500 font-bold hover:underline"
+                >
+                    Voltar ao Início
+                </button>
+            </div>
+        );
+    }
+
     switch (currentView) {
       case 'dashboard':
         return <DashboardView onNavigate={setCurrentView} />;

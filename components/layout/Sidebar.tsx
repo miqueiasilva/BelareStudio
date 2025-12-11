@@ -4,8 +4,9 @@ import {
     Home, Calendar, MessageSquare, ShoppingCart, ClipboardList, ArrowRightLeft, Archive,
     Star, Package, Users, Settings, BarChart, Globe, Banknote, LogOut
 } from 'lucide-react';
-import { ViewState } from '../../App';
+import { ViewState } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
+import { hasAccess } from '../../utils/permissions';
 
 interface SidebarProps {
     currentView: ViewState;
@@ -42,9 +43,16 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
     };
 
     const handleLogout = () => {
-        // Instant logout without confirmation for better UX flow
         signOut();
     };
+
+    // Filter function based on permissions
+    const filterItems = (items: typeof menuItems) => {
+        return items.filter(item => hasAccess(user?.papel, item.id as ViewState));
+    };
+
+    const filteredMenu = filterItems(menuItems);
+    const filteredSecondary = filterItems(secondaryItems);
 
     const renderItem = (item: any) => {
         const Icon = item.icon;
@@ -81,13 +89,17 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
             <nav className="flex-1 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-slate-200">
                 <div className="mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider px-3 mt-2">Principal</div>
                 <ul className="space-y-0.5">
-                    {menuItems.map(renderItem)}
+                    {filteredMenu.map(renderItem)}
                 </ul>
 
-                <div className="mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider px-3 mt-6">Operacional</div>
-                <ul className="space-y-0.5">
-                    {secondaryItems.map(renderItem)}
-                </ul>
+                {filteredSecondary.length > 0 && (
+                    <>
+                        <div className="mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider px-3 mt-6">Operacional</div>
+                        <ul className="space-y-0.5">
+                            {filteredSecondary.map(renderItem)}
+                        </ul>
+                    </>
+                )}
             </nav>
 
             <div className="p-4 border-t border-slate-200 bg-slate-50">

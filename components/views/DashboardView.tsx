@@ -10,7 +10,7 @@ import { ptBR } from 'date-fns/locale';
 import { safe, toNumber } from '../../utils/normalize';
 import SafePie from '../charts/SafePie';
 import SafeBar from '../charts/SafeBar';
-import { ViewState } from '../../App';
+import { ViewState } from '../../types';
 
 interface DashboardViewProps {
     onNavigate: (view: ViewState) => void;

@@ -8,6 +8,24 @@ export type PaymentMethod = 'pix' | 'cartao_credito' | 'cartao_debito' | 'dinhei
 export type OrderStatus = 'aberta' | 'fechada' | 'cancelada';
 export type OrderItemType = 'servico' | 'produto';
 
+// Navigation State Type
+export type ViewState = 
+  | 'dashboard' 
+  | 'agenda' 
+  | 'agenda_online'
+  | 'clientes' 
+  | 'financeiro' 
+  | 'configuracoes'
+  | 'whatsapp'
+  | 'relatorios'
+  | 'remuneracoes'
+  | 'vendas'
+  | 'comandas'
+  | 'caixa'
+  | 'servicos'
+  | 'produtos'
+  | 'public_preview'; 
+
 // --- Database Table Interfaces ---
 
 export interface User {
