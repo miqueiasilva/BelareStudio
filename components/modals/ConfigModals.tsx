@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Save, Upload, User, Scissors, DollarSign, Clock, Palette, Tag } from 'lucide-react';
 import { LegacyService, LegacyProfessional } from '../../types';
@@ -6,11 +7,12 @@ import { LegacyService, LegacyProfessional } from '../../types';
 
 interface ServiceModalProps {
     service?: LegacyService | null;
+    availableCategories: string[];
     onClose: () => void;
     onSave: (service: LegacyService) => void;
 }
 
-export const ServiceModal: React.FC<ServiceModalProps> = ({ service, onClose, onSave }) => {
+export const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCategories, onClose, onSave }) => {
     const [formData, setFormData] = useState<Partial<LegacyService>>({
         name: '',
         price: 0,
@@ -19,9 +21,43 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ service, onClose, on
         category: ''
     });
 
+    // Local state for split duration
+    const [hours, setHours] = useState(0);
+    const [minutes, setMinutes] = useState(30);
+
     useEffect(() => {
-        if (service) setFormData(service);
+        if (service) {
+            setFormData(service);
+            setHours(Math.floor(service.duration / 60));
+            setMinutes(service.duration % 60);
+        } else {
+            setFormData({
+                name: '',
+                price: 0,
+                duration: 30,
+                color: '#3b82f6',
+                category: ''
+            });
+            setHours(0);
+            setMinutes(30);
+        }
     }, [service]);
+
+    const handleDurationChange = (type: 'hours' | 'minutes', value: string) => {
+        const num = Math.max(0, parseInt(value) || 0);
+        let newH = hours;
+        let newM = minutes;
+
+        if (type === 'hours') {
+            setHours(num);
+            newH = num;
+        } else {
+            setMinutes(num);
+            newM = num;
+        }
+        
+        setFormData(prev => ({ ...prev, duration: (newH * 60) + newM }));
+    };
 
     const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#10b981', '#64748b'];
 
@@ -66,17 +102,16 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ service, onClose, on
                                 value={formData.category}
                                 onChange={e => setFormData({...formData, category: e.target.value})}
                                 className="w-full border border-slate-300 rounded-lg pl-9 pr-3 py-2 focus:ring-2 focus:ring-orange-500 outline-none"
-                                placeholder="Ex: Cílios, Sobrancelhas, Cabelo"
+                                placeholder="Selecione ou digite uma nova..."
                                 list="categories-list"
                             />
                             <datalist id="categories-list">
-                                <option value="Cílios" />
-                                <option value="Sobrancelhas" />
-                                <option value="Cabelo" />
-                                <option value="Estética" />
-                                <option value="Manicure" />
+                                {availableCategories.map(cat => (
+                                    <option key={cat} value={cat} />
+                                ))}
                             </datalist>
                         </div>
+                        <p className="text-[10px] text-slate-400 mt-1 ml-1">Digite para criar uma nova categoria.</p>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -93,17 +128,32 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ service, onClose, on
                             </div>
                         </div>
                         <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Duração (min)</label>
-                            <div className="relative">
-                                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                <input 
-                                    type="number"
-                                    required
-                                    step="5"
-                                    value={formData.duration}
-                                    onChange={e => setFormData({...formData, duration: Number(e.target.value)})}
-                                    className="w-full border border-slate-300 rounded-lg pl-9 pr-3 py-2 focus:ring-2 focus:ring-orange-500 outline-none"
-                                />
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Duração</label>
+                            <div className="flex gap-2 items-center">
+                                <div className="relative flex-1">
+                                    <input 
+                                        type="number"
+                                        min="0"
+                                        value={hours}
+                                        onChange={e => handleDurationChange('hours', e.target.value)}
+                                        className="w-full border border-slate-300 rounded-lg px-2 py-2 text-center focus:ring-2 focus:ring-orange-500 outline-none"
+                                        placeholder="0"
+                                    />
+                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">h</span>
+                                </div>
+                                <span className="text-slate-400 font-bold">:</span>
+                                <div className="relative flex-1">
+                                    <input 
+                                        type="number"
+                                        min="0"
+                                        step="5"
+                                        value={minutes}
+                                        onChange={e => handleDurationChange('minutes', e.target.value)}
+                                        className="w-full border border-slate-300 rounded-lg px-2 py-2 text-center focus:ring-2 focus:ring-orange-500 outline-none"
+                                        placeholder="00"
+                                    />
+                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">m</span>
+                                </div>
                             </div>
                         </div>
                     </div>

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Settings, User, Scissors, Clock, Bell, Store, Save, Plus, Trash2, Edit2, Search, Filter, Download, FolderPen, ChevronLeft, Menu } from 'lucide-react';
 import Card from '../shared/Card';
@@ -535,7 +536,8 @@ const ConfiguracoesView: React.FC = () => {
             {/* Modals */}
             {serviceModal.open && (
                 <ServiceModal 
-                    service={serviceModal.data} 
+                    service={serviceModal.data}
+                    availableCategories={categories.filter(c => c !== 'Todas')}
                     onClose={() => setServiceModal({ open: false, data: null })} 
                     onSave={handleSaveService} 
                 />
