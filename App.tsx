@@ -26,7 +26,11 @@ import { hasAccess } from './utils/permissions';
 // Internal component to handle routing logic after AuthProvider context is available
 const AppContent = () => {
   const { user, loading } = useAuth();
-  const [currentView, setCurrentView] = useState<ViewState>('dashboard');
+  
+  // Initialize view based on URL hash to prevent flickering or auth redirects
+  const [currentView, setCurrentView] = useState<ViewState>(() => {
+      return window.location.hash.includes('public-preview') ? 'public_preview' : 'dashboard';
+  });
   
   // Shared State for Financial Transactions
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
@@ -35,25 +39,20 @@ const AppContent = () => {
     setTransactions(prev => [t, ...prev]);
   };
 
-  // Simple hash router for the public preview (bypass auth)
+  // Hash router listener
   useEffect(() => {
     const handleHashChange = () => {
-        if (window.location.hash === '#/public-preview') {
+        if (window.location.hash.includes('public-preview')) {
             setCurrentView('public_preview');
         }
     };
     window.addEventListener('hashchange', handleHashChange);
-    
-    if (window.location.hash === '#/public-preview') {
-        setCurrentView('public_preview');
-    }
-
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Reset view when user logs out
+  // Reset view when user logs out, BUT ignore if on public preview
   useEffect(() => {
-    if (!user) {
+    if (!user && !window.location.hash.includes('public-preview')) {
       setCurrentView('dashboard');
     }
   }, [user]);
@@ -66,7 +65,7 @@ const AppContent = () => {
       );
   }
 
-  // Public Routes
+  // Public Routes (Bypass Auth)
   if (currentView === 'public_preview') {
       return (
         <ErrorBoundary>

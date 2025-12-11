@@ -45,8 +45,8 @@ const AgendaOnlineView: React.FC = () => {
     };
 
     const openPreview = () => {
-        // Simula a navegação para a rota pública configurada no App.tsx
-        window.location.hash = '#/public-preview';
+        // Abre a visualização em uma nova aba para garantir o isolamento da sessão admin e simular a experiência do cliente
+        window.open(`${window.location.origin}/#/public-preview`, '_blank');
     };
 
     return (
