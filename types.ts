@@ -152,6 +152,7 @@ export interface LegacyService {
   duration: number; // in minutes
   price: number;
   color: string; // For styling appointment blocks
+  category?: string;
 }
 
 export interface LegacyAppointment {

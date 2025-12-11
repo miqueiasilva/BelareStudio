@@ -9,6 +9,7 @@ import FinanceiroView from './components/views/FinanceiroView';
 import ClientesView from './components/views/ClientesView'; 
 import WhatsAppView from './components/views/WhatsAppView'; 
 import RelatoriosView from './components/views/RelatoriosView'; 
+import ConfiguracoesView from './components/views/ConfiguracoesView';
 import PublicBookingPreview from './components/views/PublicBookingPreview';
 import ViewPlaceholder from './components/views/ViewPlaceholder';
 import { mockTransactions } from './data/mockData';
@@ -78,9 +79,9 @@ export default function App() {
       case 'whatsapp':
         return <WhatsAppView />; 
       case 'relatorios':
-        return <RelatoriosView />; // Activated
+        return <RelatoriosView />; 
       case 'configuracoes':
-        return <ViewPlaceholder title="Configurações do Sistema" />;
+        return <ConfiguracoesView />;
       case 'vendas':
         return <ViewPlaceholder title="PDV - Vendas Rápidas" />;
       case 'comandas':

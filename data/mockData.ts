@@ -71,13 +71,16 @@ export const clients: Client[] = [
 ];
 
 export const services: { [key: string]: LegacyService } = {
-    designSimples: { id: 1, name: 'Design Simples', duration: 30, price: 50, color: '#3b82f6' },
-    designComTintura: { id: 2, name: 'Design Com Tintura', duration: 40, price: 70, color: '#8b5cf6' },
-    designComHenna: { id: 4, name: 'Design Com Henna', duration: 40, price: 75, color: '#a855f7' },
-    volumeEgipcio: { id: 5, name: 'Volume EGÍPCIO', duration: 110, price: 250, color: '#ec4899' },
-    manutencaoVolume: { id: 6, name: 'Manutenção Volum...', duration: 150, price: 180, color: '#ef4444' },
-    limpezaPele: { id: 7, name: 'Limpeza de Pele Pre...', duration: 50, price: 120, color: '#10b981' },
-    bloqueio: { id: 8, name: 'Horário Bloqueado', duration: 300, price: 0, color: '#64748b' },
+    designSimples: { id: 1, name: 'Design Simples', duration: 30, price: 50, color: '#3b82f6', category: 'Sobrancelhas' },
+    designComTintura: { id: 2, name: 'Design Com Tintura', duration: 40, price: 70, color: '#8b5cf6', category: 'Sobrancelhas' },
+    designComHenna: { id: 4, name: 'Design Com Henna', duration: 40, price: 75, color: '#a855f7', category: 'Sobrancelhas' },
+    volumeEgipcio: { id: 5, name: 'Volume EGÍPCIO', duration: 110, price: 250, color: '#ec4899', category: 'Cílios' },
+    manutencaoVolume: { id: 6, name: 'Manutenção Volume Brasileiro', duration: 150, price: 180, color: '#ef4444', category: 'Cílios' },
+    limpezaPele: { id: 7, name: 'Limpeza de Pele Premium', duration: 50, price: 120, color: '#10b981', category: 'Estética' },
+    bloqueio: { id: 8, name: 'Horário Bloqueado', duration: 300, price: 0, color: '#64748b', category: 'Geral' },
+    extensaoFioAFio: { id: 9, name: 'Extensão de Cílios Fio A Fio', duration: 150, price: 130, color: '#3b82f6', category: 'Cílios' },
+    foxEyes: { id: 10, name: 'FOX EYES', duration: 150, price: 140, color: '#3b82f6', category: 'Cílios' },
+    lashLifting: { id: 11, name: 'Lash Lifting', duration: 120, price: 110, color: '#3b82f6', category: 'Cílios' },
 };
 
 export const initialAppointments: LegacyAppointment[] = [

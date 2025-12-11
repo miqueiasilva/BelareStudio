@@ -9,9 +9,10 @@ import { ViewState } from '../../App';
 interface SidebarProps {
     currentView: ViewState;
     onNavigate: (view: ViewState) => void;
+    className?: string;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = '' }) => {
     
     const menuItems = [
         { id: 'dashboard', icon: Home, label: 'Página principal' },
@@ -59,7 +60,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate }) => {
     }
 
     return (
-        <aside className="w-64 bg-white border-r border-slate-200 flex flex-col h-full">
+        <aside className={`bg-white border-r border-slate-200 flex flex-col h-full ${className}`}>
             <div className="h-16 flex items-center px-4 gap-3 border-b border-slate-200 flex-shrink-0">
                 <div className="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center font-bold text-white text-xl shadow-sm shadow-orange-200">
                     B
