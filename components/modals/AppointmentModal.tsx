@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { LegacyAppointment, Client, LegacyProfessional, LegacyService, AppointmentStatus } from '../../types';
 import { clients, services as serviceMap, professionals } from '../../data/mockData';
-import { ChevronLeft, User, Calendar, Tag, Clock, DollarSign, Info, PlusCircle, Repeat, X, Loader2, AlertCircle, Briefcase, CheckSquare, Mail, Trash2, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, User, Calendar, Tag, Clock, DollarSign, Info, PlusCircle, Repeat, X, Loader2, AlertCircle, Briefcase, CheckSquare, Mail, Trash2, CheckCircle2, Edit2 } from 'lucide-react';
 import { format, addMinutes } from 'date-fns';
 import SelectionModal from './SelectionModal';
 
@@ -27,6 +27,10 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     appointment?.service ? [appointment.service] : []
   );
 
+  // Editable Totals
+  const [manualPrice, setManualPrice] = useState<number>(0);
+  const [manualDuration, setManualDuration] = useState<number>(0);
+
   const [selectionModal, setSelectionModal] = useState<'client' | 'service' | 'professional' | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false); // New state for visual feedback
@@ -43,7 +47,19 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           ...appointment,
           start: appointment?.start || new Date(),
       });
-      setSelectedServices(appointment?.service ? [appointment.service] : []);
+      
+      const initialServices = appointment?.service ? [appointment.service] : [];
+      setSelectedServices(initialServices);
+      
+      // Initialize manual values from the appointment if editing, or 0 if new
+      if (appointment?.service) {
+          setManualPrice(appointment.service.price);
+          setManualDuration(appointment.service.duration);
+      } else {
+          setManualPrice(0);
+          setManualDuration(0);
+      }
+
       setClientEmail(appointment?.client?.email || '');
       setError(null);
       setSaveSuccess(false);
@@ -53,27 +69,34 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   // Update formData whenever selectedServices changes
   useEffect(() => {
     if (selectedServices.length > 0) {
-        // We use the first service as the "primary" one for type compatibility, 
-        // but we'll calculate total stats based on the array
+        // We use the first service as the "primary" one for type compatibility
         setFormData(prev => ({ ...prev, service: selectedServices[0] }));
     }
   }, [selectedServices]);
 
-  const clientItemsForSelection = useMemo(() => clients.map(c => ({ ...c, name: c.nome })), []);
-
-  // Calculate Totals
-  const totalAmount = useMemo(() => selectedServices.reduce((acc, s) => acc + s.price, 0), [selectedServices]);
-  const totalDuration = useMemo(() => selectedServices.reduce((acc, s) => acc + s.duration, 0), [selectedServices]);
-
-  // Update End Time based on Total Duration
+  // Sync manual totals with selected services ONLY when services change
+  // This satisfies: "puxe o valor e duração do serviço ja cadastrado"
   useEffect(() => {
-    if (formData.start && totalDuration > 0) {
-        const end = addMinutes(new Date(formData.start), totalDuration);
+      if (selectedServices.length > 0) {
+          const price = selectedServices.reduce((acc, s) => acc + s.price, 0);
+          const duration = selectedServices.reduce((acc, s) => acc + s.duration, 0);
+          setManualPrice(price);
+          setManualDuration(duration);
+      }
+  }, [selectedServices]);
+
+  // Update End Time based on Manual Duration
+  useEffect(() => {
+    if (formData.start && (manualDuration > 0 || manualDuration === 0)) {
+        const end = addMinutes(new Date(formData.start), manualDuration);
+        // Only update if end time is actually different to avoid loops
         if (!formData.end || formData.end.getTime() !== end.getTime()) {
           setFormData(prev => ({ ...prev, end }));
         }
     }
-  }, [formData.start, totalDuration, formData.end]);
+  }, [formData.start, manualDuration]);
+
+  const clientItemsForSelection = useMemo(() => clients.map(c => ({ ...c, name: c.nome })), []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -155,14 +178,14 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     
     // Construct final object
     // Note: Since legacy types only support one service, we construct a "Composite Service"
-    // In a real backend, we would send an array of service IDs.
+    // with the manually edited price and duration.
     const compositeService: LegacyService = {
         ...selectedServices[0],
         name: selectedServices.length > 1 
             ? `${selectedServices[0].name} + ${selectedServices.length - 1}` 
             : selectedServices[0].name,
-        price: totalAmount,
-        duration: totalDuration
+        price: manualPrice, // Uses the editable price
+        duration: manualDuration // Uses the editable duration
     };
 
     const finalClient = { ...formData.client, email: clientEmail };
@@ -354,21 +377,37 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
              </button>
           </div>
 
-          {/* Stats: Price and Duration */}
+          {/* Stats: Price and Duration (Editable) */}
           <div className="flex items-center gap-4">
-              <div className="flex items-center gap-3 flex-1 bg-slate-50 p-2 rounded-md border border-slate-100">
-                  <DollarSign className="w-5 h-5 text-slate-400" />
-                  <div className="flex flex-col">
-                      <span className="text-[10px] text-slate-500 uppercase font-bold">Valor Total</span>
-                      <span className="font-bold text-slate-800">R$ {totalAmount.toFixed(2).replace('.', ',')}</span>
+              <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 focus-within:border-orange-300 focus-within:ring-2 focus-within:ring-orange-100 transition-all shadow-sm">
+                  <div className="p-1.5 bg-green-50 rounded text-green-600">
+                    <DollarSign className="w-4 h-4" />
                   </div>
+                  <div className="flex flex-col w-full">
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wide">Valor Total</span>
+                      <input 
+                        type="number" 
+                        value={manualPrice} 
+                        onChange={(e) => setManualPrice(Number(e.target.value))}
+                        className="font-bold text-slate-800 bg-transparent outline-none w-full p-0 border-none focus:ring-0 text-sm"
+                      />
+                  </div>
+                  <Edit2 className="w-3 h-3 text-slate-300" />
               </div>
-               <div className="flex items-center gap-3 flex-1 bg-slate-50 p-2 rounded-md border border-slate-100">
-                  <Clock className="w-5 h-5 text-slate-400" />
-                  <div className="flex flex-col">
-                      <span className="text-[10px] text-slate-500 uppercase font-bold">Duração Total</span>
-                      <span className="font-bold text-slate-800">{totalDuration > 0 ? `${totalDuration} min` : '--'}</span>
+               <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 focus-within:border-orange-300 focus-within:ring-2 focus-within:ring-orange-100 transition-all shadow-sm">
+                  <div className="p-1.5 bg-blue-50 rounded text-blue-600">
+                    <Clock className="w-4 h-4" />
                   </div>
+                  <div className="flex flex-col w-full">
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wide">Duração (min)</span>
+                      <input 
+                        type="number" 
+                        value={manualDuration} 
+                        onChange={(e) => setManualDuration(Number(e.target.value))}
+                        className="font-bold text-slate-800 bg-transparent outline-none w-full p-0 border-none focus:ring-0 text-sm"
+                      />
+                  </div>
+                  <Edit2 className="w-3 h-3 text-slate-300" />
               </div>
           </div>
           
