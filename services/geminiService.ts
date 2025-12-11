@@ -1,46 +1,29 @@
+import { GoogleGenAI, Type } from "@google/genai";
+import { initialAppointments, mockTransactions, clients, professionals } from "../data/mockData";
+import { format, isSameDay } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
-// This is a mock service to simulate Gemini API calls.
-// In a real application, you would import and use @google/genai here.
+// --- Configuration ---
+// A chave é obtida automaticamente do ambiente. 
+// O componente assume que process.env.API_KEY está configurado.
+const apiKey = process.env.API_KEY;
+const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+const modelId = "gemini-2.5-flash";
 
-const insights = [
+// --- Fallback Data (Usado se a API falhar ou estiver sem chave) ---
+const insightsFallback = [
     "O faturamento deste mês está 15% acima da meta! Considere oferecer um bônus para a equipe.",
-    "A taxa de ocupação nas terças-feiras está baixa. Sugiro criar uma promoção 'Terça em Dobro' para atrair mais clientes.",
-    "Notamos que clientes que fazem 'Corte e Barba' costumam retornar a cada 25 dias. Envie um lembrete automático para agendamento.",
-    "A profissional Maria Silva teve a maior média de avaliação (4.9 estrelas) este mês. Destaque-a nas redes sociais!",
+    "A taxa de ocupação nas terças-feiras está baixa. Sugiro criar uma promoção 'Terça em Dobro'.",
+    "Clientes que fazem 'Corte e Barba' costumam retornar a cada 25 dias. Envie um lembrete automático.",
+    "A profissional Maria Silva teve a maior média de avaliação (4.9 estrelas) este mês.",
 ];
 
-const topicInsights: Record<string, string[]> = {
-    financeiro: [
-        "Divergência detectada no fechamento de caixa de ontem: R$ 15,50 a menos no PIX. Verifique os comprovantes.",
-        "As despesas com 'Produtos de Limpeza' aumentaram 20% este mês. Vale a pena pesquisar novos fornecedores.",
-        "Sua margem de lucro nos serviços de 'Estética' está em 45%, excelente! Foque em vender mais este item.",
-        "Previsão de fluxo de caixa: Você tem R$ 2.500,00 a pagar na próxima sexta-feira. O saldo atual cobre com folga."
-    ],
-    agenda: [
-        "A agenda de amanhã tem 3 horários vagos entre 14h e 16h. Que tal enviar uma oferta relâmpago?",
-        "Hoje é sexta-feira e a agenda está 95% ocupada. Prepare a equipe para um dia movimentado!",
-        "Há uma alta taxa de cancelamentos nas segundas-feiras de manhã. Considere exigir um sinal para agendamentos neste período.",
-        "Jéssica Félix está com a agenda lotada pelos próximos 3 dias. Sugira outros profissionais para novos clientes."
-    ],
-    clientes: [
-        "A cliente 'Ana Paula' não vem há 45 dias. O ciclo médio dela é de 30 dias. Envie um 'Oi, sumida!'.",
-        "5 novos clientes se cadastraram essa semana vindo do Instagram. A campanha está funcionando.",
-        "Temos 3 aniversariantes hoje! O sistema já preparou as mensagens de parabéns com cupom de 10%.",
-        "O Ticket Médio dos clientes fidelizados é 2x maior que os eventuais. Invista no programa de fidelidade."
-    ],
-    marketing: [
-        "O post sobre 'Botox Capilar' teve alto engajamento. Impulsione-o para atrair mais agendamentos.",
-        "Sugestão de campanha: 'Semana do Amigo'. Traga um amigo e ganhe 15% de desconto.",
-        "As avaliações no Google Meu Negócio subiram para 4.9. Responda os últimos comentários para manter o engajamento.",
-        "Clientes que agendam pelo WhatsApp convertem 30% mais. Divulgue seu link direto nas redes."
-    ]
+const topicInsightsFallback: Record<string, string[]> = {
+    financeiro: ["Revise os gastos com insumos, subiram 10%.", "Fluxo de caixa positivo para a semana."],
+    agenda: ["Sexta-feira está quase lotada, prepare a equipe.", "Muitos buracos na agenda de amanhã à tarde."],
+    clientes: ["3 aniversariantes hoje, envie parabéns!", "Cliente João não vem há 45 dias."],
+    marketing: ["A campanha de Botox teve bom retorno.", "Impulsione o post do Instagram hoje."]
 };
-
-const financialAlerts = [
-    "Divergência detectada no fechamento de caixa de ontem: R$ 15,50 a menos no PIX. Verifique os comprovantes.",
-    "O produto 'Pomada Modeladora X' está com estoque crítico (apenas 2 unidades). Recomendo fazer um novo pedido.",
-    "As despesas com 'Produtos de Limpeza' aumentaram 20% este mês. Vale a pena pesquisar novos fornecedores."
-];
 
 const getRandomItem = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
@@ -52,53 +35,191 @@ const simulateApiCall = <T,>(data: T, delay?: number): Promise<T> => {
     });
 };
 
+// --- Real AI Implementations ---
+
 export const getDashboardInsight = async (): Promise<string> => {
-    return simulateApiCall(getRandomItem(insights));
+    if (!ai) return simulateApiCall(getRandomItem(insightsFallback));
+
+    try {
+        // Constrói um contexto resumido do estado atual do app
+        const today = new Date();
+        const totalAppointments = initialAppointments.length;
+        const totalClients = clients.length;
+        const activeProfs = professionals.length;
+        
+        const prompt = `
+            Você é a JaciBot, uma consultora IA experiente e motivadora para um estúdio de beleza.
+            
+            Dados atuais do estúdio (hoje ${format(today, "dd/MM/yyyy")}):
+            - Atendimentos na agenda: ${totalAppointments}
+            - Base de clientes: ${totalClients}
+            - Profissionais ativos: ${activeProfs}
+            
+            Tarefa: Gere um insight curto (máximo 1 frase), estratégico ou motivacional para a dona do salão ler agora no painel principal.
+            Exemplo: "Sua agenda está cheia hoje, ótimo trabalho na retenção de clientes!"
+        `;
+
+        const response = await ai.models.generateContent({
+            model: modelId,
+            contents: prompt,
+        });
+
+        return response.text || getRandomItem(insightsFallback);
+    } catch (error) {
+        console.error("JaciBot AI Error:", error);
+        return getRandomItem(insightsFallback);
+    }
 };
 
 export const getInsightByTopic = async (topic: string): Promise<string> => {
-    const list = topicInsights[topic] || insights;
-    return simulateApiCall(getRandomItem(list));
+    if (!ai) return simulateApiCall(getRandomItem(topicInsightsFallback[topic] || insightsFallback));
+
+    try {
+        const prompt = `
+            Você é a JaciBot. O usuário pediu uma análise rápida sobre o tópico: "${topic}".
+            Gere uma dica, observação ou alerta útil sobre esse tema para um salão de beleza moderno.
+            Mantenha curto (máx 20 palavras) e direto.
+        `;
+
+        const response = await ai.models.generateContent({
+            model: modelId,
+            contents: prompt,
+        });
+
+        return response.text || getRandomItem(topicInsightsFallback[topic] || insightsFallback);
+    } catch (error) {
+        return getRandomItem(topicInsightsFallback[topic] || insightsFallback);
+    }
 };
 
 export const getFinancialAlert = async (): Promise<string> => {
-    return simulateApiCall(getRandomItem(financialAlerts));
+    // Mantendo simulação para alertas críticos por enquanto para garantir estabilidade visual
+    const alerts = [
+        "Divergência detectada no fechamento de ontem: -R$ 15,50.",
+        "Estoque crítico: Pomada Modeladora (2 un).",
+        "Conta de Luz vence amanhã."
+    ];
+    return simulateApiCall(getRandomItem(alerts));
 };
 
 export const getClientCampaignSuggestion = async (clientName: string): Promise<string> => {
-    const suggestions = [
-        `O último serviço de ${clientName} foi 'Coloração' há 60 dias. Sugira um retoque com 10% de desconto.`,
-        `${clientName} sempre agenda 'Manicure'. Ofereça um pacote de 4 sessões com valor promocional.`,
-        `É aniversário de ${clientName} na próxima semana! Envie uma mensagem com um voucher para um tratamento capilar.`,
-    ];
-    return simulateApiCall(getRandomItem(suggestions));
+    if (!ai) {
+        return simulateApiCall(`Olá ${clientName}, sentimos sua falta! Que tal agendar um horário essa semana com 10% off?`);
+    }
+
+    try {
+        const response = await ai.models.generateContent({
+            model: modelId,
+            contents: `Crie uma mensagem curta de marketing (WhatsApp) para o cliente "${clientName}" que não aparece há 30 dias. Ofereça um incentivo sutil e seja carinhosa. Sem hashtags.`
+        });
+        return response.text || "";
+    } catch (e) {
+        return `Oi ${clientName}, faz tempo que não te vemos! Venha realçar sua beleza conosco.`;
+    }
 };
 
-// --- JaciBot Stubs ---
+// --- JaciBot Action Functions ---
 
 export const suggestSmartSlots = async (date: Date): Promise<string[]> => {
     console.log(`[JaciBot] Buscando encaixes inteligentes para ${date.toISOString()}`);
-    const slots = [
-        "Jaciene Félix: 14:30 - 15:00 (ideal para Design Simples)",
-        "Jéssica Félix: 11:20 - 12:00 (vago após Volume EGÍPCIO)",
-        "Elá Priscila: 16:00 - 17:00 (encaixe para Limpeza de Pele)"
-    ];
-    return simulateApiCall(slots, 1200);
+    
+    if (!ai) {
+        const slots = [
+            "Jaciene Félix: 14:30 - 15:00 (ideal para Design Simples)",
+            "Jéssica Félix: 11:20 - 12:00 (vago após Volume EGÍPCIO)",
+            "Elá Priscila: 16:00 - 17:00 (encaixe para Limpeza de Pele)"
+        ];
+        return simulateApiCall(slots, 1200);
+    }
+
+    try {
+        // Envia um resumo simplificado da agenda para a IA encontrar buracos
+        const scheduleContext = initialAppointments
+            .slice(0, 15) 
+            .map(a => `${a.professional.name}: ${format(a.start, 'HH:mm')} - ${format(a.end, 'HH:mm')}`)
+            .join('\n');
+
+        const response = await ai.models.generateContent({
+            model: modelId,
+            contents: `
+                Analise esta lista de horários ocupados hoje:
+                ${scheduleContext}
+                
+                Sugira 3 oportunidades de "encaixe" (gaps de tempo) onde caberia um serviço rápido (30min).
+                Se não houver dados suficientes, invente 3 horários plausíveis baseados em um salão movimentado.
+                Retorne APENAS um Array JSON de strings.
+            `,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING }
+                }
+            }
+        });
+
+        const jsonStr = response.text;
+        return jsonStr ? JSON.parse(jsonStr) : [];
+    } catch (error) {
+        console.error("AI Smart Slots Error", error);
+        return ["Sugestão AI indisponível no momento."];
+    }
 }
 
 export const enqueueReminder = async (appointmentId: number, type: 'confirmacao' | 'lembrete' | 'pos' | 'aniversario' | 'retorno'): Promise<{ success: boolean; message: string }> => {
-    const logMessage = `[JaciBot] Lembrete do tipo '${type}' para o agendamento #${appointmentId} foi enfileirado para envio.`;
-    console.log(logMessage);
-    return simulateApiCall({ success: true, message: logMessage });
+    if (!ai) {
+        const logMessage = `[JaciBot Mock] Lembrete '${type}' para agendamento #${appointmentId} enfileirado.`;
+        return simulateApiCall({ success: true, message: logMessage });
+    }
+
+    try {
+        const response = await ai.models.generateContent({
+            model: modelId,
+            contents: `Gere uma mensagem curta, cordial e profissional de WhatsApp para um cliente de salão de beleza sobre: ${type}. Apenas o texto da mensagem.`
+        });
+        
+        return { 
+            success: true, 
+            message: `[JaciBot] Mensagem gerada: "${response.text?.trim()}"` 
+        };
+    } catch (e) {
+        return { success: false, message: "Erro ao gerar mensagem via AI." };
+    }
 }
 
 export const autoCashClose = async (date: Date): Promise<{ totalPrevisto: number; totalRecebido: number; diferenca: number; resumo: string }> => {
-    console.log(`[JaciBot] Iniciando fechamento de caixa automático para ${date.toISOString()}`);
+    
+    // Calcula totais baseados nos dados mockados
+    const income = mockTransactions
+        .filter(t => t.type === 'receita' && isSameDay(new Date(t.date), date) || true) // Mock: pega tudo para demonstração
+        .reduce((sum, t) => sum + t.amount, 0);
+    
     const result = {
-        totalPrevisto: 1275.50,
-        totalRecebido: 1275.50,
+        totalPrevisto: income,
+        totalRecebido: income, 
         diferenca: 0.00,
-        resumo: "Caixa fechado com sucesso. Todos os pagamentos de atendimentos concluídos foram reconciliados."
+        resumo: ""
     };
-    return simulateApiCall(result, 1500);
+
+    if (!ai) {
+        result.resumo = "Caixa fechado com sucesso. Todos os pagamentos reconciliados (Simulação).";
+        return simulateApiCall(result, 1500);
+    }
+
+    try {
+        const response = await ai.models.generateContent({
+            model: modelId,
+            contents: `
+                Atue como uma auditora financeira de um salão.
+                Total Receitas do dia: R$ ${income.toFixed(2)}.
+                Diferença de caixa: R$ 0,00.
+                Gere um resumo executivo de 1 frase confirmando o fechamento positivo e elogiando a gestão.
+            `
+        });
+        result.resumo = response.text || "Fechamento realizado com sucesso.";
+        return result;
+    } catch (e) {
+        result.resumo = "Fechamento realizado (AI Offline).";
+        return result;
+    }
 }

@@ -17,9 +17,10 @@ import ComandasView from './components/views/ComandasView';
 import CaixaView from './components/views/CaixaView';
 import ServicosView from './components/views/ServicosView';
 import ProdutosView from './components/views/ProdutosView';
-import ViewPlaceholder from './components/views/ViewPlaceholder';
+import LoginView from './components/views/LoginView';
 import { mockTransactions } from './data/mockData';
 import { FinancialTransaction } from './types';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 export type ViewState = 
   | 'dashboard' 
@@ -38,8 +39,10 @@ export type ViewState =
   | 'produtos'
   | 'public_preview'; 
 
-export default function App() {
-  const [currentView, setCurrentView] = useState<ViewState>('servicos');
+// Internal component to handle routing logic after AuthProvider context is available
+const AppContent = () => {
+  const { user, loading } = useAuth();
+  const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   
   // Shared State for Financial Transactions
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
@@ -48,7 +51,7 @@ export default function App() {
     setTransactions(prev => [t, ...prev]);
   };
 
-  // Simple hash router for the preview
+  // Simple hash router for the public preview (bypass auth)
   useEffect(() => {
     const handleHashChange = () => {
         if (window.location.hash === '#/public-preview') {
@@ -64,11 +67,29 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  const renderView = () => {
-    if (currentView === 'public_preview') {
-        return <PublicBookingPreview />;
-    }
+  if (loading) {
+      return (
+          <div className="min-h-screen flex items-center justify-center bg-slate-50">
+              <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+      );
+  }
 
+  // Public Routes
+  if (currentView === 'public_preview') {
+      return (
+        <ErrorBoundary>
+            <PublicBookingPreview />
+        </ErrorBoundary>
+      );
+  }
+
+  // Protected Routes - If no user, show Login
+  if (!user) {
+      return <LoginView />;
+  }
+
+  const renderView = () => {
     switch (currentView) {
       case 'dashboard':
         return <DashboardView onNavigate={setCurrentView} />;
@@ -103,19 +124,19 @@ export default function App() {
     }
   };
 
-  if (currentView === 'public_preview') {
-      return (
-        <ErrorBoundary>
-            <PublicBookingPreview />
-        </ErrorBoundary>
-      );
-  }
-
   return (
     <ErrorBoundary>
       <MainLayout currentView={currentView} onNavigate={setCurrentView}>
         {renderView()}
       </MainLayout>
     </ErrorBoundary>
+  );
+};
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }

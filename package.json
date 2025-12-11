@@ -19,7 +19,8 @@
     "@fullcalendar/react": "6",
     "@fullcalendar/timegrid": "6",
     "@fullcalendar/interaction": "6",
-    "@fullcalendar/core": "^6.1.19"
+    "@fullcalendar/core": "^6.1.19",
+    "@google/genai": "^1.33.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

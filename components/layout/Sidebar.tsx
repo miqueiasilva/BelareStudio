@@ -2,9 +2,10 @@
 import React from 'react';
 import { 
     Home, Calendar, MessageSquare, ShoppingCart, ClipboardList, ArrowRightLeft, Archive,
-    Star, Package, Users, Settings, BarChart, Globe, Banknote
+    Star, Package, Users, Settings, BarChart, Globe, Banknote, LogOut
 } from 'lucide-react';
 import { ViewState } from '../../App';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface SidebarProps {
     currentView: ViewState;
@@ -13,6 +14,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = '' }) => {
+    const { user, signOut } = useAuth();
     
     const menuItems = [
         { id: 'dashboard', icon: Home, label: 'Página principal' },
@@ -37,6 +39,12 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
     const handleNavigation = (e: React.MouseEvent, viewId: string) => {
         e.preventDefault();
         onNavigate(viewId as ViewState);
+    };
+
+    const handleLogout = () => {
+        if(window.confirm('Deseja realmente sair?')) {
+            signOut();
+        }
     };
 
     const renderItem = (item: any) => {
@@ -67,7 +75,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                 </div>
                 <div>
                     <h1 className="font-bold text-slate-800 text-md leading-tight">BelaApp</h1>
-                    <p className="text-[10px] text-slate-500 font-medium">Studio Jacilene Felix</p>
+                    <p className="text-[10px] text-slate-500 font-medium">Studio {user?.nome?.split(' ')[0] || 'Beleza'}</p>
                 </div>
             </div>
             
@@ -84,15 +92,24 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
             </nav>
 
             <div className="p-4 border-t border-slate-200 bg-slate-50">
-                <button className="flex items-center gap-3 w-full p-2 hover:bg-white rounded-lg transition-colors text-slate-600">
-                    <div className="w-8 h-8 rounded-full bg-slate-300 flex items-center justify-center text-xs font-bold text-slate-600">
-                        JF
+                <div className="flex items-center gap-3 w-full p-2 rounded-lg text-slate-600">
+                    <img 
+                        src={user?.avatar_url || `https://ui-avatars.com/api/?name=${user?.nome || 'User'}`} 
+                        alt="User" 
+                        className="w-9 h-9 rounded-full border border-slate-300"
+                    />
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-700 truncate">{user?.nome || 'Usuário'}</p>
+                        <p className="text-xs text-slate-500 capitalize">{user?.papel || 'Visitante'}</p>
                     </div>
-                    <div className="text-left">
-                        <p className="text-sm font-bold text-slate-700">Jacilene Felix</p>
-                        <p className="text-xs text-slate-500">Admin</p>
-                    </div>
-                </button>
+                    <button 
+                        onClick={handleLogout}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors" 
+                        title="Sair"
+                    >
+                        <LogOut size={18} />
+                    </button>
+                </div>
             </div>
         </aside>
     );
