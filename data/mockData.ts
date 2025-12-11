@@ -10,7 +10,7 @@ export const professionals: LegacyProfessional[] = [
     { id: 2, name: 'Graziela Oliveira', avatarUrl: 'https://i.pravatar.cc/150?img=2' },
     { id: 3, name: 'Jéssica Félix', avatarUrl: 'https://i.pravatar.cc/150?img=3' },
     { id: 4, name: 'Glezia', avatarUrl: 'https://i.pravatar.cc/150?img=4' },
-    { id: 5, name: 'Elá Priscila', avatarUrl: 'https://i.pravatar.cc/150?img=5' },
+    { id: 5, name: 'Elda Priscila', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80' },
     { id: 6, name: 'Herlon', avatarUrl: 'https://i.pravatar.cc/150?img=6' },
 ];
 
@@ -98,7 +98,7 @@ export const initialAppointments: LegacyAppointment[] = [
     // Glezia
     { id: 9, professional: professionals[3], service: services.bloqueio, start: createTime(13, 0), end: createTime(18, 0), status: 'bloqueado' },
 
-    // Elá Priscila
+    // Elda Priscila
     { id: 8, client: clients[6], professional: professionals[4], service: services.limpezaPele, start: createTime(9, 30), end: createTime(10, 20), status: 'confirmado' },
 ];
 

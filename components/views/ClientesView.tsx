@@ -1,8 +1,10 @@
-import React, { useState, useMemo } from 'react';
-import { UserPlus, Search, Filter, Phone, Mail, Tag, Edit, Trash2, User } from 'lucide-react';
+
+import React, { useState, useMemo, useRef } from 'react';
+import { UserPlus, Search, Filter, Phone, Mail, Tag, Edit, Trash2, User, FileUp } from 'lucide-react';
 import { clients as initialClients, initialAppointments } from '../../data/mockData';
 import { Client } from '../../types';
 import ClientModal from '../modals/ClientModal';
+import Toast, { ToastType } from '../shared/Toast';
 import { format, differenceInDays } from 'date-fns';
 
 const ClientesView: React.FC = () => {
@@ -10,6 +12,10 @@ const ClientesView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+
+  // CSV Import Ref
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- Logic for Derived Stats ---
   
@@ -59,6 +65,8 @@ const ClientesView: React.FC = () => {
 
   // --- Handlers ---
 
+  const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
+
   const handleSaveClient = (client: Client) => {
     setClients(prev => {
       const exists = prev.find(c => c.id === client.id);
@@ -69,6 +77,7 @@ const ClientesView: React.FC = () => {
     });
     setIsModalOpen(false);
     setSelectedClient(null);
+    showToast(selectedClient ? 'Cliente atualizado!' : 'Novo cliente cadastrado!');
   };
 
   const handleEdit = (client: Client) => {
@@ -79,6 +88,7 @@ const ClientesView: React.FC = () => {
   const handleDelete = (id: number) => {
     if (window.confirm('Tem certeza que deseja remover este cliente?')) {
       setClients(prev => prev.filter(c => c.id !== id));
+      showToast('Cliente removido.', 'info');
     }
   };
 
@@ -87,8 +97,92 @@ const ClientesView: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  // --- CSV Import Logic ---
+
+  const handleImportClick = () => {
+    if (fileInputRef.current) {
+        fileInputRef.current.click();
+    }
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const text = e.target?.result as string;
+        if (!text) return;
+
+        try {
+            const lines = text.split('\n');
+            const newClients: Client[] = [];
+            let successCount = 0;
+
+            // Determine if first row is header based on common keywords
+            const firstLine = lines[0].toLowerCase();
+            const startIndex = (firstLine.includes('nome') || firstLine.includes('name') || firstLine.includes('cliente')) ? 1 : 0;
+
+            for (let i = startIndex; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+
+                // Simple split by comma
+                const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+                
+                // Expected Format: Name, WhatsApp, Email, Tags
+                // Minimum required: Name
+                if (cols.length >= 1 && cols[0]) {
+                    const nome = cols[0];
+                    const whatsapp = cols[1] || '';
+                    const email = cols[2] || '';
+                    const tagsStr = cols[3] || '';
+                    
+                    const tags = tagsStr ? tagsStr.split(';').map(t => t.trim()) : [];
+
+                    newClients.push({
+                        id: Date.now() + i + Math.random(), // Unique ID generation
+                        nome,
+                        whatsapp,
+                        email,
+                        tags,
+                        consent: true
+                    });
+                    successCount++;
+                }
+            }
+
+            if (successCount > 0) {
+                setClients(prev => [...prev, ...newClients]);
+                showToast(`${successCount} clientes importados com sucesso!`, 'success');
+            } else {
+                showToast('Nenhum dado válido encontrado. Verifique o formato (Nome, WhatsApp, Email).', 'error');
+            }
+
+        } catch (err) {
+            console.error("CSV Import Error", err);
+            showToast('Erro ao processar o arquivo. Verifique o formato.', 'error');
+        }
+
+        // Reset input
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.readAsText(file);
+  };
+
   return (
-    <div className="h-full flex flex-col bg-slate-50">
+    <div className="h-full flex flex-col bg-slate-50 relative">
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+      {/* Hidden Input for CSV */}
+      <input 
+          type="file" 
+          accept=".csv" 
+          ref={fileInputRef} 
+          className="hidden" 
+          onChange={handleFileUpload}
+      />
+
       {/* Header */}
       <header className="bg-white border-b border-slate-200 px-6 py-5 flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
@@ -98,13 +192,25 @@ const ClientesView: React.FC = () => {
           </h1>
           <p className="text-slate-500 text-sm mt-1">Gerencie sua base de clientes, histórico e preferências.</p>
         </div>
-        <button 
-          onClick={handleNewClient}
-          className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-orange-200 flex items-center gap-2 transition-all active:scale-95"
-        >
-          <UserPlus className="w-5 h-5" />
-          Novo Cliente
-        </button>
+        
+        <div className="flex gap-3 w-full md:w-auto">
+            <button 
+                onClick={handleImportClick}
+                className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 w-full md:w-auto"
+                title="Importar CSV (Nome, WhatsApp, Email)"
+            >
+                <FileUp size={20} className="text-slate-500" />
+                <span className="hidden sm:inline">Importar CSV</span>
+            </button>
+
+            <button 
+              onClick={handleNewClient}
+              className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-orange-200 flex items-center justify-center gap-2 transition-all active:scale-95 w-full md:w-auto"
+            >
+              <UserPlus className="w-5 h-5" />
+              Novo Cliente
+            </button>
+        </div>
       </header>
 
       {/* KPI Cards */}

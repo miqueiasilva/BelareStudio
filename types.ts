@@ -162,6 +162,17 @@ export interface LegacyProfessional {
   id: number;
   name: string;
   avatarUrl: string;
+  // Extended fields
+  email?: string;
+  phone?: string;
+  role?: string;
+  bio?: string;
+  active?: boolean;
+  onlineBooking?: boolean;
+  commissionRate?: number;
+  pixKey?: string;
+  services?: number[]; // IDs of enabled services
+  schedule?: { day: string; start: string; end: string; active: boolean }[];
 }
 
 export interface LegacyService {

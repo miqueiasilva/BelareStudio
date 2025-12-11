@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Settings, User, Scissors, Clock, Bell, Store, Save, Plus, Trash2, Edit2, Search, Filter, Download, FolderPen, ChevronLeft, Menu } from 'lucide-react';
+import { Settings, User, Scissors, Clock, Bell, Store, Save, Plus, Trash2, Edit2, Search, Filter, Download, FolderPen, ChevronLeft, Menu, ChevronRight } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import Toast, { ToastType } from '../shared/Toast';
@@ -8,6 +8,7 @@ import { services as initialServices, professionals as initialProfessionals } fr
 import { ServiceModal, ProfessionalModal } from '../modals/ConfigModals';
 import { LegacyService, LegacyProfessional } from '../../types';
 import ContextMenu from '../shared/ContextMenu';
+import ProfessionalDetail from './ProfessionalDetail';
 
 const ConfiguracoesView: React.FC = () => {
     const [activeTab, setActiveTab] = useState('studio');
@@ -23,6 +24,8 @@ const ConfiguracoesView: React.FC = () => {
 
     const handleTabChange = (tabId: string) => {
         setActiveTab(tabId);
+        // Reset selected professional when switching tabs
+        setSelectedProfessionalId(null);
         if (window.innerWidth < 768) {
             setIsSidebarOpen(false);
         }
@@ -47,6 +50,9 @@ const ConfiguracoesView: React.FC = () => {
     const [servicesData, setServicesData] = useState<LegacyService[]>(Object.values(initialServices));
     const [professionalsData, setProfessionalsData] = useState<LegacyProfessional[]>(initialProfessionals);
     
+    // --- Professional Detail State ---
+    const [selectedProfessionalId, setSelectedProfessionalId] = useState<number | null>(null);
+
     // --- Services Filters State ---
     const [serviceSearch, setServiceSearch] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('Todas');
@@ -65,7 +71,7 @@ const ConfiguracoesView: React.FC = () => {
 
     // --- State: Modals ---
     const [serviceModal, setServiceModal] = useState<{ open: boolean; data: LegacyService | null }>({ open: false, data: null });
-    const [profModal, setProfModal] = useState<{ open: boolean; data: LegacyProfessional | null }>({ open: false, data: null });
+    const [profModal, setProfModal] = useState<{ open: boolean; data: LegacyProfessional | null }>({ open: false, data: null }); // Kept for "New" mostly
 
     // --- Helpers ---
     
@@ -125,6 +131,7 @@ const ConfiguracoesView: React.FC = () => {
             return [...prev, prof];
         });
         setProfModal({ open: false, data: null });
+        setSelectedProfessionalId(null); // Go back to list
         showToast(`Profissional "${prof.name}" salvo com sucesso!`);
     };
 
@@ -161,10 +168,25 @@ const ConfiguracoesView: React.FC = () => {
     const tabs = [
         { id: 'studio', label: 'Dados do Estúdio', icon: Store },
         { id: 'services', label: 'Serviços', icon: Scissors },
-        { id: 'team', label: 'Profissionais', icon: User },
+        { id: 'team', label: 'Colaboradores', icon: User },
         { id: 'schedule', label: 'Horário de Funcionamento', icon: Clock },
         { id: 'notifications', label: 'Notificações', icon: Bell },
     ];
+
+    // If a professional is selected, show the detail view entirely
+    if (activeTab === 'team' && selectedProfessionalId) {
+        const selectedProf = professionalsData.find(p => p.id === selectedProfessionalId);
+        if (selectedProf) {
+            return (
+                <ProfessionalDetail 
+                    professional={selectedProf}
+                    services={servicesData}
+                    onBack={() => setSelectedProfessionalId(null)}
+                    onSave={handleSaveProfessional}
+                />
+            );
+        }
+    }
 
     return (
         <div className="flex h-full bg-slate-50 overflow-hidden relative">
@@ -229,7 +251,7 @@ const ConfiguracoesView: React.FC = () => {
                             </button>
                             <div>
                                 <h3 className="text-2xl font-bold text-slate-800">{tabs.find(t => t.id === activeTab)?.label}</h3>
-                                {activeTab !== 'services' && <p className="text-slate-500 text-sm mt-1 hidden sm:block">Gerencie as preferências e informações do sistema.</p>}
+                                {activeTab !== 'services' && activeTab !== 'team' && <p className="text-slate-500 text-sm mt-1 hidden sm:block">Gerencie as preferências e informações do sistema.</p>}
                             </div>
                         </div>
                         
@@ -417,45 +439,52 @@ const ConfiguracoesView: React.FC = () => {
                     )}
 
                     {activeTab === 'team' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {professionalsData.map(prof => (
-                                <div key={prof.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:border-orange-200 transition-colors">
-                                    <div className="relative group">
-                                        <img src={prof.avatarUrl} alt={prof.name} className="w-14 h-14 rounded-full object-cover border-2 border-slate-100" />
-                                        <button 
-                                            onClick={() => setProfModal({ open: true, data: prof })} 
-                                            className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white font-xs"
-                                        >
-                                            <Edit2 size={16}/>
-                                        </button>
-                                    </div>
-                                    <div className="flex-1">
-                                        <h4 className="font-bold text-slate-800">{prof.name}</h4>
-                                        <p className="text-xs text-slate-500">Especialista</p>
-                                        <div className="flex items-center gap-2 mt-2">
-                                            <span className="text-[10px] px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-bold">Ativo</span>
-                                            <span className="text-[10px] text-slate-400">ID: #{prof.id}</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                        <button 
-                                            onClick={() => setProfModal({ open: true, data: prof })} 
-                                            className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-blue-50 hover:text-blue-600 transition-colors"
-                                        >
-                                            <Edit2 size={16}/>
-                                        </button>
-                                        <button 
-                                            onClick={() => handleDeleteProfessional(prof.id)} 
-                                            className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                                        >
-                                            <Trash2 size={16}/>
-                                        </button>
-                                    </div>
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+                                <h3 className="font-bold text-slate-800">Ativos ({professionalsData.length})</h3>
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                                    <input 
+                                        type="text" 
+                                        placeholder="Procurar por nome..." 
+                                        className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
+                                    />
                                 </div>
-                            ))}
-                             {professionalsData.length === 0 && (
-                                <div className="col-span-2 text-center p-8 text-slate-500">Nenhum profissional cadastrado.</div>
-                            )}
+                            </div>
+                            <ul className="divide-y divide-slate-50">
+                                {professionalsData.map(prof => (
+                                    <li 
+                                        key={prof.id} 
+                                        onClick={() => setSelectedProfessionalId(prof.id)}
+                                        className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors cursor-pointer group"
+                                    >
+                                        <div className="flex items-center gap-4">
+                                            <img src={prof.avatarUrl} alt={prof.name} className="w-10 h-10 rounded-full object-cover border border-slate-200" />
+                                            <div>
+                                                <h4 className="font-bold text-slate-800 text-sm">{prof.name}</h4>
+                                                <p className="text-xs text-slate-500">{prof.email || 'e-mail não cadastrado'}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <span className="hidden md:inline-block px-2 py-1 bg-green-50 text-green-700 rounded text-xs font-semibold">
+                                                Ativo
+                                            </span>
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); /* Context Menu Logic */ }}
+                                                className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-200"
+                                            >
+                                                <ChevronRight size={18} />
+                                            </button>
+                                        </div>
+                                    </li>
+                                ))}
+                                {professionalsData.length === 0 && (
+                                    <li className="p-8 text-center text-slate-500">Nenhum profissional cadastrado.</li>
+                                )}
+                            </ul>
+                            <div className="p-4 border-t border-slate-100 bg-slate-50 text-right">
+                                <span className="text-xs text-slate-500 font-medium">Colaboradores cadastrados: {professionalsData.length}</span>
+                            </div>
                         </div>
                     )}
 
@@ -542,6 +571,7 @@ const ConfiguracoesView: React.FC = () => {
                     onSave={handleSaveService} 
                 />
             )}
+            {/* Kept for creating NEW professionals quickly without the full detail view first */}
             {profModal.open && (
                 <ProfessionalModal 
                     professional={profModal.data} 
