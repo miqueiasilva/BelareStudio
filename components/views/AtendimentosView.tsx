@@ -118,6 +118,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     // Mobile State
     const [activeMobileProfId, setActiveMobileProfId] = useState<number>(mockProfessionals[0].id);
     const [isMobile, setIsMobile] = useState(false);
+    const [isMobileProfSidebarOpen, setIsMobileProfSidebarOpen] = useState(true); // New state for sidebar
 
     const [modalState, setModalState] = useState<{ type: 'appointment' | 'block'; data: any } | null>(null);
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; options: any[] } | null>(null);
@@ -430,240 +431,263 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 </div>
             </header>
 
-            {/* Mobile Switcher (Only for Professional Day view) */}
-            {isMobile && periodType === 'Dia' && viewType === 'Profissional' && (
-                <div className="md:hidden bg-white border-b border-slate-200 overflow-x-auto scrollbar-hide flex-shrink-0">
-                    <div className="flex items-center gap-4 px-4 py-3">
-                        {mockProfessionals.map(prof => (
-                            <button key={prof.id} onClick={() => setActiveMobileProfId(prof.id)} className={`flex flex-col items-center gap-1 min-w-[60px] transition-opacity ${activeMobileProfId === prof.id ? 'opacity-100' : 'opacity-50'}`}>
-                                <div className={`w-12 h-12 rounded-full p-0.5 ${activeMobileProfId === prof.id ? 'bg-gradient-to-tr from-orange-400 to-red-500' : 'bg-transparent'}`}>
-                                    <img src={prof.avatarUrl} alt={prof.name} className="w-full h-full rounded-full object-cover border-2 border-white" />
-                                </div>
-                                <span className={`text-[10px] font-medium truncate w-full text-center ${activeMobileProfId === prof.id ? 'text-orange-600 font-bold' : 'text-slate-500'}`}>{prof.name.split(' ')[0]}</span>
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* VIEW RENDERER */}
-            <div ref={scrollContainerRef} className="flex-1 overflow-auto bg-slate-50 md:bg-white relative">
-                
-                {/* 1. TIMELINE GRID (Dia / Semana) */}
-                {(periodType === 'Dia' || periodType === 'Semana') && (
-                    <div className="relative min-h-full">
-                        {/* Headers */}
-                        <div className="hidden md:grid sticky top-0 bg-white z-20 shadow-sm border-b border-slate-200" style={{ gridTemplateColumns: `60px repeat(${columns.length}, 1fr)` }}>
-                            <div className="border-r border-slate-200 h-16 bg-white"></div>
-                            {columns.map((col, index) => (
-                                <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-200 h-16 bg-slate-50/50">
-                                    {col.type === 'professional' && (
-                                        <div className="flex items-center gap-2">
-                                            <img src={col.avatarUrl} alt={col.title} className="w-8 h-8 rounded-full border border-slate-200" />
-                                            <span className="text-sm font-bold text-slate-800 truncate">{col.title}</span>
+            <div className="flex flex-1 overflow-hidden relative">
+                {/* Mobile Professional Sidebar (Left Tabs) */}
+                {isMobile && periodType === 'Dia' && viewType === 'Profissional' && (
+                    <>
+                        {/* Sidebar Panel */}
+                        <div 
+                            className={`flex flex-col bg-slate-50 border-r border-slate-200 transition-all duration-300 ease-in-out z-20 ${isMobileProfSidebarOpen ? 'w-20' : 'w-0 overflow-hidden'}`}
+                        >
+                            <div className="flex-1 overflow-y-auto scrollbar-hide py-4 flex flex-col items-center gap-4 w-20">
+                                {mockProfessionals.map(prof => (
+                                    <button 
+                                        key={prof.id} 
+                                        onClick={() => { setActiveMobileProfId(prof.id); /* Keep open or close? Keep open for easier switching, user can close with arrow */ }} 
+                                        className={`relative group transition-all p-1 rounded-full ${activeMobileProfId === prof.id ? 'scale-110' : 'opacity-70 hover:opacity-100'}`}
+                                        title={prof.name}
+                                    >
+                                        <div className={`w-12 h-12 rounded-full p-0.5 ${activeMobileProfId === prof.id ? 'bg-gradient-to-tr from-orange-400 to-red-500 shadow-md' : 'bg-transparent border border-slate-300'}`}>
+                                            <img src={prof.avatarUrl} alt={prof.name} className="w-full h-full rounded-full object-cover border-2 border-white" />
                                         </div>
-                                    )}
-                                    {col.type === 'status' && (
-                                        <div className="flex items-center gap-2">
-                                            <div className={`w-3 h-3 rounded-full ${
-                                                col.id === 'agendado' ? 'bg-blue-400' : 
-                                                col.id === 'confirmado' ? 'bg-teal-400' : 
-                                                col.id === 'em_atendimento' ? 'bg-indigo-400' : 
-                                                'bg-green-400'
-                                            }`}></div>
-                                            <span className="text-sm font-bold text-slate-700">{col.title}</span>
-                                        </div>
-                                    )}
-                                    {col.type === 'payment' && (
-                                        <div className="flex items-center gap-2">
-                                            {col.id === 'pago' ? <CheckCircle className="w-5 h-5 text-green-500"/> : <DollarSign className="w-5 h-5 text-orange-500"/>}
-                                            <span className="text-sm font-bold text-slate-700">{col.title}</span>
-                                        </div>
-                                    )}
-                                    {col.type === 'date' && (
-                                        <>
-                                            <span className={`text-xs uppercase font-bold ${isSameDay(col.data, new Date()) ? 'text-orange-600' : 'text-slate-500'}`}>{col.title}</span>
-                                            <span className={`text-lg font-bold ${isSameDay(col.data, new Date()) ? 'text-orange-600' : 'text-slate-800'}`}>{col.subtitle}</span>
-                                        </>
-                                    )}
-                                </div>
-                            ))}
+                                        {activeMobileProfId === prof.id && (
+                                            <div className="absolute right-0 bottom-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
 
-                        {/* Grid Body */}
-                        <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, 1fr)` }}>
-                            {/* Time Column */}
-                            <div className="border-r border-slate-200 bg-white">
-                                {timeSlots.map(time => (
-                                    <div key={time} className="h-20 text-right pr-2 text-xs text-slate-400 font-medium relative pt-2">
-                                        <span className="-translate-y-1/2 block">{time}</span>
+                        {/* Toggle Button */}
+                        <button 
+                            onClick={() => setIsMobileProfSidebarOpen(!isMobileProfSidebarOpen)}
+                            className="absolute z-30 top-1/2 -translate-y-1/2 bg-white border border-slate-200 rounded-r-lg p-1.5 shadow-md text-slate-500 hover:text-orange-500 transition-all"
+                            style={{ left: isMobileProfSidebarOpen ? '5rem' : '0' }}
+                        >
+                            {isMobileProfSidebarOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+                        </button>
+                    </>
+                )}
+
+                {/* VIEW RENDERER */}
+                <div ref={scrollContainerRef} className="flex-1 overflow-auto bg-slate-50 md:bg-white relative">
+                    
+                    {/* 1. TIMELINE GRID (Dia / Semana) */}
+                    {(periodType === 'Dia' || periodType === 'Semana') && (
+                        <div className="relative min-h-full">
+                            {/* Headers */}
+                            <div className="hidden md:grid sticky top-0 bg-white z-20 shadow-sm border-b border-slate-200" style={{ gridTemplateColumns: `60px repeat(${columns.length}, 1fr)` }}>
+                                <div className="border-r border-slate-200 h-16 bg-white"></div>
+                                {columns.map((col, index) => (
+                                    <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-200 h-16 bg-slate-50/50">
+                                        {col.type === 'professional' && (
+                                            <div className="flex items-center gap-2">
+                                                <img src={col.avatarUrl} alt={col.title} className="w-8 h-8 rounded-full border border-slate-200" />
+                                                <span className="text-sm font-bold text-slate-800 truncate">{col.title}</span>
+                                            </div>
+                                        )}
+                                        {col.type === 'status' && (
+                                            <div className="flex items-center gap-2">
+                                                <div className={`w-3 h-3 rounded-full ${
+                                                    col.id === 'agendado' ? 'bg-blue-400' : 
+                                                    col.id === 'confirmado' ? 'bg-teal-400' : 
+                                                    col.id === 'em_atendimento' ? 'bg-indigo-400' : 
+                                                    'bg-green-400'
+                                                }`}></div>
+                                                <span className="text-sm font-bold text-slate-700">{col.title}</span>
+                                            </div>
+                                        )}
+                                        {col.type === 'payment' && (
+                                            <div className="flex items-center gap-2">
+                                                {col.id === 'pago' ? <CheckCircle className="w-5 h-5 text-green-500"/> : <DollarSign className="w-5 h-5 text-orange-500"/>}
+                                                <span className="text-sm font-bold text-slate-700">{col.title}</span>
+                                            </div>
+                                        )}
+                                        {col.type === 'date' && (
+                                            <>
+                                                <span className={`text-xs uppercase font-bold ${isSameDay(col.data, new Date()) ? 'text-orange-600' : 'text-slate-500'}`}>{col.title}</span>
+                                                <span className={`text-lg font-bold ${isSameDay(col.data, new Date()) ? 'text-orange-600' : 'text-slate-800'}`}>{col.subtitle}</span>
+                                            </>
+                                        )}
                                     </div>
                                 ))}
                             </div>
 
-                            {/* Dynamic Columns */}
-                            {columns.map((col, index) => {
-                                // Filter apps for this column
-                                const colApps = filteredAppointments.filter(app => {
-                                    const assignedCol = getColumnForAppointment(app, columns);
-                                    return assignedCol?.id === col.id;
-                                });
+                            {/* Grid Body */}
+                            <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, 1fr)` }}>
+                                {/* Time Column */}
+                                <div className="border-r border-slate-200 bg-white">
+                                    {timeSlots.map(time => (
+                                        <div key={time} className="h-20 text-right pr-2 text-xs text-slate-400 font-medium relative pt-2">
+                                            <span className="-translate-y-1/2 block">{time}</span>
+                                        </div>
+                                    ))}
+                                </div>
 
-                                return (
-                                    <div 
-                                        key={col.id} 
-                                        className={`relative border-r border-slate-200 bg-white min-h-[1600px] ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}
-                                        onContextMenu={(e) => handleContextMenu(e, col)}
-                                        onClick={(e) => {
-                                            if (isMobile) {
-                                                const rect = e.currentTarget.getBoundingClientRect();
-                                                const y = e.clientY - rect.top;
-                                                const minutesFromTop = y / PIXELS_PER_MINUTE;
-                                                const totalMinutes = minutesFromTop + START_HOUR * 60;
-                                                const hour = Math.floor(totalMinutes / 60);
-                                                const minute = totalMinutes % 60;
-                                                const baseDate = col.type === 'date' ? col.data : currentDate;
-                                                const clickedTime = setMinutes(setHours(baseDate, hour), minute);
-                                                const roundedTime = roundToNearestMinutes(clickedTime, { nearestTo: 30 });
-                                                const prof = col.type === 'professional' ? col.data : undefined;
-                                                setModalState({ type: 'appointment', data: { professional: prof, start: roundedTime } });
-                                            }
-                                        }}
-                                    >
-                                        {/* Grid Lines */}
-                                        {timeSlots.map((_, i) => <div key={i} className="h-20 border-b border-slate-100"></div>)}
+                                {/* Dynamic Columns */}
+                                {columns.map((col, index) => {
+                                    // Filter apps for this column
+                                    const colApps = filteredAppointments.filter(app => {
+                                        const assignedCol = getColumnForAppointment(app, columns);
+                                        return assignedCol?.id === col.id;
+                                    });
 
-                                        {/* Appointments */}
-                                        {colApps.map(app => {
-                                            const duration = (app.end.getTime() - app.start.getTime()) / (1000 * 60);
-                                            const isSmall = duration < 45;
+                                    return (
+                                        <div 
+                                            key={col.id} 
+                                            className={`relative border-r border-slate-200 bg-white min-h-[1600px] ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}
+                                            onContextMenu={(e) => handleContextMenu(e, col)}
+                                            onClick={(e) => {
+                                                if (isMobile) {
+                                                    const rect = e.currentTarget.getBoundingClientRect();
+                                                    const y = e.clientY - rect.top;
+                                                    const minutesFromTop = y / PIXELS_PER_MINUTE;
+                                                    const totalMinutes = minutesFromTop + START_HOUR * 60;
+                                                    const hour = Math.floor(totalMinutes / 60);
+                                                    const minute = totalMinutes % 60;
+                                                    const baseDate = col.type === 'date' ? col.data : currentDate;
+                                                    const clickedTime = setMinutes(setHours(baseDate, hour), minute);
+                                                    const roundedTime = roundToNearestMinutes(clickedTime, { nearestTo: 30 });
+                                                    const prof = col.type === 'professional' ? col.data : undefined;
+                                                    setModalState({ type: 'appointment', data: { professional: prof, start: roundedTime } });
+                                                }
+                                            }}
+                                        >
+                                            {/* Grid Lines */}
+                                            {timeSlots.map((_, i) => <div key={i} className="h-20 border-b border-slate-100"></div>)}
 
+                                            {/* Appointments */}
+                                            {colApps.map(app => {
+                                                const duration = (app.end.getTime() - app.start.getTime()) / (1000 * 60);
+                                                const isSmall = duration < 45;
+
+                                                return (
+                                                <div
+                                                    key={app.id}
+                                                    ref={(el) => { appointmentRefs.current.set(app.id, el); }}
+                                                    onClick={(e) => { e.stopPropagation(); if (app.status !== 'bloqueado') setActiveAppointmentDetail(app); }}
+                                                    className={`absolute w-[95%] left-1/2 -translate-x-1/2 rounded-lg shadow-sm border leading-tight overflow-hidden cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-[1.02] hover:z-10 ${getStatusColor(app.status)} ${isSmall ? 'p-0.5' : 'p-1.5'}`}
+                                                    style={getAppointmentStyle(app.start, app.end)}
+                                                >
+                                                    <div style={{ backgroundColor: app.service.color }} className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-lg"></div>
+                                                    
+                                                    <div className={`flex flex-col h-full relative z-10 pl-2 pr-1 ${isSmall ? 'justify-center' : 'pt-0.5'}`}>
+                                                        {/* Header: Time & Notes */}
+                                                        <div className={`flex justify-between items-start ${isSmall ? 'mb-0' : 'mb-0.5'}`}>
+                                                            <span className={`font-bold bg-white/60 rounded text-slate-700 backdrop-blur-sm shadow-sm tracking-tight ${isSmall ? 'text-[9px] px-1 py-0' : 'text-[10px] px-1.5 py-0.5'}`}>
+                                                                {format(app.start, 'HH:mm')}
+                                                            </span>
+                                                            {app.notas && !isSmall && <FileText size={10} className="text-slate-500 ml-1 mt-0.5" />}
+                                                        </div>
+
+                                                        {/* Body: Client & Service */}
+                                                        <div className={`flex-1 min-h-0 flex flex-col ${isSmall ? 'justify-center' : 'justify-center'}`}>
+                                                            <p className={`font-extrabold text-slate-900 truncate ${isSmall ? 'text-[10px] leading-3' : 'text-sm leading-tight mb-0.5'}`}>
+                                                                {app.client ? app.client.nome : 'Bloqueio'}
+                                                            </p>
+                                                            <p className={`font-medium text-slate-600 truncate flex items-center gap-1 ${isSmall ? 'text-[9px] leading-3' : 'text-[11px] leading-tight'}`}>
+                                                                {app.service.name}
+                                                            </p>
+                                                        </div>
+
+                                                        {/* Footer: Price (if Payment view) */}
+                                                        {viewType === 'Pagamento' && !isSmall && (
+                                                            <div className="mt-auto pt-1 flex items-center gap-1 text-[10px] font-bold text-green-700 opacity-90 border-t border-black/5">
+                                                                <span>R$ {app.service.price.toFixed(2)}</span>
+                                                                {app.status === 'concluido' && <span className="bg-green-200 px-1 rounded ml-auto text-[9px]">Pago</span>}
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {app.status === 'confirmado_whatsapp' && <div className="absolute bottom-1 right-1 w-2 h-2 rounded-full bg-green-500 shadow-sm ring-1 ring-white" title="Confirmado via WhatsApp"></div>}
+                                                </div>
+                                            )})}
+                                        </div>
+                                    );
+                                })}
+                                <TimelineIndicator />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 2. LIST & WAITLIST VIEW */}
+                    {(periodType === 'Lista' || periodType === 'Fila de Espera') && (
+                        <div className="p-6 max-w-4xl mx-auto">
+                             {filteredAppointments.length === 0 ? (
+                                <div className="text-center py-20 text-slate-400">
+                                    <List size={48} className="mx-auto mb-4 opacity-30" />
+                                    <p>Nenhum agendamento encontrado para este período.</p>
+                                </div>
+                             ) : (
+                                 <div className="space-y-4">
+                                    {filteredAppointments
+                                        .sort((a,b) => a.start.getTime() - b.start.getTime())
+                                        .map(app => (
+                                        <div key={app.id} onClick={() => setActiveAppointmentDetail(app)} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-orange-300 transition-all cursor-pointer flex items-center justify-between">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-16 text-center">
+                                                    <p className="text-xl font-bold text-slate-800">{format(app.start, 'HH:mm')}</p>
+                                                    <p className="text-xs text-slate-500">{format(app.start, 'dd/MM')}</p>
+                                                </div>
+                                                <div className="w-px h-10 bg-slate-200"></div>
+                                                <div>
+                                                    <h4 className="font-bold text-slate-800">{app.client?.nome || 'Bloqueio'}</h4>
+                                                    <p className="text-sm text-slate-500">{app.service.name} • com {app.professional.name}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize ${getStatusColor(app.status)}`}>{app.status.replace('_', ' ')}</span>
+                                                <div className="font-bold text-slate-700">R$ {app.service.price.toFixed(2)}</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                 </div>
+                             )}
+                        </div>
+                    )}
+
+                    {/* 3. MONTH VIEW (Simplified Grid) */}
+                    {periodType === 'Mês' && (
+                        <div className="p-4 h-full flex flex-col">
+                            <div className="grid grid-cols-7 gap-1 flex-1">
+                                {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
+                                    <div key={d} className="text-center py-2 text-sm font-bold text-slate-400 uppercase">{d}</div>
+                                ))}
+                                {(() => {
+                                    const start = startOfMonth(currentDate);
+                                    const end = endOfMonth(currentDate);
+                                    const startDay = start.getDay(); // 0-6
+                                    const daysInMonth = eachDayOfInterval({ start, end });
+                                    const blanks = Array.from({ length: startDay }, (_, i) => i);
+
+                                    return [
+                                        ...blanks.map(b => <div key={`blank-${b}`} className="bg-slate-50/50 rounded-lg"></div>),
+                                        ...daysInMonth.map(day => {
+                                            const dayApps = filteredAppointments.filter(a => isSameDay(a.start, day));
+                                            const isToday = isSameDay(day, new Date());
                                             return (
-                                            <div
-                                                key={app.id}
-                                                ref={(el) => { appointmentRefs.current.set(app.id, el); }}
-                                                onClick={(e) => { e.stopPropagation(); if (app.status !== 'bloqueado') setActiveAppointmentDetail(app); }}
-                                                className={`absolute w-[95%] left-1/2 -translate-x-1/2 rounded-lg shadow-sm border leading-tight overflow-hidden cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-[1.02] hover:z-10 ${getStatusColor(app.status)} ${isSmall ? 'p-0.5' : 'p-1.5'}`}
-                                                style={getAppointmentStyle(app.start, app.end)}
-                                            >
-                                                <div style={{ backgroundColor: app.service.color }} className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-lg"></div>
-                                                
-                                                <div className={`flex flex-col h-full relative z-10 pl-2 pr-1 ${isSmall ? 'justify-center' : 'pt-0.5'}`}>
-                                                    {/* Header: Time & Notes */}
-                                                    <div className={`flex justify-between items-start ${isSmall ? 'mb-0' : 'mb-0.5'}`}>
-                                                        <span className={`font-bold bg-white/60 rounded text-slate-700 backdrop-blur-sm shadow-sm tracking-tight ${isSmall ? 'text-[9px] px-1 py-0' : 'text-[10px] px-1.5 py-0.5'}`}>
-                                                            {format(app.start, 'HH:mm')}
-                                                        </span>
-                                                        {app.notas && !isSmall && <FileText size={10} className="text-slate-500 ml-1 mt-0.5" />}
-                                                    </div>
-
-                                                    {/* Body: Client & Service */}
-                                                    <div className={`flex-1 min-h-0 flex flex-col ${isSmall ? 'justify-center' : 'justify-center'}`}>
-                                                        <p className={`font-extrabold text-slate-900 truncate ${isSmall ? 'text-[10px] leading-3' : 'text-sm leading-tight mb-0.5'}`}>
-                                                            {app.client ? app.client.nome : 'Bloqueio'}
-                                                        </p>
-                                                        <p className={`font-medium text-slate-600 truncate flex items-center gap-1 ${isSmall ? 'text-[9px] leading-3' : 'text-[11px] leading-tight'}`}>
-                                                            {app.service.name}
-                                                        </p>
-                                                    </div>
-
-                                                    {/* Footer: Price (if Payment view) */}
-                                                    {viewType === 'Pagamento' && !isSmall && (
-                                                        <div className="mt-auto pt-1 flex items-center gap-1 text-[10px] font-bold text-green-700 opacity-90 border-t border-black/5">
-                                                            <span>R$ {app.service.price.toFixed(2)}</span>
-                                                            {app.status === 'concluido' && <span className="bg-green-200 px-1 rounded ml-auto text-[9px]">Pago</span>}
+                                                <div key={day.toISOString()} className={`bg-white border rounded-lg p-2 min-h-[100px] flex flex-col gap-1 transition-shadow hover:shadow-md ${isToday ? 'border-orange-300 ring-1 ring-orange-100' : 'border-slate-200'}`}>
+                                                    <span className={`text-sm font-bold mb-1 ${isToday ? 'text-orange-600' : 'text-slate-700'}`}>{format(day, 'dd')}</span>
+                                                    {dayApps.slice(0, 3).map(app => (
+                                                        <div key={app.id} className="text-[10px] truncate px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
+                                                            {format(app.start, 'HH:mm')} {app.client?.nome.split(' ')[0]}
+                                                        </div>
+                                                    ))}
+                                                    {dayApps.length > 3 && (
+                                                        <div className="text-[10px] text-slate-400 text-center font-medium">
+                                                            +{dayApps.length - 3} mais
                                                         </div>
                                                     )}
                                                 </div>
-
-                                                {app.status === 'confirmado_whatsapp' && <div className="absolute bottom-1 right-1 w-2 h-2 rounded-full bg-green-500 shadow-sm ring-1 ring-white" title="Confirmado via WhatsApp"></div>}
-                                            </div>
-                                        )})}
-                                    </div>
-                                );
-                            })}
-                            <TimelineIndicator />
-                        </div>
-                    </div>
-                )}
-
-                {/* 2. LIST & WAITLIST VIEW */}
-                {(periodType === 'Lista' || periodType === 'Fila de Espera') && (
-                    <div className="p-6 max-w-4xl mx-auto">
-                         {filteredAppointments.length === 0 ? (
-                            <div className="text-center py-20 text-slate-400">
-                                <List size={48} className="mx-auto mb-4 opacity-30" />
-                                <p>Nenhum agendamento encontrado para este período.</p>
+                                            );
+                                        })
+                                    ];
+                                })()}
                             </div>
-                         ) : (
-                             <div className="space-y-4">
-                                {filteredAppointments
-                                    .sort((a,b) => a.start.getTime() - b.start.getTime())
-                                    .map(app => (
-                                    <div key={app.id} onClick={() => setActiveAppointmentDetail(app)} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-orange-300 transition-all cursor-pointer flex items-center justify-between">
-                                        <div className="flex items-center gap-4">
-                                            <div className="w-16 text-center">
-                                                <p className="text-xl font-bold text-slate-800">{format(app.start, 'HH:mm')}</p>
-                                                <p className="text-xs text-slate-500">{format(app.start, 'dd/MM')}</p>
-                                            </div>
-                                            <div className="w-px h-10 bg-slate-200"></div>
-                                            <div>
-                                                <h4 className="font-bold text-slate-800">{app.client?.nome || 'Bloqueio'}</h4>
-                                                <p className="text-sm text-slate-500">{app.service.name} • com {app.professional.name}</p>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-4">
-                                            <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize ${getStatusColor(app.status)}`}>{app.status.replace('_', ' ')}</span>
-                                            <div className="font-bold text-slate-700">R$ {app.service.price.toFixed(2)}</div>
-                                        </div>
-                                    </div>
-                                ))}
-                             </div>
-                         )}
-                    </div>
-                )}
-
-                {/* 3. MONTH VIEW (Simplified Grid) */}
-                {periodType === 'Mês' && (
-                    <div className="p-4 h-full flex flex-col">
-                        <div className="grid grid-cols-7 gap-1 flex-1">
-                            {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
-                                <div key={d} className="text-center py-2 text-sm font-bold text-slate-400 uppercase">{d}</div>
-                            ))}
-                            {(() => {
-                                const start = startOfMonth(currentDate);
-                                const end = endOfMonth(currentDate);
-                                const startDay = start.getDay(); // 0-6
-                                const daysInMonth = eachDayOfInterval({ start, end });
-                                const blanks = Array.from({ length: startDay }, (_, i) => i);
-
-                                return [
-                                    ...blanks.map(b => <div key={`blank-${b}`} className="bg-slate-50/50 rounded-lg"></div>),
-                                    ...daysInMonth.map(day => {
-                                        const dayApps = filteredAppointments.filter(a => isSameDay(a.start, day));
-                                        const isToday = isSameDay(day, new Date());
-                                        return (
-                                            <div key={day.toISOString()} className={`bg-white border rounded-lg p-2 min-h-[100px] flex flex-col gap-1 transition-shadow hover:shadow-md ${isToday ? 'border-orange-300 ring-1 ring-orange-100' : 'border-slate-200'}`}>
-                                                <span className={`text-sm font-bold mb-1 ${isToday ? 'text-orange-600' : 'text-slate-700'}`}>{format(day, 'dd')}</span>
-                                                {dayApps.slice(0, 3).map(app => (
-                                                    <div key={app.id} className="text-[10px] truncate px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
-                                                        {format(app.start, 'HH:mm')} {app.client?.nome.split(' ')[0]}
-                                                    </div>
-                                                ))}
-                                                {dayApps.length > 3 && (
-                                                    <div className="text-[10px] text-slate-400 text-center font-medium">
-                                                        +{dayApps.length - 3} mais
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })
-                                ];
-                            })()}
                         </div>
-                    </div>
-                )}
+                    )}
 
+                </div>
             </div>
 
             {/* Modals and Overlays */}

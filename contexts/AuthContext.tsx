@@ -1,16 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
-
-// Mock User Data for Demo
-const MOCK_USER: User = {
-    id: '123e4567-e89b-12d3-a456-426614174000',
-    nome: 'Jacilene Felix',
-    email: 'admin@bela.com',
-    papel: 'admin',
-    avatar_url: 'https://i.pravatar.cc/150?img=5',
-    ativo: true
-};
+import { supabase } from '../services/supabaseClient';
 
 interface AuthContextType {
     user: User | null;
@@ -27,54 +18,97 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Check local storage for session persistence simulation
-        const storedUser = localStorage.getItem('belaapp_user');
-        if (storedUser) {
-            setUser(JSON.parse(storedUser));
-        }
-        setLoading(false);
+        // Check active session on load
+        const checkSession = async () => {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session?.user) {
+                    mapSupabaseUserToAppUser(session.user);
+                } else {
+                    setLoading(false);
+                }
+            } catch (error) {
+                console.error("Error checking session:", error);
+                setLoading(false);
+            }
+        };
+
+        checkSession();
+
+        // Listen for auth changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+            if (session?.user) {
+                mapSupabaseUserToAppUser(session.user);
+            } else {
+                setUser(null);
+                setLoading(false);
+            }
+        });
+
+        return () => {
+            subscription.unsubscribe();
+        };
     }, []);
+
+    const mapSupabaseUserToAppUser = (supaUser: any) => {
+        // In a real production app, we would fetch the 'role' from a 'profiles' table.
+        // For now, we default to 'admin' to ensure access to the dashboard features.
+        // We also check user_metadata for stored names/avatars.
+        const appUser: User = {
+            id: supaUser.id,
+            nome: supaUser.user_metadata?.full_name || supaUser.email?.split('@')[0] || 'Usuário',
+            email: supaUser.email || '',
+            papel: (supaUser.user_metadata?.role as UserRole) || 'admin', 
+            avatar_url: supaUser.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${supaUser.email}`,
+            ativo: true
+        };
+        setUser(appUser);
+        setLoading(false);
+    };
 
     const signIn = async (email: string, pass: string) => {
         setLoading(true);
-        // Simulate API delay
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        try {
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email,
+                password: pass,
+            });
 
-        // MOCK AUTHENTICATION LOGIC
-        // In the future, this will be: const { data, error } = await supabase.auth.signInWithPassword(...)
-        if (email === 'admin@bela.com' && pass === '123123') {
-            setUser(MOCK_USER);
-            localStorage.setItem('belaapp_user', JSON.stringify(MOCK_USER));
-            setLoading(false);
+            if (error) {
+                setLoading(false);
+                return { error: 'E-mail ou senha incorretos.' }; // Generic message or error.message
+            }
+
+            // State update handled by onAuthStateChange
             return { error: null };
-        } else {
+        } catch (err) {
             setLoading(false);
-            return { error: 'E-mail ou senha incorretos.' };
+            return { error: 'Ocorreu um erro ao tentar fazer login.' };
         }
     };
 
     const signInWithGoogle = async () => {
         setLoading(true);
-        // Simulate Popup/Redirect delay
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        try {
+            const { data, error } = await supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: window.location.origin
+                }
+            });
 
-        // Mock Google User
-        const googleUser: User = {
-            ...MOCK_USER,
-            nome: 'Jacilene (Google)',
-            email: 'jacilene@gmail.com',
-            avatar_url: 'https://lh3.googleusercontent.com/a-/AOh14Gg', // Placeholder
-        };
-
-        setUser(googleUser);
-        localStorage.setItem('belaapp_user', JSON.stringify(googleUser));
-        setLoading(false);
-        return { error: null };
+            if (error) throw error;
+            return { error: null };
+        } catch (err) {
+            setLoading(false);
+            return { error: 'Erro ao conectar com Google.' };
+        }
     };
 
-    const signOut = () => {
-        setUser(null);
-        localStorage.removeItem('belaapp_user');
+    const signOut = async () => {
+        setLoading(true);
+        await supabase.auth.signOut();
+        // State update handled by onAuthStateChange
     };
 
     return (
