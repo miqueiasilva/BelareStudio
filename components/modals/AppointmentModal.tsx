@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { LegacyAppointment, Client, LegacyProfessional, LegacyService, AppointmentStatus } from '../../types';
-import { clients, services as serviceMap, professionals } from '../../data/mockData';
+import { clients as initialClients, services as serviceMap, professionals } from '../../data/mockData';
 import { ChevronLeft, User, Calendar, Tag, Clock, DollarSign, Info, PlusCircle, Repeat, X, Loader2, AlertCircle, Briefcase, CheckSquare, Mail, Trash2, CheckCircle2, Edit2 } from 'lucide-react';
 import { format, addMinutes } from 'date-fns';
 import SelectionModal from './SelectionModal';
+import ClientModal from './ClientModal';
 
 const services = Object.values(serviceMap);
 
@@ -22,6 +23,9 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     start: appointment?.start || new Date(),
   });
   
+  // Local Clients State to support adding new ones on the fly
+  const [localClients, setLocalClients] = useState<Client[]>(initialClients);
+
   // State for multiple services
   const [selectedServices, setSelectedServices] = useState<LegacyService[]>(
     appointment?.service ? [appointment.service] : []
@@ -32,6 +36,10 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   const [manualDuration, setManualDuration] = useState<number>(0);
 
   const [selectionModal, setSelectionModal] = useState<'client' | 'service' | 'professional' | null>(null);
+  
+  // New State for Client Creation Flow
+  const [isClientModalOpen, setIsClientModalOpen] = useState(false);
+
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false); // New state for visual feedback
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +104,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     }
   }, [formData.start, manualDuration]);
 
-  const clientItemsForSelection = useMemo(() => clients.map(c => ({ ...c, name: c.nome })), []);
+  // Use localClients for selection list so newly created clients appear
+  const clientItemsForSelection = useMemo(() => localClients.map(c => ({ ...c, name: c.nome })), [localClients]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -214,6 +223,18 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     setClientEmail(client.email || ''); // Pre-fill email
     setSelectionModal(null);
     if (error) setError(null);
+  };
+
+  const handleOpenNewClientModal = () => {
+      setSelectionModal(null);
+      setIsClientModalOpen(true);
+  };
+
+  const handleSaveNewClient = (newClient: Client) => {
+      setLocalClients(prev => [...prev, newClient]);
+      setFormData(prev => ({ ...prev, client: newClient }));
+      setClientEmail(newClient.email || '');
+      setIsClientModalOpen(false);
   };
   
   const handleAddService = (service: LegacyService) => {
@@ -505,10 +526,12 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             }
             onClose={() => setSelectionModal(null)}
             onSelect={
-                selectionModal === 'client' ? (item) => handleSelectClient(clients.find(c => c.id === item.id)!) :
+                selectionModal === 'client' ? (item) => handleSelectClient(localClients.find(c => c.id === item.id)!) :
                 selectionModal === 'service' ? (item) => handleAddService(services.find(s=>s.id === item.id)!) :
                 (item) => handleSelectProfessional(professionals.find(p => p.id === item.id)!)
             }
+            // Pass the onNew handler only for Clients
+            onNew={selectionModal === 'client' ? handleOpenNewClientModal : undefined}
             searchPlaceholder={
                 selectionModal === 'client' ? 'Buscar Cliente...' :
                 selectionModal === 'service' ? 'Buscar Serviço...' :
@@ -520,6 +543,14 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
                 <Briefcase size={20} />
             }
           />
+        )}
+
+        {isClientModalOpen && (
+            <ClientModal 
+                client={null} 
+                onClose={() => setIsClientModalOpen(false)} 
+                onSave={handleSaveNewClient}
+            />
         )}
       </div>
     </div>

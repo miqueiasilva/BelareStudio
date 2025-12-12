@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { X, Plus, Search, ChevronRight, User, Tag } from 'lucide-react';
 
@@ -11,6 +12,7 @@ interface SelectionModalProps {
   items: SelectableItem[];
   onClose: () => void;
   onSelect: (item: SelectableItem) => void;
+  onNew?: () => void; // Optional callback for creating a new item
   searchPlaceholder: string;
   renderItemIcon: () => React.ReactNode;
 }
@@ -20,6 +22,7 @@ const SelectionModal: React.FC<SelectionModalProps> = ({
   items,
   onClose,
   onSelect,
+  onNew,
   searchPlaceholder,
   renderItemIcon,
 }) => {
@@ -36,9 +39,15 @@ const SelectionModal: React.FC<SelectionModalProps> = ({
         <div className="flex-1"></div>
         <h2 className="flex-1 text-lg font-bold text-center">{title}</h2>
         <div className="flex-1 flex justify-end items-center gap-2">
-          <button className="p-1 text-slate-600 hover:text-slate-900">
-              <Plus size={24} />
-          </button>
+          {onNew && (
+            <button 
+                onClick={onNew} 
+                className="p-1 text-slate-600 hover:text-orange-500 hover:bg-orange-50 rounded-full transition-colors"
+                title="Cadastrar Novo"
+            >
+                <Plus size={24} />
+            </button>
+          )}
           <button onClick={onClose} className="p-1 text-slate-600 hover:text-slate-900">
               <X size={24} />
           </button>
@@ -75,6 +84,16 @@ const SelectionModal: React.FC<SelectionModalProps> = ({
               </button>
             </li>
           ))}
+          {filteredItems.length === 0 && (
+             <li className="p-8 text-center text-slate-500">
+                <p>Nenhum item encontrado.</p>
+                {onNew && (
+                    <button onClick={onNew} className="mt-2 text-orange-600 font-bold text-sm hover:underline">
+                        Cadastrar Novo
+                    </button>
+                )}
+             </li>
+          )}
         </ul>
       </div>
     </div>
