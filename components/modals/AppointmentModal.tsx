@@ -211,10 +211,10 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
     setSaveSuccess(true);
     
-    // Allow user to see the success state briefly
+    // Use setTimeout to allow visual feedback before unmounting
     setTimeout(() => {
+        // Critical fix: Do not set state after calling onSave because onSave triggers unmount
         onSave(finalAppointment);
-        setIsSaving(false);
     }, 500);
   };
   
