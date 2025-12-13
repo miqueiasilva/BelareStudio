@@ -50,14 +50,14 @@ const SelectionModal: React.FC<SelectionModalProps> = ({
         <div className="flex-1 flex justify-end items-center gap-2">
           {onNew && (
             <button 
-                onClick={(e) => { e.stopPropagation(); onNew(); }}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onNew(); }}
                 className="p-1 text-slate-600 hover:text-orange-500 hover:bg-orange-50 rounded-full transition-colors"
                 title="Cadastrar Novo"
             >
                 <Plus size={24} />
             </button>
           )}
-          <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="p-1 text-slate-600 hover:text-slate-900">
+          <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }} className="p-1 text-slate-600 hover:text-slate-900">
               <X size={24} />
           </button>
         </div>
@@ -84,6 +84,7 @@ const SelectionModal: React.FC<SelectionModalProps> = ({
               <button
                 type="button"
                 onClick={(e) => {
+                    // CRITICAL FIX: Prevent bubbling to parent containers while unmounting
                     e.preventDefault();
                     e.stopPropagation();
                     onSelect(item);

@@ -212,8 +212,9 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     }
   };
   
-  // Use setTimeout(0) to defer state updates that unmount components
-  // This allows the event loop to clear the current click event stack
+  // FIX: Use setTimeout(0) instead of requestAnimationFrame.
+  // This pushes the state update (and component unmount) to the end of the event loop,
+  // ensuring the click event bubble phase is completely finished.
   const handleSelectClient = (client: Client) => {
     setTimeout(() => {
         setFormData(prev => ({ ...prev, client }));
