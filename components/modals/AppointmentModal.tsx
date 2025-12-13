@@ -179,7 +179,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     setIsSaving(true);
     
     try {
-        // Simulate network delay to prevent immediate unmount jitter
+        // Simulate network delay to prevent immediate unmount jitter and validate async handling
         await new Promise(resolve => setTimeout(resolve, 600));
         
         // Construct final object
@@ -205,13 +205,13 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
         } as LegacyAppointment;
 
         // Directly call save. Parent handles notification and closing.
-        // This avoids the "removeChild" error caused by internal state updates on unmounting components.
+        // Important: We do NOT call setIsSaving(false) here because the component will unmount.
         onSave(finalAppointment);
         
     } catch (err) {
-        console.error(err);
+        console.error("Error saving appointment:", err);
         setError("Ocorreu um erro ao salvar o agendamento.");
-        setIsSaving(false);
+        setIsSaving(false); // Only reset state if we are staying on this screen (error case)
     }
   };
   
@@ -254,11 +254,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <style>{`
-        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-        .animate-fade-in { animation: fade-in 0.2s ease-out forwards; }
-      `}</style>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col relative overflow-hidden animate-fade-in" style={{height: '95vh'}} onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col relative overflow-hidden animate-in fade-in zoom-in-95 duration-200" style={{height: '95vh'}} onClick={(e) => e.stopPropagation()}>
         
         <header className="p-4 border-b flex items-center gap-4 flex-shrink-0 bg-slate-50">
           <button onClick={onClose} className="text-slate-500 hover:text-slate-800"><ChevronLeft size={24} /></button>
