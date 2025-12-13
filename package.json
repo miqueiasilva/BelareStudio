@@ -1,31 +1,36 @@
 {
-  "name": "belaapp-—-gestão-inteligente-para-estúdios-de-beleza",
+  "name": "bela-app",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3",
-    "recharts": "2.12.0",
-    "lucide-react": "0.344.0",
-    "date-fns": "^4.1.0",
-    "react-toggle-switch": "3.0.4",
-    "@supabase/supabase-js": "2",
-    "@fullcalendar/react": "6",
-    "@fullcalendar/timegrid": "6",
-    "@fullcalendar/interaction": "6",
-    "@fullcalendar/core": "6.1.10",
-    "@google/genai": "0.1.1"
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "recharts": "^2.12.0",
+    "lucide-react": "^0.344.0",
+    "date-fns": "^3.3.1",
+    "react-toggle-switch": "^3.0.4",
+    "@supabase/supabase-js": "^2.39.7",
+    "@fullcalendar/react": "^6.1.10",
+    "@fullcalendar/timegrid": "^6.1.10",
+    "@fullcalendar/interaction": "^6.1.10",
+    "@fullcalendar/core": "^6.1.10",
+    "@google/genai": "^0.1.1"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "@types/react": "^18.2.64",
+    "@types/react-dom": "^18.2.21",
+    "@vitejs/plugin-react": "^4.2.1",
+    "typescript": "^5.2.2",
+    "vite": "^5.1.4",
+    "autoprefixer": "^10.4.18",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1"
   }
 }
