@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { LegacyAppointment, Client, LegacyProfessional, LegacyService, AppointmentStatus } from '../../types';
+import { LegacyAppointment, Client, LegacyProfessional, LegacyService } from '../../types';
 import { clients as initialClients, services as serviceMap, professionals } from '../../data/mockData';
-import { ChevronLeft, User, Calendar, Tag, Clock, DollarSign, Info, PlusCircle, Repeat, X, Loader2, AlertCircle, Briefcase, CheckSquare, Mail, Trash2, CheckCircle2, Edit2 } from 'lucide-react';
+import { ChevronLeft, User, Calendar, Tag, Clock, DollarSign, Info, PlusCircle, Repeat, X, Loader2, AlertCircle, Briefcase, CheckSquare, Mail, Trash2, Edit2 } from 'lucide-react';
 import { format, addMinutes } from 'date-fns';
 import SelectionModal from './SelectionModal';
 import ClientModal from './ClientModal';
@@ -41,7 +41,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false); // New state for visual feedback
   const [error, setError] = useState<string | null>(null);
   
   // New state for email validation
@@ -70,7 +69,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
       setClientEmail(appointment?.client?.email || '');
       setError(null);
-      setSaveSuccess(false);
       setEmailError('');
   }, [appointment]);
 
@@ -83,7 +81,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   }, [selectedServices]);
 
   // Sync manual totals with selected services ONLY when services change
-  // This satisfies: "puxe o valor e duração do serviço ja cadastrado"
   useEffect(() => {
       if (selectedServices.length > 0) {
           const price = selectedServices.reduce((acc, s) => acc + s.price, 0);
@@ -97,7 +94,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   useEffect(() => {
     if (formData.start && (manualDuration > 0 || manualDuration === 0)) {
         const end = addMinutes(new Date(formData.start), manualDuration);
-        // Only update if end time is actually different to avoid loops
         if (!formData.end || formData.end.getTime() !== end.getTime()) {
           setFormData(prev => ({ ...prev, end }));
         }
@@ -182,40 +178,41 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
     setIsSaving(true);
     
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // Construct final object
-    // Note: Since legacy types only support one service, we construct a "Composite Service"
-    // with the manually edited price and duration.
-    const compositeService: LegacyService = {
-        ...selectedServices[0],
-        name: selectedServices.length > 1 
-            ? `${selectedServices[0].name} + ${selectedServices.length - 1}` 
-            : selectedServices[0].name,
-        price: manualPrice, // Uses the editable price
-        duration: manualDuration // Uses the editable duration
-    };
+    try {
+        // Simulate network delay to prevent immediate unmount jitter
+        await new Promise(resolve => setTimeout(resolve, 600));
+        
+        // Construct final object
+        const compositeService: LegacyService = {
+            ...selectedServices[0],
+            name: selectedServices.length > 1 
+                ? `${selectedServices[0].name} + ${selectedServices.length - 1}` 
+                : selectedServices[0].name,
+            price: manualPrice, // Uses the editable price
+            duration: manualDuration // Uses the editable duration
+        };
 
-    const finalClient = { ...formData.client, email: clientEmail };
+        const finalClient = { ...formData.client, email: clientEmail };
 
-    const finalAppointment = {
-        ...formData,
-        client: finalClient,
-        service: compositeService,
-        // Append service details to notes if multiple
-        notas: selectedServices.length > 1 
-            ? `${formData.notas || ''} \n[Serviços: ${selectedServices.map(s => s.name).join(', ')}]`
-            : formData.notas
-    } as LegacyAppointment;
+        const finalAppointment = {
+            ...formData,
+            client: finalClient,
+            service: compositeService,
+            // Append service details to notes if multiple
+            notas: selectedServices.length > 1 
+                ? `${formData.notas || ''} \n[Serviços: ${selectedServices.map(s => s.name).join(', ')}]`
+                : formData.notas
+        } as LegacyAppointment;
 
-    setSaveSuccess(true);
-    
-    // Use setTimeout to allow visual feedback before unmounting
-    setTimeout(() => {
-        // Critical fix: Do not set state after calling onSave because onSave triggers unmount
+        // Directly call save. Parent handles notification and closing.
+        // This avoids the "removeChild" error caused by internal state updates on unmounting components.
         onSave(finalAppointment);
-    }, 500);
+        
+    } catch (err) {
+        console.error(err);
+        setError("Ocorreu um erro ao salvar o agendamento.");
+        setIsSaving(false);
+    }
   };
   
   const handleSelectClient = (client: Client) => {
@@ -238,7 +235,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
   
   const handleAddService = (service: LegacyService) => {
-    // Prevent duplicates if needed, or allow them. Here we allow.
     setSelectedServices(prev => [...prev, service]);
     setSelectionModal(null);
     if (error) setError(null);
@@ -492,22 +488,15 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
                 <a href="#" className="text-orange-600 hover:underline">Ver histórico do cliente</a>
             </p>
             <div className="flex justify-end items-center gap-3">
-                <button onClick={onClose} className="px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors" disabled={isSaving || saveSuccess}>
+                <button onClick={onClose} className="px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors" disabled={isSaving}>
                     Cancelar
                 </button>
                 <button 
                     onClick={handleSave} 
-                    disabled={isSaving || saveSuccess}
-                    className={`px-6 py-2.5 text-sm font-semibold text-white rounded-lg shadow-lg transition-all flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed ${
-                        saveSuccess ? 'bg-green-500 hover:bg-green-600 shadow-green-200' : 'bg-orange-500 hover:bg-orange-600 shadow-orange-200'
-                    }`}
+                    disabled={isSaving}
+                    className="px-6 py-2.5 text-sm font-semibold bg-orange-500 text-white rounded-lg hover:bg-orange-600 shadow-lg shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                    {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {saveSuccess && <CheckCircle2 className="w-4 h-4 animate-bounce" />}
-                    
-                    {!isSaving && !saveSuccess && 'Salvar Agendamento'}
-                    {isSaving && 'Salvando...'}
-                    {saveSuccess && 'Salvo!'}
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar Agendamento'}
                 </button>
             </div>
         </footer>
