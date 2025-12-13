@@ -1,4 +1,3 @@
-
 import { createClient } from '@supabase/supabase-js';
 
 // ------------------------------------------------------------------
@@ -10,16 +9,18 @@ import { createClient } from '@supabase/supabase-js';
 // 3. Copie "anon" "public" key e cole em SUPABASE_ANON_KEY
 // ------------------------------------------------------------------
 
-const SUPABASE_URL = 'https://rxtwmwrgcilmsldtqdfe.supabase.co'; // Substitua pela sua URL real se for diferente
-const SUPABASE_ANON_KEY = 'sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x'; // SUBSTITUA POR SUA CHAVE 'anon' REAL (começa com eyJ...)
+// Estas chaves devem ser substituídas pelas variáveis de ambiente em produção
+const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://rxtwmwrgcilmsldtqdfe.supabase.co'; 
+const SUPABASE_ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x';
 
 let client;
+let isDemoMode = false;
 
 // Helper to create a dummy client that won't crash the app
 const createDummyClient = () => ({
     auth: {
         getSession: async () => ({ data: { session: null }, error: null }),
-        getUser: async () => ({ data: { user: null }, error: null }), // Ensure getUser exists
+        getUser: async () => ({ data: { user: null }, error: null }), 
         onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
         signInWithPassword: async () => ({ data: null, error: { message: "Modo Demo: Use o login de teste." } }),
         signUp: async () => ({ data: null, error: { message: "Cadastro desativado no modo Demo." } }),
@@ -32,7 +33,6 @@ const createDummyClient = () => ({
 
 try {
     // Check if keys are present AND look like valid Supabase keys (anon keys usually start with eyJ)
-    // The current placeholder 'sb_publishable...' is invalid and will cause network hangs.
     const isValidKey = SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.startsWith('eyJ');
 
     if (SUPABASE_URL && isValidKey) {
@@ -40,29 +40,28 @@ try {
     } else {
         console.warn("Supabase credentials missing or invalid. App running in DEMO mode.");
         client = createDummyClient();
+        isDemoMode = true;
     }
 } catch (error) {
     console.error("Failed to initialize Supabase client:", error);
     client = createDummyClient();
+    isDemoMode = true;
 }
 
 export const supabase = client;
 
 // Função auxiliar para testar conexão
 export const testConnection = async () => {
-    try {
-        // If it's the dummy client, return false immediately without error
-        // Checking for a specific dummy property or behavior
-        const sessionCheck = await supabase.auth.getSession();
-        if (sessionCheck.error?.message === "Modo Demo: Use o login de teste.") {
-             return false;
-        }
+    // Se estiver explicitamente em modo demo, retorna false imediatamente
+    if (isDemoMode) {
+        return false;
+    }
 
-        // Tenta fazer uma consulta leve apenas para ver se a API responde
-        // Using 'profiles' might fail if RLS is strict and no user is logged in.
-        // A better check for general connectivity is health check if available or a public table.
-        // For now, we assume if we can talk to Auth, we are connected.
+    try {
+        // Tenta verificar a sessão (operação leve)
+        const sessionCheck = await supabase.auth.getSession();
         
+        // Se a chamada de sessão funcionou (mesmo sem usuário), a conexão existe
         return true; 
     } catch (e) {
         console.error("Supabase Connection Exception:", e);
