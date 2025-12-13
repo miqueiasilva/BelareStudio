@@ -15,36 +15,34 @@ const SUPABASE_ANON_KEY = 'sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x'; // S
 
 let client;
 
+// Helper to create a dummy client that won't crash the app
+const createDummyClient = () => ({
+    auth: {
+        getSession: async () => ({ data: { session: null }, error: null }),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+        signInWithPassword: async () => ({ data: null, error: { message: "Modo Demo: Use o login de teste." } }),
+        signUp: async () => ({ data: null, error: { message: "Cadastro desativado no modo Demo." } }),
+        resetPasswordForEmail: async () => ({ data: null, error: { message: "Recuperação desativada no modo Demo." } }),
+        signInWithOAuth: async () => ({ data: null, error: { message: "Login social desativado no modo Demo." } }),
+        signOut: async () => {},
+    },
+    from: () => ({ select: async () => ({ error: { code: 'NOT_CONFIGURED' } }) })
+} as any);
+
 try {
-    if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    // Check if keys are present AND look like valid Supabase keys (anon keys usually start with eyJ)
+    // The current placeholder 'sb_publishable...' is invalid and will cause network hangs.
+    const isValidKey = SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.startsWith('eyJ');
+
+    if (SUPABASE_URL && isValidKey) {
         client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     } else {
-        console.warn("Supabase credentials missing. App will run in demo mode only.");
-        // Create a dummy client to prevent crashes on method calls
-        client = {
-            auth: {
-                getSession: async () => ({ data: { session: null }, error: null }),
-                onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
-                signInWithPassword: async () => ({ data: null, error: { message: "Supabase not configured" } }),
-                signInWithOAuth: async () => ({ data: null, error: { message: "Supabase not configured" } }),
-                signOut: async () => {},
-            },
-            from: () => ({ select: async () => ({ error: { code: 'NOT_CONFIGURED' } }) })
-        } as any;
+        console.warn("Supabase credentials missing or invalid. App running in DEMO mode.");
+        client = createDummyClient();
     }
 } catch (error) {
     console.error("Failed to initialize Supabase client:", error);
-    // Fallback dummy client
-    client = {
-        auth: {
-            getSession: async () => ({ data: { session: null }, error: null }),
-            onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
-            signInWithPassword: async () => ({ data: null, error: { message: "Client Init Failed" } }),
-            signInWithOAuth: async () => ({ data: null, error: { message: "Client Init Failed" } }),
-            signOut: async () => {},
-        },
-        from: () => ({ select: async () => ({ error: { code: 'INIT_FAILED' } }) })
-    } as any;
+    client = createDummyClient();
 }
 
 export const supabase = client;
@@ -52,8 +50,10 @@ export const supabase = client;
 // Função auxiliar para testar conexão
 export const testConnection = async () => {
     try {
+        // If it's the dummy client, return false immediately without error
+        if (!supabase.auth.getUser) return false;
+
         // Tenta fazer uma consulta leve apenas para ver se a API responde
-        // Usamos 'from' em uma tabela que sabemos que existe ou apenas verificamos a sessão
         const { error } = await supabase.from('profiles').select('count', { count: 'exact', head: true });
         
         // Se der erro de permissão (401) ou conexão, retornamos false
