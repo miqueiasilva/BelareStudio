@@ -106,8 +106,8 @@ export const initialAppointments: LegacyAppointment[] = [
 
 export const mockOnlineConfig: OnlineBookingConfig = {
     isActive: true,
-    slug: 'studio-jacilene-felix',
-    studioName: 'Studio Jacilene Félix',
+    slug: 'belissima-studio',
+    studioName: 'Belíssima Studio',
     description: 'Especialistas em realçar sua beleza com design de sobrancelhas, cílios e estética facial avançada.',
     coverUrl: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80',
     logoUrl: 'https://i.pravatar.cc/150?u=studio',
