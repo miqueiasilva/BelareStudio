@@ -128,6 +128,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
+    const columnRefs = useRef<Map<string | number, HTMLDivElement>>(new Map());
     
     const viewDropdownRef = useRef<HTMLDivElement>(null);
     const periodDropdownRef = useRef<HTMLDivElement>(null);
@@ -182,9 +183,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
 
         if (viewType === 'Profissional') {
-            const profs = isMobile 
-                ? mockProfessionals.filter(p => p.id === activeMobileProfId)
-                : mockProfessionals.filter(p => visibleProfIds.includes(p.id));
+            // On mobile, show ALL filtered professionals to allow horizontal scrolling, 
+            // instead of just the 'activeMobileProfId' one.
+            // The sidebar will be used to scrollTo the column.
+            const profs = mockProfessionals.filter(p => visibleProfIds.includes(p.id));
             
             return profs.map(p => ({
                 id: p.id,
@@ -214,7 +216,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
 
         return [];
-    }, [viewType, periodType, currentDate, visibleProfIds, activeMobileProfId, isMobile]);
+    }, [viewType, periodType, currentDate, visibleProfIds]);
 
     // --- Logic: Filtering Appointments for the View ---
     const filteredAppointments = useMemo(() => {
@@ -274,6 +276,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     // --- Handlers ---
     const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
+
+    const handleMobileSidebarClick = (profId: number) => {
+        setActiveMobileProfId(profId);
+        // Smooth scroll to the professional's column
+        const el = columnRefs.current.get(profId);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        }
+    };
 
     const handleSaveAppointment = (app: LegacyAppointment) => {
         let isNew = false;
@@ -432,18 +443,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             </header>
 
             <div className="flex flex-1 overflow-hidden relative">
-                {/* Mobile Professional Sidebar (Left Tabs) */}
+                {/* Mobile Professional Sidebar (Left Tabs) - Acts as Navigation Anchor */}
                 {isMobile && periodType === 'Dia' && viewType === 'Profissional' && (
                     <>
                         {/* Sidebar Panel */}
                         <div 
                             className={`flex flex-col bg-slate-50 border-r border-slate-200 transition-all duration-300 ease-in-out z-20 ${isMobileProfSidebarOpen ? 'w-20' : 'w-0 overflow-hidden'}`}
                         >
-                            <div className="flex-1 overflow-y-auto scrollbar-hide py-4 flex flex-col items-center gap-4 w-20">
+                            <div className="flex-1 overflow-y-auto scrollbar-hide py-4 flex flex-col items-center gap-4 w-20 pb-20">
                                 {mockProfessionals.map(prof => (
                                     <button 
                                         key={prof.id} 
-                                        onClick={() => { setActiveMobileProfId(prof.id); /* Keep open or close? Keep open for easier switching, user can close with arrow */ }} 
+                                        onClick={() => handleMobileSidebarClick(prof.id)} 
                                         className={`relative group transition-all p-1 rounded-full ${activeMobileProfId === prof.id ? 'scale-110' : 'opacity-70 hover:opacity-100'}`}
                                         title={prof.name}
                                     >
@@ -476,14 +487,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     {(periodType === 'Dia' || periodType === 'Semana') && (
                         <div className="relative min-h-full">
                             {/* Headers */}
-                            <div className="hidden md:grid sticky top-0 bg-white z-20 shadow-sm border-b border-slate-200" style={{ gridTemplateColumns: `60px repeat(${columns.length}, 1fr)` }}>
-                                <div className="border-r border-slate-200 h-16 bg-white"></div>
+                            <div className="grid sticky top-0 z-40 shadow-sm border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isMobile ? '170px' : '1fr'}, 1fr))` }}>
+                                <div className="border-r border-slate-200 h-16 bg-white sticky left-0 z-50"></div>
                                 {columns.map((col, index) => (
-                                    <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-200 h-16 bg-slate-50/50">
+                                    <div key={col.id} ref={(el) => { if(el) columnRefs.current.set(col.id, el) }} className="flex flex-col items-center justify-center p-2 border-r border-slate-200 h-16 bg-slate-50/50">
                                         {col.type === 'professional' && (
                                             <div className="flex items-center gap-2">
                                                 <img src={col.avatarUrl} alt={col.title} className="w-8 h-8 rounded-full border border-slate-200" />
-                                                <span className="text-sm font-bold text-slate-800 truncate">{col.title}</span>
+                                                <span className="text-sm font-bold text-slate-800 truncate max-w-[120px]">{col.title}</span>
                                             </div>
                                         )}
                                         {col.type === 'status' && (
@@ -514,9 +525,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             </div>
 
                             {/* Grid Body */}
-                            <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, 1fr)` }}>
+                            <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isMobile ? '170px' : '1fr'}, 1fr))` }}>
                                 {/* Time Column */}
-                                <div className="border-r border-slate-200 bg-white">
+                                <div className="border-r border-slate-200 bg-white sticky left-0 z-30">
                                     {timeSlots.map(time => (
                                         <div key={time} className="h-20 text-right pr-2 text-xs text-slate-400 font-medium relative pt-2">
                                             <span className="-translate-y-1/2 block">{time}</span>
