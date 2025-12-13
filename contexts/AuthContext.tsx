@@ -6,6 +6,8 @@ import { supabase } from '../services/supabaseClient';
 interface AuthContextType {
     user: User | null;
     signIn: (email: string, pass: string) => Promise<{ error: string | null }>;
+    signUp: (email: string, pass: string, name: string) => Promise<{ error: string | null; data?: any }>;
+    resetPassword: (email: string) => Promise<{ error: string | null; message?: string }>;
     signInWithGoogle: () => Promise<{ error: string | null }>;
     signInWithGithub: () => Promise<{ error: string | null }>;
     signOut: () => void;
@@ -125,6 +127,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
+    const signUp = async (email: string, pass: string, name: string) => {
+        setLoading(true);
+        try {
+            const { data, error } = await supabase.auth.signUp({
+                email,
+                password: pass,
+                options: {
+                    data: {
+                        full_name: name,
+                        role: 'admin' // Default role for new signups in this demo
+                    }
+                }
+            });
+
+            setLoading(false);
+            if (error) return { error: error.message };
+            return { error: null, data };
+        } catch (err) {
+            setLoading(false);
+            return { error: 'Erro ao tentar cadastrar.' };
+        }
+    };
+
+    const resetPassword = async (email: string) => {
+        setLoading(true);
+        try {
+            const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo: window.location.origin
+            });
+            
+            setLoading(false);
+            if (error) return { error: error.message };
+            return { error: null, message: 'Link de recuperação enviado para o e-mail.' };
+        } catch (err) {
+            setLoading(false);
+            return { error: 'Erro ao solicitar recuperação de senha.' };
+        }
+    };
+
     const signInWithGoogle = async () => {
         setLoading(true);
         try {
@@ -175,7 +216,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     return (
-        <AuthContext.Provider value={{ user, signIn, signInWithGoogle, signInWithGithub, signOut, loading }}>
+        <AuthContext.Provider value={{ user, signIn, signUp, resetPassword, signInWithGoogle, signInWithGithub, signOut, loading }}>
             {children}
         </AuthContext.Provider>
     );
