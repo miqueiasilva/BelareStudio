@@ -215,16 +215,21 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     }
   };
   
+  // CRITICAL FIX: Use requestAnimationFrame to defer state update (unmount) until after click event bubbles
   const handleSelectClient = (client: Client) => {
-    setFormData(prev => ({ ...prev, client }));
-    setClientEmail(client.email || ''); // Pre-fill email
-    setSelectionModal(null);
-    if (error) setError(null);
+    requestAnimationFrame(() => {
+        setFormData(prev => ({ ...prev, client }));
+        setClientEmail(client.email || ''); 
+        setSelectionModal(null);
+        if (error) setError(null);
+    });
   };
 
   const handleOpenNewClientModal = () => {
-      setSelectionModal(null);
-      setIsClientModalOpen(true);
+      requestAnimationFrame(() => {
+          setSelectionModal(null);
+          setIsClientModalOpen(true);
+      });
   };
 
   const handleSaveNewClient = (newClient: Client) => {
@@ -235,9 +240,11 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
   
   const handleAddService = (service: LegacyService) => {
-    setSelectedServices(prev => [...prev, service]);
-    setSelectionModal(null);
-    if (error) setError(null);
+    requestAnimationFrame(() => {
+        setSelectedServices(prev => [...prev, service]);
+        setSelectionModal(null);
+        if (error) setError(null);
+    });
   };
 
   const handleRemoveService = (index: number) => {
@@ -247,9 +254,11 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
 
   const handleSelectProfessional = (professional: LegacyProfessional) => {
-    setFormData(prev => ({ ...prev, professional }));
-    setSelectionModal(null);
-    if (error) setError(null);
+    requestAnimationFrame(() => {
+        setFormData(prev => ({ ...prev, professional }));
+        setSelectionModal(null);
+        if (error) setError(null);
+    });
   };
   
   return (
