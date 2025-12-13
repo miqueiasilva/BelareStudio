@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { services, professionals, mockOnlineConfig } from '../../data/mockData';
 import { 
@@ -494,7 +493,7 @@ const PublicBookingPreview: React.FC = () => {
             </div>
 
             {/* --- BOTTOM FLOATING BAR --- */}
-            {step !== 'success' && selectedServicesList.length > 0 && (
+            {selectedServicesList.length > 0 && (
                 <div className="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-slate-200 z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                     <div className="max-w-3xl mx-auto flex items-center justify-between gap-4">
                         <div className="flex flex-col">
