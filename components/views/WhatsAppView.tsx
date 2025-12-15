@@ -110,7 +110,7 @@ const WhatsAppView: React.FC = () => {
                 {/* Sidebar Header */}
                 <div className="h-16 bg-slate-50 border-b border-slate-200 flex items-center justify-between px-4 flex-shrink-0">
                     <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white">
+                        <div className="w-8 h-8 bg-green-50 rounded-full flex items-center justify-center text-white">
                             <MessageSquare className="w-5 h-5" />
                         </div>
                         <h2 className="font-bold text-slate-700">WhatsApp</h2>

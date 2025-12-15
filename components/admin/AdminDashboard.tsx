@@ -66,7 +66,6 @@ const statusClasses: { [key in AppointmentStatus]: string } = {
     chegou: 'bg-purple-100 border-purple-300 text-purple-800',
     concluido: 'bg-green-100 border-green-300 text-green-800',
     cancelado: 'bg-pink-100 border-pink-300 text-pink-800 line-through',
-    bloqueio: 'bg-slate-200 border-slate-300 text-slate-600 pattern-diagonal-lines-sm pattern-slate-400 pattern-bg-slate-200 pattern-size-4 pattern-opacity-100',
     bloqueado: 'bg-slate-200 border-slate-300 text-slate-600 pattern-diagonal-lines-sm pattern-slate-400 pattern-bg-slate-200 pattern-size-4 pattern-opacity-100',
     faltou: 'bg-orange-100 border-orange-300 text-orange-800 line-through',
     em_atendimento: 'bg-indigo-100 border-indigo-300 text-indigo-800 animate-pulse',

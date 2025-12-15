@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { initialAppointments, professionals as mockProfessionals } from '../../data/mockData';
 import { LegacyAppointment, LegacyProfessional, AppointmentStatus, FinancialTransaction } from '../../types';
-import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval } from 'date-fns';
+import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, endOfMonth } from 'date-fns';
 import { 
     ChevronLeft, ChevronRight, Plus, Edit, Lock, Trash2, MessageSquare, 
     ShoppingCart, FileText, Calendar as CalendarIcon, Share2, Bell, 
@@ -33,49 +33,6 @@ interface DynamicColumn {
 }
 
 // --- Helper Functions ---
-
-// Date-fns replacement helpers
-const startOfDay = (date: Date) => {
-    const d = new Date(date);
-    d.setHours(0, 0, 0, 0);
-    return d;
-};
-
-const startOfWeek = (date: Date) => {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
-    d.setDate(diff);
-    d.setHours(0, 0, 0, 0);
-    return d;
-};
-
-const endOfWeek = (date: Date) => {
-    const d = startOfWeek(date);
-    d.setDate(d.getDate() + 6);
-    d.setHours(23, 59, 59, 999);
-    return d;
-}
-
-const startOfMonth = (date: Date) => {
-    const d = new Date(date);
-    d.setDate(1);
-    d.setHours(0, 0, 0, 0);
-    return d;
-};
-
-const endOfMonth = (date: Date) => {
-    const d = new Date(date);
-    d.setMonth(d.getMonth() + 1);
-    d.setDate(0);
-    d.setHours(23, 59, 59, 999);
-    return d;
-}
-
-const roundToNearestMinutes = (date: Date, options: { nearestTo: number }) => {
-    const coeff = 1000 * 60 * options.nearestTo;
-    return new Date(Math.round(date.getTime() / coeff) * coeff);
-};
 
 const getAppointmentStyle = (start: Date, end: Date) => {
     const startMinutes = start.getHours() * 60 + start.getMinutes();
@@ -209,8 +166,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const columns = useMemo<DynamicColumn[]>(() => {
         if (periodType === 'Semana') {
             // In Week view, columns are always Days of the week
-            const start = startOfWeek(currentDate); // Monday start
-            const end = endOfWeek(currentDate);
+            const start = startOfWeek(currentDate, { weekStartsOn: 1 }); // Monday start
+            const end = endOfWeek(currentDate, { weekStartsOn: 1 });
             const days = eachDayOfInterval({ start, end });
             return days.map(day => ({
                 id: day.toISOString(),
@@ -265,11 +222,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         if (periodType === 'Dia') {
             relevantApps = appointments.filter(a => isSameDay(a.start, currentDate));
         } else if (periodType === 'Semana') {
-            const start = startOfWeek(currentDate);
-            const end = endOfWeek(currentDate);
+            const start = startOfWeek(currentDate, { weekStartsOn: 1 });
+            const end = endOfWeek(currentDate, { weekStartsOn: 1 });
             relevantApps = appointments.filter(a => isWithinInterval(a.start, { start, end }));
         } else if (periodType === 'Mês') {
-             const start = startOfMonth(currentDate);
+             const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1); // Start of month manual
              const end = endOfMonth(currentDate);
              relevantApps = appointments.filter(a => isWithinInterval(a.start, { start, end }));
         } else if (periodType === 'Fila de Espera') {
@@ -374,7 +331,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         const baseDate = column.type === 'date' ? column.data : currentDate;
         const clickedTime = new Date(baseDate);
         clickedTime.setHours(hour, minute, 0, 0);
-        const roundedTime = roundToNearestMinutes(clickedTime, { nearestTo: 15 });
+        
+        // Manual rounding to nearest 15 mins
+        const m = clickedTime.getMinutes();
+        const roundedM = Math.round(m / 15) * 15;
+        clickedTime.setMinutes(roundedM, 0, 0);
+        const roundedTime = clickedTime;
 
         // Determine professional based on column type
         const prof = column.type === 'professional' ? column.data : undefined;
@@ -396,8 +358,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         if (periodType === 'Dia' || periodType === 'Lista' || periodType === 'Fila de Espera') {
             text = format(currentDate, "EEE, dd 'de' MMMM", { locale: ptBR });
         } else if (periodType === 'Semana') {
-            const start = startOfWeek(currentDate);
-            const end = endOfWeek(currentDate);
+            const start = startOfWeek(currentDate, { weekStartsOn: 1 });
+            const end = endOfWeek(currentDate, { weekStartsOn: 1 });
             text = `${format(start, "dd MMM", { locale: ptBR })} - ${format(end, "dd MMM", { locale: ptBR })}`;
         } else if (periodType === 'Mês') {
             text = format(currentDate, "MMMM yyyy", { locale: ptBR });
@@ -597,9 +559,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                                     const hour = Math.floor(totalMinutes / 60);
                                                     const minute = totalMinutes % 60;
                                                     const baseDate = col.type === 'date' ? col.data : currentDate;
+                                                    
+                                                    // Manual rounding/setting
                                                     const clickedTime = new Date(baseDate);
                                                     clickedTime.setHours(hour, minute, 0, 0);
-                                                    const roundedTime = roundToNearestMinutes(clickedTime, { nearestTo: 30 });
+                                                    const m = clickedTime.getMinutes();
+                                                    const roundedM = Math.round(m / 30) * 30;
+                                                    clickedTime.setMinutes(roundedM, 0, 0);
+                                                    const roundedTime = clickedTime;
+
                                                     const prof = col.type === 'professional' ? col.data : undefined;
                                                     setModalState({ type: 'appointment', data: { professional: prof, start: roundedTime } });
                                                 }
@@ -706,7 +674,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                     <div key={d} className="text-center py-2 text-sm font-bold text-slate-400 uppercase">{d}</div>
                                 ))}
                                 {(() => {
-                                    const start = startOfMonth(currentDate);
+                                    const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
                                     const end = endOfMonth(currentDate);
                                     const startDay = start.getDay(); // 0-6
                                     const daysInMonth = eachDayOfInterval({ start, end });
