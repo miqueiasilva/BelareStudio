@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { isConfigured, saveSupabaseConfig } from '../services/supabaseClient';
 import { Database, Save, AlertTriangle } from 'lucide-react';
 
@@ -10,6 +10,11 @@ const EnvGate: React.FC<EnvGateProps> = ({ children }) => {
   // Configuração automática: Credenciais do Supabase preenchidas
   const [url, setUrl] = useState('https://rxtwmwrgcilmsldtqdfe.supabase.co');
   const [key, setKey] = useState('sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x');
+
+  useEffect(() => {
+    // Log para depuração em produção se necessário
+    if (!isConfigured) console.log('EnvGate: Aguardando configuração do Supabase...');
+  }, []);
 
   if (isConfigured) {
     return <>{children}</>;
