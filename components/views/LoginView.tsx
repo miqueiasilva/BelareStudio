@@ -48,7 +48,7 @@ const LoginView: React.FC = () => {
             if (error) throw error;
         } catch (err: any) {
             console.error("Google Login Error:", err);
-            setError("Erro ao conectar com Google. Verifique a configuração.");
+            setError("Erro ao conectar com Google. Tente novamente.");
             setIsLoading(false);
         }
     };
@@ -80,7 +80,8 @@ const LoginView: React.FC = () => {
             }
         } catch (err: any) {
             console.error("Auth Error:", err);
-            // Robust error handling to prevent [object Object]
+            
+            // Tratamento robusto de erros para evitar [object Object]
             let msg = "Ocorreu um erro inesperado.";
             
             if (typeof err === 'string') {
@@ -89,13 +90,20 @@ const LoginView: React.FC = () => {
                 msg = err.message;
             } else if (err?.error_description) {
                 msg = err.error_description;
+            } else {
+                // Se for um objeto desconhecido, tenta stringify ou mensagem genérica
+                try {
+                    msg = JSON.stringify(err);
+                } catch {
+                    msg = "Erro desconhecido.";
+                }
             }
 
             // Tradução amigável de erros comuns do Supabase
             if (msg.includes("Invalid login credentials")) msg = "E-mail ou senha incorretos.";
             if (msg.includes("User not found")) msg = "Usuário não encontrado.";
             if (msg.includes("weak_password")) msg = "A senha deve ter pelo menos 6 caracteres.";
-            if (msg.includes("already registered")) msg = "Este e-mail já está cadastrado.";
+            if (msg.includes("already registered") || msg.includes("User already registered")) msg = "Este e-mail já está cadastrado.";
 
             setError(msg);
         } finally {
