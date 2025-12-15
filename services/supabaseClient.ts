@@ -1,61 +1,75 @@
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-import { createClient } from '@supabase/supabase-js';
-
-// --- Safe Environment Variable Access & Diagnostics ---
-let supabaseUrl: string | undefined;
-let supabaseAnonKey: string | undefined;
-
-try {
-    // Diagnostic: Check if we are running in a Vite-processed environment
+// Helper to safely get env vars from various sources
+const getEnvVar = (key: string): string | null => {
+  // 1. Try Vite's import.meta.env
+  try {
     // @ts-ignore
-    const env = import.meta.env;
-    
-    console.group('🔍 Supabase Client Diagnostics');
-    console.log('Environment Mode:', env ? env.MODE : 'Unknown (import.meta.env undefined)');
-    
-    // We access properties directly so Vite can perform static replacement string injection
+    if (import.meta.env && import.meta.env[key]) {
+      // @ts-ignore
+      return import.meta.env[key];
+    }
+  } catch (e) {}
+
+  // 2. Try window.__ENV__ (common in docker/preview builds)
+  try {
     // @ts-ignore
-    supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    // @ts-ignore
-    supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (typeof window !== 'undefined' && window.__ENV__ && window.__ENV__[key]) {
+      // @ts-ignore
+      return window.__ENV__[key];
+    }
+  } catch (e) {}
 
-    console.log('VITE_SUPABASE_URL:', supabaseUrl ? '✅ Defined' : '❌ Missing/Undefined');
-    console.log('VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? '✅ Defined' : '❌ Missing/Undefined');
-    console.groupEnd();
+  // 3. Try LocalStorage (User override)
+  try {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem(key);
+    }
+  } catch (e) {}
 
-} catch (error) {
-    console.error('CRITICAL ERROR: Failed to access environment variables. The app is likely running untransformed code.', error);
-}
+  return null;
+};
 
-// --- Client Initialization ---
+const supabaseUrl = getEnvVar('VITE_SUPABASE_URL');
+const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY');
 
-// 1. Check for missing keys to warn developer
-if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn(
-        '⚠️ Supabase Credentials missing. Authentication will fail.\n' +
-        'Check your .env file or Vercel Environment Variables settings.'
-    );
-}
+export const isConfigured = !!(supabaseUrl && supabaseAnonKey);
 
-// 2. Use fallbacks to prevent "White Screen of Death"
-// The app will load, but Auth calls will fail gracefully with a 400/401 error instead of crashing the JS thread.
-const finalUrl = supabaseUrl || 'https://placeholder.supabase.co';
-const finalKey = supabaseAnonKey || 'placeholder-key';
+// We export a client if configured, otherwise null (cast as Client to satisfy TS imports downstream)
+// The EnvGate component prevents usage of this null client.
+export const supabase = (isConfigured 
+  ? createClient(supabaseUrl!, supabaseAnonKey!, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      }
+    }) 
+  : null) as unknown as SupabaseClient;
 
-export const supabase = createClient(finalUrl, finalKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
+export const saveSupabaseConfig = (url: string, key: string) => {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('VITE_SUPABASE_URL', url);
+    localStorage.setItem('VITE_SUPABASE_ANON_KEY', key);
+    window.location.reload();
   }
-});
+};
 
-// Helper to check connection status (used in Settings)
+export const clearSupabaseConfig = () => {
+    if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('VITE_SUPABASE_URL');
+        localStorage.removeItem('VITE_SUPABASE_ANON_KEY');
+        window.location.reload();
+    }
+}
+
+// Helper to check connection status
 export async function testConnection() {
-    if (!supabaseUrl || !supabaseAnonKey) return false;
+    if (!isConfigured || !supabase) return false;
     try {
         const { error } = await supabase.auth.getSession();
-        return !error;
+        if (error) throw error;
+        return true;
     } catch (e) {
         console.error("Supabase Connection Error:", e);
         return false;

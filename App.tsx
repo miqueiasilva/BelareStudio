@@ -1,7 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ViewState, FinancialTransaction } from './types';
+import EnvGate from './components/EnvGate';
 
 // Layout & Views
 import MainLayout from './components/layout/MainLayout';
@@ -125,8 +125,10 @@ const AppContent: React.FC = () => {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <EnvGate>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </EnvGate>
   );
 }
