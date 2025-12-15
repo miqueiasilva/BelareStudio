@@ -7,7 +7,7 @@ interface EnvGateProps {
 }
 
 const EnvGate: React.FC<EnvGateProps> = ({ children }) => {
-  // Pre-fill with provided credentials for convenience
+  // Configuração automática: Credenciais do Supabase preenchidas
   const [url, setUrl] = useState('https://rxtwmwrgcilmsldtqdfe.supabase.co');
   const [key, setKey] = useState('sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x');
 
