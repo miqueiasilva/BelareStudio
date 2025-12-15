@@ -5,7 +5,7 @@ import {
     ChevronLeft, Calendar, Clock, Check, MapPin, Star, 
     Search, Heart, Info, Image as ImageIcon, ChevronDown, ChevronUp, Share2, Plus, Minus, Trash2
 } from 'lucide-react';
-import { format, addDays, startOfToday, isSameDay, addMinutes } from 'date-fns';
+import { format, addDays, isSameDay, addMinutes } from 'date-fns';
 import ptBR from 'date-fns/locale/pt-BR';
 import { LegacyService } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
@@ -85,6 +85,11 @@ const PublicBookingPreview: React.FC = () => {
 
     // Date Picker Helper - Generate next 14 days
     const dates = useMemo(() => {
+        const startOfToday = () => {
+            const d = new Date();
+            d.setHours(0,0,0,0);
+            return d;
+        };
         return Array.from({ length: 14 }, (_, i) => addDays(startOfToday(), i));
     }, []);
 

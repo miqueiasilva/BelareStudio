@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { initialAppointments, professionals } from '../../data/mockData';
-import { format, isSameMonth, subMonths, addMonths } from 'date-fns';
+import { format, isSameMonth, addMonths } from 'date-fns';
 import ptBR from 'date-fns/locale/pt-BR';
 import { Wallet, ChevronDown, ChevronUp, Download, CheckCircle } from 'lucide-react';
 
@@ -11,7 +11,7 @@ const RemuneracoesView: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  const handlePrevMonth = () => setCurrentDate(prev => subMonths(prev, 1));
+  const handlePrevMonth = () => setCurrentDate(prev => addMonths(prev, -1));
   const handleNextMonth = () => setCurrentDate(prev => addMonths(prev, 1));
 
   const filteredAppointments = useMemo(() => {

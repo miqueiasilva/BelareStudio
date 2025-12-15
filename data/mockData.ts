@@ -1,9 +1,13 @@
 
 import { LegacyProfessional, Client, LegacyService, LegacyAppointment, OnlineBookingConfig, Review, AnalyticsData, FinancialTransaction, ChatConversation, Product } from '../types';
-import { startOfDay, setHours, setMinutes, subDays, addDays, subMinutes } from 'date-fns';
+import { addDays, addMinutes } from 'date-fns';
 
 const today = new Date();
-const createTime = (hour: number, minute: number) => setMinutes(setHours(startOfDay(today), hour), minute);
+const createTime = (hour: number, minute: number) => {
+    const d = new Date(today);
+    d.setHours(hour, minute, 0, 0);
+    return d;
+};
 
 export const professionals: LegacyProfessional[] = [
     { id: 1, name: 'Jacilene Félix', avatarUrl: 'https://i.pravatar.cc/150?img=1' },
@@ -153,7 +157,7 @@ const createTransaction = (
     amount,
     type,
     category: cat,
-    date: daysOffset === 0 ? new Date() : (daysOffset > 0 ? addDays(new Date(), daysOffset) : subDays(new Date(), Math.abs(daysOffset))),
+    date: daysOffset === 0 ? new Date() : addDays(new Date(), daysOffset),
     paymentMethod: 'pix',
     status: 'pago',
     professionalId: profId
@@ -188,12 +192,12 @@ export const mockConversations: ChatConversation[] = [
         clientId: 2,
         clientName: 'Juanita Estefano',
         lastMessage: 'Oi! Tudo bem? Gostaria de confirmar meu horário de amanhã.',
-        lastMessageTime: subMinutes(new Date(), 15),
+        lastMessageTime: addMinutes(new Date(), -15),
         unreadCount: 2,
         messages: [
-            { id: '1', sender: 'user', text: 'Olá Juanita! Tudo ótimo e você?', timestamp: subMinutes(new Date(), 120), status: 'read' },
-            { id: '2', sender: 'client', text: 'Tudo bem também. Queria confirmar se é às 14h mesmo?', timestamp: subMinutes(new Date(), 20), status: 'sent' },
-            { id: '3', sender: 'client', text: 'Oi! Tudo bem? Gostaria de confirmar meu horário de amanhã.', timestamp: subMinutes(new Date(), 15), status: 'sent' }
+            { id: '1', sender: 'user', text: 'Olá Juanita! Tudo ótimo e você?', timestamp: addMinutes(new Date(), -120), status: 'read' },
+            { id: '2', sender: 'client', text: 'Tudo bem também. Queria confirmar se é às 14h mesmo?', timestamp: addMinutes(new Date(), -20), status: 'sent' },
+            { id: '3', sender: 'client', text: 'Oi! Tudo bem? Gostaria de confirmar meu horário de amanhã.', timestamp: addMinutes(new Date(), -15), status: 'sent' }
         ]
     },
     {
@@ -201,12 +205,12 @@ export const mockConversations: ChatConversation[] = [
         clientId: 3,
         clientName: 'Clara Coelho',
         lastMessage: 'Amei o resultado! Obrigada ❤️',
-        lastMessageTime: subDays(new Date(), 1),
+        lastMessageTime: addDays(new Date(), -1),
         unreadCount: 0,
         messages: [
-            { id: '1', sender: 'system', text: 'Olá Clara, seu agendamento está confirmado para hoje às 10:00.', timestamp: subDays(new Date(), 1), status: 'sent' },
-            { id: '2', sender: 'client', text: 'Obrigada! Já estou chegando.', timestamp: subDays(new Date(), 1), status: 'read' },
-            { id: '3', sender: 'client', text: 'Amei o resultado! Obrigada ❤️', timestamp: subDays(new Date(), 1), status: 'read' }
+            { id: '1', sender: 'system', text: 'Olá Clara, seu agendamento está confirmado para hoje às 10:00.', timestamp: addDays(new Date(), -1), status: 'sent' },
+            { id: '2', sender: 'client', text: 'Obrigada! Já estou chegando.', timestamp: addDays(new Date(), -1), status: 'read' },
+            { id: '3', sender: 'client', text: 'Amei o resultado! Obrigada ❤️', timestamp: addDays(new Date(), -1), status: 'read' }
         ]
     },
     {
@@ -214,11 +218,11 @@ export const mockConversations: ChatConversation[] = [
         clientId: 6,
         clientName: 'Bárbara Salles',
         lastMessage: 'Tem horário para sábado?',
-        lastMessageTime: subMinutes(new Date(), 5),
+        lastMessageTime: addMinutes(new Date(), -5),
         unreadCount: 1,
         tags: ['Alergia'],
         messages: [
-            { id: '1', sender: 'client', text: 'Bom dia! Tem horário para sábado?', timestamp: subMinutes(new Date(), 5), status: 'sent' }
+            { id: '1', sender: 'client', text: 'Bom dia! Tem horário para sábado?', timestamp: addMinutes(new Date(), -5), status: 'sent' }
         ]
     }
 ];

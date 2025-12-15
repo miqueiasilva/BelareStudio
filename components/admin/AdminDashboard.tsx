@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 // FIX: Use legacy types with aliases to match mock data structure and resolve type errors.
 import { LegacyAppointment as Appointment, LegacyProfessional as Professional, Client, LegacyService as Service, AppointmentStatus } from '../../types';
-import { format, addMinutes, setHours, setMinutes, startOfDay } from 'date-fns';
+import { format } from 'date-fns';
 import { ChevronLeft, ChevronRight, Calendar, Bell, MessageSquare } from 'lucide-react';
 
 // --- MOCK DATA ---
@@ -34,7 +34,11 @@ const services: { [key: string]: Service } = {
     bloqueio: { id: 8, name: 'Horário Bloqueado', duration: 300, price: 0, color: 'gray' },
 };
 
-const createTime = (hour: number, minute: number) => setMinutes(setHours(startOfDay(today), hour), minute);
+const createTime = (hour: number, minute: number) => {
+    const d = new Date(today);
+    d.setHours(hour, minute, 0, 0);
+    return d;
+};
 
 // FIX: Use LegacyAppointment type which matches the mock data structure (client, professional, service, start, end).
 const appointments: Appointment[] = [
@@ -62,6 +66,7 @@ const statusClasses: { [key in AppointmentStatus]: string } = {
     chegou: 'bg-purple-100 border-purple-300 text-purple-800',
     concluido: 'bg-green-100 border-green-300 text-green-800',
     cancelado: 'bg-pink-100 border-pink-300 text-pink-800 line-through',
+    bloqueio: 'bg-slate-200 border-slate-300 text-slate-600 pattern-diagonal-lines-sm pattern-slate-400 pattern-bg-slate-200 pattern-size-4 pattern-opacity-100',
     bloqueado: 'bg-slate-200 border-slate-300 text-slate-600 pattern-diagonal-lines-sm pattern-slate-400 pattern-bg-slate-200 pattern-size-4 pattern-opacity-100',
     faltou: 'bg-orange-100 border-orange-300 text-orange-800 line-through',
     em_atendimento: 'bg-indigo-100 border-indigo-300 text-indigo-800 animate-pulse',

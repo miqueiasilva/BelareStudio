@@ -2,27 +2,25 @@
 import React, { useState, useMemo } from 'react';
 import { 
     BarChart3, TrendingUp, TrendingDown, DollarSign, Calendar, 
-    Users, ChevronLeft, ChevronRight, Download, Filter, PieChart 
+    ChevronLeft, ChevronRight, Download
 } from 'lucide-react';
-import { format, subMonths, addMonths, isSameMonth } from 'date-fns';
+import { format, addMonths, isSameMonth } from 'date-fns';
 import ptBR from 'date-fns/locale/pt-BR';
 import Card from '../shared/Card';
 import SafePie from '../charts/SafePie';
 import SafeBar from '../charts/SafeBar';
 import { mockTransactions, initialAppointments, professionals } from '../../data/mockData';
-import { safe, toNumber } from '../../utils/normalize';
 
 const RelatoriosView: React.FC = () => {
     const [currentDate, setCurrentDate] = useState(new Date());
 
     // --- Actions ---
-    const handlePrevMonth = () => setCurrentDate(prev => subMonths(prev, 1));
+    const handlePrevMonth = () => setCurrentDate(prev => addMonths(prev, -1));
     const handleNextMonth = () => setCurrentDate(prev => addMonths(prev, 1));
 
     // --- Data Processing ---
 
     // 1. Filter Transactions for Financial KPIs
-    // Recalculating useMemo logic properly
     const financialStats = useMemo(() => {
         const income = mockTransactions
             .filter(t => t.type === 'receita' && isSameMonth(new Date(t.date), currentDate))
