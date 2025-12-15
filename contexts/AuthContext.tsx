@@ -1,110 +1,136 @@
-// contexts/AuthContext.tsx
+
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
+import { User as SupabaseUser, Session } from '@supabase/supabase-js';
 
-type AppUser = {
-  id: string;
-  email?: string | null;
-  papel?: string; // seu App.tsx usa isso
-  [key: string]: any;
-} | null;
+// Extended User type to include role/papel
+export type AppUser = SupabaseUser & {
+  papel?: string;
+  nome?: string;
+  avatar_url?: string;
+};
 
 type AuthContextType = {
-  user: AppUser;
+  user: AppUser | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<any>;
-  signUp: (email: string, password: string) => Promise<any>;
-  signInWithGoogle: () => Promise<any>;
-  resetPassword: (email: string) => Promise<any>;
-  updatePassword: (newPassword: string) => Promise<any>;
+  signIn: (email: string, password: string) => Promise<{ error: any }>;
+  signUp: (email: string, password: string, name: string) => Promise<{ error: any }>;
+  signInWithGoogle: () => Promise<{ error: any }>;
+  resetPassword: (email: string) => Promise<{ error: any }>;
+  updatePassword: (newPassword: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-async function fetchProfile(userId: string) {
-  // Se você tiver outra tabela/colunas, ajuste aqui
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, papel, full_name')
-    .eq('id', userId)
-    .maybeSingle();
-
-  // se não existir profile ainda, devolve null sem quebrar
-  if (error) return null;
-  return data ?? null;
-}
-
-function buildRedirectBase() {
-  // mantém compatível com hash routing
-  return window.location.origin;
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AppUser>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const hydrateUser = async () => {
-    setLoading(true);
+  // Helper to fetch extra profile data from 'public.profiles'
+  const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('full_name, papel, avatar_url')
+        .eq('id', authUser.id)
+        .single();
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const authUser = sessionData?.session?.user ?? null;
+      if (error) {
+        // If profile doesn't exist yet, return basic user with default role
+        // This prevents app crash if the SQL trigger didn't run or table is missing
+        console.warn("Profile fetch warning:", error.message);
+        return {
+            ...authUser,
+            papel: 'admin', // Default fallback for first setup
+            nome: authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
+            avatar_url: authUser.user_metadata?.avatar_url
+        };
+      }
 
-    if (!authUser) {
-      setUser(null);
-      setLoading(false);
-      return;
+      return {
+        ...authUser,
+        papel: data.papel || 'profissional',
+        nome: data.full_name || authUser.user_metadata?.full_name,
+        avatar_url: data.avatar_url || authUser.user_metadata?.avatar_url
+      };
+    } catch (e) {
+      return { ...authUser, papel: 'admin', nome: 'Usuário' };
     }
-
-    const profile = await fetchProfile(authUser.id);
-
-    // IMPORTANT: garante papel pra seu hasAccess()
-    setUser({
-      ...authUser,
-      papel: profile?.papel ?? 'admin',
-      full_name: profile?.full_name ?? authUser.user_metadata?.full_name ?? null,
-    });
-
-    setLoading(false);
   };
 
   useEffect(() => {
-    hydrateUser();
+    let mounted = true;
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event) => {
-      await hydrateUser();
+    // 1. Check active session
+    const getInitialSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user && mounted) {
+          const appUser = await fetchProfile(session.user);
+          setUser(appUser);
+        }
+      } catch (error) {
+        console.error("Auth init error:", error);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    getInitialSession();
+
+    // 2. Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("Auth Event:", event);
+      
+      if (session?.user) {
+        const appUser = await fetchProfile(session.user);
+        if (mounted) setUser(appUser);
+      } else {
+        if (mounted) setUser(null);
+      }
+      
+      if (mounted) setLoading(false);
     });
 
     return () => {
-      listener?.subscription?.unsubscribe();
+      mounted = false;
+      subscription.unsubscribe();
     };
   }, []);
 
-  const signIn = (email: string, password: string) =>
-    supabase.auth.signInWithPassword({ email, password });
-
-  const signUp = async (email: string, password: string) => {
-    // Depois do signup você pode criar o profile via trigger no banco (recomendado).
-    return supabase.auth.signUp({ email, password });
+  const signIn = async (email: string, password: string) => {
+    return await supabase.auth.signInWithPassword({ email, password });
   };
 
-  const signInWithGoogle = () => {
-    const redirectTo = buildRedirectBase(); // volta pro app
-    return supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo },
+  const signUp = async (email: string, password: string, name: string) => {
+    return await supabase.auth.signUp({ 
+        email, 
+        password,
+        options: {
+            data: { full_name: name } // This metadata triggers the profile creation in SQL
+        }
     });
   };
 
-  const resetPassword = (email: string) => {
-    // manda para tela hash de reset
-    const redirectTo = `${buildRedirectBase()}/#/reset-password`;
-    return supabase.auth.resetPasswordForEmail(email, { redirectTo });
+  const signInWithGoogle = async () => {
+    return await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin
+      },
+    });
   };
 
-  const updatePassword = (newPassword: string) => {
-    // usado na tela /#/reset-password
-    return supabase.auth.updateUser({ password: newPassword });
+  const resetPassword = async (email: string) => {
+    // Redirects to /reset-password route
+    return await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    return await supabase.auth.updateUser({ password: newPassword });
   };
 
   const signOut = async () => {
@@ -112,19 +138,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
-  const value = useMemo(
-    () => ({
-      user,
-      loading,
-      signIn,
-      signUp,
-      signInWithGoogle,
-      resetPassword,
-      updatePassword,
-      signOut,
-    }),
-    [user, loading]
-  );
+  const value = useMemo(() => ({
+    user,
+    loading,
+    signIn,
+    signUp,
+    signInWithGoogle,
+    resetPassword,
+    updatePassword,
+    signOut,
+  }), [user, loading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -1,27 +1,40 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Ensure environment variables are loaded or handle missing keys gracefully
+// Get Environment Variables
 // @ts-ignore
-const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL || '';
+const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL;
 // @ts-ignore
-const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase URL or Anon Key is missing. Check your .env file.');
+  console.error('CRITICAL: Supabase URL or Anon Key is missing. Check your .env file or Vercel Environment Variables.');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Create single instance for the app
+export const supabase = createClient(
+  supabaseUrl || '', 
+  supabaseAnonKey || '',
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    }
+  }
+);
 
-// Simple connection test helper
+// Helper to check connection status (used in Settings)
 export async function testConnection() {
     if (!supabaseUrl) return false;
     try {
-        // Try to fetch one row from a public table or just check health
+        // Simple health check query
         const { error } = await supabase.from('profiles').select('id').limit(1);
-        // It's ok if table doesn't exist or is empty, mostly checking for connection error
+        // Error code PGRST116 means "No rows returned" which implies connection is OK, just empty table
+        // Or if error is null, it's fine.
         return !error || error.code === 'PGRST116'; 
     } catch (e) {
+        console.error("Supabase Connection Error:", e);
         return false;
     }
 }

@@ -6,7 +6,7 @@ import { ViewState, FinancialTransaction } from './types';
 // Layout & Views
 import MainLayout from './components/layout/MainLayout';
 import LoginView from './components/views/LoginView';
-import ResetPasswordView from './components/views/ResetPasswordView';
+import ResetPasswordView from './components/views/ResetPasswordView'; // Ensure this matches import
 import DashboardView from './components/views/DashboardView';
 import AtendimentosView from './components/views/AtendimentosView';
 import AgendaOnlineView from './components/views/AgendaOnlineView';
@@ -30,11 +30,15 @@ const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
   const [hash, setHash] = useState(window.location.hash);
+  const [pathname, setPathname] = useState(window.location.pathname);
 
-  // Simple Hash Router for Auth flows
+  // Router listener
   useEffect(() => {
     const handleHashChange = () => setHash(window.location.hash);
     window.addEventListener('hashchange', handleHashChange);
+    // Pathname might change if Vercel redirects for reset password
+    setPathname(window.location.pathname);
+    
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
@@ -50,15 +54,16 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // --- PUBLIC ROUTES ---
+  // --- PUBLIC & AUTH ROUTES ---
   
-  // Public Booking Page (No Auth Required)
+  // Public Booking Page
   if (hash === '#/public-preview') {
     return <PublicBookingPreview />;
   }
 
-  // Password Reset Flow
-  if (hash === '#/reset-password') {
+  // Password Reset Flow (Priority over login)
+  // Checks both pathname (Vercel rewrite) and hash (standard logic)
+  if (pathname === '/reset-password' || hash === '#/reset-password') {
     return <ResetPasswordView />;
   }
 
@@ -105,8 +110,6 @@ const AppContent: React.FC = () => {
       case 'servicos':
         return <ServicosView />;
       case 'public_preview':
-        // This case redirects to the public view but keeps context if needed, 
-        // though usually we just change window location hash above.
         window.location.hash = '/public-preview';
         return null;
       default:

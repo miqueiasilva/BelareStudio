@@ -48,7 +48,8 @@ const LoginView: React.FC = () => {
             const { error } = await signInWithGoogle();
             if (error) throw error;
         } catch (err: any) {
-            setError(err.message || "Erro ao conectar com Google.");
+            console.error(err);
+            setError("Erro ao conectar com Google. Verifique a configuração do Supabase.");
             setIsLoading(false);
         }
     };
@@ -64,17 +65,19 @@ const LoginView: React.FC = () => {
                 const { error } = await signIn(email, password);
                 if (error) throw error;
             } else if (mode === 'register') {
-                const { error } = await signUp(email, password);
+                const { error } = await signUp(email, password, name);
                 if (error) throw error;
-                setSuccessMessage("Conta criada! Se o login não for automático, verifique seu e-mail.");
-                if(!error) setTimeout(() => handleModeChange('login'), 2000);
+                setSuccessMessage("Conta criada! Verifique seu e-mail para confirmar.");
+                // Optional: switch to login mode after delay
+                // setTimeout(() => handleModeChange('login'), 3000);
             } else if (mode === 'forgot') {
                 const { error } = await resetPassword(email);
                 if (error) throw error;
                 setSuccessMessage("Link de recuperação enviado para o e-mail.");
             }
         } catch (err: any) {
-            setError(err.message || "Ocorreu um erro inesperado.");
+            console.error(err);
+            setError(err.message === "Invalid login credentials" ? "E-mail ou senha incorretos." : err.message);
         } finally {
             setIsLoading(false);
         }
@@ -84,7 +87,7 @@ const LoginView: React.FC = () => {
         switch (mode) {
             case 'register': return 'Criar Conta';
             case 'forgot': return 'Recuperar Senha';
-            default: return 'Bem-vindo ao BelaApp';
+            default: return 'BelaApp';
         }
     };
 
@@ -105,7 +108,7 @@ const LoginView: React.FC = () => {
                             <span className="text-white font-bold text-3xl">B</span>
                         </div>
                         <h1 className="text-2xl font-bold text-white mb-2">{getTitle()}</h1>
-                        <p className="text-slate-300 text-sm">Gestão Inteligente para Estúdios de Beleza</p>
+                        {mode === 'login' && <p className="text-slate-300 text-sm">Gestão Inteligente para Estúdios de Beleza</p>}
                     </div>
 
                     <div className="space-y-5">
@@ -132,7 +135,7 @@ const LoginView: React.FC = () => {
                                     className="w-full flex items-center justify-center gap-3 bg-white text-slate-700 font-bold py-3.5 rounded-xl hover:bg-slate-50 transition-all shadow-sm active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
                                 >
                                     {isLoading ? <Loader2 className="animate-spin w-5 h-5 text-slate-400"/> : <GoogleIcon />}
-                                    <span>Entrar com Google</span>
+                                    <span>{mode === 'login' ? 'Entrar com Google' : 'Cadastrar com Google'}</span>
                                 </button>
 
                                 <div className="relative flex items-center py-2">
