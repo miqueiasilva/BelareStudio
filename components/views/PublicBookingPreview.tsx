@@ -6,7 +6,7 @@ import {
     Search, Heart, Info, Image as ImageIcon, ChevronDown, ChevronUp, Share2, Plus, Minus, Trash2
 } from 'lucide-react';
 import { format, addDays, isSameDay, addMinutes } from 'date-fns';
-import { pt } from 'date-fns/locale';
+import { ptBR as pt } from 'date-fns/locale';
 import { LegacyService } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 

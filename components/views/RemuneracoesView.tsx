@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { initialAppointments, professionals } from '../../data/mockData';
 import { format, isSameMonth, addMonths } from 'date-fns';
-import { pt } from 'date-fns/locale';
+import { ptBR as pt } from 'date-fns/locale';
 import { Wallet, ChevronDown, ChevronUp, Download, CheckCircle } from 'lucide-react';
 
 const DEFAULT_COMMISSION_RATE = 0.5; // 50%

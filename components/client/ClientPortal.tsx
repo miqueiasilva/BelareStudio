@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import Card from '../shared/Card';
 import { Calendar, Clock, Scissors, User, Sparkles, CheckCircle, ArrowRight, Star } from 'lucide-react';
 import { format } from 'date-fns';
-import { pt } from 'date-fns/locale';
+import { ptBR as pt } from 'date-fns/locale';
 
 const clientData = {
   name: "Juliana Paes",

@@ -5,7 +5,7 @@ import {
     ChevronLeft, ChevronRight, Download
 } from 'lucide-react';
 import { format, addMonths, isSameMonth } from 'date-fns';
-import { pt } from 'date-fns/locale';
+import { ptBR as pt } from 'date-fns/locale';
 import Card from '../shared/Card';
 import SafePie from '../charts/SafePie';
 import SafeBar from '../charts/SafeBar';

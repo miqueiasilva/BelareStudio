@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import Card from '../shared/Card';
 import { format } from 'date-fns';
-import { pt } from 'date-fns/locale';
+import { ptBR as pt } from 'date-fns/locale';
 import Toast, { ToastType } from '../shared/Toast';
 
 // --- Types ---

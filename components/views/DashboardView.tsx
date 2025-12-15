@@ -6,7 +6,7 @@ import { getDashboardInsight } from '../../services/geminiService';
 import { initialAppointments, professionals } from '../../data/mockData';
 import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, ArrowRight, Clock, Globe } from 'lucide-react';
 import { format } from 'date-fns';
-import { pt } from 'date-fns/locale';
+import { ptBR as pt } from 'date-fns/locale';
 import { safe, toNumber } from '../../utils/normalize';
 import SafePie from '../charts/SafePie';
 import SafeBar from '../charts/SafeBar';

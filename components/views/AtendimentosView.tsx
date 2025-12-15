@@ -2,13 +2,13 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { initialAppointments, professionals as mockProfessionals } from '../../data/mockData';
 import { LegacyAppointment, LegacyProfessional, AppointmentStatus, FinancialTransaction } from '../../types';
-import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, endOfMonth, startOfMonth, setHours, setMinutes, roundToNearestMinutes } from 'date-fns';
+import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval } from 'date-fns';
 import { 
     ChevronLeft, ChevronRight, Plus, Edit, Lock, Trash2, MessageSquare, 
     ShoppingCart, FileText, Calendar as CalendarIcon, Share2, Bell, 
     RotateCcw, ChevronDown, List, Clock, Filter, DollarSign, CheckCircle, Circle 
 } from 'lucide-react';
-import { pt } from 'date-fns/locale';
+import { ptBR as pt } from 'date-fns/locale';
 
 import AppointmentModal from '../modals/AppointmentModal';
 import BlockTimeModal from '../modals/BlockTimeModal';
@@ -20,6 +20,63 @@ import Toast, { ToastType } from '../shared/Toast';
 const START_HOUR = 8;
 const END_HOUR = 20; // Extended for visibility
 const PIXELS_PER_MINUTE = 80 / 60; // 80px for every 60 minutes
+
+// --- Date Helper Functions (replacing missing date-fns imports) ---
+
+function setHours(date: Date, hours: number): Date {
+    const d = new Date(date);
+    d.setHours(hours);
+    return d;
+}
+
+function setMinutes(date: Date, minutes: number): Date {
+    const d = new Date(date);
+    d.setMinutes(minutes);
+    return d;
+}
+
+function startOfWeek(date: Date, options?: { weekStartsOn?: number }): Date {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = (day < (options?.weekStartsOn || 0) ? 7 : 0) + day - (options?.weekStartsOn || 0);
+    d.setDate(d.getDate() - diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
+
+function endOfWeek(date: Date, options?: { weekStartsOn?: number }): Date {
+    const start = startOfWeek(date, options);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+    return end;
+}
+
+function startOfMonth(date: Date): Date {
+    const d = new Date(date);
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
+
+function endOfMonth(date: Date): Date {
+    const d = new Date(date);
+    d.setMonth(d.getMonth() + 1);
+    d.setDate(0);
+    d.setHours(23, 59, 59, 999);
+    return d;
+}
+
+function roundToNearestMinutes(date: Date, options?: { nearestTo?: number }): Date {
+    const d = new Date(date);
+    const minutes = d.getMinutes();
+    const nearestTo = options?.nearestTo || 1;
+    const roundedMinutes = Math.round(minutes / nearestTo) * nearestTo;
+    d.setMinutes(roundedMinutes);
+    d.setSeconds(0);
+    d.setMilliseconds(0);
+    return d;
+}
 
 // --- Interfaces for Dynamic Columns ---
 
