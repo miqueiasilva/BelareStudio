@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ViewState, FinancialTransaction } from './types';
-import EnvGate from './components/EnvGate';
 
 // Layout & Views
 import MainLayout from './components/layout/MainLayout';
@@ -124,32 +123,6 @@ const AppContent: React.FC = () => {
 };
 
 export default function App() {
-  const [hash, setHash] = useState(window.location.hash);
-
-  useEffect(() => {
-    const onHashChange = () => setHash(window.location.hash);
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
-
-  // Rota técnica para configuração manual (#/config)
-  if (hash === '#/config') {
-    return (
-      <EnvGate>
-        <div className="min-h-screen flex items-center justify-center bg-slate-50">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold text-green-600 mb-2">Configuração Concluída</h1>
-            <p className="text-slate-600 mb-4">O ambiente está configurado corretamente.</p>
-            <a href="/" className="px-4 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-900 transition">
-              Ir para o App
-            </a>
-          </div>
-        </div>
-      </EnvGate>
-    );
-  }
-
-  // Fluxo padrão: AuthProvider direto
   return (
     <AuthProvider>
       <AppContent />
