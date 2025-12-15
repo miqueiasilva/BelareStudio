@@ -1,55 +1,66 @@
 <!DOCTYPE html>
-<html lang="en" translate="no">
+<html lang="pt-BR" translate="no">
   <head>
     <meta charset="UTF-8" />
     <meta name="google" content="notranslate" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BelaApp — Gestão Inteligente para Estúdios de Beleza</title>
+
+    <!-- Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
     <style>
       body {
         font-family: 'Poppins', sans-serif;
       }
-      /* Hide scrollbar for Chrome, Safari and Opera */
       .scrollbar-hide::-webkit-scrollbar {
-          display: none;
+        display: none;
       }
-      /* Hide scrollbar for IE, Edge and Firefox */
       .scrollbar-hide {
-          -ms-overflow-style: none;  /* IE and Edge */
-          scrollbar-width: none;  /* Firefox */
+        -ms-overflow-style: none;
+        scrollbar-width: none;
       }
     </style>
- <script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@18.2.0",
-    "react-dom": "https://esm.sh/react-dom@18.2.0",
-    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-    "recharts": "https://esm.sh/recharts@2.12.0?external=react,react-dom",
-    "lucide-react": "https://esm.sh/lucide-react@0.344.0",
-    "date-fns": "https://esm.sh/date-fns@3.3.1",
-    "date-fns/locale": "https://esm.sh/date-fns@3.3.1/locale",
-    "react-toggle-switch": "https://esm.sh/react-toggle-switch@3.0.4",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
-    "@fullcalendar/react": "https://esm.sh/@fullcalendar/react@6",
-    "@fullcalendar/timegrid": "https://esm.sh/@fullcalendar/timegrid@6",
-    "@fullcalendar/interaction": "https://esm.sh/@fullcalendar/interaction@6",
-    "@fullcalendar/core/locales/pt-br": "https://esm.sh/@fullcalendar/core/locales/pt-br.js",
-    "@fullcalendar/core": "https://esm.sh/@fullcalendar/core@6.1.10",
-    "@google/genai": "https://esm.sh/@google/genai@0.2.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "date-fns/": "https://esm.sh/date-fns@^4.1.0/"
-  }
-}
-</script>
 
-</head>
+    <!-- IMPORT MAP (PADRONIZADO) -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom": "https://esm.sh/react-dom@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+
+        "recharts": "https://esm.sh/recharts@2.12.0?external=react,react-dom",
+        "lucide-react": "https://esm.sh/lucide-react@0.344.0",
+
+        "date-fns": "https://esm.sh/date-fns@3.3.1",
+        "date-fns/locale": "https://esm.sh/date-fns@3.3.1/locale",
+
+        "react-toggle-switch": "https://esm.sh/react-toggle-switch@3.0.4",
+
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
+
+        "@fullcalendar/react": "https://esm.sh/@fullcalendar/react@6",
+        "@fullcalendar/timegrid": "https://esm.sh/@fullcalendar/timegrid@6",
+        "@fullcalendar/interaction": "https://esm.sh/@fullcalendar/interaction@6",
+        "@fullcalendar/core": "https://esm.sh/@fullcalendar/core@6.1.10",
+        "@fullcalendar/core/locales/pt-br": "https://esm.sh/@fullcalendar/core/locales/pt-br.js",
+
+        "@google/genai": "https://esm.sh/@google/genai@0.2.0"
+      }
+    }
+    </script>
+  </head>
+
   <body class="bg-slate-50 notranslate">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
