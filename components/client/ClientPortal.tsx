@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import Card from '../shared/Card';
 import { Calendar, Clock, Scissors, User, Sparkles, CheckCircle, ArrowRight, Star } from 'lucide-react';
 import { format } from 'date-fns';
-import ptBR from 'date-fns/locale/pt-BR';
+import { pt } from 'date-fns/locale';
 
 const clientData = {
   name: "Juliana Paes",
@@ -92,7 +92,7 @@ const ClientPortal: React.FC = () => {
           <p className="text-sm text-cyan-200">Seu próximo agendamento</p>
           <p className="text-2xl font-bold mt-2">{clientData.nextAppointment.service}</p>
           <div className="mt-4 space-y-2 text-sm">
-            <div className="flex items-center gap-2 text-cyan-100"><Calendar size={16}/> <span>{format(clientData.nextAppointment.date, "EEEE, dd 'de' MMMM", { locale: ptBR })}</span></div>
+            <div className="flex items-center gap-2 text-cyan-100"><Calendar size={16}/> <span>{format(clientData.nextAppointment.date, "EEEE, dd 'de' MMMM", { locale: pt })}</span></div>
             <div className="flex items-center gap-2 text-cyan-100"><Clock size={16}/> <span>{clientData.nextAppointment.time}</span></div>
             <div className="flex items-center gap-2 text-cyan-100"><Scissors size={16}/> <span>{clientData.nextAppointment.professional}</span></div>
           </div>

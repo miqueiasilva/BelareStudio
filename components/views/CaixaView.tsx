@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import Card from '../shared/Card';
 import { format } from 'date-fns';
-import ptBR from 'date-fns/locale/pt-BR';
+import { pt } from 'date-fns/locale';
 import Toast, { ToastType } from '../shared/Toast';
 
 // --- Types ---
@@ -214,7 +214,7 @@ const CaixaView: React.FC = () => {
                     </h1>
                     <div className="flex items-center gap-2 text-sm text-slate-500 mt-1">
                         <Calendar size={14}/>
-                        <span>{format(new Date(), "dd 'de' MMMM, yyyy", { locale: ptBR })}</span>
+                        <span>{format(new Date(), "dd 'de' MMMM, yyyy", { locale: pt })}</span>
                         <span className="text-slate-300">•</span>
                         <span className={`font-bold ${session.status === 'aberto' ? 'text-green-600' : 'text-red-500'}`}>
                             {session.status === 'aberto' ? 'CAIXA ABERTO' : 'CAIXA FECHADO'}
@@ -316,3 +316,70 @@ const CaixaView: React.FC = () => {
                                         </tr>
                                     ))}
                                     {session.movements.length === 0 && (
+                                        <tr>
+                                            <td colSpan={4} className="p-8 text-center text-slate-400 italic">
+                                                Nenhuma movimentação registrada.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </Card>
+
+                    {/* Summary / Calculator */}
+                    <Card title="Resumo do Fechamento" icon={<CheckCircle size={20}/>}>
+                        <div className="space-y-4">
+                            <div className="p-4 bg-slate-50 rounded-xl space-y-2">
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-slate-500">Abertura</span>
+                                    <span className="font-medium">R$ {session.openingBalance.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-slate-500">Total Entradas</span>
+                                    <span className="font-medium text-green-600">+ R$ {(stats.vendas + stats.suprimentos).toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-slate-500">Total Saídas</span>
+                                    <span className="font-medium text-red-600">- R$ {stats.sangrias.toFixed(2)}</span>
+                                </div>
+                                <div className="border-t border-slate-200 pt-2 flex justify-between text-base font-bold">
+                                    <span className="text-slate-700">Saldo Calculado</span>
+                                    <span className="text-slate-900">R$ {stats.currentBalance.toFixed(2)}</span>
+                                </div>
+                            </div>
+
+                            {session.status === 'fechado' && session.difference !== undefined && (
+                                <div className={`p-4 rounded-xl border ${session.difference === 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                    <p className="text-xs font-bold uppercase mb-1 text-slate-500">Resultado do último fechamento</p>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-sm font-medium">Diferença</span>
+                                        <span className={`font-bold ${session.difference === 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                            R$ {session.difference.toFixed(2)}
+                                        </span>
+                                    </div>
+                                    {session.difference !== 0 && (
+                                        <p className="text-xs text-red-500 mt-2 flex items-center gap-1">
+                                            <AlertTriangle size={12}/> Valor em gaveta não bateu com sistema.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </Card>
+                </div>
+            </div>
+
+            {modalType && (
+                <OperationModal 
+                    type={modalType} 
+                    currentBalance={stats.currentBalance}
+                    onClose={() => setModalType(null)} 
+                    onConfirm={handleOperation} 
+                />
+            )}
+        </div>
+    );
+};
+
+export default CaixaView;

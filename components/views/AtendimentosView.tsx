@@ -2,13 +2,13 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { initialAppointments, professionals as mockProfessionals } from '../../data/mockData';
 import { LegacyAppointment, LegacyProfessional, AppointmentStatus, FinancialTransaction } from '../../types';
-import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, endOfMonth } from 'date-fns';
+import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, endOfMonth, startOfMonth, setHours, setMinutes, roundToNearestMinutes } from 'date-fns';
 import { 
     ChevronLeft, ChevronRight, Plus, Edit, Lock, Trash2, MessageSquare, 
     ShoppingCart, FileText, Calendar as CalendarIcon, Share2, Bell, 
     RotateCcw, ChevronDown, List, Clock, Filter, DollarSign, CheckCircle, Circle 
 } from 'lucide-react';
-import ptBR from 'date-fns/locale/pt-BR';
+import { pt } from 'date-fns/locale';
 
 import AppointmentModal from '../modals/AppointmentModal';
 import BlockTimeModal from '../modals/BlockTimeModal';
@@ -171,7 +171,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             const days = eachDayOfInterval({ start, end });
             return days.map(day => ({
                 id: day.toISOString(),
-                title: format(day, 'EEE', { locale: ptBR }),
+                title: format(day, 'EEE', { locale: pt }),
                 subtitle: format(day, 'dd/MM'),
                 type: 'date',
                 data: day
@@ -226,7 +226,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             const end = endOfWeek(currentDate, { weekStartsOn: 1 });
             relevantApps = appointments.filter(a => isWithinInterval(a.start, { start, end }));
         } else if (periodType === 'Mês') {
-             const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1); // Start of month manual
+             const start = startOfMonth(currentDate);
              const end = endOfMonth(currentDate);
              relevantApps = appointments.filter(a => isWithinInterval(a.start, { start, end }));
         } else if (periodType === 'Fila de Espera') {
@@ -329,14 +329,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
         // Determine date based on column type
         const baseDate = column.type === 'date' ? column.data : currentDate;
-        const clickedTime = new Date(baseDate);
-        clickedTime.setHours(hour, minute, 0, 0);
-        
-        // Manual rounding to nearest 15 mins
-        const m = clickedTime.getMinutes();
-        const roundedM = Math.round(m / 15) * 15;
-        clickedTime.setMinutes(roundedM, 0, 0);
-        const roundedTime = clickedTime;
+        const clickedTime = setMinutes(setHours(baseDate, hour), minute);
+        const roundedTime = roundToNearestMinutes(clickedTime, { nearestTo: 15 });
 
         // Determine professional based on column type
         const prof = column.type === 'professional' ? column.data : undefined;
@@ -356,13 +350,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const DateDisplay = () => {
         let text = "";
         if (periodType === 'Dia' || periodType === 'Lista' || periodType === 'Fila de Espera') {
-            text = format(currentDate, "EEE, dd 'de' MMMM", { locale: ptBR });
+            text = format(currentDate, "EEE, dd 'de' MMMM", { locale: pt });
         } else if (periodType === 'Semana') {
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
             const end = endOfWeek(currentDate, { weekStartsOn: 1 });
-            text = `${format(start, "dd MMM", { locale: ptBR })} - ${format(end, "dd MMM", { locale: ptBR })}`;
+            text = `${format(start, "dd MMM", { locale: pt })} - ${format(end, "dd MMM", { locale: pt })}`;
         } else if (periodType === 'Mês') {
-            text = format(currentDate, "MMMM yyyy", { locale: ptBR });
+            text = format(currentDate, "MMMM yyyy", { locale: pt });
         }
         return <span className="text-orange-500 font-bold text-lg capitalize px-2">{text.replace('.', '')}</span>;
     }
@@ -559,15 +553,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                                     const hour = Math.floor(totalMinutes / 60);
                                                     const minute = totalMinutes % 60;
                                                     const baseDate = col.type === 'date' ? col.data : currentDate;
-                                                    
-                                                    // Manual rounding/setting
-                                                    const clickedTime = new Date(baseDate);
-                                                    clickedTime.setHours(hour, minute, 0, 0);
-                                                    const m = clickedTime.getMinutes();
-                                                    const roundedM = Math.round(m / 30) * 30;
-                                                    clickedTime.setMinutes(roundedM, 0, 0);
-                                                    const roundedTime = clickedTime;
-
+                                                    const clickedTime = setMinutes(setHours(baseDate, hour), minute);
+                                                    const roundedTime = roundToNearestMinutes(clickedTime, { nearestTo: 30 });
                                                     const prof = col.type === 'professional' ? col.data : undefined;
                                                     setModalState({ type: 'appointment', data: { professional: prof, start: roundedTime } });
                                                 }
@@ -674,7 +661,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                     <div key={d} className="text-center py-2 text-sm font-bold text-slate-400 uppercase">{d}</div>
                                 ))}
                                 {(() => {
-                                    const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+                                    const start = startOfMonth(currentDate);
                                     const end = endOfMonth(currentDate);
                                     const startDay = start.getDay(); // 0-6
                                     const daysInMonth = eachDayOfInterval({ start, end });

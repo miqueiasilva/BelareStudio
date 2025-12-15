@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { initialAppointments, professionals } from '../../data/mockData';
 import { format, isSameMonth, addMonths } from 'date-fns';
-import ptBR from 'date-fns/locale/pt-BR';
+import { pt } from 'date-fns/locale';
 import { Wallet, ChevronDown, ChevronUp, Download, CheckCircle } from 'lucide-react';
 
 const DEFAULT_COMMISSION_RATE = 0.5; // 50%
@@ -56,7 +56,7 @@ const RemuneracoesView: React.FC = () => {
             <ChevronDown className="w-5 h-5 rotate-90" />
           </button>
           <div className="px-4 font-semibold text-slate-700 min-w-[160px] text-center capitalize">
-            {format(currentDate, 'MMMM yyyy', { locale: ptBR })}
+            {format(currentDate, 'MMMM yyyy', { locale: pt })}
           </div>
           <button onClick={handleNextMonth} className="p-2 hover:bg-slate-100 rounded-md text-slate-600">
             <ChevronDown className="w-5 h-5 -rotate-90" />

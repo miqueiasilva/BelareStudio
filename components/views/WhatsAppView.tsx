@@ -8,7 +8,7 @@ import {
 import { mockConversations } from '../../data/mockData';
 import { ChatConversation, ChatMessage } from '../../types';
 import { format } from 'date-fns';
-import ptBR from 'date-fns/locale/pt-BR';
+import { pt } from 'date-fns/locale';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import Toast, { ToastType } from '../shared/Toast';
 

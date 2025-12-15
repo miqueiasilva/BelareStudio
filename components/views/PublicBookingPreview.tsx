@@ -6,7 +6,7 @@ import {
     Search, Heart, Info, Image as ImageIcon, ChevronDown, ChevronUp, Share2, Plus, Minus, Trash2
 } from 'lucide-react';
 import { format, addDays, isSameDay, addMinutes } from 'date-fns';
-import ptBR from 'date-fns/locale/pt-BR';
+import { pt } from 'date-fns/locale';
 import { LegacyService } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -162,7 +162,7 @@ const PublicBookingPreview: React.FC = () => {
                     <div className="bg-slate-50 p-4 rounded-xl text-left mb-6 border border-slate-100">
                         <div className="flex items-center gap-3 mb-2">
                             <Calendar className="w-4 h-4 text-slate-500" />
-                            <span className="font-semibold text-slate-700">{format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}</span>
+                            <span className="font-semibold text-slate-700">{format(selectedDate, "dd 'de' MMMM", { locale: pt })}</span>
                         </div>
                         <div className="flex items-center gap-3 mb-4">
                             <Clock className="w-4 h-4 text-slate-500" />
@@ -401,7 +401,7 @@ const PublicBookingPreview: React.FC = () => {
                                                 : 'bg-slate-50 text-slate-500 border-transparent hover:bg-slate-100'
                                             }`}
                                         >
-                                            <span className="text-[10px] font-bold uppercase">{format(date, 'EEE', { locale: ptBR })}</span>
+                                            <span className="text-[10px] font-bold uppercase">{format(date, 'EEE', { locale: pt })}</span>
                                             <span className="text-xl font-bold">{format(date, 'dd')}</span>
                                         </button>
                                     )
@@ -450,7 +450,7 @@ const PublicBookingPreview: React.FC = () => {
                             </div>
                             <div className="flex justify-between text-sm">
                                 <span className="text-slate-500">Data e Hora</span>
-                                <span className="font-bold text-slate-800">{format(selectedDate, "dd/MM", { locale: ptBR })} às {selectedTime}</span>
+                                <span className="font-bold text-slate-800">{format(selectedDate, "dd/MM", { locale: pt })} às {selectedTime}</span>
                             </div>
                             <div className="flex justify-between text-sm">
                                 <span className="text-slate-500">Duração Total</span>
