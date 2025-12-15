@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import Card from '../shared/Card';
 import { format } from 'date-fns';
-import { pt } from 'date-fns/locale';
+import { ptBR } from 'date-fns/locale';
 import Toast, { ToastType } from '../shared/Toast';
 
 // --- Types ---
@@ -214,7 +214,7 @@ const CaixaView: React.FC = () => {
                     </h1>
                     <div className="flex items-center gap-2 text-sm text-slate-500 mt-1">
                         <Calendar size={14}/>
-                        <span>{format(new Date(), "dd 'de' MMMM, yyyy", { locale: pt })}</span>
+                        <span>{format(new Date(), "dd 'de' MMMM, yyyy", { locale: ptBR })}</span>
                         <span className="text-slate-300">•</span>
                         <span className={`font-bold ${session.status === 'aberto' ? 'text-green-600' : 'text-red-500'}`}>
                             {session.status === 'aberto' ? 'CAIXA ABERTO' : 'CAIXA FECHADO'}

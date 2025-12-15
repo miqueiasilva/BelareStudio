@@ -9,7 +9,7 @@ import ToggleSwitch from '../shared/ToggleSwitch';
 import { mockOnlineConfig, mockReviews, mockAnalytics } from '../../data/mockData';
 import { Review } from '../../types';
 import { format } from 'date-fns';
-import { pt } from 'date-fns/locale';
+import { ptBR } from 'date-fns/locale';
 
 // Helper for Tabs
 const TabButton = ({ id, label, active, onClick, icon: Icon }: any) => (
@@ -241,7 +241,7 @@ const AgendaOnlineView: React.FC = () => {
                                 <div className="flex justify-between items-start mb-3">
                                     <div>
                                         <p className="font-bold text-slate-800">{review.clientName}</p>
-                                        <p className="text-xs text-slate-500">{format(review.date, "dd 'de' MMMM, yyyy", {locale: pt})} • {review.serviceName}</p>
+                                        <p className="text-xs text-slate-500">{format(review.date, "dd 'de' MMMM, yyyy", {locale: ptBR})} • {review.serviceName}</p>
                                     </div>
                                     <div className="flex text-amber-400">
                                         {[...Array(5)].map((_, i) => (

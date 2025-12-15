@@ -5,7 +5,7 @@ import {
     ChevronLeft, ChevronRight, Download
 } from 'lucide-react';
 import { format, addMonths, isSameMonth } from 'date-fns';
-import { pt } from 'date-fns/locale';
+import { ptBR } from 'date-fns/locale';
 import Card from '../shared/Card';
 import SafePie from '../charts/SafePie';
 import SafeBar from '../charts/SafeBar';
@@ -103,7 +103,7 @@ const RelatoriosView: React.FC = () => {
                             <ChevronLeft size={18} />
                         </button>
                         <div className="px-4 font-bold text-slate-700 w-40 text-center capitalize">
-                            {format(currentDate, 'MMMM yyyy', { locale: pt })}
+                            {format(currentDate, 'MMMM yyyy', { locale: ptBR })}
                         </div>
                         <button onClick={handleNextMonth} className="p-2 hover:bg-white hover:shadow-sm rounded-md transition-all text-slate-600">
                             <ChevronRight size={18} />
