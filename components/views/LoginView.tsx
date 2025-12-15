@@ -47,7 +47,7 @@ const LoginView: React.FC = () => {
             const { error } = await signInWithGoogle();
             if (error) throw error;
         } catch (err: any) {
-            console.error(err);
+            console.error("Google Login Error:", err);
             setError("Erro ao conectar com Google. Verifique a configuração.");
             setIsLoading(false);
         }
@@ -60,21 +60,44 @@ const LoginView: React.FC = () => {
         setIsLoading(true);
 
         try {
+            let result;
             if (mode === 'login') {
-                const { error } = await signIn(email, password);
-                if (error) throw error;
+                result = await signIn(email, password);
             } else if (mode === 'register') {
-                const { error } = await signUp(email, password, name);
-                if (error) throw error;
+                result = await signUp(email, password, name);
+            } else if (mode === 'forgot') {
+                result = await resetPassword(email);
+            }
+
+            if (result && result.error) {
+                throw result.error;
+            }
+
+            if (mode === 'register') {
                 setSuccessMessage("Conta criada! Verifique seu e-mail para confirmar.");
             } else if (mode === 'forgot') {
-                const { error } = await resetPassword(email);
-                if (error) throw error;
                 setSuccessMessage("Link de recuperação enviado para o e-mail.");
             }
         } catch (err: any) {
-            console.error(err);
-            setError(err.message === "Invalid login credentials" ? "E-mail ou senha incorretos." : err.message);
+            console.error("Auth Error:", err);
+            // Robust error handling to prevent [object Object]
+            let msg = "Ocorreu um erro inesperado.";
+            
+            if (typeof err === 'string') {
+                msg = err;
+            } else if (err?.message) {
+                msg = err.message;
+            } else if (err?.error_description) {
+                msg = err.error_description;
+            }
+
+            // Tradução amigável de erros comuns do Supabase
+            if (msg.includes("Invalid login credentials")) msg = "E-mail ou senha incorretos.";
+            if (msg.includes("User not found")) msg = "Usuário não encontrado.";
+            if (msg.includes("weak_password")) msg = "A senha deve ter pelo menos 6 caracteres.";
+            if (msg.includes("already registered")) msg = "Este e-mail já está cadastrado.";
+
+            setError(msg);
         } finally {
             setIsLoading(false);
         }

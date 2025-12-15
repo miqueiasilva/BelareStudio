@@ -31,17 +31,15 @@ const AppContent: React.FC = () => {
   const [hash, setHash] = useState(window.location.hash);
   const [pathname, setPathname] = useState(window.location.pathname);
 
-  // Router listener
+  // Router listener simples
   useEffect(() => {
     const handleHashChange = () => setHash(window.location.hash);
     window.addEventListener('hashchange', handleHashChange);
-    // Pathname might change if Vercel redirects for reset password
     setPathname(window.location.pathname);
-    
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Handle Loading State
+  // 1. Loading State
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -53,65 +51,46 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // --- PUBLIC & AUTH ROUTES ---
-  
-  // Public Booking Page
+  // 2. Rotas Públicas (Reset de Senha e Agenda Pública)
   if (hash === '#/public-preview') {
     return <PublicBookingPreview />;
   }
 
-  // Password Reset Flow (Priority over login)
   if (pathname === '/reset-password' || hash === '#/reset-password') {
     return <ResetPasswordView />;
   }
 
-  // --- AUTHENTICATION CHECK ---
-  
+  // 3. Verificação de Autenticação (Ponto Crítico)
+  // Se não tiver usuário, exibe Login. Simples assim.
   if (!user) {
     return <LoginView />;
   }
 
-  // --- PROTECTED APP ---
-
+  // 4. Aplicação Protegida (Usuário Logado)
   const handleAddTransaction = (t: FinancialTransaction) => {
     setTransactions(prev => [t, ...prev]);
   };
 
   const renderView = () => {
     switch (currentView) {
-      case 'dashboard':
-        return <DashboardView onNavigate={setCurrentView} />;
-      case 'agenda':
-        return <AtendimentosView onAddTransaction={handleAddTransaction} />;
-      case 'agenda_online':
-        return <AgendaOnlineView />;
-      case 'whatsapp':
-        return <WhatsAppView />;
-      case 'financeiro':
-        return <FinanceiroView transactions={transactions} onAddTransaction={handleAddTransaction} />;
-      case 'clientes':
-        return <ClientesView />;
-      case 'relatorios':
-        return <RelatoriosView />;
-      case 'configuracoes':
-        return <ConfiguracoesView />;
-      case 'remuneracoes':
-        return <RemuneracoesView />;
-      case 'vendas':
-        return <VendasView onAddTransaction={handleAddTransaction} />;
-      case 'comandas':
-        return <ComandasView onAddTransaction={handleAddTransaction} />;
-      case 'caixa':
-        return <CaixaView />;
-      case 'produtos':
-        return <ProdutosView />;
-      case 'servicos':
-        return <ServicosView />;
+      case 'dashboard': return <DashboardView onNavigate={setCurrentView} />;
+      case 'agenda': return <AtendimentosView onAddTransaction={handleAddTransaction} />;
+      case 'agenda_online': return <AgendaOnlineView />;
+      case 'whatsapp': return <WhatsAppView />;
+      case 'financeiro': return <FinanceiroView transactions={transactions} onAddTransaction={handleAddTransaction} />;
+      case 'clientes': return <ClientesView />;
+      case 'relatorios': return <RelatoriosView />;
+      case 'configuracoes': return <ConfiguracoesView />;
+      case 'remuneracoes': return <RemuneracoesView />;
+      case 'vendas': return <VendasView onAddTransaction={handleAddTransaction} />;
+      case 'comandas': return <ComandasView onAddTransaction={handleAddTransaction} />;
+      case 'caixa': return <CaixaView />;
+      case 'produtos': return <ProdutosView />;
+      case 'servicos': return <ServicosView />;
       case 'public_preview':
         window.location.hash = '/public-preview';
         return null;
-      default:
-        return <DashboardView onNavigate={setCurrentView} />;
+      default: return <DashboardView onNavigate={setCurrentView} />;
     }
   };
 
