@@ -1,6 +1,5 @@
-
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { supabase } from '../services/supabaseClient';
+import { supabase, isConfigured } from '../services/supabaseClient';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 
 // Extended User type to include role/papel
@@ -31,6 +30,8 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   // Designed to NOT crash if the table doesn't exist yet
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
+      if (!isConfigured) throw new Error("Not configured");
+
       const { data, error } = await supabase
         .from('profiles')
         .select('full_name, papel, avatar_url')
@@ -64,6 +65,11 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
 
     // 1. Check active session
     const getInitialSession = async () => {
+      if (!isConfigured) {
+        if (mounted) setLoading(false);
+        return;
+      }
+
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user && mounted) {
@@ -80,28 +86,34 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
     getInitialSession();
 
     // 2. Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        const appUser = await fetchProfile(session.user);
-        if (mounted) setUser(appUser);
-      } else {
-        if (mounted) setUser(null);
-      }
-      
-      if (mounted) setLoading(false);
-    });
+    let subscription: any = null;
+    if (isConfigured) {
+      const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (session?.user) {
+          const appUser = await fetchProfile(session.user);
+          if (mounted) setUser(appUser);
+        } else {
+          if (mounted) setUser(null);
+        }
+        
+        if (mounted) setLoading(false);
+      });
+      subscription = data.subscription;
+    }
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+      if (subscription) subscription.unsubscribe();
     };
   }, []);
 
   const signIn = async (email: string, password: string) => {
+    if (!isConfigured) return { error: { message: "Sistema não configurado (Supabase URL/Key ausentes)." } };
     return await supabase.auth.signInWithPassword({ email, password });
   };
 
   const signUp = async (email: string, password: string, name: string) => {
+    if (!isConfigured) return { error: { message: "Sistema não configurado." } };
     return await supabase.auth.signUp({ 
         email, 
         password,
@@ -112,6 +124,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   };
 
   const signInWithGoogle = async () => {
+    if (!isConfigured) return { error: { message: "Sistema não configurado." } };
     return await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -121,17 +134,19 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
+    if (!isConfigured) return { error: { message: "Sistema não configurado." } };
     return await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
     });
   };
 
   const updatePassword = async (newPassword: string) => {
+    if (!isConfigured) return { error: { message: "Sistema não configurado." } };
     return await supabase.auth.updateUser({ password: newPassword });
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    if (isConfigured) await supabase.auth.signOut();
     setUser(null);
   };
 
