@@ -8,7 +8,7 @@ import {
     ShoppingCart, FileText, Calendar as CalendarIcon, Share2, Bell, 
     RotateCcw, ChevronDown, List, Clock, Filter, DollarSign, CheckCircle, Circle 
 } from 'lucide-react';
-import { ptBR } from 'date-fns/locale';
+import { pt } from 'date-fns/locale';
 
 import AppointmentModal from '../modals/AppointmentModal';
 import BlockTimeModal from '../modals/BlockTimeModal';
@@ -228,7 +228,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             const days = eachDayOfInterval({ start, end });
             return days.map(day => ({
                 id: day.toISOString(),
-                title: format(day, 'EEE', { locale: ptBR }),
+                title: format(day, 'EEE', { locale: pt }),
                 subtitle: format(day, 'dd/MM'),
                 type: 'date',
                 data: day
@@ -407,13 +407,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const DateDisplay = () => {
         let text = "";
         if (periodType === 'Dia' || periodType === 'Lista' || periodType === 'Fila de Espera') {
-            text = format(currentDate, "EEE, dd 'de' MMMM", { locale: ptBR });
+            text = format(currentDate, "EEE, dd 'de' MMMM", { locale: pt });
         } else if (periodType === 'Semana') {
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
             const end = endOfWeek(currentDate, { weekStartsOn: 1 });
-            text = `${format(start, "dd MMM", { locale: ptBR })} - ${format(end, "dd MMM", { locale: ptBR })}`;
+            text = `${format(start, "dd MMM", { locale: pt })} - ${format(end, "dd MMM", { locale: pt })}`;
         } else if (periodType === 'Mês') {
-            text = format(currentDate, "MMMM yyyy", { locale: ptBR });
+            text = format(currentDate, "MMMM yyyy", { locale: pt });
         }
         return <span className="text-orange-500 font-bold text-lg capitalize px-2">{text.replace('.', '')}</span>;
     }

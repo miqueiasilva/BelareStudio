@@ -6,7 +6,7 @@ import { getDashboardInsight } from '../../services/geminiService';
 import { initialAppointments, professionals } from '../../data/mockData';
 import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, ArrowRight, Clock, Globe } from 'lucide-react';
 import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { pt } from 'date-fns/locale';
 import { safe, toNumber } from '../../utils/normalize';
 import SafePie from '../charts/SafePie';
 import SafeBar from '../charts/SafeBar';
@@ -193,7 +193,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                 <div>
                     <div className="flex items-center gap-2 text-slate-500 text-sm mb-1">
                         <Calendar className="w-4 h-4" />
-                        <span className="capitalize">{format(today, "EEEE, dd 'de' MMMM", { locale: ptBR })}</span>
+                        <span className="capitalize">{format(today, "EEEE, dd 'de' MMMM", { locale: pt })}</span>
                     </div>
                     <h1 className="text-2xl md:text-3xl font-bold text-slate-800">
                         Bom dia, <span className="text-orange-500">{userName}!</span>

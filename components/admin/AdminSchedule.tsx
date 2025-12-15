@@ -5,7 +5,7 @@ import Card from '../shared/Card';
 import { LegacyAppointment as Appointment, LegacyService as Service, LegacyProfessional as Professional, Client, AppointmentStatus } from '../../types';
 import { Calendar, Clock, User, Scissors, DollarSign, Tag, Info, X } from 'lucide-react';
 import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { pt } from 'date-fns/locale';
 
 // Mock Data
 // FIX: Update mock client data to use 'nome' instead of 'name' and add 'consent' property to match the Client type.
@@ -121,7 +121,7 @@ const AppointmentModal = ({ appointment, onClose }: { appointment: Appointment; 
 
 const AdminSchedule: React.FC = () => {
     const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
-    const todayStr = format(today, "EEEE, dd 'de' MMMM", { locale: ptBR });
+    const todayStr = format(today, "EEEE, dd 'de' MMMM", { locale: pt });
 
     return (
         <Card title="Agenda Inteligente do Dia" icon={<Calendar className="w-5 h-5" />}>

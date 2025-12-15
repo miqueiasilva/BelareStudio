@@ -3,7 +3,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { LegacyAppointment, AppointmentStatus } from '../../types';
 import { Calendar, Tag, DollarSign, Send, Edit, Trash2, User, MoreVertical, X } from 'lucide-react';
 import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { pt } from 'date-fns/locale';
 import StatusUpdatePopover from './StatusUpdatePopover';
 
 interface AppointmentDetailPopoverProps {
@@ -122,7 +122,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                 <div className="flex items-start gap-3 text-sm text-slate-600">
                     <Calendar size={16} className="mt-0.5 text-slate-400" />
                     <div>
-                        {format(appointment.start, "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                        {format(appointment.start, "EEEE, dd 'de' MMMM", { locale: pt })}
                         <br/>
                         {format(appointment.start, "HH:mm")} até {format(appointment.end, "HH:mm")}
                     </div>
