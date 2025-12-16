@@ -16,7 +16,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "recharts": "^2.12.0",
-    "lucide-react": "^0.344.0",
+    "lucide-react": "^0.469.0",
     "date-fns": "^3.3.1",
     "react-toggle-switch": "^3.0.4",
     "@supabase/supabase-js": "^2.39.7",
@@ -25,6 +25,10 @@
     "@fullcalendar/interaction": "^6.1.10",
     "@fullcalendar/core": "^6.1.10",
     "@google/genai": "^0.2.0"
+  },
+  "overrides": {
+    "react": "$react",
+    "react-dom": "$react-dom"
   },
   "devDependencies": {
     "@types/react": "^18.2.64",
