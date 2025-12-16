@@ -1,13 +1,13 @@
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 
 // Helper to get env vars safely using Vite standard
 const getEnv = (key: string): string => {
   // @ts-ignore
-  return (import.meta as any).env ? (import.meta as any).env[key] || '' : '';
+  return (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env[key] : '';
 };
 
 // Access environment variables directly via Vite
-// Fallback to local storage for manual configuration via EnvGate
+// Fallback to local storage for manual configuration via EnvGate is preserved for functionality
 const envUrl = getEnv('VITE_SUPABASE_URL');
 const envKey = getEnv('VITE_SUPABASE_ANON_KEY');
 
@@ -20,10 +20,10 @@ const supabaseAnonKey = envKey || localKey;
 export const isConfigured = !!(supabaseUrl && supabaseAnonKey);
 
 // Initialize client ONLY if configured to prevent runtime crash on load
-// We cast as SupabaseClient to satisfy TypeScript usage in other files
-export const supabase = (isConfigured 
+// Explicitly typed as any to allow null check downstream without strict SupabaseClient type enforcement crashing the build if types differ
+export const supabase = isConfigured 
   ? createClient(supabaseUrl!, supabaseAnonKey!) 
-  : null) as unknown as SupabaseClient;
+  : null;
 
 // Helpers for the EnvGate component
 export const saveSupabaseConfig = (url: string, key: string) => {
