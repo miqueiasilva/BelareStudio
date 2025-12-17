@@ -1,17 +1,27 @@
-
 import React, { useState, useMemo } from 'react';
 import { services, professionals, mockOnlineConfig } from '../../data/mockData';
 import { 
     ChevronLeft, Calendar, Clock, Check, MapPin, Star, 
-    Search, Heart, Info, Image as ImageIcon, ChevronDown, ChevronUp, Share2, Plus, Minus, Trash2
+    Search, Heart, Info, Image as ImageIcon, ChevronDown, ChevronUp, Share2, Plus, Minus, Trash2, Loader2
 } from 'lucide-react';
 import { format, addDays, isSameDay, addMinutes } from 'date-fns';
 import { pt } from 'date-fns/locale';
 import { LegacyService } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../services/supabaseClient';
 
 // --- Types for the Wizard ---
 type Step = 'service' | 'professional' | 'datetime' | 'form' | 'success';
+
+// Ensure consistent ID mapping with Admin Panel
+const PROFISSIONAIS_MAP: Record<number, string> = {
+    1: 'Jacilene Félix',
+    2: 'Graziela Oliveira',
+    3: 'Jéssica Félix',
+    4: 'Glezia',
+    5: 'Elda Priscila',
+    6: 'Herlon'
+};
 
 const PublicBookingPreview: React.FC = () => {
     const [step, setStep] = useState<Step>('service');
@@ -22,6 +32,7 @@ const PublicBookingPreview: React.FC = () => {
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
     const [clientForm, setClientForm] = useState({ name: '', phone: '', notes: '' });
     const [searchTerm, setSearchTerm] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
     const { user } = useAuth();
     
     // Accordion state for categories
@@ -105,11 +116,62 @@ const PublicBookingPreview: React.FC = () => {
         );
     };
 
+    const handleConfirmBooking = async () => {
+        if (!clientForm.name || !clientForm.phone || !selectedTime) return;
+        setIsSaving(true);
+
+        try {
+            // 1. Determine Resource ID (Professional Column)
+            // If user chose "Any" (-1) or null, default to column 1 (Jacilene) or distribute.
+            // Here we default to 1 to ensure it appears on the board.
+            const resourceId = (selectedProfessional && selectedProfessional > 0) ? selectedProfessional : 1;
+            
+            // 2. Get Professional Name for display
+            const professionalName = PROFISSIONAIS_MAP[resourceId] || 'Jacilene Félix';
+
+            // 3. Construct Date
+            const [hours, minutes] = selectedTime.split(':').map(Number);
+            const startDateTime = new Date(selectedDate);
+            startDateTime.setHours(hours, minutes, 0, 0);
+
+            // 4. Construct Payload
+            const serviceNames = selectedServicesList.map(s => s.name).join(' + ');
+            const notes = `WhatsApp: ${clientForm.phone}. ${clientForm.notes ? `Obs: ${clientForm.notes}` : ''}`;
+
+            const payload = {
+                client_name: clientForm.name,
+                service_name: serviceNames,
+                professional_name: professionalName,
+                resource_id: resourceId,
+                date: startDateTime.toISOString(),
+                value: totalStats.price,
+                status: 'agendado', // Default status for online bookings
+                // Store extra info in notes if DB doesn't have specific columns yet
+                notes: notes 
+            };
+
+            console.log('Sending Public Booking:', payload);
+
+            const { error } = await supabase.from('appointments').insert([payload]);
+
+            if (error) throw error;
+
+            setStep('success');
+        } catch (error) {
+            console.error('Error creating appointment:', error);
+            alert('Erro ao realizar agendamento. Por favor, tente novamente ou entre em contato pelo WhatsApp.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const handleNext = () => {
         if (step === 'service' && selectedServiceIds.length > 0) setStep('professional');
         else if (step === 'professional') setStep('datetime'); // Professional is optional/any
         else if (step === 'datetime' && selectedTime) setStep('form');
-        else if (step === 'form' && clientForm.name && clientForm.phone) setStep('success');
+        else if (step === 'form' && clientForm.name && clientForm.phone) {
+            handleConfirmBooking();
+        }
     };
 
     const handleBack = () => {
@@ -150,13 +212,13 @@ const PublicBookingPreview: React.FC = () => {
         return (
             <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 font-sans relative">
                 <BackToAdminButton />
-                <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-md w-full">
+                <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-md w-full animate-in zoom-in-95 duration-300">
                     <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
                         <Check className="w-10 h-10 text-green-600" />
                     </div>
                     <h2 className="text-2xl font-bold text-slate-800 mb-2">Agendamento Confirmado!</h2>
                     <p className="text-slate-600 mb-6">
-                        Obrigado, <b>{clientForm.name}</b>. Seus serviços estão agendados com <b>{profObj ? profObj.name : 'Profissional Disponível'}</b>.
+                        Obrigado, <b>{clientForm.name}</b>. Seus serviços estão agendados com <b>{profObj ? profObj.name : 'Nossa Equipe'}</b>.
                     </p>
                     
                     <div className="bg-slate-50 p-4 rounded-xl text-left mb-6 border border-slate-100">
@@ -232,7 +294,7 @@ const PublicBookingPreview: React.FC = () => {
                     ) : (
                         /* Navigation Header (Steps 2-4) */
                         <div className="flex items-center justify-between py-2 mt-8 md:mt-0">
-                            <button onClick={handleBack} className="p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-full">
+                            <button onClick={handleBack} disabled={isSaving} className="p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-full disabled:opacity-50">
                                 <ChevronLeft />
                             </button>
                             <span className="font-semibold text-slate-800">
@@ -513,11 +575,18 @@ const PublicBookingPreview: React.FC = () => {
                             onClick={handleNext}
                             disabled={
                                 (step === 'datetime' && !selectedTime) || 
-                                (step === 'form' && (!clientForm.name || !clientForm.phone))
+                                (step === 'form' && (!clientForm.name || !clientForm.phone)) ||
+                                isSaving
                             }
-                            className="bg-slate-800 text-white font-bold py-3 px-6 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-900 transition flex items-center justify-center gap-2 shadow-lg"
+                            className="bg-slate-800 text-white font-bold py-3 px-6 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-900 transition flex items-center justify-center gap-2 shadow-lg min-w-[140px]"
                         >
-                            {step === 'form' ? 'Confirmar' : 'Continuar'} <ChevronDown className="rotate-[-90deg] w-4 h-4"/>
+                            {isSaving ? (
+                                <Loader2 className="animate-spin w-5 h-5" />
+                            ) : (
+                                <>
+                                    {step === 'form' ? 'Confirmar' : 'Continuar'} <ChevronDown className="rotate-[-90deg] w-4 h-4"/>
+                                </>
+                            )}
                         </button>
                     </div>
                 </div>
