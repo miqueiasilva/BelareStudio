@@ -1,23 +1,24 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { initialAppointments, mockTransactions, clients, professionals } from "../data/mockData";
 import { format, isSameDay } from "date-fns";
 
 // --- Configuration ---
+// Função segura para obter a chave de API em diferentes ambientes (Vite, Next, Node, Vanilla)
 const getApiKey = () => {
     try {
-        // @ts-ignore
-        if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) {
-            // @ts-ignore
-            return import.meta.env.VITE_API_KEY;
-        }
-        // Fallback for non-Vite environments or direct process access
         // @ts-ignore
         if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
             // @ts-ignore
             return process.env.API_KEY;
         }
+        // @ts-ignore
+        if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) {
+            // @ts-ignore
+            return import.meta.env.VITE_API_KEY;
+        }
     } catch (e) {
-        console.warn("Chave de API do Gemini não detectada.");
+        console.warn("Ambiente não suporta acesso a variáveis de ambiente padrão.");
     }
     return null;
 };

@@ -1,40 +1,69 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Helper seguro para ler variáveis de ambiente no Vite
-const getEnvVar = (key: string): string | undefined => {
+// Helper to safely get env vars from various sources
+const getEnvVar = (key: string): string | null => {
+  // 1. Try Vite's import.meta.env
   try {
     // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env) {
+    if (import.meta.env && import.meta.env[key]) {
       // @ts-ignore
       return import.meta.env[key];
     }
-  } catch (e) {
-    console.warn('Ambiente não suporta import.meta.env ou variável ausente');
-  }
-  return undefined;
+  } catch (e) {}
+
+  // 2. Try window.__ENV__ (common in docker/preview builds)
+  try {
+    // @ts-ignore
+    if (typeof window !== 'undefined' && window.__ENV__ && window.__ENV__[key]) {
+      // @ts-ignore
+      return window.__ENV__[key];
+    }
+  } catch (e) {}
+
+  // 3. Try LocalStorage (User override)
+  try {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem(key);
+    }
+  } catch (e) {}
+
+  return null;
 };
 
 const supabaseUrl = getEnvVar('VITE_SUPABASE_URL');
 const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY');
 
-// Verifica se a configuração está completa
 export const isConfigured = !!(supabaseUrl && supabaseAnonKey);
 
-// Inicializa o cliente apenas se configurado corretamente
-// Se não houver chaves, 'supabase' será null, permitindo fallback para modo Mock/Demo
-export const supabase = isConfigured 
-  ? createClient(supabaseUrl as string, supabaseAnonKey as string) 
-  : null;
+// We export a client if configured, otherwise null (cast as Client to satisfy TS imports downstream)
+// The EnvGate component prevents usage of this null client.
+export const supabase = (isConfigured 
+  ? createClient(supabaseUrl!, supabaseAnonKey!, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      }
+    }) 
+  : null) as unknown as SupabaseClient;
 
-// Funções legadas mantidas para compatibilidade de interface
 export const saveSupabaseConfig = (url: string, key: string) => {
-  console.warn("A configuração manual foi desativada. Use variáveis de ambiente (arquivo .env).");
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('VITE_SUPABASE_URL', url);
+    localStorage.setItem('VITE_SUPABASE_ANON_KEY', key);
+    window.location.reload();
+  }
 };
 
 export const clearSupabaseConfig = () => {
-    // No-op
+    if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('VITE_SUPABASE_URL');
+        localStorage.removeItem('VITE_SUPABASE_ANON_KEY');
+        window.location.reload();
+    }
 }
 
+// Helper to check connection status
 export async function testConnection() {
     if (!isConfigured || !supabase) return false;
     try {

@@ -13,7 +13,7 @@ const EnvGate: React.FC<EnvGateProps> = ({ children }) => {
 
   useEffect(() => {
     // Log para depuração em produção se necessário
-    if (!isConfigured) console.log('EnvGate: Verificando configuração do Supabase...');
+    if (!isConfigured) console.log('EnvGate: Aguardando configuração do Supabase...');
   }, []);
 
   if (isConfigured) {

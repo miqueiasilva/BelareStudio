@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ViewState, FinancialTransaction } from './types';
+import EnvGate from './components/EnvGate';
 
 // Layout & Views
 import MainLayout from './components/layout/MainLayout';
@@ -31,15 +32,17 @@ const AppContent: React.FC = () => {
   const [hash, setHash] = useState(window.location.hash);
   const [pathname, setPathname] = useState(window.location.pathname);
 
-  // Router listener simples
+  // Router listener
   useEffect(() => {
     const handleHashChange = () => setHash(window.location.hash);
     window.addEventListener('hashchange', handleHashChange);
+    // Pathname might change if Vercel redirects for reset password
     setPathname(window.location.pathname);
+    
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // 1. Loading State
+  // Handle Loading State
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -51,46 +54,65 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // 2. Rotas Públicas (Reset de Senha e Agenda Pública)
+  // --- PUBLIC & AUTH ROUTES ---
+  
+  // Public Booking Page
   if (hash === '#/public-preview') {
     return <PublicBookingPreview />;
   }
 
+  // Password Reset Flow (Priority over login)
   if (pathname === '/reset-password' || hash === '#/reset-password') {
     return <ResetPasswordView />;
   }
 
-  // 3. Verificação de Autenticação (Ponto Crítico para Login)
-  // Se não tiver usuário, exibe Login.
+  // --- AUTHENTICATION CHECK ---
+  
   if (!user) {
     return <LoginView />;
   }
 
-  // 4. Aplicação Protegida (Usuário Logado)
+  // --- PROTECTED APP ---
+
   const handleAddTransaction = (t: FinancialTransaction) => {
     setTransactions(prev => [t, ...prev]);
   };
 
   const renderView = () => {
     switch (currentView) {
-      case 'dashboard': return <DashboardView onNavigate={setCurrentView} />;
-      case 'agenda': return <AtendimentosView onAddTransaction={handleAddTransaction} />;
-      case 'agenda_online': return <AgendaOnlineView />;
-      case 'whatsapp': return <WhatsAppView />;
-      case 'financeiro': return <FinanceiroView transactions={transactions} onAddTransaction={handleAddTransaction} />;
-      case 'clientes': return <ClientesView />;
-      case 'relatorios': return <RelatoriosView />;
-      case 'configuracoes': return <ConfiguracoesView />;
-      case 'remuneracoes': return <RemuneracoesView />;
-      case 'vendas': return <VendasView onAddTransaction={handleAddTransaction} />;
-      case 'comandas': return <ComandasView onAddTransaction={handleAddTransaction} />;
-      case 'caixa': return <CaixaView />;
-      case 'produtos': return <ProdutosView />;
-      case 'servicos': return <ServicosView />;
+      case 'dashboard':
+        return <DashboardView onNavigate={setCurrentView} />;
+      case 'agenda':
+        return <AtendimentosView onAddTransaction={handleAddTransaction} />;
+      case 'agenda_online':
+        return <AgendaOnlineView />;
+      case 'whatsapp':
+        return <WhatsAppView />;
+      case 'financeiro':
+        return <FinanceiroView transactions={transactions} onAddTransaction={handleAddTransaction} />;
+      case 'clientes':
+        return <ClientesView />;
+      case 'relatorios':
+        return <RelatoriosView />;
+      case 'configuracoes':
+        return <ConfiguracoesView />;
+      case 'remuneracoes':
+        return <RemuneracoesView />;
+      case 'vendas':
+        return <VendasView onAddTransaction={handleAddTransaction} />;
+      case 'comandas':
+        return <ComandasView onAddTransaction={handleAddTransaction} />;
+      case 'caixa':
+        return <CaixaView />;
+      case 'produtos':
+        return <ProdutosView />;
+      case 'servicos':
+        return <ServicosView />;
       case 'public_preview':
         window.location.hash = '/public-preview';
         return null;
-      default: return <DashboardView onNavigate={setCurrentView} />;
+      default:
+        return <DashboardView onNavigate={setCurrentView} />;
     }
   };
 
@@ -103,8 +125,10 @@ const AppContent: React.FC = () => {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <EnvGate>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </EnvGate>
   );
 }
