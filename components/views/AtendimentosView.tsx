@@ -158,9 +158,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     // --- State Management ---
     const [currentDate, setCurrentDate] = useState(new Date());
     
-    // 1. Initialize empty to respect "No Fake Data" rule
+    // Start empty, fetch real data from Supabase
     const [appointments, setAppointments] = useState<LegacyAppointment[]>([]);
-    
     const [isLoadingData, setIsLoadingData] = useState(false);
     const [visibleProfIds, setVisibleProfIds] = useState<number[]>(mockProfessionals.map(p => p.id));
     
@@ -194,7 +193,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const fetchAppointments = async () => {
         setIsLoadingData(true);
         try {
-            // 2. Fetch real data from Supabase 'appointments' table
             const { data, error } = await supabase
                 .from('appointments')
                 .select('*');
@@ -205,22 +203,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             }
 
             if (data && data.length > 0) {
-                // Map flat DB rows to nested UI objects
                 const mappedAppointments: LegacyAppointment[] = data.map(row => {
-                    
-                    // Attempt to match professional by name to keep avatar/color consistent if possible
                     const profName = row.professional_name || 'Profissional';
                     const matchedProf = mockProfessionals.find(p => p.name === profName) || {
-                        id: 0, // Fallback ID
+                        id: 0,
                         name: profName,
                         avatarUrl: `https://ui-avatars.com/api/?name=${profName}&background=random`
                     };
 
-                    // Handle date parsing (supports ISO strings)
-                    const startTime = new Date(row.start_time || row.date); // 'date' is fallback legacy column
+                    const startTime = new Date(row.date || row.start_time); 
                     const endTime = row.end_time 
                         ? new Date(row.end_time) 
-                        : new Date(startTime.getTime() + 30 * 60000); // Default 30 min duration if no end time
+                        : new Date(startTime.getTime() + 30 * 60000);
 
                     return {
                         id: row.id,
@@ -245,7 +239,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 });
                 setAppointments(mappedAppointments);
             } else {
-                setAppointments([]); // Ensure it's empty if no data
+                setAppointments([]);
             }
         } catch (e) {
             console.error("Unexpected error fetching appointments:", e);
@@ -410,42 +404,54 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     // --- SAVE (CREATE/UPDATE) LOGIC - Text Based ---
     const handleSaveAppointment = async (app: LegacyAppointment) => {
-        
-        setModalState(null);
-
-        // 3. Prepare Payload with Text Columns
-        const payload = {
-            client_name: app.client?.nome, // Sending Name as Text
-            service_name: app.service.name, // Sending Service Name as Text
-            professional_name: app.professional.name, // Sending Prof Name
-            start_time: app.start.toISOString(),
-            end_time: app.end.toISOString(),
-            status: 'agendado', // Default to 'agendado' on create
-            notes: app.notas,
-            value: app.service.price,
-            // Fallback for legacy schemas
-            date: app.start.toISOString(), 
-        };
+        setModalState(null); // Close modal first
 
         try {
-            // Check if it's an update (ID exists and is not a temp timestamp)
-            const isUpdate = app.id && app.id < 1000000000000; 
+            // 1. Construct ISO Date robustly
+            // The modal returns 'app.start' as a Date object correctly.
+            const dataIso = app.start.toISOString();
+            const dataEndIso = app.end.toISOString();
 
-            if (isUpdate) {
-                const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
-                if (error) throw error;
+            // 2. Prepare Payload with correct column mapping
+            const payload = {
+                client_name: app.client?.nome || 'Cliente Sem Nome',
+                service_name: app.service.name,
+                professional_name: app.professional.name,
+                date: dataIso, // 'timestamptz'
+                start_time: dataIso, // Optional Legacy
+                end_time: dataEndIso, // Optional Legacy
+                status: app.status || 'agendado',
+                value: app.service.price || 0,
+                notes: app.notas
+            };
+
+            console.log('Enviando agendamento para Supabase:', payload);
+
+            // 3. Check for ID to decide Insert vs Update
+            if (app.id && typeof app.id === 'number' && app.id < 1000000000000) {
+                 // Update (assuming real DB ID)
+                 const { error } = await supabase
+                    .from('appointments')
+                    .update(payload)
+                    .eq('id', app.id);
+                 
+                 if (error) throw error;
             } else {
-                const { error } = await supabase.from('appointments').insert([payload]);
+                // Insert New
+                const { error } = await supabase
+                    .from('appointments')
+                    .insert([payload]);
+
                 if (error) throw error;
             }
 
-            // Refresh data from DB immediately
+            // 4. Refresh Data
             await fetchAppointments(); 
             showToast('Agendamento salvo com sucesso!', 'success');
 
         } catch (error: any) {
-            console.error('Supabase Save Error:', error);
-            showToast(`Erro ao salvar: ${error.message || 'Verifique a conexão'}`, 'error');
+            console.error('Erro ao salvar no banco:', error);
+            alert(`Erro ao salvar no banco: ${error.message || 'Verifique sua conexão.'}`);
         }
     };
     
@@ -473,8 +479,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             await supabase.from('appointments').update({ status: newStatus }).eq('id', appointmentId);
             showToast(`Status atualizado para ${newStatus.replace('_', ' ')}`, 'success');
         } catch (e) {
-            // Revert on error
-            fetchAppointments();
+            fetchAppointments(); // Revert on error
         }
     };
     
