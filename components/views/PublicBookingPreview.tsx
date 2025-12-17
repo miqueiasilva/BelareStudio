@@ -237,16 +237,22 @@ const PublicBookingPreview: React.FC = () => {
                             </div>
                         </div>
                     ) : (
-                        <div className="flex items-center justify-between">
-                            <button onClick={handleBack} className="p-2 -ml-2 hover:bg-slate-100 rounded-full text-slate-600 transition">
-                                <ChevronLeft />
+                        <div className="flex items-center justify-between w-full">
+                            <button 
+                                onClick={handleBack} 
+                                className="flex items-center gap-1 text-slate-600 hover:text-orange-600 transition-colors py-2 pr-3 -ml-2 rounded-lg group"
+                            >
+                                <div className="bg-slate-100 group-hover:bg-orange-100 rounded-full p-1.5 transition-colors">
+                                    <ChevronLeft size={16} />
+                                </div>
+                                <span className="font-semibold text-sm">Voltar</span>
                             </button>
-                            <span className="font-semibold text-slate-800">
+                            <span className="font-bold text-slate-800 text-sm md:text-base hidden xs:block">
                                 {step === 'professional' && 'Escolha o Profissional'}
                                 {step === 'datetime' && 'Data e Horário'}
                                 {step === 'form' && 'Seus Dados'}
                             </span>
-                            <div className="w-8"></div> {/* Spacer */}
+                            <div className="w-16"></div> {/* Spacer */}
                         </div>
                     )}
                     
