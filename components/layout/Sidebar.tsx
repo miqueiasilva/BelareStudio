@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { 
     Home, Calendar, MessageSquare, ShoppingCart, ClipboardList, ArrowRightLeft, Archive,
@@ -42,8 +41,27 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         onNavigate(viewId as ViewState);
     };
 
-    const handleLogout = () => {
-        signOut();
+    const handleLogout = async () => {
+        try {
+            await signOut();
+            
+            // Salvar configuração do Supabase antes de limpar (se existir via EnvGate)
+            const sbUrl = localStorage.getItem('VITE_SUPABASE_URL');
+            const sbKey = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
+            
+            localStorage.clear();
+            
+            // Restaurar config para não bloquear o app
+            if (sbUrl && sbKey) {
+                localStorage.setItem('VITE_SUPABASE_URL', sbUrl);
+                localStorage.setItem('VITE_SUPABASE_ANON_KEY', sbKey);
+            }
+
+            // Forçar recarregamento para garantir estado limpo
+            window.location.href = '/';
+        } catch (error) {
+            console.error("Erro ao realizar logout:", error);
+        }
     };
 
     // Filter function based on permissions
@@ -115,7 +133,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                     </div>
                     <button 
                         onClick={handleLogout}
-                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors group" 
+                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors group cursor-pointer" 
                         title="Sair do Sistema"
                     >
                         <LogOut size={20} className="group-hover:scale-110 transition-transform" />
