@@ -1,63 +1,61 @@
 import React, { useState, useMemo } from 'react';
-import { services, mockOnlineConfig } from '../../data/mockData';
+import { services, professionals, mockOnlineConfig } from '../../data/mockData';
 import { 
-    ChevronLeft, Calendar, Clock, Check, Star, 
-    Search, Info, Image as ImageIcon, ChevronDown, ChevronUp, Share2, 
-    Loader2, MapPin, Phone, User, Mail, Heart
+    ChevronLeft, Calendar, Clock, Check, MapPin, Star, 
+    Search, Heart, Info, Image as ImageIcon, ChevronDown, ChevronUp, Share2, Plus, Minus, Trash2, Loader2, Mail, Phone, User
 } from 'lucide-react';
-import { format, addDays, isSameDay } from 'date-fns';
+import { format, addDays, isSameDay, addMinutes } from 'date-fns';
 import { pt } from 'date-fns/locale';
-import { supabase } from '../../services/supabaseClient';
 import { LegacyService } from '../../types';
+import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../services/supabaseClient';
 
-// --- Configuration ---
-
-// Lista fixa de profissionais para garantir o mapeamento correto do resource_id no banco
-const PROFISSIONAIS = [
-  { id: '1', title: 'Jacilene Félix', avatar: 'https://i.pravatar.cc/150?img=1', role: 'Especialista' },
-  { id: '2', title: 'Graziela Oliveira', avatar: 'https://i.pravatar.cc/150?img=5', role: 'Especialista' },
-  { id: '3', title: 'Jéssica Félix', avatar: 'https://i.pravatar.cc/150?img=9', role: 'Designer' },
-  { id: '4', title: 'Glezia', avatar: 'https://i.pravatar.cc/150?img=4', role: 'Manicure' },
-  { id: '5', title: 'Elda Priscila', avatar: 'https://i.pravatar.cc/150?img=12', role: 'Esteticista' },
-  { id: '6', title: 'Herlon', avatar: 'https://i.pravatar.cc/150?img=11', role: 'Cabeleireiro' }
-];
-
+// --- Types for the Wizard ---
 type Step = 'service' | 'professional' | 'datetime' | 'form' | 'success';
 
+// Ensure consistent ID mapping with Admin Panel
+const PROFISSIONAIS_MAP: Record<number, string> = {
+    1: 'Jacilene Félix',
+    2: 'Graziela Oliveira',
+    3: 'Jéssica Félix',
+    4: 'Glezia',
+    5: 'Elda Priscila',
+    6: 'Herlon'
+};
+
 const PublicBookingPreview: React.FC = () => {
-    // --- State ---
     const [step, setStep] = useState<Step>('service');
-    
-    // Selection State
+    // Changed to array to support multiple services
     const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
-    const [selectedProfessionalId, setSelectedProfessionalId] = useState<string | null>(null);
+    const [selectedProfessional, setSelectedProfessional] = useState<number | null>(null);
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
     
-    // Client Form State
-    const [clientForm, setClientForm] = useState({ 
-        name: '', 
-        phone: '', 
-        email: '', 
-        notes: '' 
-    });
-
-    // UI State
+    // Updated Form State to include Email
+    const [clientForm, setClientForm] = useState({ name: '', phone: '', email: '', notes: '' });
+    
     const [searchTerm, setSearchTerm] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    const { user } = useAuth();
+    
+    // Accordion state for categories
     const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
         'Mais Agendados': true,
         'Sobrancelhas': true,
-        'Geral': true
+        'Cílios': false,
+        'Estética': false,
+        'Geral': false
     });
 
-    // --- Derived Data ---
-
+    // Helper to get objects from IDs
     const selectedServicesList = useMemo(() => {
         const allServices = Object.values(services);
         return allServices.filter(s => selectedServiceIds.includes(s.id));
     }, [selectedServiceIds]);
 
+    const profObj = useMemo(() => professionals.find(p => p.id === selectedProfessional), [selectedProfessional]);
+
+    // Totals Calculation
     const totalStats = useMemo(() => {
         return selectedServicesList.reduce((acc, curr) => ({
             price: acc.price + curr.price,
@@ -65,25 +63,33 @@ const PublicBookingPreview: React.FC = () => {
         }), { price: 0, duration: 0 });
     }, [selectedServicesList]);
 
-    const groupedServices = useMemo(() => {
+    // Data Filtering & Grouping
+    const groupedServices = useMemo<Record<string, LegacyService[]>>(() => {
         const allServices = Object.values(services);
         const filtered = allServices.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()));
+        
         const groups: Record<string, LegacyService[]> = {};
         
-        if (!searchTerm) groups['Mais Agendados'] = allServices.slice(0, 3);
+        // Mock "Mais Agendados" - taking first 3
+        if (!searchTerm) {
+            groups['Mais Agendados'] = allServices.slice(0, 3);
+        }
 
         filtered.forEach(service => {
             const cat = service.category || 'Geral';
             if (!groups[cat]) groups[cat] = [];
             groups[cat].push(service);
         });
+
         return groups;
     }, [searchTerm]);
 
+    // Mock Time Slots Generation based on duration
     const timeSlots = useMemo(() => {
         const slots = [];
         const start = 9; // 9 AM
-        const end = 19; // 7 PM
+        const end = 18; // 6 PM
+        // Simple logic: generated slots every 30 mins
         for (let i = start; i < end; i++) {
             slots.push(`${String(i).padStart(2, '0')}:00`);
             slots.push(`${String(i).padStart(2, '0')}:30`);
@@ -91,116 +97,183 @@ const PublicBookingPreview: React.FC = () => {
         return slots;
     }, []);
 
+    // Date Picker Helper - Generate next 14 days
     const dates = useMemo(() => {
-        const start = new Date();
-        start.setHours(0,0,0,0);
-        return Array.from({ length: 14 }, (_, i) => addDays(start, i));
+        const startOfToday = () => {
+            const d = new Date();
+            d.setHours(0,0,0,0);
+            return d;
+        };
+        return Array.from({ length: 14 }, (_, i) => addDays(startOfToday(), i));
     }, []);
 
-    // --- Handlers ---
+    const toggleCategory = (cat: string) => {
+        setExpandedCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
+    };
 
+    const toggleServiceSelection = (id: number) => {
+        setSelectedServiceIds(prev => 
+            prev.includes(id) 
+                ? prev.filter(sId => sId !== id) 
+                : [...prev, id]
+        );
+    };
+
+    // Phone Mask Helper
     const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         let value = e.target.value.replace(/\D/g, '');
         if (value.length > 11) value = value.slice(0, 11);
-        if (value.length > 2) value = `(${value.slice(0, 2)}) ${value.slice(2)}`;
-        if (value.length > 9) value = `${value.slice(0, 9)}-${value.slice(9)}`;
+        
+        // Format (XX) XXXXX-XXXX
+        if (value.length > 2) {
+            value = `(${value.slice(0, 2)}) ${value.slice(2)}`;
+        }
+        if (value.length > 9) {
+            value = `${value.slice(0, 9)}-${value.slice(9)}`;
+        }
         setClientForm(prev => ({ ...prev, phone: value }));
     };
 
     const handleConfirmBooking = async () => {
-        if (!clientForm.name || !clientForm.phone) {
-            alert("Por favor, preencha seu nome e telefone/WhatsApp.");
-            return;
-        }
-        
+        if (!clientForm.name || !clientForm.phone || !selectedTime) return;
         setIsSaving(true);
 
         try {
-            // 1. Identify Professional & Resource ID
-            // Default to '1' (Jacilene) if "Any" or null is selected, to ensure it shows on a column
-            const profId = selectedProfessionalId || '1';
-            const profObj = PROFISSIONAIS.find(p => p.id === profId);
-            const professionalName = profObj ? profObj.title : 'Profissional do Estúdio';
+            // 1. Determine Resource ID (Professional Column)
+            const resourceId = (selectedProfessional && selectedProfessional > 0) ? selectedProfessional : 1;
+            
+            // 2. Get Professional Name for display
+            const professionalName = PROFISSIONAIS_MAP[resourceId] || 'Jacilene Félix';
 
-            // 2. Prepare Date
-            const [hours, minutes] = (selectedTime || '09:00').split(':').map(Number);
+            // 3. Construct Date
+            const [hours, minutes] = selectedTime.split(':').map(Number);
             const startDateTime = new Date(selectedDate);
             startDateTime.setHours(hours, minutes, 0, 0);
 
-            // 3. Prepare Payload
+            // 4. Construct Payload
             const serviceNames = selectedServicesList.map(s => s.name).join(' + ');
-            const notes = `WhatsApp: ${clientForm.phone}. ${clientForm.notes ? `Obs: ${clientForm.notes}` : ''}`;
+            
+            // Keep critical info in notes for backward compatibility
+            const notes = `WhatsApp: ${clientForm.phone}. Email: ${clientForm.email}. ${clientForm.notes ? `Obs: ${clientForm.notes}` : ''}`;
 
             const payload = {
                 client_name: clientForm.name,
-                client_phone: clientForm.phone, // Nova coluna
-                client_email: clientForm.email, // Nova coluna
+                client_phone: clientForm.phone, // New column
+                client_email: clientForm.email, // New column
                 service_name: serviceNames,
                 professional_name: professionalName,
-                resource_id: Number(profId), // Important: Integer for DB column
+                resource_id: resourceId,
                 date: startDateTime.toISOString(),
                 value: totalStats.price,
                 status: 'agendado',
-                notes: notes,
-                origem: 'link'
+                notes: notes 
             };
 
-            console.log('Enviando Agendamento:', payload);
+            console.log('Sending Public Booking:', payload);
 
             const { error } = await supabase.from('appointments').insert([payload]);
 
             if (error) throw error;
 
             setStep('success');
-        } catch (error: any) {
-            console.error('Erro ao agendar:', error);
-            alert(`Erro ao realizar agendamento: ${error.message || 'Tente novamente.'}`);
+        } catch (error) {
+            console.error('Error creating appointment:', error);
+            alert('Erro ao realizar agendamento. Por favor, tente novamente ou entre em contato pelo WhatsApp.');
         } finally {
             setIsSaving(false);
         }
     };
 
-    const handleBack = () => {
-        if (step === 'professional') setStep('service');
-        if (step === 'datetime') setStep('professional');
-        if (step === 'form') setStep('datetime');
+    const handleNext = () => {
+        if (step === 'service' && selectedServiceIds.length > 0) setStep('professional');
+        else if (step === 'professional') setStep('datetime'); // Professional is optional/any
+        else if (step === 'datetime' && selectedTime) setStep('form');
+        else if (step === 'form' && clientForm.name && clientForm.phone) {
+            handleConfirmBooking();
+        }
     };
 
+    const handleBack = () => {
+        if (step === 'professional') setStep('service');
+        else if (step === 'datetime') setStep('professional');
+        else if (step === 'form') setStep('datetime');
+    };
+
+    const handleExitPreview = () => {
+        window.location.hash = ''; // Return to dashboard handled by App.tsx
+    };
+
+    // Formatter helpers
     const formatDuration = (min: number) => {
         const h = Math.floor(min / 60);
         const m = min % 60;
-        return h > 0 ? `${h}h${m > 0 ? ` ${m}min` : ''}` : `${m}min`;
+        if (h > 0 && m > 0) return `${h}h ${m}m`;
+        if (h > 0) return `${h}h`;
+        return `${m}m`;
     };
 
-    // --- Render ---
+    // --- RENDERERS ---
+
+    const BackToAdminButton = () => (
+        user ? (
+            <div className="fixed top-4 left-4 z-50">
+                <button 
+                    onClick={handleExitPreview} 
+                    className="bg-slate-800 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-xs font-bold hover:bg-slate-700 transition-colors border border-slate-600"
+                >
+                    <ChevronLeft size={14} /> Voltar ao Admin
+                </button>
+            </div>
+        ) : null
+    );
 
     if (step === 'success') {
         return (
-            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 font-sans">
-                <div className="bg-white p-8 rounded-3xl shadow-xl text-center max-w-sm w-full animate-in zoom-in-95 duration-500">
+            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 font-sans relative">
+                <BackToAdminButton />
+                <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-md w-full animate-in zoom-in-95 duration-300">
                     <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
                         <Check className="w-10 h-10 text-green-600" />
                     </div>
                     <h2 className="text-2xl font-bold text-slate-800 mb-2">Agendamento Confirmado!</h2>
-                    <p className="text-slate-500 mb-8">
-                        Obrigado, <b>{clientForm.name.split(' ')[0]}</b>. Já reservamos seu horário.
+                    <p className="text-slate-600 mb-6">
+                        Obrigado, <b>{clientForm.name}</b>. Seus serviços estão agendados com <b>{profObj ? profObj.name : 'Nossa Equipe'}</b>.
                     </p>
                     
-                    <div className="bg-slate-50 rounded-2xl p-4 mb-6 border border-slate-100 text-left">
-                        <p className="text-xs text-slate-400 font-bold uppercase mb-1">Serviço</p>
-                        <p className="font-semibold text-slate-800 mb-3">{selectedServicesList[0]?.name} {selectedServicesList.length > 1 && `+ ${selectedServicesList.length - 1}`}</p>
-                        
-                        <p className="text-xs text-slate-400 font-bold uppercase mb-1">Data e Hora</p>
-                        <p className="font-semibold text-slate-800">
-                            {format(selectedDate, "dd 'de' MMMM", { locale: pt })} às {selectedTime}
-                        </p>
+                    <div className="bg-slate-50 p-4 rounded-xl text-left mb-6 border border-slate-100">
+                        <div className="flex items-center gap-3 mb-2">
+                            <Calendar className="w-4 h-4 text-slate-500" />
+                            <span className="font-semibold text-slate-700">{format(selectedDate, "dd 'de' MMMM", { locale: pt })}</span>
+                        </div>
+                        <div className="flex items-center gap-3 mb-4">
+                            <Clock className="w-4 h-4 text-slate-500" />
+                            <span className="font-semibold text-slate-700">
+                                {selectedTime} 
+                                <span className="text-slate-400 font-normal ml-1">
+                                    (Duração: {formatDuration(totalStats.duration)})
+                                </span>
+                            </span>
+                        </div>
+                        <div className="border-t border-slate-200 pt-3">
+                            <p className="text-xs font-bold text-slate-400 uppercase mb-2">Serviços:</p>
+                            <ul className="space-y-1 text-sm text-slate-700">
+                                {selectedServicesList.map(s => (
+                                    <li key={s.id} className="flex justify-between">
+                                        <span>{s.name}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
                     </div>
 
                     <button className="w-full bg-green-500 text-white font-bold py-3 rounded-xl hover:bg-green-600 transition shadow-lg shadow-green-200 mb-3">
                         Receber comprovante no WhatsApp
                     </button>
-                    <button onClick={() => window.location.reload()} className="text-slate-400 hover:text-slate-600 text-sm font-medium">
-                        Voltar ao início
+                    <button 
+                        onClick={() => window.location.reload()}
+                        className="text-slate-500 font-medium hover:text-slate-800 text-sm"
+                    >
+                        Fazer outro agendamento
                     </button>
                 </div>
             </div>
@@ -208,31 +281,39 @@ const PublicBookingPreview: React.FC = () => {
     }
 
     return (
-        <div className="min-h-screen bg-[#F8F9FA] pb-32 font-sans relative">
-            {/* Header / Brand */}
-            <div className="bg-white p-6 shadow-sm sticky top-0 z-20">
-                <div className="max-w-md mx-auto">
+        <div className="min-h-screen bg-[#FAFAFA] font-sans pb-32 relative">
+            <BackToAdminButton />
+            
+            {/* --- HEADER --- */}
+            <header className="bg-white pt-6 pb-4 px-4 shadow-sm sticky top-0 z-20">
+                <div className="max-w-3xl mx-auto">
                     {step === 'service' ? (
-                        <div className="flex gap-4 items-center">
+                        /* Studio Profile Header */
+                        <div className="flex flex-col md:flex-row items-center md:items-start text-center md:text-left gap-4 mb-4 mt-8 md:mt-0">
                             <div className="relative">
-                                <img src={mockOnlineConfig.logoUrl} className="w-16 h-16 rounded-full border border-slate-100 shadow-sm object-cover" alt="Logo" />
-                                <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
+                                <img src={mockOnlineConfig.logoUrl} alt="Logo" className="w-24 h-24 rounded-full border border-slate-100 shadow-sm object-cover" />
+                                <div className="absolute bottom-0 right-0 w-6 h-6 bg-green-500 border-2 border-white rounded-full" title="Aberto Agora"></div>
                             </div>
-                            <div>
-                                <h1 className="font-bold text-lg text-slate-900 leading-tight">{mockOnlineConfig.studioName}</h1>
-                                <div className="flex items-center gap-1 text-slate-500 text-xs mt-1">
-                                    <MapPin size={12} />
-                                    <span className="truncate max-w-[200px]">Centro, São Paulo</span>
+                            <div className="flex-1">
+                                <h1 className="text-xl font-bold text-slate-800">{mockOnlineConfig.studioName}</h1>
+                                <p className="text-xs text-slate-500 mt-1">Avenida Santina Gomes de Andrade, 4 - Loja 04, Centro</p>
+                                <div className="flex items-center justify-center md:justify-start gap-1 text-amber-500 text-sm font-bold mt-2">
+                                    <Star className="w-4 h-4 fill-current" /> 5.0 <span className="text-amber-600 font-normal">- Ótimo</span> <span className="text-slate-400 font-normal ml-1">(4 avaliações)</span>
                                 </div>
-                                <div className="flex gap-1 mt-2">
-                                    <div className="flex text-amber-400"><Star size={12} fill="currentColor"/> 5.0</div>
-                                    <span className="text-xs text-slate-400">(128 avaliações)</span>
+                                
+                                {/* Action Buttons */}
+                                <div className="flex items-center justify-center md:justify-start gap-4 mt-4 text-xs font-semibold text-slate-600">
+                                    <button className="flex items-center gap-1 hover:text-orange-500 transition-colors"><ImageIcon size={16}/> Fotos</button>
+                                    <button className="flex items-center gap-1 hover:text-orange-500 transition-colors"><Info size={16}/> Informações</button>
+                                    <button className="flex items-center gap-1 hover:text-orange-500 transition-colors"><Heart size={16}/> Favorito</button>
+                                    <button className="flex items-center gap-1 hover:text-orange-500 transition-colors"><Share2 size={16}/> Compartilhar</button>
                                 </div>
                             </div>
                         </div>
                     ) : (
-                        <div className="flex items-center justify-between">
-                            <button onClick={handleBack} className="p-2 -ml-2 hover:bg-slate-100 rounded-full text-slate-600 transition">
+                        /* Navigation Header (Steps 2-4) */
+                        <div className="flex items-center justify-between py-2 mt-8 md:mt-0">
+                            <button onClick={handleBack} disabled={isSaving} className="p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-full disabled:opacity-50">
                                 <ChevronLeft />
                             </button>
                             <span className="font-semibold text-slate-800">
@@ -240,71 +321,77 @@ const PublicBookingPreview: React.FC = () => {
                                 {step === 'datetime' && 'Data e Horário'}
                                 {step === 'form' && 'Seus Dados'}
                             </span>
-                            <div className="w-8"></div> {/* Spacer */}
+                            <div className="w-8"></div>
                         </div>
                     )}
-                    
-                    {/* Progress Bar */}
+
+                    {/* Progress Bar (Steps 2-4) */}
                     {step !== 'service' && (
-                        <div className="h-1 bg-slate-100 w-full mt-4 rounded-full overflow-hidden">
+                        <div className="h-1 bg-slate-100 w-full mt-2 rounded-full overflow-hidden">
                             <div 
-                                className="h-full bg-orange-500 transition-all duration-500 ease-out"
+                                className="h-full bg-orange-500 transition-all duration-300"
                                 style={{ width: step === 'professional' ? '33%' : step === 'datetime' ? '66%' : '100%' }}
                             ></div>
                         </div>
                     )}
                 </div>
-            </div>
+            </header>
 
-            <div className="max-w-md mx-auto p-4">
+            <div className="max-w-3xl mx-auto px-4 mt-6">
                 
-                {/* STEP 1: SERVICE */}
+                {/* --- STEP 1: SERVICE SELECTION (Catalog Style) --- */}
                 {step === 'service' && (
-                    <div className="space-y-6 animate-in slide-in-from-bottom-4 fade-in duration-500">
-                        {/* Search */}
+                    <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500 pb-20">
+                        {/* Search Bar */}
                         <div className="relative">
                             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
                             <input 
                                 type="text" 
-                                placeholder="Buscar procedimento..." 
+                                placeholder="Pesquisar Serviço..." 
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-12 pr-4 py-3.5 bg-white border-none shadow-sm rounded-2xl text-slate-700 focus:ring-2 focus:ring-orange-100 outline-none"
+                                className="w-full pl-12 pr-4 py-3 bg-slate-100 border-none rounded-xl text-slate-700 focus:bg-white focus:ring-2 focus:ring-slate-200 transition-all outline-none"
                             />
                         </div>
 
-                        {Object.entries(groupedServices).map(([cat, items]) => (
-                            <div key={cat} className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                        {/* Service List by Category */}
+                        {Object.entries(groupedServices).map(([category, items]) => (
+                            <div key={category} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                                {/* Accordion Header */}
                                 <button 
-                                    onClick={() => setExpandedCategories(prev => ({...prev, [cat]: !prev[cat]}))}
-                                    className="w-full flex items-center justify-between p-4 bg-white border-b border-slate-50"
+                                    onClick={() => toggleCategory(category)}
+                                    className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors"
                                 >
-                                    <span className="font-bold text-slate-800">{cat}</span>
-                                    {expandedCategories[cat] ? <ChevronUp size={18} className="text-slate-400"/> : <ChevronDown size={18} className="text-slate-400"/>}
+                                    <h3 className="font-bold text-slate-800 text-sm md:text-base">{category}</h3>
+                                    {expandedCategories[category] ? <ChevronUp className="text-slate-400 w-5 h-5" /> : <ChevronDown className="text-slate-400 w-5 h-5" />}
                                 </button>
-                                
-                                {expandedCategories[cat] && (
-                                    <div className="divide-y divide-slate-50">
+
+                                {/* List Items */}
+                                {expandedCategories[category] && (
+                                    <div className="divide-y divide-slate-100">
                                         {(items as LegacyService[]).map(service => {
                                             const isSelected = selectedServiceIds.includes(service.id);
                                             return (
                                                 <div 
-                                                    key={service.id}
-                                                    onClick={() => setSelectedServiceIds(prev => isSelected ? prev.filter(id => id !== service.id) : [...prev, service.id])}
-                                                    className={`p-4 flex justify-between items-center cursor-pointer transition-colors ${isSelected ? 'bg-orange-50' : 'hover:bg-slate-50'}`}
+                                                    key={service.id} 
+                                                    onClick={() => toggleServiceSelection(service.id)}
+                                                    className={`p-4 flex items-center justify-between hover:bg-slate-50 transition-colors group cursor-pointer ${isSelected ? 'bg-orange-50/50' : ''}`}
                                                 >
-                                                    <div className="flex gap-3 items-start">
-                                                        <div className={`mt-1 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-orange-500 border-orange-500' : 'border-slate-300'}`}>
-                                                            {isSelected && <Check size={14} className="text-white" />}
+                                                    <div className="flex items-start gap-3">
+                                                        <div className={`mt-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'border-orange-500 bg-orange-500' : 'border-slate-300'}`}>
+                                                            {isSelected && <Check size={12} className="text-white" />}
                                                         </div>
                                                         <div>
-                                                            <p className={`font-semibold text-sm ${isSelected ? 'text-orange-900' : 'text-slate-700'}`}>{service.name}</p>
-                                                            <p className="text-xs text-slate-400 mt-0.5">{formatDuration(service.duration)}</p>
+                                                            <p className={`font-semibold text-sm md:text-base ${isSelected ? 'text-orange-900' : 'text-slate-700'}`}>{service.name}</p>
+                                                            <p className="text-xs text-slate-400 mt-1">{service.duration} min</p>
                                                         </div>
                                                     </div>
-                                                    <span className={`text-sm font-bold ${isSelected ? 'text-orange-700' : 'text-slate-600'}`}>
-                                                        R$ {service.price.toFixed(2)}
-                                                    </span>
+                                                    
+                                                    <div className="text-right">
+                                                        <span className={`block text-sm font-bold ${isSelected ? 'text-orange-700' : 'text-slate-600'}`}>
+                                                            R$ {service.price.toFixed(2)}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             );
                                         })}
@@ -312,80 +399,90 @@ const PublicBookingPreview: React.FC = () => {
                                 )}
                             </div>
                         ))}
+                        
+                        {Object.keys(groupedServices).length === 0 && (
+                            <div className="text-center py-10 text-slate-400">
+                                <p>Nenhum serviço encontrado.</p>
+                            </div>
+                        )}
                     </div>
                 )}
 
-                {/* STEP 2: PROFESSIONAL */}
+                {/* --- STEP 2: PROFESSIONAL --- */}
                 {step === 'professional' && (
                     <div className="space-y-4 animate-in slide-in-from-right-8 duration-300">
-                        {/* Summary */}
-                        <div className="bg-orange-50 border border-orange-100 p-4 rounded-2xl mb-6">
-                            <p className="text-xs font-bold text-orange-800 uppercase mb-2">Serviços Selecionados</p>
-                            <div className="text-sm text-orange-900 space-y-1 mb-3">
-                                {selectedServicesList.map(s => <div key={s.id}>• {s.name}</div>)}
+                        {/* Summary of Selection */}
+                        <div className="bg-orange-50 border border-orange-100 p-4 rounded-xl mb-4">
+                            <div className="flex justify-between items-start mb-2">
+                                <p className="text-xs font-bold text-orange-800 uppercase tracking-wide">Resumo da seleção</p>
+                                <button onClick={handleBack} className="text-xs text-orange-600 font-bold hover:underline">Alterar</button>
                             </div>
-                            <div className="flex justify-between items-center pt-2 border-t border-orange-200/50 text-sm font-bold text-orange-800">
-                                <span>Total Estimado</span>
-                                <span>R$ {totalStats.price.toFixed(2)}</span>
+                            <ul className="text-sm text-orange-900 space-y-1 mb-2">
+                                {selectedServicesList.map(s => (
+                                    <li key={s.id}>• {s.name}</li>
+                                ))}
+                            </ul>
+                            <div className="text-sm font-bold text-orange-800 border-t border-orange-100 pt-2 flex justify-between">
+                                <span>Total Estimado:</span>
+                                <span>R$ {totalStats.price.toFixed(2)} • {formatDuration(totalStats.duration)}</span>
                             </div>
                         </div>
 
-                        <button 
-                            onClick={() => { setSelectedProfessionalId(null); setStep('datetime'); }}
-                            className="w-full bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 hover:border-orange-300 transition-all group"
+                        <button
+                            onClick={() => { setSelectedProfessional(-1); setStep('datetime'); }}
+                            className="w-full bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:border-orange-300 transition-all group"
                         >
-                            <div className="w-14 h-14 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-xl group-hover:bg-orange-500 group-hover:text-white transition-colors">
+                             <div className="w-14 h-14 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-xl group-hover:bg-orange-500 group-hover:text-white transition-colors">
                                 ?
-                            </div>
-                            <div className="text-left">
-                                <h3 className="font-bold text-slate-800">Qualquer Profissional</h3>
-                                <p className="text-xs text-slate-500">Máxima disponibilidade de horários</p>
-                            </div>
-                            <ChevronDown className="-rotate-90 ml-auto text-slate-300" />
+                             </div>
+                             <div className="text-left">
+                                 <h3 className="font-bold text-slate-800 text-lg">Qualquer profissional</h3>
+                                 <p className="text-xs text-slate-500">Encontraremos o horário mais próximo</p>
+                             </div>
                         </button>
-
-                        <div className="grid grid-cols-1 gap-3">
-                            {PROFISSIONAIS.map(prof => (
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {professionals.map(prof => (
                                 <button
                                     key={prof.id}
-                                    onClick={() => { setSelectedProfessionalId(prof.id); setStep('datetime'); }}
-                                    className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 hover:border-orange-300 transition-all text-left group"
+                                    onClick={() => { setSelectedProfessional(prof.id); setStep('datetime'); }}
+                                    className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:border-orange-300 transition-all text-left"
                                 >
-                                    <img src={prof.avatar} alt={prof.title} className="w-14 h-14 rounded-full object-cover border-2 border-slate-50" />
-                                    <div className="flex-1">
-                                        <h3 className="font-bold text-slate-800">{prof.title}</h3>
-                                        <p className="text-xs text-slate-500">{prof.role}</p>
-                                        <div className="flex items-center gap-1 mt-1 text-amber-400">
-                                            <Star size={10} fill="currentColor" />
+                                    <img src={prof.avatarUrl} alt={prof.name} className="w-14 h-14 rounded-full object-cover border-2 border-slate-100" />
+                                    <div>
+                                        <h3 className="font-bold text-slate-800">{prof.name}</h3>
+                                        <p className="text-xs text-slate-500">Especialista</p>
+                                        <div className="flex items-center gap-1 mt-1">
+                                            <Star className="w-3 h-3 text-amber-400 fill-current" />
                                             <span className="text-xs font-bold text-slate-600">4.9</span>
                                         </div>
                                     </div>
-                                    <ChevronDown className="-rotate-90 text-slate-300 group-hover:text-orange-400" />
                                 </button>
                             ))}
                         </div>
                     </div>
                 )}
 
-                {/* STEP 3: DATE & TIME */}
+                {/* --- STEP 3: DATE & TIME --- */}
                 {step === 'datetime' && (
                     <div className="space-y-6 animate-in slide-in-from-right-8 duration-300">
-                        <div className="bg-white p-5 rounded-2xl shadow-sm">
-                            <h2 className="font-bold text-slate-800 mb-4 text-sm uppercase tracking-wide">Escolha o Dia</h2>
-                            <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-2 px-2">
+                        {/* Horizontal Date Picker */}
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                            <h2 className="font-bold text-slate-700 mb-3 text-sm uppercase tracking-wide">Escolha uma data</h2>
+                            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                                 {dates.map(date => {
                                     const selected = isSameDay(date, selectedDate);
                                     return (
                                         <button
                                             key={date.toISOString()}
                                             onClick={() => setSelectedDate(date)}
-                                            className={`flex-shrink-0 w-16 h-20 rounded-2xl flex flex-col items-center justify-center border-2 transition-all ${
+                                            className={`flex-shrink-0 w-14 h-20 rounded-xl flex flex-col items-center justify-center border transition-all ${
                                                 selected 
                                                 ? 'bg-slate-800 text-white border-slate-800 shadow-lg scale-105' 
-                                                : 'bg-white text-slate-500 border-transparent hover:bg-slate-50'
+                                                : 'bg-slate-50 text-slate-500 border-transparent hover:bg-slate-100'
                                             }`}
                                         >
-                                            <span className="text-[10px] font-bold uppercase mb-1">{format(date, 'EEE', { locale: pt })}</span>
+                                            <span className="text-[10px] font-bold uppercase">{format(date, 'EEE', { locale: pt })}</span>
                                             <span className="text-xl font-bold">{format(date, 'dd')}</span>
                                         </button>
                                     )
@@ -393,17 +490,18 @@ const PublicBookingPreview: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="bg-white p-5 rounded-2xl shadow-sm">
-                             <h2 className="font-bold text-slate-800 mb-4 text-sm uppercase tracking-wide">Horários Disponíveis</h2>
-                             <div className="grid grid-cols-4 gap-3">
+                        {/* Time Slots Grid */}
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                             <h2 className="font-bold text-slate-700 mb-3 text-sm uppercase tracking-wide">Horários disponíveis</h2>
+                             <div className="grid grid-cols-4 sm:grid-cols-5 gap-3">
                                 {timeSlots.map(time => (
                                     <button
                                         key={time}
                                         onClick={() => setSelectedTime(time)}
-                                        className={`py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${
+                                        className={`py-2 rounded-lg text-sm font-bold border transition-all ${
                                             selectedTime === time
-                                            ? 'bg-orange-500 text-white border-orange-500 shadow-md transform scale-105'
-                                            : 'bg-white text-slate-600 border-slate-100 hover:border-orange-200'
+                                            ? 'bg-orange-500 text-white border-orange-500 shadow-md'
+                                            : 'bg-white text-slate-600 border-slate-200 hover:border-orange-300 hover:text-orange-600'
                                         }`}
                                     >
                                         {time}
@@ -414,125 +512,118 @@ const PublicBookingPreview: React.FC = () => {
                     </div>
                 )}
 
-                {/* STEP 4: FORM */}
+                {/* --- STEP 4: FORM --- */}
                 {step === 'form' && (
-                    <div className="space-y-6 animate-in slide-in-from-right-8 duration-300">
-                        {/* Recap Card */}
-                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden">
-                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-400 to-pink-500"></div>
-                            <h3 className="font-bold text-slate-800 mb-4 text-lg">Resumo do Agendamento</h3>
-                            
-                            <div className="space-y-3 text-sm">
-                                <div className="flex justify-between">
-                                    <span className="text-slate-500">Serviço</span>
-                                    <span className="font-semibold text-slate-900 text-right w-1/2">{selectedServicesList.map(s => s.name).join(', ')}</span>
+                    <div className="space-y-6 animate-in slide-in-from-right-8 duration-300 pb-24">
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
+                            <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2">Resumo do Agendamento</h3>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-slate-500">Serviços ({selectedServicesList.length})</span>
+                                <div className="text-right">
+                                    {selectedServicesList.map(s => (
+                                        <div key={s.id} className="font-bold text-slate-800">{s.name}</div>
+                                    ))}
                                 </div>
-                                <div className="flex justify-between">
-                                    <span className="text-slate-500">Profissional</span>
-                                    <span className="font-semibold text-slate-900">
-                                        {selectedProfessionalId ? PROFISSIONAIS.find(p=>p.id===selectedProfessionalId)?.title : 'Qualquer Profissional'}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-slate-500">Data e Hora</span>
-                                    <span className="font-semibold text-slate-900">{format(selectedDate, "dd/MM", { locale: pt })} às {selectedTime}</span>
-                                </div>
-                                <div className="border-t border-slate-100 pt-3 flex justify-between items-center mt-2">
-                                    <span className="font-bold text-slate-500">Total</span>
-                                    <span className="font-bold text-xl text-green-600">R$ {totalStats.price.toFixed(2)}</span>
-                                </div>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-slate-500">Profissional</span>
+                                <span className="font-bold text-slate-800">{selectedProfessional === -1 || !selectedProfessional ? 'Qualquer disponível' : profObj?.name}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-slate-500">Data e Hora</span>
+                                <span className="font-bold text-slate-800">{format(selectedDate, "dd/MM", { locale: pt })} às {selectedTime}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-slate-500">Duração Total</span>
+                                <span className="font-bold text-slate-800">{formatDuration(totalStats.duration)}</span>
+                            </div>
+                            <div className="flex justify-between text-sm pt-2 border-t border-slate-100">
+                                <span className="text-slate-500 font-bold">Total Estimado</span>
+                                <span className="font-bold text-green-600 text-lg">R$ {totalStats.price.toFixed(2)}</span>
                             </div>
                         </div>
 
-                        {/* Form Fields */}
-                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-5">
-                            <h2 className="font-bold text-slate-800 text-lg">Seus Dados</h2>
-                            
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">Nome Completo <span className="text-red-500">*</span></label>
-                                    <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus-within:ring-2 focus-within:ring-orange-200 focus-within:border-orange-400 transition-all">
-                                        <User className="w-5 h-5 text-slate-400" />
-                                        <input 
-                                            type="text" 
-                                            value={clientForm.name}
-                                            onChange={(e) => setClientForm({...clientForm, name: e.target.value})}
-                                            className="w-full bg-transparent outline-none text-slate-800 placeholder:text-slate-400"
-                                            placeholder="Seu nome"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">WhatsApp <span className="text-red-500">*</span></label>
-                                    <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus-within:ring-2 focus-within:ring-orange-200 focus-within:border-orange-400 transition-all">
-                                        <Phone className="w-5 h-5 text-slate-400" />
-                                        <input 
-                                            type="tel" 
-                                            value={clientForm.phone}
-                                            onChange={handlePhoneChange}
-                                            maxLength={15}
-                                            className="w-full bg-transparent outline-none text-slate-800 placeholder:text-slate-400"
-                                            placeholder="(00) 00000-0000"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">E-mail (Opcional)</label>
-                                    <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus-within:ring-2 focus-within:ring-orange-200 focus-within:border-orange-400 transition-all">
-                                        <Mail className="w-5 h-5 text-slate-400" />
-                                        <input 
-                                            type="email" 
-                                            value={clientForm.email}
-                                            onChange={(e) => setClientForm({...clientForm, email: e.target.value})}
-                                            className="w-full bg-transparent outline-none text-slate-800 placeholder:text-slate-400"
-                                            placeholder="seu@email.com"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">Observações</label>
-                                    <textarea 
-                                        value={clientForm.notes}
-                                        onChange={(e) => setClientForm({...clientForm, notes: e.target.value})}
-                                        className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none h-24 resize-none transition-all placeholder:text-slate-400"
-                                        placeholder="Alguma preferência ou alergia?"
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                            <h2 className="font-bold text-slate-800">Seus dados</h2>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nome Completo <span className="text-red-500">*</span></label>
+                                <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-3 focus-within:ring-2 focus-within:ring-orange-200 focus-within:border-orange-400 transition-all">
+                                    <User className="w-5 h-5 text-slate-400" />
+                                    <input 
+                                        type="text" 
+                                        value={clientForm.name}
+                                        onChange={(e) => setClientForm({...clientForm, name: e.target.value})}
+                                        className="w-full bg-transparent outline-none text-slate-800 placeholder:text-slate-400"
+                                        placeholder="Como gostaria de ser chamado(a)?"
                                     />
                                 </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">WhatsApp / Celular <span className="text-red-500">*</span></label>
+                                <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-3 focus-within:ring-2 focus-within:ring-orange-200 focus-within:border-orange-400 transition-all">
+                                    <Phone className="w-5 h-5 text-slate-400" />
+                                    <input 
+                                        type="tel" 
+                                        value={clientForm.phone}
+                                        onChange={handlePhoneChange}
+                                        maxLength={15}
+                                        className="w-full bg-transparent outline-none text-slate-800 placeholder:text-slate-400"
+                                        placeholder="(00) 00000-0000"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">E-mail (Opcional)</label>
+                                <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-3 focus-within:ring-2 focus-within:ring-orange-200 focus-within:border-orange-400 transition-all">
+                                    <Mail className="w-5 h-5 text-slate-400" />
+                                    <input 
+                                        type="email" 
+                                        value={clientForm.email}
+                                        onChange={(e) => setClientForm({...clientForm, email: e.target.value})}
+                                        className="w-full bg-transparent outline-none text-slate-800 placeholder:text-slate-400"
+                                        placeholder="seu@email.com"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Observações (Opcional)</label>
+                                <textarea 
+                                    value={clientForm.notes}
+                                    onChange={(e) => setClientForm({...clientForm, notes: e.target.value})}
+                                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none bg-slate-50 focus:bg-white h-24 resize-none transition-all placeholder:text-slate-400"
+                                    placeholder="Tem alguma alergia ou preferência?"
+                                />
                             </div>
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* BOTTOM ACTION BAR */}
+            {/* --- BOTTOM FLOATING BAR --- */}
             {selectedServicesList.length > 0 && (
-                <div className="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-slate-100 z-30 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
-                    <div className="max-w-md mx-auto flex items-center justify-between gap-4">
+                <div className="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-slate-200 z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                    <div className="max-w-3xl mx-auto flex items-center justify-between gap-4">
                         <div className="flex flex-col">
-                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{selectedServicesList.length} serviço(s)</span>
-                            <div className="flex items-baseline gap-1">
-                                <span className="font-extrabold text-slate-800 text-xl">R$ {totalStats.price.toFixed(2)}</span>
-                                <span className="text-xs font-medium text-slate-500">{formatDuration(totalStats.duration)}</span>
+                            <span className="text-xs text-slate-500 font-bold uppercase">{selectedServicesList.length} serviço(s)</span>
+                            <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-800 text-lg">R$ {totalStats.price.toFixed(2)}</span>
+                                <span className="text-xs bg-slate-100 px-2 py-0.5 rounded text-slate-600">{formatDuration(totalStats.duration)}</span>
                             </div>
                         </div>
                         <button 
-                            onClick={step === 'form' ? handleConfirmBooking : handleNext}
+                            onClick={handleNext}
                             disabled={
                                 (step === 'datetime' && !selectedTime) || 
                                 (step === 'form' && (!clientForm.name || !clientForm.phone)) ||
                                 isSaving
                             }
-                            className="bg-slate-900 text-white font-bold py-3.5 px-8 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-black transition-all shadow-lg active:scale-95 flex items-center gap-2 min-w-[160px] justify-center"
+                            className="bg-slate-800 text-white font-bold py-3 px-6 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-900 transition flex items-center justify-center gap-2 shadow-lg min-w-[140px]"
                         >
                             {isSaving ? (
                                 <Loader2 className="animate-spin w-5 h-5" />
                             ) : (
                                 <>
-                                    {step === 'form' ? 'Confirmar' : 'Continuar'} 
-                                    {step !== 'form' && <ChevronDown className="rotate-[-90deg] w-4 h-4"/>}
+                                    {step === 'form' ? 'Confirmar' : 'Continuar'} <ChevronDown className="rotate-[-90deg] w-4 h-4"/>
                                 </>
                             )}
                         </button>
