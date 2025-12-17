@@ -193,6 +193,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const fetchAppointments = async () => {
         setIsLoadingData(true);
         try {
+            // 1. Busca os dados brutos
             const { data, error } = await supabase
                 .from('appointments')
                 .select('*');
@@ -202,42 +203,50 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 return;
             }
 
+            console.log("Raw Supabase Data:", data); // Debug
+
             if (data && data.length > 0) {
+                // 2. Tradução e Mapeamento (Mapping)
                 const mappedAppointments: LegacyAppointment[] = data.map(row => {
-                    const profName = row.professional_name || 'Profissional';
-                    const matchedProf = mockProfessionals.find(p => p.name === profName) || {
-                        id: 0,
-                        name: profName,
-                        avatarUrl: `https://ui-avatars.com/api/?name=${profName}&background=random`
-                    };
+                    // Normaliza Data: Garante que vira um Date real
+                    const startTime = new Date(row.date); 
+                    // Se não tiver fim, assume 30min
+                    const endTime = new Date(startTime.getTime() + 30 * 60000);
 
-                    const startTime = new Date(row.date || row.start_time); 
-                    // Calculate end time or default to 30 mins if not provided (DB doesn't have it)
-                    const endTime = row.end_time 
-                        ? new Date(row.end_time) 
-                        : new Date(startTime.getTime() + 30 * 60000);
+                    // Normaliza Profissional: 
+                    // Se o banco não tem 'professional_name', usa o primeiro da lista mockada para garantir exibição
+                    const profName = row.professional_name;
+                    let matchedProf = mockProfessionals[0]; 
+                    
+                    if (profName) {
+                        const found = mockProfessionals.find(p => p.name === profName);
+                        if (found) matchedProf = found;
+                    }
 
+                    // Monta o objeto LegacyAppointment
                     return {
                         id: row.id,
                         start: startTime,
                         end: endTime,
-                        status: row.status as AppointmentStatus,
-                        notas: row.notes || row.notas,
+                        status: (row.status as AppointmentStatus) || 'agendado',
+                        notas: row.notes || '',
                         client: { 
-                            id: 0, 
-                            nome: row.client_name || 'Cliente', 
+                            id: 0, // Mock ID
+                            nome: row.client_name || 'Cliente Sem Nome', 
                             consent: true 
                         },
                         professional: matchedProf,
                         service: { 
-                            id: 0, 
+                            id: 0, // Mock ID
                             name: row.service_name || 'Serviço', 
                             price: parseFloat(row.value || 0), 
-                            duration: (endTime.getTime() - startTime.getTime()) / 60000, 
+                            duration: 30, 
                             color: 'blue' 
                         }
                     };
                 });
+                
+                console.log("Dados Formatados para a Tela:", mappedAppointments);
                 setAppointments(mappedAppointments);
             } else {
                 setAppointments([]);
