@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { initialAppointments, professionals as mockProfessionals, services as mockServicesMap } from '../../data/mockData';
+import { professionals as mockProfessionals, services as mockServicesMap } from '../../data/mockData';
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction } from '../../types';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval } from 'date-fns';
 import { 
@@ -157,7 +157,8 @@ type PeriodType = 'Dia' | 'Semana' | 'Mês' | 'Lista' | 'Fila de Espera';
 const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction }) => {
     // --- State Management ---
     const [currentDate, setCurrentDate] = useState(new Date());
-    const [appointments, setAppointments] = useState<LegacyAppointment[]>(initialAppointments);
+    // Start empty, fetch real data from Supabase
+    const [appointments, setAppointments] = useState<LegacyAppointment[]>([]);
     const [isLoadingData, setIsLoadingData] = useState(false);
     const [visibleProfIds, setVisibleProfIds] = useState<number[]>(mockProfessionals.map(p => p.id));
     
