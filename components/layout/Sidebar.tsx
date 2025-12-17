@@ -44,6 +44,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
 
     const handleLogout = async () => {
         // 1. Preservar configuração do Supabase (EnvGate) para não bloquear o app no próximo load
+        // Isso é crucial para que o usuário não tenha que digitar a URL/Key novamente se estiver usando EnvGate
         const sbUrl = localStorage.getItem('VITE_SUPABASE_URL');
         const sbKey = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
 
@@ -136,7 +137,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                         <p className="text-xs text-slate-500 capitalize">{user?.papel || 'Visitante'}</p>
                     </div>
                     <button 
-                        onClick={handleLogout}
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); handleLogout(); }}
                         className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors group cursor-pointer" 
                         title="Sair do Sistema"
                     >
