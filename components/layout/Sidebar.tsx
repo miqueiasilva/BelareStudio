@@ -43,29 +43,28 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
     };
 
     const handleLogout = async () => {
-        // 1. Preservar configuração do Supabase (EnvGate) para não bloquear o app no próximo load
-        // Isso é crucial para que o usuário não tenha que digitar a URL/Key novamente se estiver usando EnvGate
+        // 1. Preservar configuração do Supabase (EnvGate)
         const sbUrl = localStorage.getItem('VITE_SUPABASE_URL');
         const sbKey = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
 
-        // 2. Tenta avisar o Supabase (opcional, não bloqueante)
+        // 2. Logout do Supabase (Tenta, mas não bloqueia se falhar)
         try {
             await supabase.auth.signOut();
         } catch (error) {
-            console.error("Erro silencioso ao sair do Supabase", error);
+            console.error("Erro no signOut:", error);
         }
 
-        // 3. Limpa TUDO do navegador
+        // 3. Limpeza total
         localStorage.clear();
         sessionStorage.clear();
 
-        // 4. Restaura a configuração do EnvGate se existia
+        // 4. Restaura EnvGate se necessário
         if (sbUrl && sbKey) {
             localStorage.setItem('VITE_SUPABASE_URL', sbUrl);
             localStorage.setItem('VITE_SUPABASE_ANON_KEY', sbKey);
         }
 
-        // 5. Força Bruta: Redireciona via navegador (Refresh total)
+        // 5. Força recarregamento para a tela de login
         window.location.href = '/login';
     };
 
@@ -136,13 +135,13 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                         <p className="text-sm font-bold text-slate-700 truncate">{user?.nome || 'Usuário'}</p>
                         <p className="text-xs text-slate-500 capitalize">{user?.papel || 'Visitante'}</p>
                     </div>
+                    
                     <button 
-                        type="button"
-                        onClick={(e) => { e.preventDefault(); handleLogout(); }}
-                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors group cursor-pointer" 
+                        onClick={handleLogout}
+                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer flex-shrink-0 z-10" 
                         title="Sair do Sistema"
                     >
-                        <LogOut size={20} className="group-hover:scale-110 transition-transform" />
+                        <LogOut size={20} />
                     </button>
                 </div>
             </div>
