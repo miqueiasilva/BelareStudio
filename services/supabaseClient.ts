@@ -5,7 +5,7 @@ const getEnvVar = (key: string): string | null => {
   // 1. Try Vite's import.meta.env
   try {
     // @ts-ignore
-    if (import.meta.env && import.meta.env[key]) {
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
       // @ts-ignore
       return import.meta.env[key];
     }
@@ -30,8 +30,12 @@ const getEnvVar = (key: string): string | null => {
   return null;
 };
 
-const supabaseUrl = getEnvVar('VITE_SUPABASE_URL');
-const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY');
+// HARDCODED FALLBACKS FOR HOTFIX (Ensures app works even if .env doesn't load immediately)
+const FALLBACK_URL = "https://rxtwmwrgcilmsldtqdfe.supabase.co";
+const FALLBACK_KEY = "sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x";
+
+const supabaseUrl = getEnvVar('VITE_SUPABASE_URL') || FALLBACK_URL;
+const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY') || FALLBACK_KEY;
 
 export const isConfigured = !!(supabaseUrl && supabaseAnonKey);
 
