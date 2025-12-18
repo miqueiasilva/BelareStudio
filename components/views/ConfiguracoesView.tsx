@@ -34,7 +34,7 @@ const ConfiguracoesView: React.FC = () => {
     });
 
     const [servicesData, setServicesData] = useState<LegacyService[]>(Object.values(initialServices));
-    const [professionalsData, setProfessionalsData] = useState<LegacyProfessional[]>([]);
+    const [colaboradores, setColaboradores] = useState<LegacyProfessional[]>([]);
     
     // --- Professional Detail State ---
     const [selectedProfessionalId, setSelectedProfessionalId] = useState<number | null>(null);
@@ -59,8 +59,8 @@ const ConfiguracoesView: React.FC = () => {
     const [serviceModal, setServiceModal] = useState<{ open: boolean; data: LegacyService | null }>({ open: false, data: null });
     const [profModal, setProfModal] = useState<{ open: boolean; data: LegacyProfessional | null }>({ open: false, data: null });
 
-    // --- Data Fetching Logic ---
-    const fetchProfessionals = async () => {
+    // --- Data Fetching Logic (Supabase Integration) ---
+    const fetchColaboradores = async () => {
         setIsLoading(true);
         try {
             const { data, error } = await supabase
@@ -71,15 +71,16 @@ const ConfiguracoesView: React.FC = () => {
             if (error) throw error;
             
             if (data) {
+                // Map database photo_url to avatarUrl used by components
                 const mapped = data.map((p: any) => ({
                     ...p,
-                    avatarUrl: p.photo_url || p.avatarUrl || `https://ui-avatars.com/api/?name=${p.name}&background=random`
+                    avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`
                 }));
-                setProfessionalsData(mapped);
+                setColaboradores(mapped);
             }
         } catch (error) {
             console.error("Erro ao buscar colaboradores:", error);
-            setProfessionalsData(initialProfessionals); // Fallback
+            setColaboradores(initialProfessionals); // Fallback to mock data if DB fails
         } finally {
             setIsLoading(false);
         }
@@ -92,8 +93,8 @@ const ConfiguracoesView: React.FC = () => {
         
         testConnection().then(connected => {
             setDbStatus(connected ? 'connected' : 'error');
-            if (connected) fetchProfessionals();
-            else setProfessionalsData(initialProfessionals);
+            if (connected) fetchColaboradores();
+            else setColaboradores(initialProfessionals);
         });
     }, []);
 
@@ -105,7 +106,7 @@ const ConfiguracoesView: React.FC = () => {
         }
     };
 
-    // --- Logic: Photo Upload ---
+    // --- Logic: Photo Upload to Storage & DB Update ---
     const handleUploadFoto = async (event: React.ChangeEvent<HTMLInputElement>, idProfissional: number) => {
         const file = event.target.files?.[0];
         if (!file) return;
@@ -114,19 +115,19 @@ const ConfiguracoesView: React.FC = () => {
         showToast("Enviando foto...", "info");
 
         try {
-            // 1. Upload to Storage
+            // 1. Upload to Storage bucket 'team-photos'
             const { error: uploadError } = await supabase.storage
                 .from('team-photos')
                 .upload(fileName, file, { upsert: true });
 
             if (uploadError) throw uploadError;
 
-            // 2. Get Public URL
+            // 2. Get Public Link
             const { data: { publicUrl } } = supabase.storage
                 .from('team-photos')
                 .getPublicUrl(fileName);
 
-            // 3. Update Database
+            // 3. Save the link in the 'professionals' table
             const { error: updateError } = await supabase
                 .from('professionals')
                 .update({ photo_url: publicUrl })
@@ -135,7 +136,7 @@ const ConfiguracoesView: React.FC = () => {
             if (updateError) throw updateError;
 
             // 4. Refresh UI
-            fetchProfessionals();
+            fetchColaboradores();
             showToast("Foto atualizada com sucesso!", "success");
         } catch (error: any) {
             console.error("Erro no upload:", error);
@@ -209,7 +210,7 @@ const ConfiguracoesView: React.FC = () => {
                 await supabase.from('professionals').insert([payload]);
             }
             
-            fetchProfessionals();
+            fetchColaboradores();
             setProfModal({ open: false, data: null });
             setSelectedProfessionalId(null);
             showToast(`Dados de "${prof.name}" salvos com sucesso!`);
@@ -222,7 +223,7 @@ const ConfiguracoesView: React.FC = () => {
         if (window.confirm('Tem certeza que deseja remover este profissional?')) {
             try {
                 await supabase.from('professionals').delete().eq('id', id);
-                fetchProfessionals();
+                fetchColaboradores();
                 showToast('Profissional removido.', 'info');
             } catch (error) {
                 showToast("Erro ao remover.", "error");
@@ -261,7 +262,7 @@ const ConfiguracoesView: React.FC = () => {
     ];
 
     if (activeTab === 'team' && selectedProfessionalId) {
-        const selectedProf = professionalsData.find(p => p.id === selectedProfessionalId);
+        const selectedProf = colaboradores.find(p => p.id === selectedProfessionalId);
         if (selectedProf) {
             return (
                 <ProfessionalDetail 
@@ -523,7 +524,7 @@ const ConfiguracoesView: React.FC = () => {
                     {activeTab === 'team' && (
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                             <div className="flex items-center justify-between p-4 border-b border-slate-100">
-                                <h3 className="font-bold text-slate-800">Ativos ({professionalsData.length})</h3>
+                                <h3 className="font-bold text-slate-800">Ativos ({colaboradores.length})</h3>
                                 <div className="relative">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                                     <input 
@@ -534,25 +535,26 @@ const ConfiguracoesView: React.FC = () => {
                                 </div>
                             </div>
                             <ul className="divide-y divide-slate-50">
-                                {professionalsData.map(prof => (
+                                {colaboradores.map(colab => (
                                     <li 
-                                        key={prof.id} 
+                                        key={colab.id} 
                                         className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors cursor-pointer group"
-                                        onClick={() => setSelectedProfessionalId(prof.id)}
+                                        onClick={() => setSelectedProfessionalId(colab.id)}
                                     >
                                         <div className="flex items-center gap-4">
-                                            {/* Foto com Upload Button */}
+                                            {/* Avatar with Upload logic */}
                                             <div className="relative group/avatar cursor-pointer" onClick={(e) => e.stopPropagation()}>
                                                 <img 
-                                                    src={prof.avatarUrl} 
-                                                    alt={prof.name} 
-                                                    className="w-12 h-12 rounded-full object-cover border border-slate-200" 
+                                                    src={colab.avatarUrl || "https://via.placeholder.com/150"} 
+                                                    alt={colab.name} 
+                                                    className="w-12 h-12 rounded-full object-cover border-2 border-orange-500 shadow-sm" 
                                                 />
                                                 <input 
                                                     type="file" 
                                                     accept="image/*"
                                                     className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                                                    onChange={(e) => handleUploadFoto(e, prof.id)}
+                                                    onChange={(e) => handleUploadFoto(e, colab.id)}
+                                                    title="Clique para alterar a foto"
                                                 />
                                                 <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity text-white pointer-events-none">
                                                     <Camera size={14} />
@@ -560,8 +562,8 @@ const ConfiguracoesView: React.FC = () => {
                                             </div>
 
                                             <div>
-                                                <h4 className="font-bold text-slate-800 text-sm">{prof.name}</h4>
-                                                <p className="text-xs text-slate-500">{prof.email || 'e-mail não cadastrado'}</p>
+                                                <h4 className="font-bold text-slate-800 text-sm">{colab.name}</h4>
+                                                <p className="text-xs text-slate-500">Clique na foto para alterar</p>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-4">
