@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { professionals as mockProfessionals, services as mockServicesMap } from '../../data/mockData';
-import { LegacyAppointment, AppointmentStatus, FinancialTransaction } from '../../types';
+import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval } from 'date-fns';
 import { 
     ChevronLeft, ChevronRight, Plus, Lock, MessageSquare, 
     Share2, Bell, RotateCcw, ChevronDown, List, Clock, 
-    CheckCircle, DollarSign, FileText, Calendar as CalendarIcon, RefreshCw
+    CheckCircle, DollarSign, FileText, Calendar as CalendarIcon, RefreshCw, User as UserIcon
 } from 'lucide-react';
 import { pt } from 'date-fns/locale';
 
@@ -20,17 +20,6 @@ import { supabase } from '../../services/supabaseClient';
 const START_HOUR = 8;
 const END_HOUR = 20; 
 const PIXELS_PER_MINUTE = 80 / 60; 
-
-// --- Resource Mapping ---
-// Hardcoded map to ensure ID consistency between Frontend and Database
-const RESOURCE_MAP: Record<string, number> = {
-    'Jacilene Félix': 1,
-    'Graziela Oliveira': 2,
-    'Jéssica Félix': 3,
-    'Glezia': 4,
-    'Elda Priscila': 5,
-    'Herlon': 6
-};
 
 // --- Date Helper Functions ---
 
@@ -169,21 +158,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     // --- State Management ---
     const [currentDate, setCurrentDate] = useState(new Date());
     
-    // Start empty, fetch real data from Supabase
+    // Real Data States
     const [appointments, setAppointments] = useState<LegacyAppointment[]>([]);
+    const [dbProfessionals, setDbProfessionals] = useState<LegacyProfessional[]>([]);
     const [isLoadingData, setIsLoadingData] = useState(false);
-    const [visibleProfIds, setVisibleProfIds] = useState<number[]>(mockProfessionals.map(p => p.id));
+    const [visibleProfIds, setVisibleProfIds] = useState<number[]>([]);
     
     // View States
     const [viewType, setViewType] = useState<ViewType>('Profissional');
     const [periodType, setPeriodType] = useState<PeriodType>('Dia');
     
-    // Dropdown States
+    // UI States
     const [isViewDropdownOpen, setIsViewDropdownOpen] = useState(false);
     const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = useState(false);
-
-    // Mobile State
-    const [activeMobileProfId, setActiveMobileProfId] = useState<number>(mockProfessionals[0].id);
+    const [activeMobileProfId, setActiveMobileProfId] = useState<number | null>(null);
     const [isMobile, setIsMobile] = useState(false);
     const [isMobileProfSidebarOpen, setIsMobileProfSidebarOpen] = useState(true);
 
@@ -201,42 +189,54 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const periodDropdownRef = useRef<HTMLDivElement>(null);
 
     // --- Data Persistence Logic (READ) ---
+    
+    const fetchProfessionals = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('professionals')
+                .select('*')
+                .order('name');
+            
+            if (error) throw error;
+            
+            if (data) {
+                const mapped = data.map((p: any) => ({
+                    id: p.id,
+                    name: p.name,
+                    avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
+                    role: p.role
+                }));
+                setDbProfessionals(mapped);
+                setVisibleProfIds(mapped.map(p => p.id));
+                if (mapped.length > 0) setActiveMobileProfId(mapped[0].id);
+            }
+        } catch (e) {
+            console.error("Erro ao buscar profissionais:", e);
+            // Fallback for UI safety
+            setDbProfessionals(mockProfessionals);
+            setVisibleProfIds(mockProfessionals.map(p => p.id));
+        }
+    };
+
     const fetchAppointments = async () => {
         setIsLoadingData(true);
         try {
-            // 1. Busca os dados brutos
             const { data, error } = await supabase
                 .from('appointments')
                 .select('*');
             
-            if (error) {
-                console.error("Supabase fetch error:", error.message);
-                return;
-            }
+            if (error) throw error;
 
-            console.log("Raw Supabase Data:", data); // Debug
-
-            if (data && data.length > 0) {
-                // 2. Tradução e Mapeamento (Mapping)
+            if (data) {
                 const mappedAppointments: LegacyAppointment[] = data.map(row => {
-                    // Normaliza Data: Garante que vira um Date real
                     const startTime = new Date(row.date); 
-                    // Se não tiver fim, assume 30min
                     const endTime = new Date(startTime.getTime() + 30 * 60000);
 
-                    // --- RESOURCE MAPPING LOGIC ---
-                    // Tenta identificar o profissional correto usando resource_id ou professional_name
-                    let matchedProf = mockProfessionals[0];
-                    
-                    if (row.resource_id) {
-                        const foundById = mockProfessionals.find(p => p.id === Number(row.resource_id));
-                        if (foundById) matchedProf = foundById;
-                    } else if (row.professional_name) {
-                        const foundByName = mockProfessionals.find(p => p.name === row.professional_name);
-                        if (foundByName) matchedProf = foundByName;
-                    }
+                    // Map to existing professionals state or fallback
+                    let matchedProf = dbProfessionals.find(p => p.id === Number(row.resource_id)) 
+                                    || dbProfessionals.find(p => p.name === row.professional_name)
+                                    || { id: row.resource_id || 0, name: row.professional_name || 'Profissional', avatarUrl: '' };
 
-                    // Monta o objeto LegacyAppointment
                     return {
                         id: row.id,
                         start: startTime,
@@ -244,36 +244,43 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         status: (row.status as AppointmentStatus) || 'agendado',
                         notas: row.notes || '',
                         client: { 
-                            id: 0, // Mock ID
+                            id: 0, 
                             nome: row.client_name || 'Cliente Sem Nome', 
                             consent: true 
                         },
-                        professional: matchedProf,
+                        professional: matchedProf as LegacyProfessional,
                         service: { 
-                            id: 0, // Mock ID
+                            id: 0, 
                             name: row.service_name || 'Serviço', 
                             price: parseFloat(row.value || 0), 
                             duration: 30, 
-                            color: 'blue' 
+                            color: '#3b82f6' 
                         }
                     };
                 });
-                
-                console.log("Dados Formatados para a Tela:", mappedAppointments);
                 setAppointments(mappedAppointments);
-            } else {
-                setAppointments([]);
             }
         } catch (e) {
-            console.error("Unexpected error fetching appointments:", e);
+            console.error("Erro ao buscar agendamentos:", e);
         } finally {
             setIsLoadingData(false);
         }
     };
 
+    // Initial load flow
     useEffect(() => {
-        fetchAppointments();
+        const init = async () => {
+            await fetchProfessionals();
+        };
+        init();
     }, []);
+
+    // Refresh appointments when professionals are ready or updated
+    useEffect(() => {
+        if (dbProfessionals.length > 0) {
+            fetchAppointments();
+        }
+    }, [dbProfessionals]);
 
     // --- Effects ---
     useEffect(() => {
@@ -286,8 +293,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             if (periodDropdownRef.current && !periodDropdownRef.current.contains(event.target as Node)) setIsPeriodDropdownOpen(false);
         };
         document.addEventListener('mousedown', handleClickOutside);
-
-        if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
         
         return () => {
             window.removeEventListener('resize', handleResize);
@@ -324,8 +329,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
 
         if (viewType === 'Profissional') {
-            // Filter only valid professionals
-            const profs = mockProfessionals.filter(p => visibleProfIds.includes(p.id));
+            const profs = dbProfessionals.filter(p => visibleProfIds.includes(p.id));
             return profs.map(p => ({
                 id: p.id,
                 title: p.name,
@@ -353,7 +357,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
 
         return [];
-    }, [viewType, periodType, currentDate, visibleProfIds]);
+    }, [viewType, periodType, currentDate, visibleProfIds, dbProfessionals]);
 
     // --- Grid Styling Calculation ---
     const gridStyle = useMemo(() => {
@@ -394,7 +398,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             return cols.find(c => isSameDay(app.start, c.data));
         }
         if (viewType === 'Profissional') {
-            // Match by ID or Name
             return cols.find(c => c.id === app.professional.id || c.title === app.professional.name);
         }
         if (viewType === 'Andamento') {
@@ -425,59 +428,40 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     };
 
-    // --- SAVE (CREATE/UPDATE) LOGIC - Text Based ---
     const handleSaveAppointment = async (app: LegacyAppointment) => {
-        setModalState(null); // Close modal first
+        setModalState(null); 
 
         try {
-            // 1. Construct ISO Date robustly
             const dateIso = app.start.toISOString();
-
-            // 2. Prepare Payload - STRICTLY CLEAN with Resource Mapping
-            // RESOURCE MAPPING: Ensure the appointment goes to the correct column
-            const mappedResourceId = RESOURCE_MAP[app.professional.name] || app.professional.id;
-
             const payload = {
                 client_name: app.client?.nome || 'Cliente Sem Nome',
                 service_name: app.service.name,
-                professional_name: app.professional.name, // Explicitly save name
-                resource_id: mappedResourceId,            // Explicitly save mapped ID
+                professional_name: app.professional.name, 
+                resource_id: app.professional.id,            
                 date: dateIso,
                 value: typeof app.service.price === 'number' ? app.service.price : parseFloat(app.service.price || '0'),
-                status: app.status || 'agendado'
+                status: app.status || 'agendado',
+                notes: app.notas || ''
             };
 
-            console.log('Payload Limpo para Supabase:', payload);
-
-            // 3. Check for ID to decide Insert vs Update
             if (app.id && typeof app.id === 'number' && app.id < 1000000000000) {
-                 const { error } = await supabase
-                    .from('appointments')
-                    .update(payload)
-                    .eq('id', app.id);
-                 
+                 const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
                  if (error) throw error;
             } else {
-                const { error } = await supabase
-                    .from('appointments')
-                    .insert([payload]);
-
+                const { error } = await supabase.from('appointments').insert([payload]);
                 if (error) throw error;
             }
 
-            // 4. Refresh Data
             await fetchAppointments(); 
             showToast('Agendamento salvo com sucesso!', 'success');
-
         } catch (error: any) {
             console.error('Erro ao salvar no banco:', error);
-            alert(`Erro ao salvar no banco: ${error.message || 'Verifique os logs.'}`);
+            showToast(`Erro ao salvar: ${error.message}`, 'error');
         }
     };
     
     const handleDeleteAppointment = async (id: number) => {
         if (window.confirm("Tem certeza que deseja excluir este agendamento?")) {
-            // Optimistic remove from UI
             setAppointments(prev => prev.filter(a => a.id !== id));
             setActiveAppointmentDetail(null);
             
@@ -486,27 +470,25 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 showToast('Agendamento removido.', 'info');
             } catch (e) {
                 showToast('Erro ao remover do banco.', 'error');
-                fetchAppointments(); // Revert on error
+                fetchAppointments(); 
             }
         }
     };
     
     const handleStatusUpdate = async (appointmentId: number, newStatus: AppointmentStatus) => {
-        // Optimistic update
         setAppointments(prev => prev.map(app => (app.id === appointmentId ? { ...app, status: newStatus } : app)));
-        
         try {
             await supabase.from('appointments').update({ status: newStatus }).eq('id', appointmentId);
             showToast(`Status atualizado para ${newStatus.replace('_', ' ')}`, 'success');
         } catch (e) {
-            fetchAppointments(); // Revert on error
+            fetchAppointments();
         }
     };
     
     const handleEditAppointment = (app: LegacyAppointment) => setModalState({ type: 'appointment', data: app });
 
     const handleNewAppointment = () => {
-        const prof = isMobile ? mockProfessionals.find(p => p.id === activeMobileProfId) : undefined;
+        const prof = isMobile ? dbProfessionals.find(p => p.id === activeMobileProfId) : undefined;
         setModalState({ type: 'appointment', data: { start: currentDate, professional: prof } });
     };
 
@@ -636,7 +618,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     <>
                         <div className={`flex flex-col bg-slate-50 border-r border-slate-200 transition-all duration-300 ease-in-out z-20 ${isMobileProfSidebarOpen ? 'w-20' : 'w-0 overflow-hidden'}`}>
                             <div className="flex-1 overflow-y-auto scrollbar-hide py-4 flex flex-col items-center gap-4 w-20 pb-20">
-                                {mockProfessionals.map(prof => (
+                                {dbProfessionals.map(prof => (
                                     <button 
                                         key={prof.id} 
                                         onClick={() => handleMobileSidebarClick(prof.id)} 
@@ -644,7 +626,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                         title={prof.name}
                                     >
                                         <div className={`w-12 h-12 rounded-full p-0.5 ${activeMobileProfId === prof.id ? 'bg-gradient-to-tr from-orange-400 to-red-500 shadow-md' : 'bg-transparent border border-slate-300'}`}>
-                                            <img src={prof.avatarUrl} alt={prof.name} className="w-full h-full rounded-full object-cover border-2 border-white" />
+                                            {prof.avatarUrl ? (
+                                                <img src={prof.avatarUrl} alt={prof.name} className="w-full h-full rounded-full object-cover border-2 border-white" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center bg-slate-200 rounded-full">
+                                                    <UserIcon size={18} className="text-slate-400" />
+                                                </div>
+                                            )}
                                         </div>
                                         {activeMobileProfId === prof.id && (
                                             <div className="absolute right-0 bottom-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
@@ -676,7 +664,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                     <div key={col.id} ref={(el) => { if(el) columnRefs.current.set(col.id, el) }} className="flex flex-col items-center justify-center p-2 border-r border-slate-200 h-16 bg-slate-50/50">
                                         {col.type === 'professional' && (
                                             <div className="flex items-center gap-2">
-                                                <img src={col.avatarUrl} alt={col.title} className="w-8 h-8 rounded-full border border-slate-200" />
+                                                {col.avatarUrl ? (
+                                                    <img src={col.avatarUrl} alt={col.title} className="w-8 h-8 rounded-full border border-slate-200 object-cover" />
+                                                ) : (
+                                                    <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center">
+                                                        <UserIcon size={14} className="text-slate-400" />
+                                                    </div>
+                                                )}
                                                 <span className="text-sm font-bold text-slate-800 truncate max-w-[120px]">{col.title}</span>
                                             </div>
                                         )}
@@ -780,15 +774,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                                                 {app.service.name}
                                                             </p>
                                                         </div>
-
-                                                        {viewType === 'Pagamento' && !isSmall && (
-                                                            <div className="mt-auto pt-1 flex items-center gap-1 text-[10px] font-bold text-green-700 opacity-90 border-t border-black/5">
-                                                                <span>R$ {app.service.price.toFixed(2)}</span>
-                                                                {app.status === 'concluido' && <span className="bg-green-200 px-1 rounded ml-auto text-[9px]">Pago</span>}
-                                                            </div>
-                                                        )}
                                                     </div>
-                                                    {app.status === 'confirmado_whatsapp' && <div className="absolute bottom-1 right-1 w-2 h-2 rounded-full bg-green-500 shadow-sm ring-1 ring-white" title="Confirmado via WhatsApp"></div>}
                                                 </div>
                                             )})}
                                         </div>
