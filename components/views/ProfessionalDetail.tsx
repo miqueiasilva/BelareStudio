@@ -2,11 +2,12 @@
 import React, { useState, useRef } from 'react';
 import { 
     ChevronLeft, Mail, Phone, MapPin, Calendar, Clock, DollarSign, 
-    CheckCircle, List, User, Save, Upload, Plus, Trash2, Globe, Camera, Scissors
+    CheckCircle, List, User, Save, Upload, Plus, Trash2, Globe, Camera, Scissors, Loader2
 } from 'lucide-react';
 import { LegacyProfessional, LegacyService } from '../../types';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
+import { supabase } from '../../services/supabaseClient';
 
 interface ProfessionalDetailProps {
     professional: LegacyProfessional;
@@ -17,21 +18,8 @@ interface ProfessionalDetailProps {
 
 const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: initialProf, services, onBack, onSave }) => {
     // Merge initial data with defaults if missing
-    const [prof, setProf] = useState<LegacyProfessional>({
-        ...initialProf,
-        email: initialProf.email || '',
-        phone: initialProf.phone || '',
-        role: initialProf.role || 'Especialista',
-        bio: initialProf.bio || '',
-        active: initialProf.active ?? true,
-        onlineBooking: initialProf.onlineBooking ?? true,
-        commissionRate: initialProf.commissionRate || 50,
-        pixKey: initialProf.pixKey || '',
-        services: initialProf.services || services.map(s => s.id), // Enable all by default for demo
-        schedule: initialProf.schedule || ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map(d => ({
-            day: d, start: '09:00', end: '18:00', active: true
-        }))
-    });
+    const [prof, setProf] = useState<LegacyProfessional>(initialProf);
+    const [isUploading, setIsUploading] = useState(false);
 
     const [activeTab, setActiveTab] = useState<'perfil' | 'servicos' | 'horarios' | 'comissoes'>('perfil');
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -40,19 +28,65 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         onSave(prof);
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleUploadFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) {
-            const url = URL.createObjectURL(file);
-            setProf({ ...prof, avatarUrl: url });
+        if (!file) return;
+
+        setIsUploading(true);
+        try {
+            const fileName = `${prof.id}-${Date.now()}.jpg`;
+
+            // 1. Upload para o Storage bucket 'team-photos'
+            const { error: uploadError } = await supabase.storage
+                .from('team-photos')
+                .upload(fileName, file, { upsert: true });
+
+            if (uploadError) throw uploadError;
+
+            // 2. Pegar URL Pública
+            const { data: { publicUrl } } = supabase.storage
+                .from('team-photos')
+                .getPublicUrl(fileName);
+
+            // 3. ATUALIZAR TABELA IMEDIATAMENTE
+            const { error: dbError } = await supabase
+                .from('professionals')
+                .update({ photo_url: publicUrl })
+                .eq('id', prof.id);
+
+            if (dbError) throw dbError;
+
+            // 4. Atualiza o estado local para mostrar a foto nova na hora
+            setProf(prev => ({ ...prev, avatarUrl: publicUrl }));
+            alert("Foto atualizada com sucesso!");
+
+        } catch (error: any) {
+            console.error("Erro no upload:", error);
+            alert("Erro ao salvar foto: " + (error.message || "Erro desconhecido"));
+        } finally {
+            setIsUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
-    const handleRemovePhoto = (e: React.MouseEvent) => {
+    const handleRemovePhoto = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        setProf({ ...prof, avatarUrl: '' });
-        if (fileInputRef.current) {
-            fileInputRef.current.value = '';
+        if (!window.confirm("Deseja remover a foto do perfil?")) return;
+
+        try {
+            const { error } = await supabase
+                .from('professionals')
+                .update({ photo_url: null })
+                .eq('id', prof.id);
+
+            if (error) throw error;
+
+            setProf({ ...prof, avatarUrl: '' });
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+        } catch (error) {
+            alert("Erro ao remover foto.");
         }
     };
 
@@ -89,7 +123,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                     onClick={handleSave}
                     className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl shadow-lg shadow-orange-200 transition-all active:scale-95 flex items-center gap-2"
                 >
-                    <Save size={18} /> Salvar
+                    <Save size={18} /> Salvar Alterações
                 </button>
             </div>
 
@@ -103,7 +137,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         <div className="relative z-10 flex flex-col items-center">
                             <div 
                                 className="w-32 h-32 rounded-full border-4 border-white shadow-md overflow-hidden bg-slate-200 group cursor-pointer relative"
-                                onClick={() => fileInputRef.current?.click()}
+                                onClick={() => !isUploading && fileInputRef.current?.click()}
                             >
                                 {prof.avatarUrl ? (
                                     <img src={prof.avatarUrl} alt={prof.name} className="w-full h-full object-cover" />
@@ -113,8 +147,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                     </div>
                                 )}
                                 
-                                <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <Camera className="text-white w-8 h-8" />
+                                <div className={`absolute inset-0 bg-black/30 flex items-center justify-center transition-opacity ${isUploading ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                    {isUploading ? <Loader2 className="text-white w-8 h-8 animate-spin" /> : <Camera className="text-white w-8 h-8" />}
                                 </div>
                             </div>
                             
@@ -124,10 +158,10 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                 ref={fileInputRef} 
                                 className="hidden" 
                                 accept="image/*"
-                                onChange={handleFileChange}
+                                onChange={handleUploadFoto}
                             />
 
-                            {prof.avatarUrl && (
+                            {prof.avatarUrl && !isUploading && (
                                 <button 
                                     onClick={handleRemovePhoto}
                                     className="mt-2 text-xs text-red-500 font-bold hover:text-red-700 flex items-center gap-1 bg-white/80 px-2 py-1 rounded-full shadow-sm backdrop-blur-sm"
