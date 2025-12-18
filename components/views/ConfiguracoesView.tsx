@@ -1,6 +1,5 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
-import { Settings, User, Scissors, Clock, Bell, Store, Save, Plus, Trash2, Edit2, Search, Filter, Download, FolderPen, ChevronLeft, Menu, ChevronRight, Database, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Settings, User, Scissors, Clock, Bell, Store, Save, Plus, Trash2, Edit2, Search, Filter, Download, FolderPen, ChevronLeft, Menu, ChevronRight, Database, CheckCircle, AlertTriangle, Camera } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import Toast, { ToastType } from '../shared/Toast';
@@ -9,33 +8,14 @@ import { ServiceModal, ProfessionalModal } from '../modals/ConfigModals';
 import { LegacyService, LegacyProfessional } from '../../types';
 import ContextMenu from '../shared/ContextMenu';
 import ProfessionalDetail from './ProfessionalDetail';
-import { testConnection } from '../../services/supabaseClient';
+import { supabase, testConnection } from '../../services/supabaseClient';
 
 const ConfiguracoesView: React.FC = () => {
     const [activeTab, setActiveTab] = useState('studio');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [dbStatus, setDbStatus] = useState<'checking' | 'connected' | 'error'>('checking');
-
-    // Initial check for mobile
-    useEffect(() => {
-        if (window.innerWidth < 768) {
-            setIsSidebarOpen(false);
-        }
-        // Check DB status on mount
-        testConnection().then(connected => {
-            setDbStatus(connected ? 'connected' : 'error');
-        });
-    }, []);
-
-    const handleTabChange = (tabId: string) => {
-        setActiveTab(tabId);
-        // Reset selected professional when switching tabs
-        setSelectedProfessionalId(null);
-        if (window.innerWidth < 768) {
-            setIsSidebarOpen(false);
-        }
-    };
+    const [isLoading, setIsLoading] = useState(false);
 
     // --- State: Data ---
     const [studioData, setStudioData] = useState({
@@ -54,7 +34,7 @@ const ConfiguracoesView: React.FC = () => {
     });
 
     const [servicesData, setServicesData] = useState<LegacyService[]>(Object.values(initialServices));
-    const [professionalsData, setProfessionalsData] = useState<LegacyProfessional[]>(initialProfessionals);
+    const [professionalsData, setProfessionalsData] = useState<LegacyProfessional[]>([]);
     
     // --- Professional Detail State ---
     const [selectedProfessionalId, setSelectedProfessionalId] = useState<number | null>(null);
@@ -69,18 +49,101 @@ const ConfiguracoesView: React.FC = () => {
     const [schedule, setSchedule] = useState(
         ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'].map((day, i) => ({
             day,
-            start: i >= 5 ? '09:00' : '09:00', // Weekend vs Weekday logic (simplified)
+            start: i >= 5 ? '09:00' : '09:00', 
             end: i >= 5 ? '14:00' : '18:00',
-            active: i !== 6 // Sunday inactive by default
+            active: i !== 6 
         }))
     );
 
     // --- State: Modals ---
     const [serviceModal, setServiceModal] = useState<{ open: boolean; data: LegacyService | null }>({ open: false, data: null });
-    const [profModal, setProfModal] = useState<{ open: boolean; data: LegacyProfessional | null }>({ open: false, data: null }); // Kept for "New" mostly
+    const [profModal, setProfModal] = useState<{ open: boolean; data: LegacyProfessional | null }>({ open: false, data: null });
+
+    // --- Data Fetching Logic ---
+    const fetchProfessionals = async () => {
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('professionals')
+                .select('*')
+                .order('name');
+            
+            if (error) throw error;
+            
+            if (data) {
+                const mapped = data.map((p: any) => ({
+                    ...p,
+                    avatarUrl: p.photo_url || p.avatarUrl || `https://ui-avatars.com/api/?name=${p.name}&background=random`
+                }));
+                setProfessionalsData(mapped);
+            }
+        } catch (error) {
+            console.error("Erro ao buscar colaboradores:", error);
+            setProfessionalsData(initialProfessionals); // Fallback
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (window.innerWidth < 768) {
+            setIsSidebarOpen(false);
+        }
+        
+        testConnection().then(connected => {
+            setDbStatus(connected ? 'connected' : 'error');
+            if (connected) fetchProfessionals();
+            else setProfessionalsData(initialProfessionals);
+        });
+    }, []);
+
+    const handleTabChange = (tabId: string) => {
+        setActiveTab(tabId);
+        setSelectedProfessionalId(null);
+        if (window.innerWidth < 768) {
+            setIsSidebarOpen(false);
+        }
+    };
+
+    // --- Logic: Photo Upload ---
+    const handleUploadFoto = async (event: React.ChangeEvent<HTMLInputElement>, idProfissional: number) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const fileName = `${idProfissional}-${Date.now()}.jpg`;
+        showToast("Enviando foto...", "info");
+
+        try {
+            // 1. Upload to Storage
+            const { error: uploadError } = await supabase.storage
+                .from('team-photos')
+                .upload(fileName, file, { upsert: true });
+
+            if (uploadError) throw uploadError;
+
+            // 2. Get Public URL
+            const { data: { publicUrl } } = supabase.storage
+                .from('team-photos')
+                .getPublicUrl(fileName);
+
+            // 3. Update Database
+            const { error: updateError } = await supabase
+                .from('professionals')
+                .update({ photo_url: publicUrl })
+                .eq('id', idProfissional);
+
+            if (updateError) throw updateError;
+
+            // 4. Refresh UI
+            fetchProfessionals();
+            showToast("Foto atualizada com sucesso!", "success");
+        } catch (error: any) {
+            console.error("Erro no upload:", error);
+            showToast("Erro ao atualizar foto: " + error.message, "error");
+        }
+    };
 
     // --- Helpers ---
-    
     const formatDuration = (min: number) => {
         const h = Math.floor(min / 60);
         const m = min % 60;
@@ -103,15 +166,12 @@ const ConfiguracoesView: React.FC = () => {
     }, [servicesData, serviceSearch, selectedCategory]);
 
     // --- Actions ---
-
     const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
-    // Studio & Notifications
     const handleSaveStudio = () => showToast('Dados do estúdio salvos com sucesso!');
     const handleSaveNotifications = () => showToast('Preferências de notificação atualizadas!');
     const handleSaveSchedule = () => showToast('Horário de funcionamento atualizado!');
 
-    // Services CRUD
     const handleSaveService = (service: LegacyService) => {
         setServicesData(prev => {
             const exists = prev.find(s => s.id === service.id);
@@ -129,26 +189,47 @@ const ConfiguracoesView: React.FC = () => {
         }
     };
 
-    // Professionals CRUD
-    const handleSaveProfessional = (prof: LegacyProfessional) => {
-        setProfessionalsData(prev => {
-            const exists = prev.find(p => p.id === prof.id);
-            if (exists) return prev.map(p => p.id === prof.id ? prof : p);
-            return [...prev, prof];
-        });
-        setProfModal({ open: false, data: null });
-        setSelectedProfessionalId(null); // Go back to list
-        showToast(`Profissional "${prof.name}" salvo com sucesso!`);
-    };
+    const handleSaveProfessional = async (prof: LegacyProfessional) => {
+        try {
+            const payload = {
+                name: prof.name,
+                email: prof.email,
+                phone: prof.phone,
+                role: prof.role,
+                photo_url: prof.avatarUrl,
+                active: prof.active,
+                online_booking: prof.onlineBooking,
+                pix_key: prof.pixKey,
+                commission_rate: prof.commissionRate
+            };
 
-    const handleDeleteProfessional = (id: number) => {
-        if (window.confirm('Tem certeza que deseja remover este profissional?')) {
-            setProfessionalsData(prev => prev.filter(p => p.id !== id));
-            showToast('Profissional removido.', 'info');
+            if (prof.id && prof.id < 1000000000) {
+                await supabase.from('professionals').update(payload).eq('id', prof.id);
+            } else {
+                await supabase.from('professionals').insert([payload]);
+            }
+            
+            fetchProfessionals();
+            setProfModal({ open: false, data: null });
+            setSelectedProfessionalId(null);
+            showToast(`Dados de "${prof.name}" salvos com sucesso!`);
+        } catch (error) {
+            showToast("Erro ao salvar no banco.", "error");
         }
     };
 
-    // Schedule Logic
+    const handleDeleteProfessional = async (id: number) => {
+        if (window.confirm('Tem certeza que deseja remover este profissional?')) {
+            try {
+                await supabase.from('professionals').delete().eq('id', id);
+                fetchProfessionals();
+                showToast('Profissional removido.', 'info');
+            } catch (error) {
+                showToast("Erro ao remover.", "error");
+            }
+        }
+    };
+
     const toggleDay = (index: number) => {
         setSchedule(prev => prev.map((item, i) => i === index ? { ...item, active: !item.active } : item));
     };
@@ -179,7 +260,6 @@ const ConfiguracoesView: React.FC = () => {
         { id: 'notifications', label: 'Notificações', icon: Bell },
     ];
 
-    // If a professional is selected, show the detail view entirely
     if (activeTab === 'team' && selectedProfessionalId) {
         const selectedProf = professionalsData.find(p => p.id === selectedProfessionalId);
         if (selectedProf) {
@@ -199,7 +279,6 @@ const ConfiguracoesView: React.FC = () => {
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} options={contextMenu.options} onClose={() => setContextMenu(null)} />}
 
-            {/* Mobile Overlay */}
             {isSidebarOpen && (
                 <div 
                     className="fixed inset-0 bg-black/20 z-20 md:hidden"
@@ -207,7 +286,6 @@ const ConfiguracoesView: React.FC = () => {
                 />
             )}
 
-            {/* Sidebar Settings */}
             <aside className={`
                 bg-white border-r border-slate-200 flex-col flex-shrink-0 transition-all duration-300 ease-in-out
                 fixed md:relative z-30 h-full
@@ -258,17 +336,14 @@ const ConfiguracoesView: React.FC = () => {
                 </div>
             </aside>
 
-            {/* Main Content */}
             <main className="flex-1 overflow-y-auto w-full">
                 <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
                     
-                    {/* Header for current tab */}
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                         <div className="flex items-center gap-3">
                             <button 
                                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                                 className="p-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors shadow-sm"
-                                title={isSidebarOpen ? "Ocultar menu" : "Mostrar menu"}
                             >
                                 {isSidebarOpen ? <ChevronLeft size={20} className="hidden md:block" /> : <Menu size={20} />}
                                 {isSidebarOpen && <ChevronLeft size={20} className="md:hidden" />}
@@ -279,7 +354,6 @@ const ConfiguracoesView: React.FC = () => {
                             </div>
                         </div>
                         
-                        {/* Dynamic Actions */}
                         {activeTab === 'studio' && (
                              <button onClick={handleSaveStudio} className="w-full sm:w-auto bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2 shadow-sm transition-all">
                                 <Save size={18} /> <span className="hidden sm:inline">Salvar Alterações</span><span className="sm:hidden">Salvar</span>
@@ -302,7 +376,6 @@ const ConfiguracoesView: React.FC = () => {
                         )}
                     </div>
 
-                    {/* Content Areas */}
                     {activeTab === 'studio' && (
                         <Card>
                             <div className="space-y-4">
@@ -361,7 +434,6 @@ const ConfiguracoesView: React.FC = () => {
 
                     {activeTab === 'services' && (
                         <div className="space-y-4">
-                            {/* Toolbar */}
                             <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
                                 <div className="flex items-center gap-3 w-full md:w-auto">
                                     <div className="relative">
@@ -402,7 +474,6 @@ const ConfiguracoesView: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Service List Table */}
                             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left min-w-[600px]">
@@ -442,21 +513,8 @@ const ConfiguracoesView: React.FC = () => {
                                                     </td>
                                                 </tr>
                                             ))}
-                                            {filteredServices.length === 0 && (
-                                                <tr>
-                                                    <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
-                                                        Nenhum serviço encontrado.
-                                                    </td>
-                                                </tr>
-                                            )}
                                         </tbody>
                                     </table>
-                                </div>
-                                {/* Pagination (Static for Mock) */}
-                                <div className="px-6 py-4 border-t border-slate-100 flex justify-end">
-                                    <span className="text-xs font-bold bg-white text-slate-800 border border-slate-200 w-8 h-8 flex items-center justify-center rounded-lg shadow-sm">
-                                        {filteredServices.length}
-                                    </span>
                                 </div>
                             </div>
                         </div>
@@ -479,11 +537,28 @@ const ConfiguracoesView: React.FC = () => {
                                 {professionalsData.map(prof => (
                                     <li 
                                         key={prof.id} 
-                                        onClick={() => setSelectedProfessionalId(prof.id)}
                                         className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors cursor-pointer group"
+                                        onClick={() => setSelectedProfessionalId(prof.id)}
                                     >
                                         <div className="flex items-center gap-4">
-                                            <img src={prof.avatarUrl} alt={prof.name} className="w-10 h-10 rounded-full object-cover border border-slate-200" />
+                                            {/* Foto com Upload Button */}
+                                            <div className="relative group/avatar cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                                                <img 
+                                                    src={prof.avatarUrl} 
+                                                    alt={prof.name} 
+                                                    className="w-12 h-12 rounded-full object-cover border border-slate-200" 
+                                                />
+                                                <input 
+                                                    type="file" 
+                                                    accept="image/*"
+                                                    className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                                    onChange={(e) => handleUploadFoto(e, prof.id)}
+                                                />
+                                                <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity text-white pointer-events-none">
+                                                    <Camera size={14} />
+                                                </div>
+                                            </div>
+
                                             <div>
                                                 <h4 className="font-bold text-slate-800 text-sm">{prof.name}</h4>
                                                 <p className="text-xs text-slate-500">{prof.email || 'e-mail não cadastrado'}</p>
@@ -494,7 +569,6 @@ const ConfiguracoesView: React.FC = () => {
                                                 Ativo
                                             </span>
                                             <button 
-                                                onClick={(e) => { e.stopPropagation(); /* Context Menu Logic */ }}
                                                 className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-200"
                                             >
                                                 <ChevronRight size={18} />
@@ -502,46 +576,38 @@ const ConfiguracoesView: React.FC = () => {
                                         </div>
                                     </li>
                                 ))}
-                                {professionalsData.length === 0 && (
-                                    <li className="p-8 text-center text-slate-500">Nenhum profissional cadastrado.</li>
-                                )}
                             </ul>
-                            <div className="p-4 border-t border-slate-100 bg-slate-50 text-right">
-                                <span className="text-xs text-slate-500 font-medium">Colaboradores cadastrados: {professionalsData.length}</span>
-                            </div>
                         </div>
                     )}
 
                     {activeTab === 'schedule' && (
                         <Card>
                             <div className="divide-y divide-slate-100">
-                                {schedule.map((item, index) => {
-                                    return (
-                                        <div key={item.day} className={`flex items-center justify-between py-4 first:pt-0 last:pb-0 ${!item.active ? 'opacity-50' : ''}`}>
-                                            <span className="font-medium text-slate-700 w-32">{item.day}</span>
-                                            <div className="flex items-center gap-3">
-                                                <input 
-                                                    type="time" 
-                                                    value={item.start} 
-                                                    onChange={(e) => updateScheduleTime(index, 'start', e.target.value)}
-                                                    disabled={!item.active}
-                                                    className={`border rounded-lg px-3 py-1.5 text-sm outline-none focus:border-orange-500 w-24 ${!item.active ? 'bg-slate-100 text-slate-400' : 'bg-white'}`} 
-                                                />
-                                                <span className="text-slate-400 font-medium">até</span>
-                                                <input 
-                                                    type="time" 
-                                                    value={item.end} 
-                                                    onChange={(e) => updateScheduleTime(index, 'end', e.target.value)}
-                                                    disabled={!item.active}
-                                                    className={`border rounded-lg px-3 py-1.5 text-sm outline-none focus:border-orange-500 w-24 ${!item.active ? 'bg-slate-100 text-slate-400' : 'bg-white'}`} 
-                                                />
-                                            </div>
-                                            <div className="w-16 flex justify-end">
-                                                <ToggleSwitch on={item.active} onClick={() => toggleDay(index)} />
-                                            </div>
+                                {schedule.map((item, index) => (
+                                    <div key={item.day} className={`flex items-center justify-between py-4 first:pt-0 last:pb-0 ${!item.active ? 'opacity-50' : ''}`}>
+                                        <span className="font-medium text-slate-700 w-32">{item.day}</span>
+                                        <div className="flex items-center gap-3">
+                                            <input 
+                                                type="time" 
+                                                value={item.start} 
+                                                onChange={(e) => updateScheduleTime(index, 'start', e.target.value)}
+                                                disabled={!item.active}
+                                                className={`border rounded-lg px-3 py-1.5 text-sm outline-none focus:border-orange-500 w-24 ${!item.active ? 'bg-slate-100 text-slate-400' : 'bg-white'}`} 
+                                            />
+                                            <span className="text-slate-400 font-medium">até</span>
+                                            <input 
+                                                type="time" 
+                                                value={item.end} 
+                                                onChange={(e) => updateScheduleTime(index, 'end', e.target.value)}
+                                                disabled={!item.active}
+                                                className={`border rounded-lg px-3 py-1.5 text-sm outline-none focus:border-orange-500 w-24 ${!item.active ? 'bg-slate-100 text-slate-400' : 'bg-white'}`} 
+                                            />
                                         </div>
-                                    );
-                                })}
+                                        <div className="w-16 flex justify-end">
+                                            <ToggleSwitch on={item.active} onClick={() => toggleDay(index)} />
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </Card>
                     )}
@@ -586,16 +652,14 @@ const ConfiguracoesView: React.FC = () => {
                 </div>
             </main>
 
-            {/* Modals */}
             {serviceModal.open && (
                 <ServiceModal 
                     service={serviceModal.data}
-                    availableCategories={categories.filter(c => c !== 'Todas')} // Add categories
+                    availableCategories={categories.filter(c => c !== 'Todas')} 
                     onClose={() => setServiceModal({ open: false, data: null })} 
                     onSave={handleSaveService} 
                 />
             )}
-            {/* Kept for creating NEW professionals quickly without the full detail view first */}
             {profModal.open && (
                 <ProfessionalModal 
                     professional={profModal.data} 
