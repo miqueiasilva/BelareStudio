@@ -5,13 +5,12 @@ import {
     Share2, Bell, RotateCcw, ChevronDown, List, Clock, 
     CheckCircle, DollarSign, FileText, Calendar as CalendarIcon, RefreshCw, User as UserIcon
 } from 'lucide-react';
-import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth, setHours, setMinutes, roundToNearestMinutes } from 'date-fns';
+import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth, setHours, setMinutes } from 'date-fns';
 import { pt } from 'date-fns/locale';
 
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
 import AppointmentModal from '../modals/AppointmentModal';
 import BlockTimeModal from '../modals/BlockTimeModal';
-import ContextMenu from '../shared/ContextMenu';
 import JaciBotPanel from '../JaciBotPanel';
 import AppointmentDetailPopover from '../shared/AppointmentDetailPopover';
 import Toast, { ToastType } from '../shared/Toast';
@@ -41,7 +40,7 @@ const getAppointmentStyle = (start: Date, end: Date) => {
 const getStatusColor = (status: AppointmentStatus) => {
     switch (status) {
         case 'concluido': return 'bg-green-100 border-green-300 text-green-800 hover:ring-green-400';
-        case 'bloqueado': return 'bg-slate-200 border-slate-300 text-slate-700 hover:ring-slate-400 pattern-diagonal-lines-sm pattern-slate-400 pattern-bg-slate-200 pattern-size-4 pattern-opacity-100';
+        case 'bloqueado': return 'bg-slate-200 border-slate-300 text-slate-700 hover:ring-slate-400 pattern-diagonal-lines-sm pattern-slate-400 pattern-bg-slate-200';
         case 'confirmado': return 'bg-cyan-100 border-cyan-300 text-cyan-800 hover:ring-cyan-400';
         case 'confirmado_whatsapp': return 'bg-teal-100 border-teal-300 text-teal-800 hover:ring-teal-400';
         case 'chegou': return 'bg-purple-100 border-purple-300 text-purple-800 hover:ring-purple-400';
@@ -61,7 +60,7 @@ const TimelineIndicator = () => {
             const now = new Date();
             const startOfDayMinutes = START_HOUR * 60;
             const nowMinutes = now.getHours() * 60 + now.getMinutes();
-            if (nowMinutes < startOfDayMinutes) {
+            if (nowMinutes < startOfDayMinutes || nowMinutes > END_HOUR * 60) {
                 setTopPosition(-1); return;
             }
             const top = (nowMinutes - startOfDayMinutes) * PIXELS_PER_MINUTE;
@@ -88,31 +87,22 @@ interface AtendimentosViewProps {
 }
 
 type ViewType = 'Profissional' | 'Andamento' | 'Pagamento';
-type PeriodType = 'Dia' | 'Semana' | 'Mês' | 'Lista' | 'Fila de Espera';
+type PeriodType = 'Dia' | 'Semana' | 'Mês' | 'Lista';
 
 const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [appointments, setAppointments] = useState<LegacyAppointment[]>([]);
     const [resources, setResources] = useState<LegacyProfessional[]>([]);
     const [isLoadingData, setIsLoadingData] = useState(false);
-    const [visibleResourceIds, setVisibleResourceIds] = useState<number[]>([]);
-    const [viewType, setViewType] = useState<ViewType>('Profissional');
+    const [viewType] = useState<ViewType>('Profissional');
     const [periodType, setPeriodType] = useState<PeriodType>('Dia');
-    const [isViewDropdownOpen, setIsViewDropdownOpen] = useState(false);
     const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = useState(false);
-    const [activeMobileProfId, setActiveMobileProfId] = useState<number | null>(null);
-    const [isMobile, setIsMobile] = useState(false);
-    const [isMobileProfSidebarOpen, setIsMobileProfSidebarOpen] = useState(true);
     const [modalState, setModalState] = useState<{ type: 'appointment' | 'block'; data: any } | null>(null);
-    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; options: any[] } | null>(null);
     const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
     const [isJaciBotOpen, setIsJaciBotOpen] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    const scrollContainerRef = useRef<HTMLDivElement>(null);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
-    const columnRefs = useRef<Map<string | number, HTMLDivElement>>(new Map());
-    const viewDropdownRef = useRef<HTMLDivElement>(null);
     const periodDropdownRef = useRef<HTMLDivElement>(null);
 
     const fetchResources = async () => {
@@ -131,8 +121,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     role: p.role
                 }));
                 setResources(mapped);
-                setVisibleResourceIds(mapped.map(p => p.id));
-                if (mapped.length > 0) setActiveMobileProfId(mapped[0].id);
             }
         } catch (e) {
             console.error("Error fetching professionals:", e);
@@ -177,25 +165,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     useEffect(() => {
         if (resources.length > 0) fetchAppointments();
-    }, [resources]);
+    }, [resources, currentDate]);
 
     useEffect(() => {
-        const handleResize = () => setIsMobile(window.innerWidth < 768);
-        handleResize();
-        window.addEventListener('resize', handleResize);
         const handleClickOutside = (event: MouseEvent) => {
-            if (viewDropdownRef.current && !viewDropdownRef.current.contains(event.target as Node)) setIsViewDropdownOpen(false);
             if (periodDropdownRef.current && !periodDropdownRef.current.contains(event.target as Node)) setIsPeriodDropdownOpen(false);
         };
         document.addEventListener('mousedown', handleClickOutside);
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
+        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
     const handleDateChange = (direction: number) => {
-        if (periodType === 'Dia' || periodType === 'Lista' || periodType === 'Fila de Espera') setCurrentDate(prev => addDays(prev, direction));
+        if (periodType === 'Dia' || periodType === 'Lista') setCurrentDate(prev => addDays(prev, direction));
         else if (periodType === 'Semana') setCurrentDate(prev => addWeeks(prev, direction));
         else if (periodType === 'Mês') setCurrentDate(prev => addMonths(prev, direction));
     };
@@ -208,29 +189,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             return days.map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date', data: day }));
         }
         if (viewType === 'Profissional') {
-            const profs = resources.filter(p => visibleResourceIds.includes(p.id));
-            return profs.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional', data: p }));
-        }
-        if (viewType === 'Andamento') {
-            return [
-                { id: 'agendado', title: 'Agendados', type: 'status' },
-                { id: 'confirmado', title: 'Confirmados', type: 'status' },
-                { id: 'chegou', title: 'Chegou', type: 'status' },
-                { id: 'em_atendimento', title: 'Em Atendimento', type: 'status' },
-                { id: 'concluido', title: 'Concluídos', type: 'status' }
-            ];
-        }
-        if (viewType === 'Pagamento') {
-            return [{ id: 'pendente', title: 'A Pagar / Aberto', type: 'payment' }, { id: 'pago', title: 'Pagos', type: 'payment' }];
+            return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional', data: p }));
         }
         return [];
-    }, [viewType, periodType, currentDate, visibleResourceIds, resources]);
+    }, [viewType, periodType, currentDate, resources]);
 
     const gridStyle = useMemo(() => {
         const colsCount = columns.length || 1;
-        const minWidth = isMobile ? '140px' : '180px';
-        return { gridTemplateColumns: `60px repeat(${colsCount}, minmax(${minWidth}, 1fr))` };
-    }, [columns.length, isMobile]);
+        return { gridTemplateColumns: `60px repeat(${colsCount}, minmax(180px, 1fr))` };
+    }, [columns.length]);
 
     const filteredAppointments = useMemo(() => {
         if (periodType === 'Dia' || periodType === 'Lista') return appointments.filter(a => isSameDay(a.start, currentDate));
@@ -244,18 +211,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             const end = endOfMonth(currentDate);
             return appointments.filter(a => isWithinInterval(a.start, { start, end }));
         }
-        if (periodType === 'Fila de Espera') return appointments.filter(a => a.status === 'em_espera');
         return appointments;
     }, [appointments, periodType, currentDate]);
 
     const getColumnForAppointment = (app: LegacyAppointment, cols: DynamicColumn[]) => {
         if (periodType === 'Semana') return cols.find(c => isSameDay(app.start, c.data));
         if (viewType === 'Profissional') return cols.find(c => c.id === app.professional.id || c.title === app.professional.name);
-        if (viewType === 'Andamento') {
-            if (app.status === 'confirmado' || app.status === 'confirmado_whatsapp') return cols.find(c => c.id === 'confirmado');
-            return cols.find(c => c.id === app.status);
-        }
-        if (viewType === 'Pagamento') return cols.find(c => c.id === (app.status === 'concluido' ? 'pago' : 'pendente'));
         return null;
     };
 
@@ -288,8 +249,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     };
 
     return (
-        <div className="flex h-full bg-white relative flex-col overflow-visible">
+        <div className="flex h-full bg-white relative flex-col overflow-visible font-sans">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+            
             <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-6 z-[60]">
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-4">
                     <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">Atendimentos {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}</h2>
@@ -297,18 +259,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         <div className="relative z-[70]" ref={periodDropdownRef}>
                             <button onClick={() => setIsPeriodDropdownOpen(!isPeriodDropdownOpen)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50">{periodType} <ChevronDown size={16} /></button>
                             {isPeriodDropdownOpen && (
-                                <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-2xl z-[100] py-2">
-                                    {['Dia', 'Semana', 'Mês', 'Lista', 'Fila de Espera'].map((item) => (
+                                <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-2xl z-[100] py-2 overflow-hidden">
+                                    {['Dia', 'Semana', 'Mês', 'Lista'].map((item) => (
                                         <button key={item} onClick={() => { setPeriodType(item as PeriodType); setIsPeriodDropdownOpen(false); }} className={`w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 ${periodType === item ? 'text-orange-600 font-bold bg-orange-50/50' : 'text-slate-700'}`}>{item}</button>
                                     ))}
                                 </div>
                             )}
                         </div>
-                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-6 rounded-xl shadow-lg">Agendar</button>
+                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all active:scale-95">Agendar</button>
                     </div>
                 </div>
                 <div className="flex items-center gap-4">
-                    <button onClick={() => setCurrentDate(new Date())} className="text-sm font-bold bg-slate-100 px-4 py-2 rounded-lg">HOJE</button>
+                    <button onClick={() => setCurrentDate(new Date())} className="text-sm font-bold bg-slate-100 px-4 py-2 rounded-lg hover:bg-slate-200 transition-colors">HOJE</button>
                     <div className="flex items-center gap-1">
                         <button onClick={() => handleDateChange(-1)} className="p-2 hover:bg-slate-100 rounded-full"><ChevronLeft size={20} /></button>
                         <button onClick={() => handleDateChange(1)} className="p-2 hover:bg-slate-100 rounded-full"><ChevronRight size={20} /></button>
@@ -318,19 +280,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             </header>
 
             <div className="flex flex-1 overflow-hidden relative">
-                {isMobile && periodType === 'Dia' && viewType === 'Profissional' && (
-                    <div className={`flex flex-col bg-slate-50 border-r border-slate-200 transition-all duration-300 z-20 ${isMobileProfSidebarOpen ? 'w-20' : 'w-0 overflow-hidden'}`}>
-                        <div className="flex-1 py-4 flex flex-col items-center gap-4">
-                            {resources.map(prof => (
-                                <button key={prof.id} onClick={() => setActiveMobileProfId(prof.id)} className={`w-12 h-12 rounded-full border-2 ${activeMobileProfId === prof.id ? 'border-orange-500 scale-110' : 'border-slate-300 opacity-70'}`}>
-                                    <img src={prof.avatarUrl} className="w-full h-full rounded-full object-cover" alt={prof.name} />
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                <div ref={scrollContainerRef} className="flex-1 overflow-auto bg-slate-50 md:bg-white relative">
+                <div className="flex-1 overflow-auto bg-slate-50 md:bg-white relative">
                     {(periodType === 'Dia' || periodType === 'Semana') && (
                         <div className="relative min-h-full min-w-full">
                             <div className="grid sticky top-0 z-40 shadow-sm border-b border-slate-200 bg-white" style={gridStyle}>
@@ -339,14 +289,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                     <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-200 h-24 bg-slate-50/30">
                                         <div className="flex items-center gap-3 px-4 py-2 bg-white rounded-2xl border border-slate-200 shadow-sm min-w-[140px]">
                                             {col.photo && <img src={col.photo} alt={col.title} className="w-10 h-10 rounded-full object-cover border-2 border-orange-100" />}
-                                            <span className="text-xs font-bold text-slate-800 truncate">{col.title}</span>
+                                            <div className="flex flex-col overflow-hidden">
+                                                <span className="text-xs font-bold text-slate-800 truncate">{col.title}</span>
+                                                {col.subtitle && <span className="text-[10px] text-slate-400 font-semibold">{col.subtitle}</span>}
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
                             </div>
                             <div className="grid relative" style={gridStyle}>
                                 <div className="border-r border-slate-200 bg-white sticky left-0 z-30">
-                                    {timeSlots.map(time => <div key={time} className="h-20 text-right pr-3 text-[11px] text-slate-400 font-bold pt-2"><span>{time}</span></div>)}
+                                    {timeSlots.map(time => <div key={time} className="h-20 text-right pr-3 text-[11px] text-slate-400 font-bold pt-2 border-b border-slate-50/50 border-dashed"><span>{time}</span></div>)}
                                 </div>
                                 {columns.map((col, idx) => (
                                     <div key={col.id} className={`relative border-r border-slate-200 min-h-[1000px] ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/10'}`}>
