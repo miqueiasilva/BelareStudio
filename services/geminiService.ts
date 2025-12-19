@@ -1,12 +1,17 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { initialAppointments, mockTransactions, clients, professionals } from "../data/mockData";
 import { format, isSameDay } from "date-fns";
 
-// --- Segurança de Inicialização ---
+// --- Padrão Lazy Singleton para Estabilidade ---
 
 let aiInstance: GoogleGenAI | null = null;
 const modelId = "gemini-3-flash-preview";
 
+/**
+ * Obtém a instância do SDK apenas quando necessário.
+ * Evita crash global se a chave estiver ausente.
+ */
 const getAIClient = () => {
     if (aiInstance) return aiInstance;
     
@@ -25,7 +30,8 @@ const getAIClient = () => {
     }
 };
 
-// --- Fallback Data ---
+// --- Dados de Fallback (Segurança de Interface) ---
+
 const insightsFallback = [
     "O faturamento deste mês está 15% acima da meta! Considere oferecer um bônus para a equipe.",
     "A taxa de ocupação nas terças-feiras está baixa. Sugiro criar uma promoção 'Terça em Dobro'.",
@@ -42,7 +48,7 @@ const topicInsightsFallback: Record<string, string[]> = {
 
 const getRandomItem = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
-// --- Real AI Implementations com Safety Gates ---
+// --- Implementações Blindadas (Public API) ---
 
 export const getDashboardInsight = async (): Promise<string> => {
     const ai = getAIClient();
@@ -54,11 +60,12 @@ export const getDashboardInsight = async (): Promise<string> => {
         
         const response = await ai.models.generateContent({
             model: modelId,
-            contents: `Você é a JaciBot. Dados do estúdio hoje (${format(today, "dd/MM")}): ${context}. Gere um insight curto e estratégico de 1 frase.`,
+            contents: `Você é a JaciBot, consultora IA de beleza. Dados hoje (${format(today, "dd/MM")}): ${context}. Gere um insight estratégico de 1 frase.`,
         });
 
         return response.text || getRandomItem(insightsFallback);
     } catch (error) {
+        console.error("JaciBot Error:", error);
         return getRandomItem(insightsFallback);
     }
 };
@@ -70,7 +77,7 @@ export const getInsightByTopic = async (topic: string): Promise<string> => {
     try {
         const response = await ai.models.generateContent({
             model: modelId,
-            contents: `JaciBot, dica rápida (máx 15 palavras) sobre: ${topic} para um salão de beleza.`,
+            contents: `JaciBot, forneça uma dica rápida (máx 15 palavras) sobre o tópico: "${topic}" para um salão de beleza moderno.`,
         });
 
         return response.text || getRandomItem(topicInsightsFallback[topic] || insightsFallback);
@@ -81,12 +88,14 @@ export const getInsightByTopic = async (topic: string): Promise<string> => {
 
 export const suggestSmartSlots = async (date: Date): Promise<string[]> => {
     const ai = getAIClient();
-    if (!ai) return ["10:00 - Design Sobrancelha", "14:30 - Manicure", "16:00 - Corte"];
+    const fallbackSlots = ["10:00 - Design Sobrancelha", "14:30 - Manicure", "16:00 - Corte"];
+    
+    if (!ai) return fallbackSlots;
     
     try {
         const response = await ai.models.generateContent({
             model: modelId,
-            contents: `Sugira 3 horários livres plausíveis para hoje. Retorne APENAS um Array JSON de strings.`,
+            contents: `Analise a agenda e sugira 3 horários de encaixe plausíveis para hoje. Retorne APENAS um Array JSON de strings.`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
@@ -97,27 +106,30 @@ export const suggestSmartSlots = async (date: Date): Promise<string[]> => {
         });
 
         const jsonStr = response.text;
-        return jsonStr ? JSON.parse(jsonStr) : [];
+        return jsonStr ? JSON.parse(jsonStr) : fallbackSlots;
     } catch (error) {
-        return ["Sugestão AI indisponível."];
+        return fallbackSlots;
     }
-}
+};
 
 export const enqueueReminder = async (appointmentId: number, type: string): Promise<{ success: boolean; message: string }> => {
     const ai = getAIClient();
-    if (!ai) return { success: true, message: "[Fallback] Lembrete padrão agendado." };
+    if (!ai) return { success: true, message: "[Modo Offline] Lembrete padrão agendado para o cliente." };
 
     try {
         const response = await ai.models.generateContent({
             model: modelId,
-            contents: `Crie uma mensagem curta de WhatsApp para: ${type}. Apenas o texto.`
+            contents: `Gere uma mensagem curta e cordial de WhatsApp para um cliente sobre: ${type}. Apenas o texto.`
         });
         
-        return { success: true, message: `[JaciBot] ${response.text?.trim()}` };
+        return { 
+            success: true, 
+            message: `[JaciBot] Mensagem gerada: "${response.text?.trim()}"` 
+        };
     } catch (e) {
-        return { success: false, message: "Erro ao gerar mensagem via AI." };
+        return { success: false, message: "Erro ao gerar mensagem via IA." };
     }
-}
+};
 
 export const autoCashClose = async (date: Date): Promise<{ totalPrevisto: number; totalRecebido: number; diferenca: number; resumo: string }> => {
     const ai = getAIClient();
@@ -125,18 +137,23 @@ export const autoCashClose = async (date: Date): Promise<{ totalPrevisto: number
         .filter(t => t.type === 'receita')
         .reduce((sum, t) => sum + t.amount, 0);
     
-    const result = { totalPrevisto: income, totalRecebido: income,  diferenca: 0, resumo: "Fechamento realizado." };
+    const result = {
+        totalPrevisto: income,
+        totalRecebido: income, 
+        diferenca: 0,
+        resumo: "Fechamento realizado com sucesso baseados nos lançamentos do sistema."
+    };
 
     if (!ai) return result;
 
     try {
         const response = await ai.models.generateContent({
             model: modelId,
-            contents: `Resumo financeiro: R$ ${income.toFixed(2)}. Diferença: 0. Gere um elogio curto de 1 frase.`
+            contents: `Resumo financeiro: R$ ${income.toFixed(2)}. Diferença zero. Gere um elogio executivo curto de 1 frase para a gerente.`
         });
         result.resumo = response.text || result.resumo;
         return result;
     } catch (e) {
         return result;
     }
-}
+};
