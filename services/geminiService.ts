@@ -4,28 +4,10 @@ import { initialAppointments, mockTransactions, clients, professionals } from ".
 import { format, isSameDay } from "date-fns";
 
 // --- Configuration ---
-// Função segura para obter a chave de API em diferentes ambientes (Vite, Next, Node, Vanilla)
-const getApiKey = () => {
-    try {
-        // @ts-ignore
-        if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-            // @ts-ignore
-            return process.env.API_KEY;
-        }
-        // @ts-ignore
-        if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) {
-            // @ts-ignore
-            return import.meta.env.VITE_API_KEY;
-        }
-    } catch (e) {
-        console.warn("Ambiente não suporta acesso a variáveis de ambiente padrão.");
-    }
-    return null;
-};
-
-const apiKey = getApiKey();
-const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
-const modelId = "gemini-2.5-flash";
+// FIX: Using process.env.API_KEY directly as per naming guidelines
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// FIX: Using gemini-3-flash-preview for general text/reasoning tasks
+const modelId = "gemini-3-flash-preview";
 
 // --- Fallback Data (Usado se a API falhar ou estiver sem chave) ---
 const insightsFallback = [
@@ -55,8 +37,6 @@ const simulateApiCall = <T,>(data: T, delay?: number): Promise<T> => {
 // --- Real AI Implementations ---
 
 export const getDashboardInsight = async (): Promise<string> => {
-    if (!ai) return simulateApiCall(getRandomItem(insightsFallback));
-
     try {
         // Constrói um contexto resumido do estado atual do app
         const today = new Date();
@@ -81,6 +61,7 @@ export const getDashboardInsight = async (): Promise<string> => {
             contents: prompt,
         });
 
+        // FIX: Access response.text directly (it is a property, not a function)
         return response.text || getRandomItem(insightsFallback);
     } catch (error) {
         console.error("JaciBot AI Error:", error);
@@ -89,8 +70,6 @@ export const getDashboardInsight = async (): Promise<string> => {
 };
 
 export const getInsightByTopic = async (topic: string): Promise<string> => {
-    if (!ai) return simulateApiCall(getRandomItem(topicInsightsFallback[topic] || insightsFallback));
-
     try {
         const prompt = `
             Você é a JaciBot. O usuário pediu uma análise rápida sobre o tópico: "${topic}".
@@ -103,6 +82,7 @@ export const getInsightByTopic = async (topic: string): Promise<string> => {
             contents: prompt,
         });
 
+        // FIX: Access response.text directly
         return response.text || getRandomItem(topicInsightsFallback[topic] || insightsFallback);
     } catch (error) {
         return getRandomItem(topicInsightsFallback[topic] || insightsFallback);
@@ -120,16 +100,13 @@ export const getFinancialAlert = async (): Promise<string> => {
 };
 
 export const getClientCampaignSuggestion = async (clientName: string): Promise<string> => {
-    if (!ai) {
-        return simulateApiCall(`Olá ${clientName}, sentimos sua falta! Que tal agendar um horário essa semana com 10% off?`);
-    }
-
     try {
         const response = await ai.models.generateContent({
             model: modelId,
             contents: `Crie uma mensagem curta de marketing (WhatsApp) para o cliente "${clientName}" que não aparece há 30 dias. Ofereça um incentivo sutil e seja carinhosa. Sem hashtags.`
         });
-        return response.text || "";
+        // FIX: Access response.text directly
+        return response.text || `Oi ${clientName}, sentimos sua falta! Que tal agendar um horário essa semana com 10% off?`;
     } catch (e) {
         return `Oi ${clientName}, faz tempo que não te vemos! Venha realçar sua beleza conosco.`;
     }
@@ -140,15 +117,6 @@ export const getClientCampaignSuggestion = async (clientName: string): Promise<s
 export const suggestSmartSlots = async (date: Date): Promise<string[]> => {
     console.log(`[JaciBot] Buscando encaixes inteligentes para ${date.toISOString()}`);
     
-    if (!ai) {
-        const slots = [
-            "Jaciene Félix: 14:30 - 15:00 (ideal para Design Simples)",
-            "Jéssica Félix: 11:20 - 12:00 (vago após Volume EGÍPCIO)",
-            "Elá Priscila: 16:00 - 17:00 (encaixe para Limpeza de Pele)"
-        ];
-        return simulateApiCall(slots, 1200);
-    }
-
     try {
         // Envia um resumo simplificado da agenda para a IA encontrar buracos
         const scheduleContext = initialAppointments
@@ -167,6 +135,7 @@ export const suggestSmartSlots = async (date: Date): Promise<string[]> => {
                 Retorne APENAS um Array JSON de strings.
             `,
             config: {
+                // FIX: responseMimeType is supported for text models
                 responseMimeType: "application/json",
                 responseSchema: {
                     type: Type.ARRAY,
@@ -175,6 +144,7 @@ export const suggestSmartSlots = async (date: Date): Promise<string[]> => {
             }
         });
 
+        // FIX: Access response.text directly
         const jsonStr = response.text;
         return jsonStr ? JSON.parse(jsonStr) : [];
     } catch (error) {
@@ -184,17 +154,13 @@ export const suggestSmartSlots = async (date: Date): Promise<string[]> => {
 }
 
 export const enqueueReminder = async (appointmentId: number, type: 'confirmacao' | 'lembrete' | 'pos' | 'aniversario' | 'retorno'): Promise<{ success: boolean; message: string }> => {
-    if (!ai) {
-        const logMessage = `[JaciBot Mock] Lembrete '${type}' para agendamento #${appointmentId} enfileirado.`;
-        return simulateApiCall({ success: true, message: logMessage });
-    }
-
     try {
         const response = await ai.models.generateContent({
             model: modelId,
             contents: `Gere uma mensagem curta, cordial e profissional de WhatsApp para um cliente de salão de beleza sobre: ${type}. Apenas o texto da mensagem.`
         });
         
+        // FIX: Access response.text directly
         return { 
             success: true, 
             message: `[JaciBot] Mensagem gerada: "${response.text?.trim()}"` 
@@ -208,7 +174,7 @@ export const autoCashClose = async (date: Date): Promise<{ totalPrevisto: number
     
     // Calcula totais baseados nos dados mockados
     const income = mockTransactions
-        .filter(t => t.type === 'receita' && isSameDay(new Date(t.date), date) || true) // Mock: pega tudo para demonstração
+        .filter(t => t.type === 'receita' && (isSameDay(new Date(t.date), date) || true)) // Mock: pega tudo para demonstração
         .reduce((sum, t) => sum + t.amount, 0);
     
     const result = {
@@ -217,11 +183,6 @@ export const autoCashClose = async (date: Date): Promise<{ totalPrevisto: number
         diferenca: 0.00,
         resumo: ""
     };
-
-    if (!ai) {
-        result.resumo = "Caixa fechado com sucesso. Todos os pagamentos reconciliados (Simulação).";
-        return simulateApiCall(result, 1500);
-    }
 
     try {
         const response = await ai.models.generateContent({
@@ -233,6 +194,7 @@ export const autoCashClose = async (date: Date): Promise<{ totalPrevisto: number
                 Gere um resumo executivo de 1 frase confirmando o fechamento positivo e elogiando a gestão.
             `
         });
+        // FIX: Access response.text directly
         result.resumo = response.text || "Fechamento realizado com sucesso.";
         return result;
     } catch (e) {

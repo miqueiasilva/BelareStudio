@@ -30,56 +30,52 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         const file = e.target.files?.[0];
         if (!file) return;
 
-        // Validar tamanho (ex: 2MB)
-        if (file.size > 2 * 1024 * 1024) {
-            alert("A imagem deve ter no máximo 2MB.");
+        // 1. Validação de Tamanho (Máx 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            alert("A imagem é muito grande (máx 5MB). Tente uma imagem mais leve ou um print da tela.");
             return;
         }
 
         setIsUploading(true);
         try {
-            // Nome único para evitar conflitos de cache e RLS Update
+            // Nome único usando timestamp para evitar problemas de cache e RLS
             const fileExt = file.name.split('.').pop();
             const fileName = `${prof.id}-${Date.now()}.${fileExt}`;
 
-            // 1. Upload para o Storage bucket 'team-photos'
-            // NOTA: Removido 'upsert: true' para evitar erro de RLS que exige permissão de UPDATE
+            // 2. Upload para o Storage (team-photos)
             const { error: uploadError } = await supabase.storage
                 .from('team-photos')
                 .upload(fileName, file);
 
             if (uploadError) {
                 if (uploadError.message.includes('row violates row-level security policy')) {
-                    throw new Error("Permissão negada no Storage. Verifique se o bucket 'team-photos' permite uploads públicos ou autenticados.");
+                    throw new Error("Permissão negada no Storage. Contate o administrador.");
                 }
                 throw uploadError;
             }
 
-            // 2. Pegar URL Pública
+            // 3. Pegar URL Pública
             const { data: { publicUrl } } = supabase.storage
                 .from('team-photos')
                 .getPublicUrl(fileName);
 
-            // 3. ATUALIZAR TABELA IMEDIATAMENTE
+            // 4. ATUALIZAÇÃO BLINDADA DO ESTADO LOCAL
+            // Garante que se o usuário clicar em "Salvar" depois, a URL nova será enviada
+            setProf(prev => ({ ...prev, avatarUrl: publicUrl }));
+
+            // 5. ATUALIZAR TABELA IMEDIATAMENTE (Redundância Segura)
             const { error: dbError } = await supabase
                 .from('professionals')
                 .update({ photo_url: publicUrl })
                 .eq('id', prof.id);
 
-            if (dbError) {
-                if (dbError.message.includes('row violates row-level security policy')) {
-                    throw new Error("Permissão negada na Tabela. Verifique a política de UPDATE na tabela 'professionals'.");
-                }
-                throw dbError;
-            }
+            if (dbError) throw dbError;
 
-            // 4. Atualiza o estado local
-            setProf(prev => ({ ...prev, avatarUrl: publicUrl }));
             alert("Foto atualizada com sucesso!");
 
         } catch (error: any) {
-            console.error("Erro completo do upload:", error);
-            alert(error.message || "Erro desconhecido ao salvar foto.");
+            console.error("Erro no upload:", error);
+            alert(error.message || "Erro ao salvar foto. Tente arquivos .jpg ou .png.");
         } finally {
             setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -101,7 +97,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
             setProf({ ...prof, avatarUrl: '' });
             if (fileInputRef.current) fileInputRef.current.value = '';
         } catch (error) {
-            alert("Erro ao remover foto. Verifique as permissões de acesso.");
+            alert("Erro ao remover foto.");
         }
     };
 
