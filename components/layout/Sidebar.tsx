@@ -51,22 +51,19 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
             // 1. Terminate Supabase session
             await supabase.auth.signOut();
             
-            // 2. Clear local storage except for Supabase setup (EnvGate)
-            const sbUrl = localStorage.getItem('VITE_SUPABASE_URL');
-            const sbKey = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
-            
+            // 2. Clear local storage for safety (excluding supabase config keys)
+            const url = localStorage.getItem('VITE_SUPABASE_URL');
+            const key = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
             localStorage.clear();
             sessionStorage.clear();
+            if (url) localStorage.setItem('VITE_SUPABASE_URL', url);
+            if (key) localStorage.setItem('VITE_SUPABASE_ANON_KEY', key);
 
-            if (sbUrl && sbKey) {
-                localStorage.setItem('VITE_SUPABASE_URL', sbUrl);
-                localStorage.setItem('VITE_SUPABASE_ANON_KEY', sbKey);
-            }
-
-            // 3. Force clean redirect to trigger AuthContext reset
+            // 3. Force redirect to root to clear memory and context
             window.location.href = '/'; 
         } catch (error) {
             console.error("Erro ao sair:", error);
+            // Fallback redirect even if error
             window.location.href = '/';
         }
     };
@@ -106,7 +103,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                 </div>
                 <div>
                     <h1 className="font-black text-slate-800 text-base leading-tight tracking-tight">BelaApp</h1>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Studio Pro</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Painel Administrativo</p>
                 </div>
             </div>
             
@@ -131,7 +128,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                     <img 
                         src={user?.avatar_url || `https://ui-avatars.com/api/?name=${user?.nome || 'User'}&background=random`} 
                         alt="User" 
-                        className="w-10 h-10 rounded-full border-2 border-orange-100 shadow-sm"
+                        className="w-10 h-10 rounded-full border-2 border-orange-100 shadow-sm object-cover"
                     />
                     <div className="flex-1 min-w-0">
                         <p className="text-sm font-black text-slate-700 truncate leading-none mb-1">{user?.nome || 'Usuário'}</p>

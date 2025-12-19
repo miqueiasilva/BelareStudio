@@ -48,7 +48,7 @@ const LoginView: React.FC = () => {
             if (error) throw error;
         } catch (err: any) {
             console.error(err);
-            setError("Erro ao conectar com Google. Verifique a configuração.");
+            setError("Erro ao conectar com Google. Tente novamente.");
             setIsLoading(false);
         }
     };
@@ -66,14 +66,14 @@ const LoginView: React.FC = () => {
             } else if (mode === 'register') {
                 const { error } = await signUp(email, password, name);
                 if (error) throw error;
-                setSuccessMessage("Conta criada! Verifique seu e-mail.");
+                setSuccessMessage("Verifique seu e-mail para confirmar a conta!");
             } else if (mode === 'forgot') {
                 const { error } = await resetPassword(email);
                 if (error) throw error;
-                setSuccessMessage("Link de recuperação enviado.");
+                setSuccessMessage("Link de recuperação enviado para seu e-mail.");
             }
         } catch (err: any) {
-            setError(err.message === "Invalid login credentials" ? "E-mail ou senha incorretos." : err.message);
+            setError(err.message === "Invalid login credentials" ? "E-mail ou senha inválidos." : err.message);
         } finally {
             setIsLoading(false);
         }
@@ -81,26 +81,24 @@ const LoginView: React.FC = () => {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50 relative overflow-hidden font-sans">
-            {/* Subtle Background Decoration */}
             <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-0">
                 <div className="absolute -top-24 -left-24 w-96 h-96 bg-orange-100 rounded-full opacity-50 blur-3xl"></div>
                 <div className="absolute bottom-0 right-0 w-80 h-80 bg-slate-200 rounded-full opacity-30 blur-3xl"></div>
             </div>
 
-            <div className="w-full max-w-[420px] p-6 relative z-10 animate-in fade-in zoom-in-95 duration-500">
-                <div className="bg-white rounded-[32px] shadow-2xl shadow-slate-200 border border-slate-100 p-10">
+            <div className="w-full max-w-[440px] p-6 relative z-10 animate-in fade-in zoom-in-95 duration-500">
+                <div className="bg-white rounded-[40px] shadow-2xl shadow-slate-200 border border-slate-100 overflow-hidden">
                     
-                    <div className="text-center mb-8">
-                        <div className="w-16 h-16 bg-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-orange-200 rotate-3">
-                            <span className="text-white font-black text-4xl">B</span>
+                    <div className="bg-orange-500 p-10 text-center relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
+                        <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl rotate-3">
+                            <span className="text-orange-500 font-black text-5xl">B</span>
                         </div>
-                        <h1 className="text-3xl font-black text-slate-800 tracking-tight">
-                            {mode === 'login' ? 'Bem-vindo!' : mode === 'register' ? 'Começar agora' : 'Recuperar'}
-                        </h1>
-                        <p className="text-slate-400 text-sm mt-2 font-medium">BelaApp — Gestão Inteligente</p>
+                        <h1 className="text-3xl font-black text-white tracking-tight">BelaApp</h1>
+                        <p className="text-orange-100 text-sm mt-1 font-medium">Gestão Inteligente para Beleza</p>
                     </div>
 
-                    <div className="space-y-6">
+                    <div className="p-10 pt-8 space-y-6">
                         {error && (
                             <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-xs font-bold flex items-center gap-3">
                                 <XCircle className="w-4 h-4" />
@@ -123,8 +121,8 @@ const LoginView: React.FC = () => {
                                             type="text"
                                             value={name}
                                             onChange={(e) => setName(e.target.value)}
-                                            className="block w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
-                                            placeholder="Seu Nome Completo"
+                                            className="block w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
+                                            placeholder="Nome Completo"
                                             required={mode === 'register'}
                                         />
                                     </div>
@@ -138,8 +136,8 @@ const LoginView: React.FC = () => {
                                         type="email"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
-                                        className="block w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
-                                        placeholder="seu@email.com"
+                                        className="block w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
+                                        placeholder="E-mail profissional"
                                         required
                                     />
                                 </div>
@@ -153,8 +151,8 @@ const LoginView: React.FC = () => {
                                             type={showPassword ? "text" : "password"}
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
-                                            className="block w-full pl-12 pr-12 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
-                                            placeholder="••••••••"
+                                            className="block w-full pl-12 pr-12 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
+                                            placeholder="Sua senha secreta"
                                             required
                                             minLength={6}
                                         />
@@ -180,13 +178,13 @@ const LoginView: React.FC = () => {
                             <button
                                 type="submit"
                                 disabled={isLoading}
-                                className="w-full flex justify-center items-center gap-3 py-4 px-6 rounded-2xl shadow-xl shadow-orange-100 text-sm font-black text-white bg-orange-500 hover:bg-orange-600 transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed uppercase tracking-wider"
+                                className="w-full flex justify-center items-center gap-3 py-4.5 px-6 rounded-2xl shadow-xl shadow-orange-100 text-sm font-black text-white bg-orange-500 hover:bg-orange-600 transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed uppercase tracking-wider h-14"
                             >
                                 {isLoading ? (
                                     <Loader2 className="animate-spin h-5 w-5" />
                                 ) : (
                                     <>
-                                        {mode === 'login' ? 'Entrar agora' : mode === 'register' ? 'Criar Conta' : 'Enviar Link'}
+                                        {mode === 'login' ? 'Entrar no Sistema' : mode === 'register' ? 'Criar Minha Conta' : 'Enviar Link de Resgate'}
                                         <ArrowRight className="h-5 w-5" />
                                     </>
                                 )}
@@ -195,7 +193,7 @@ const LoginView: React.FC = () => {
 
                         <div className="relative flex items-center py-2">
                             <div className="flex-grow border-t border-slate-100"></div>
-                            <span className="flex-shrink-0 mx-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">ou</span>
+                            <span className="flex-shrink-0 mx-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">ou entre com</span>
                             <div className="flex-grow border-t border-slate-100"></div>
                         </div>
 
@@ -203,16 +201,16 @@ const LoginView: React.FC = () => {
                             type="button"
                             onClick={handleGoogleLogin}
                             disabled={isLoading}
-                            className="w-full flex items-center justify-center gap-3 bg-white text-slate-700 font-bold py-4 rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all shadow-sm active:scale-[0.98] disabled:opacity-70"
+                            className="w-full flex items-center justify-center gap-3 bg-white text-slate-700 font-bold py-4 rounded-2xl border border-slate-200 hover:bg-slate-50 transition-all shadow-sm active:scale-[0.98] disabled:opacity-70"
                         >
                             <GoogleIcon />
-                            <span className="text-sm">Continuar com Google</span>
+                            <span className="text-sm">Google</span>
                         </button>
                         
-                        <div className="text-center pt-2">
+                        <div className="text-center pt-4 border-t border-slate-50">
                             {mode === 'login' ? (
                                 <p className="text-xs text-slate-400 font-medium">
-                                    Novo por aqui? <button type="button" onClick={() => handleModeChange('register')} className="text-orange-600 font-black hover:underline">Crie seu estúdio</button>
+                                    Ainda não usa BelaApp? <button type="button" onClick={() => handleModeChange('register')} className="text-orange-600 font-black hover:underline ml-1">Comece Grátis</button>
                                 </p>
                             ) : (
                                 <button type="button" onClick={() => handleModeChange('login')} className="text-xs text-slate-400 font-bold flex items-center gap-2 mx-auto hover:text-slate-600 transition-colors">

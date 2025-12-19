@@ -190,7 +190,6 @@ const ConfiguracoesView: React.FC = () => {
                 <div className="text-center py-12 text-slate-400">
                     <Scissors size={48} className="mx-auto mb-4 opacity-20" />
                     <p>Nenhum serviço cadastrado.</p>
-                    <p className="text-xs">Vá para o menu "Serviços" para gerenciar seu catálogo.</p>
                 </div>
             ) : (
                 <div className="divide-y divide-slate-100">
@@ -200,7 +199,7 @@ const ConfiguracoesView: React.FC = () => {
                                 <div className="w-2 h-8 rounded-full" style={{ backgroundColor: service.color }}></div>
                                 <div>
                                     <p className="font-bold text-slate-800">{service.name}</p>
-                                    <p className="text-xs text-slate-500">{service.duration} min • {service.category || 'Geral'}</p>
+                                    <p className="text-xs text-slate-500">{service.duration} min</p>
                                 </div>
                             </div>
                             <p className="font-bold text-slate-700">R$ {service.price.toFixed(2)}</p>
@@ -257,11 +256,9 @@ const ConfiguracoesView: React.FC = () => {
             <div className="mt-6 flex justify-end">
                 <button 
                     onClick={handleSaveStudio}
-                    disabled={isSaving}
                     className="bg-slate-800 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2"
                 >
-                    {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-                    Salvar Horários
+                    <Save size={16} /> Salvar Horários
                 </button>
             </div>
         </Card>
@@ -273,7 +270,7 @@ const ConfiguracoesView: React.FC = () => {
             <textarea 
                 value={studioData.general_notice}
                 onChange={e => setStudioData({...studioData, general_notice: e.target.value})}
-                className="w-full h-48 p-4 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-orange-500 outline-none resize-none bg-slate-50"
+                className="w-full h-48 p-4 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-orange-500 outline-none resize-none bg-slate-50 font-medium"
                 placeholder="Ex: Atenção equipe, reunião geral na próxima segunda às 08h..."
             />
             <div className="mt-4 flex justify-end">
@@ -325,18 +322,16 @@ const ConfiguracoesView: React.FC = () => {
             <User className="w-16 h-16 text-orange-200 mx-auto mb-4" />
             <h3 className="text-xl font-bold text-slate-800 mb-2">Gestão de Colaboradores</h3>
             <p className="text-slate-500 max-w-sm mx-auto mb-6">
-                Para gerenciar permissões, serviços habilitados e horários individuais da equipe, utilize o menu lateral.
+                Para gerenciar permissões, serviços habilitados e horários individuais da equipe, utilize o menu "Clientes / Equipe" no menu principal.
             </p>
             <button 
-                onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'clientes' }))}
-                className="text-orange-600 font-bold hover:underline flex items-center gap-2 mx-auto"
+                onClick={() => window.location.hash = '#/clientes'}
+                className="bg-orange-500 text-white px-6 py-2 rounded-xl font-bold hover:bg-orange-600 transition flex items-center gap-2 mx-auto"
             >
-                Ir para Gestão de Equipe <ChevronRight size={16} />
+                Acessar Gestão de Equipe <ChevronRight size={16} />
             </button>
         </Card>
     );
-
-    // --- Main Layout ---
 
     const tabs = [
         { id: 'studio', label: 'Estúdio', icon: Store },
@@ -359,14 +354,13 @@ const ConfiguracoesView: React.FC = () => {
         <div className="flex h-full bg-slate-50 overflow-hidden font-sans">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
-            {/* Left Menu */}
-            <aside className="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col flex-shrink-0">
+            <aside className="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col flex-shrink-0 z-10">
                 <div className="p-6 border-b border-slate-100 h-20 flex items-center">
                     <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                        <Settings className="w-6 h-6 text-slate-400" /> Ajustes
+                        <Settings className="w-6 h-6 text-slate-400" /> Configurações
                     </h2>
                 </div>
-                <nav className="p-4 space-y-1">
+                <nav className="p-4 space-y-1 overflow-y-auto">
                     {tabs.map(tab => (
                         <button 
                             key={tab.id}
@@ -381,14 +375,13 @@ const ConfiguracoesView: React.FC = () => {
                 </nav>
             </aside>
 
-            {/* Main Content */}
             <main className="flex-1 overflow-y-auto p-4 md:p-8">
                 <div className="max-w-3xl mx-auto space-y-6">
                     <div className="mb-4">
                         <h1 className="text-2xl font-black text-slate-800 tracking-tight">
                             {tabs.find(t => t.id === activeTab)?.label}
                         </h1>
-                        <p className="text-sm text-slate-500 font-medium">Configure as preferências do BelaApp para seu negócio.</p>
+                        <p className="text-sm text-slate-500 font-medium">Configure as preferências do seu estúdio.</p>
                     </div>
 
                     {activeTab === 'studio' && renderStudioTab()}
