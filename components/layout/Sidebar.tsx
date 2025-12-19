@@ -2,7 +2,7 @@
 import React from 'react';
 import { 
     Home, Calendar, MessageSquare, ShoppingCart, ClipboardList, ArrowRightLeft, Archive,
-    Star, Package, Users, Settings, BarChart, Globe, Banknote, LogOut
+    Star, Package, Users, Settings, BarChart, Globe, Banknote, LogOut, Briefcase
 } from 'lucide-react';
 import { ViewState, UserRole } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
@@ -25,6 +25,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         { id: 'whatsapp', icon: MessageSquare, label: 'WhatsApp' },
         { id: 'financeiro', icon: ArrowRightLeft, label: 'Fluxo de Caixa' },
         { id: 'clientes', icon: Users, label: 'Clientes' },
+        { id: 'equipe', icon: Briefcase, label: 'Equipe' }, // Added
         { id: 'relatorios', icon: BarChart, label: 'Relatórios' },
         { id: 'configuracoes', icon: Settings, label: 'Configurações' },
     ];
@@ -40,7 +41,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
 
     const handleNavigation = (e: React.MouseEvent, viewId: string) => {
         e.preventDefault();
-        onNavigate(viewId as ViewState);
+        onNavigate(viewId as any);
     };
 
     const handleLogout = async () => {
@@ -48,27 +49,21 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         if (!confirm) return;
 
         try {
-            // 1. Terminate Supabase session
             await supabase.auth.signOut();
-            
-            // 2. Clear local storage for safety (excluding supabase config keys)
             const url = localStorage.getItem('VITE_SUPABASE_URL');
             const key = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
             localStorage.clear();
             sessionStorage.clear();
             if (url) localStorage.setItem('VITE_SUPABASE_URL', url);
             if (key) localStorage.setItem('VITE_SUPABASE_ANON_KEY', key);
-
-            // 3. Force redirect to root to clear memory and context
             window.location.href = '/'; 
         } catch (error) {
             console.error("Erro ao sair:", error);
-            // Fallback redirect even if error
             window.location.href = '/';
         }
     };
 
-    const filterItems = (items: typeof menuItems) => {
+    const filterItems = (items: any[]) => {
         return items.filter(item => hasAccess(user?.papel as UserRole, item.id as ViewState));
     };
 

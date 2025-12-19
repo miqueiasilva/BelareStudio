@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ViewState, FinancialTransaction } from './types';
@@ -21,6 +22,7 @@ import ComandasView from './components/views/ComandasView';
 import CaixaView from './components/views/CaixaView';
 import ProdutosView from './components/views/ProdutosView';
 import ServicosView from './components/views/ServicosView';
+import EquipeView from './components/views/EquipeView'; // New
 import PublicBookingPreview from './components/views/PublicBookingPreview';
 
 import { mockTransactions } from './data/mockData';
@@ -36,13 +38,11 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     const handleHashChange = () => setHash(window.location.hash);
     window.addEventListener('hashchange', handleHashChange);
-    // Pathname might change if Vercel redirects for reset password
     setPathname(window.location.pathname);
     
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Handle Loading State
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -54,25 +54,17 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // --- PUBLIC & AUTH ROUTES ---
-  
-  // Public Booking Page
   if (hash === '#/public-preview') {
     return <PublicBookingPreview />;
   }
 
-  // Password Reset Flow (Priority over login)
   if (pathname === '/reset-password' || hash === '#/reset-password') {
     return <ResetPasswordView />;
   }
 
-  // --- AUTHENTICATION CHECK ---
-  
   if (!user) {
     return <LoginView />;
   }
-
-  // --- PROTECTED APP ---
 
   const handleAddTransaction = (t: FinancialTransaction) => {
     setTransactions(prev => [t, ...prev]);
@@ -91,6 +83,7 @@ const AppContent: React.FC = () => {
       case 'financeiro':
         return <FinanceiroView transactions={transactions} onAddTransaction={handleAddTransaction} />;
       case 'clientes':
+        // Reuse ClientesView logic for staff listing as well if route matches 'equipe'
         return <ClientesView />;
       case 'relatorios':
         return <RelatoriosView />;
@@ -112,6 +105,8 @@ const AppContent: React.FC = () => {
         window.location.hash = '/public-preview';
         return null;
       default:
+        // Check for specific sidebar logic or custom routes
+        if ((currentView as string) === 'equipe') return <EquipeView />;
         return <DashboardView onNavigate={setCurrentView} />;
     }
   };
