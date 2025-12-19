@@ -1,6 +1,5 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
-import { Settings, User, Scissors, Clock, Bell, Store, Save, Plus, Trash2, Edit2, Search, Filter, Download, FolderPen, ChevronLeft, Menu, ChevronRight, Database, CheckCircle, AlertTriangle, Camera } from 'lucide-react';
+import { Settings, User, Scissors, Clock, Bell, Store, Save, Plus, Trash2, Edit2, Search, Filter, Download, FolderPen, ChevronLeft, Menu, ChevronRight, CheckCircle, AlertTriangle, Camera } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import Toast, { ToastType } from '../shared/Toast';
@@ -18,8 +17,10 @@ const ConfiguracoesView: React.FC = () => {
     const [dbStatus, setDbStatus] = useState<'checking' | 'connected' | 'error'>('checking');
     const [isLoading, setIsLoading] = useState(false);
 
-    // FIX: Added missing showToast definition to fix 'Cannot find name' errors
-    const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
+    // Definição do showToast para evitar erros de compilação
+    const showToast = (message: string, type: ToastType = 'success') => {
+        setToast({ message, type });
+    };
 
     // --- State: Data ---
     const [studioData, setStudioData] = useState({
@@ -105,7 +106,6 @@ const ConfiguracoesView: React.FC = () => {
         const file = event.target.files?.[0];
         if (!file) return;
 
-        // Validação básica de tamanho
         if (file.size > 5 * 1024 * 1024) {
             showToast("Imagem muito grande (máx 5MB)", "error");
             return;
@@ -126,7 +126,7 @@ const ConfiguracoesView: React.FC = () => {
                 .from('team-photos')
                 .getPublicUrl(fileName);
 
-            const { error: updateError = null } = await supabase
+            const { error: updateError } = await supabase
                 .from('professionals')
                 .update({ photo_url: publicUrl })
                 .eq('id', idProfissional);
@@ -143,8 +143,6 @@ const ConfiguracoesView: React.FC = () => {
 
     const handleSaveProfessional = async (prof: LegacyProfessional) => {
         try {
-            // PAYLOAD BLINDADO: Protege contra o envio de nulo na foto caso o avatarUrl esteja vazio
-            // Mas permite nulo se for uma remoção intencional vinda de handlers específicos
             const payload: any = {
                 name: prof.name,
                 email: prof.email,
@@ -156,7 +154,6 @@ const ConfiguracoesView: React.FC = () => {
                 commission_rate: prof.commissionRate
             };
 
-            // Apenas envia photo_url se houver um valor real no estado
             if (prof.avatarUrl) {
                 payload.photo_url = prof.avatarUrl;
             }
@@ -189,6 +186,19 @@ const ConfiguracoesView: React.FC = () => {
             }
         }
     };
+
+    const filteredServices = useMemo(() => {
+        return servicesData.filter(service => {
+            const matchesSearch = service.name.toLowerCase().includes(serviceSearch.toLowerCase());
+            const matchesCategory = selectedCategory === 'Todas' || (service.category || 'Geral') === selectedCategory;
+            return matchesSearch && matchesCategory;
+        });
+    }, [servicesData, serviceSearch, selectedCategory]);
+
+    const categories = useMemo(() => {
+        const cats = new Set(servicesData.map(s => s.category || 'Geral'));
+        return ['Todas', ...Array.from(cats).sort()];
+    }, [servicesData]);
 
     const tabs = [
         { id: 'studio', label: 'Estúdio', icon: Store },
@@ -238,7 +248,7 @@ const ConfiguracoesView: React.FC = () => {
                 <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                         <div className="flex items-center gap-3">
-                            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors shadow-sm">
+                            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 shadow-sm transition-colors">
                                 {isSidebarOpen ? <ChevronLeft size={20} /> : <Menu size={20} />}
                             </button>
                             <h3 className="text-2xl font-bold text-slate-800">{tabs.find(t => t.id === activeTab)?.label}</h3>
@@ -287,16 +297,10 @@ const ConfiguracoesView: React.FC = () => {
                             </ul>
                         </div>
                     )}
-
-                    {activeTab === 'studio' && (
-                        <Card title="Dados">
-                            <p className="text-slate-500 text-sm">Configurações do Studio Jacilene Felix...</p>
-                        </Card>
-                    )}
                 </div>
             </main>
 
-            {serviceModal.open && <ServiceModal service={serviceModal.data} availableCategories={[]} onClose={() => setServiceModal({ open: false, data: null })} onSave={() => {}} />}
+            {serviceModal.open && <ServiceModal service={serviceModal.data} availableCategories={categories.filter(c => c !== 'Todas')} onClose={() => setServiceModal({ open: false, data: null })} onSave={() => {}} />}
             {profModal.open && <ProfessionalModal professional={profModal.data} onClose={() => setProfModal({ open: false, data: null })} onSave={handleSaveProfessional} />}
         </div>
     );
