@@ -3,14 +3,14 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { 
     ChevronLeft, ChevronRight, Plus, MessageSquare, 
     RefreshCw, User as UserIcon, Calendar as CalendarIcon,
-    Scissors, Lock, AlertCircle, Trash2, Edit2, ShieldAlert
+    Scissors, Lock, AlertCircle, Trash2, Edit2, ShieldAlert,
+    ArrowLeft, ArrowRight
 } from 'lucide-react';
-import { format, addDays, isSameDay, startOfWeek, endOfWeek, eachDayOfInterval } from 'date-fns';
+import { format, addDays, isSameDay, startOfWeek, endOfWeek, eachDayOfInterval, differenceInMinutes } from 'date-fns';
 import { pt } from 'date-fns/locale';
 
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
 import AppointmentModal from '../modals/AppointmentModal';
-import JaciBotPanel from '../JaciBotPanel';
 import AppointmentDetailPopover from '../shared/AppointmentDetailPopover';
 import ContextMenu from '../shared/ContextMenu';
 import Toast, { ToastType } from '../shared/Toast';
@@ -26,6 +26,7 @@ interface DynamicColumn {
     subtitle?: string;
     photo?: string; 
     type: 'professional' | 'date';
+    display_order?: number;
     data?: any; 
 }
 
@@ -39,8 +40,8 @@ const getAppointmentStyle = (start: Date, end: Date) => {
     const startMinutes = start.getHours() * 60 + start.getMinutes();
     const endMinutes = end.getHours() * 60 + end.getMinutes();
     const top = (startMinutes - START_HOUR * 60) * PIXELS_PER_MINUTE;
-    const height = Math.max(40, (endMinutes - startMinutes) * PIXELS_PER_MINUTE);
-    return { top: `${top}px`, height: `${height - 4}px` };
+    const height = Math.max(30, (endMinutes - startMinutes) * PIXELS_PER_MINUTE);
+    return { top: `${top}px`, height: `${height - 2}px` };
 };
 
 const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
@@ -66,11 +67,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
 
     const fetchResources = async (signal?: AbortSignal) => {
         try {
+            // FIX: Adicionado .order('display_order') para permitir reordenação manual
             const { data, error } = await supabase
                 .from('professionals')
-                .select('id, name, photo_url, role')
+                .select('id, name, photo_url, role, display_order')
                 .eq('active', true)
-                .order('name')
+                .order('display_order', { ascending: true })
                 .abortSignal(signal!);
             
             if (error) throw error;
@@ -78,7 +80,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                 id: p.id,
                 name: p.name,
                 avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
-                role: p.role
+                role: p.role,
+                display_order: p.display_order
             }));
             setResources(mapped);
             return mapped;
@@ -139,7 +142,29 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
         return () => abortControllerRef.current?.abort();
     }, [currentDate]);
 
-    // FIX: Payload Corrected with proper color and type mapping
+    // FIX: Função de Reordenação de Colunas
+    const handleMoveColumn = async (prof: LegacyProfessional, direction: 'left' | 'right') => {
+        const index = resources.findIndex(p => p.id === prof.id);
+        const targetIndex = direction === 'left' ? index - 1 : index + 1;
+        
+        if (targetIndex < 0 || targetIndex >= resources.length) return;
+
+        const targetProf = resources[targetIndex];
+        const currentOrder = (prof as any).display_order || 0;
+        const targetOrder = (targetProf as any).display_order || 0;
+
+        setIsLoadingData(true);
+        try {
+            await supabase.from('professionals').update({ display_order: targetOrder }).eq('id', prof.id);
+            await supabase.from('professionals').update({ display_order: currentOrder }).eq('id', targetProf.id);
+            fetchAppointments();
+        } catch (err: any) {
+            alert("Erro ao reordenar: " + err.message);
+        } finally {
+            setIsLoadingData(false);
+        }
+    };
+
     const handleSaveAppointment = async (app: LegacyAppointment) => {
         setModalState(null); 
         setIsLoadingData(true);
@@ -155,7 +180,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                 value: isBlock ? 0 : (Number(app.service?.price) || 0),
                 status: app.status || 'agendado',
                 notes: app.notas || '',
-                // FIX: Schema persisted correctly based on item type
                 color: isBlock ? '#94a3b8' : (app.service?.color || '#3b82f6'),
                 type: isBlock ? 'block' : 'appointment',
                 origem: (app as any).origem || 'interno'
@@ -190,15 +214,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
         });
     };
 
-    // FIX: Context Menu Handler
     const handleContextMenu = (e: React.MouseEvent, time: string, col: DynamicColumn) => {
         e.preventDefault();
-        setContextMenu({
-            x: e.clientX,
-            y: e.clientY,
-            time,
-            column: col
-        });
+        setContextMenu({ x: e.clientX, y: e.clientY, time, column: col });
     };
 
     const handleContextAction = (type: 'appointment' | 'block') => {
@@ -209,12 +227,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
         start.setHours(hour, min, 0, 0);
 
         if (type === 'block') {
-            const end = new Date(start.getTime() + 60 * 60000); // 1h bloqueio padrão
+            const end = new Date(start.getTime() + 60 * 60000);
             handleSaveAppointment({
-                id: 0,
-                start,
-                end,
-                status: 'bloqueado',
+                id: 0, start, end, status: 'bloqueado',
                 professional: contextMenu.column.type === 'professional' ? contextMenu.column.data : resources[0],
                 service: { id: 0, name: 'Bloqueio', price: 0, duration: 60, color: '#94a3b8' }
             } as any);
@@ -235,11 +250,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                 id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date', data: day 
             }));
         }
-        if (resources.length === 0) return [{ id: 1, title: 'Buscando...', type: 'professional', data: { id: 1, name: '...' } }];
         return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional', data: p }));
     }, [periodType, currentDate, resources]);
 
-    const gridStyle = { gridTemplateColumns: `60px repeat(${columns.length}, minmax(180px, 1fr))` };
+    const gridStyle = { gridTemplateColumns: `60px repeat(${columns.length}, minmax(200px, 1fr))` };
     const timeSlots = Array.from({ length: (END_HOUR - START_HOUR) * 2 }, (_, i) => { 
         const h = START_HOUR + Math.floor(i / 2);
         return `${String(h).padStart(2, '0')}:${(i % 2) * 30 === 0 ? '00' : '30'}`;
@@ -249,14 +263,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
         <div className="flex h-full bg-white relative flex-col overflow-hidden font-sans">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
-            <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-6 z-[60]">
-                {fetchError && (
-                    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between text-red-700 text-sm">
-                        <div className="flex items-center gap-2"><AlertCircle size={18} /> {fetchError}</div>
-                        <button onClick={fetchAppointments} className="font-bold underline">Re-tentar</button>
-                    </div>
-                )}
-                <div className="flex justify-between items-center mb-6">
+            <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-[60]">
+                <div className="flex justify-between items-center mb-4">
                     <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
                         Agenda {isLoadingData && <RefreshCw className="animate-spin text-orange-400" size={20} />}
                     </h2>
@@ -265,12 +273,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                         <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate, professional: resources[0] } })} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 px-6 rounded-xl shadow-lg flex items-center gap-2 transition-all active:scale-95"><Plus size={20} /> Agendar</button>
                     </div>
                 </div>
-                <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-2">
-                        <button onClick={() => setCurrentDate(prev => addDays(prev, -1))} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><ChevronLeft size={24} /></button>
-                        <span className="text-xl font-black text-slate-800 capitalize min-w-[200px] text-center">{format(currentDate, "EEEE, dd 'de' MMMM", { locale: pt })}</span>
-                        <button onClick={() => setCurrentDate(prev => addDays(prev, 1))} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><ChevronRight size={24} /></button>
-                    </div>
+                <div className="flex items-center gap-2">
+                    <button onClick={() => setCurrentDate(prev => addDays(prev, -1))} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400 hover:text-slate-800"><ChevronLeft size={24} /></button>
+                    <span className="text-xl font-black text-slate-800 capitalize min-w-[200px] text-center">{format(currentDate, "EEEE, dd 'de' MMMM", { locale: pt })}</span>
+                    <button onClick={() => setCurrentDate(prev => addDays(prev, 1))} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400 hover:text-slate-800"><ChevronRight size={24} /></button>
                 </div>
             </header>
 
@@ -278,11 +284,30 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                 <div className="relative min-h-full min-w-full">
                     <div className="grid sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm" style={gridStyle}>
                         <div className="border-r border-slate-100 h-24 bg-white sticky left-0 z-50"></div>
-                        {columns.map(col => (
-                            <div key={col.id} className="flex flex-col items-center justify-center p-4 border-r border-slate-100 h-24">
-                                <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-2xl border border-slate-100 min-w-[140px]">
+                        {columns.map((col, idx) => (
+                            <div key={col.id} className="flex flex-col items-center justify-center p-4 border-r border-slate-100 h-24 relative group/header">
+                                <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-2xl border border-slate-100 min-w-[160px] relative">
                                     {col.photo ? <img src={col.photo} className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm" /> : <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400"><UserIcon size={20} /></div>}
-                                    <div className="flex flex-col"><span className="text-xs font-black text-slate-800 truncate">{col.title}</span>{col.subtitle && <span className="text-[10px] font-bold text-slate-400">{col.subtitle}</span>}</div>
+                                    <div className="flex flex-col overflow-hidden">
+                                        <span className="text-xs font-black text-slate-800 truncate">{col.title}</span>
+                                        {col.subtitle && <span className="text-[10px] font-bold text-slate-400">{col.subtitle}</span>}
+                                    </div>
+                                    
+                                    {/* FIX: Botões de Reordenação de Coluna */}
+                                    {periodType === 'Dia' && col.type === 'professional' && (
+                                        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex gap-1 opacity-0 group-hover/header:opacity-100 transition-all">
+                                            {idx > 0 && (
+                                                <button onClick={(e) => { e.stopPropagation(); handleMoveColumn(col.data, 'left'); }} className="p-1 bg-white border border-slate-200 rounded-md text-slate-400 hover:text-orange-500 shadow-sm">
+                                                    <ChevronLeft size={14} />
+                                                </button>
+                                            )}
+                                            {idx < columns.length - 1 && (
+                                                <button onClick={(e) => { e.stopPropagation(); handleMoveColumn(col.data, 'right'); }} className="p-1 bg-white border border-slate-200 rounded-md text-slate-400 hover:text-orange-500 shadow-sm">
+                                                    <ChevronRight size={14} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}
@@ -296,27 +321,43 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
                                 {timeSlots.map((time, i) => (
                                     <div 
                                         key={i} 
-                                        className="h-20 border-b border-slate-100/30 border-dashed cursor-cell hover:bg-orange-50/20 transition-colors" 
+                                        className="h-20 border-b border-slate-100/30 border-dashed cursor-cell hover:bg-orange-50/10 transition-colors" 
                                         onClick={() => handleCellClick(time, col)}
                                         onContextMenu={(e) => handleContextMenu(e, time, col)}
                                     ></div>
                                 ))}
-                                {appointments.filter(app => periodType === 'Semana' ? isSameDay(app.start, col.data) : Number(app.professional.id) === Number(col.id)).filter(app => periodType === 'Semana' || isSameDay(app.start, currentDate)).map(app => (
-                                    <div
-                                        key={app.id}
-                                        ref={(el) => { appointmentRefs.current.set(app.id, el); }}
-                                        onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }}
-                                        className={`absolute w-[94%] left-1/2 -translate-x-1/2 rounded-2xl shadow-md border p-3 cursor-pointer hover:scale-[1.01] transition-all z-10 overflow-hidden bg-white hover:border-orange-200 group`}
-                                        style={getAppointmentStyle(app.start, app.end)}
-                                    >
-                                        <div style={{ backgroundColor: app.service.color }} className="absolute left-0 top-0 bottom-0 w-2 shadow-inner opacity-80 group-hover:opacity-100 transition-opacity"></div>
-                                        <div className="pl-2 h-full flex flex-col justify-center">
-                                            <p className="font-black text-slate-800 truncate text-[11px] uppercase tracking-tight">{app.client?.nome || 'BLOQUEIO'}</p>
-                                            <p className="text-[10px] font-bold text-slate-500 truncate leading-tight">{app.service.name}</p>
-                                            <span className="text-[9px] font-black text-slate-400 mt-1 uppercase">{format(app.start, 'HH:mm')}</span>
+                                {appointments.filter(app => periodType === 'Semana' ? isSameDay(app.start, col.data) : Number(app.professional.id) === Number(col.id)).filter(app => periodType === 'Semana' || isSameDay(app.start, currentDate)).map(app => {
+                                    // FIX: UX DE CARD INTELIGENTE
+                                    const duration = differenceInMinutes(app.end, app.start);
+                                    const isShort = duration <= 30;
+
+                                    return (
+                                        <div
+                                            key={app.id}
+                                            ref={(el) => { appointmentRefs.current.set(app.id, el); }}
+                                            onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }}
+                                            className={`absolute w-[94%] left-1/2 -translate-x-1/2 rounded-xl shadow-sm border p-1 cursor-pointer hover:scale-[1.01] transition-all z-10 overflow-hidden bg-white hover:border-orange-200 group`}
+                                            style={getAppointmentStyle(app.start, app.end)}
+                                        >
+                                            <div style={{ backgroundColor: app.service.color }} className="absolute left-0 top-0 bottom-0 w-1.5 opacity-80 group-hover:opacity-100 transition-opacity"></div>
+                                            <div className="pl-2 h-full flex flex-col justify-start overflow-hidden">
+                                                <p className="font-black text-slate-800 truncate text-[10px] uppercase leading-tight">
+                                                    {app.client?.nome || 'BLOQUEIO'}
+                                                </p>
+                                                {!isShort && (
+                                                    <p className="text-[9px] font-bold text-slate-500 truncate leading-tight opacity-80">
+                                                        {app.service.name}
+                                                    </p>
+                                                )}
+                                                {duration > 45 && (
+                                                    <span className="text-[8px] font-black text-slate-400 mt-0.5 uppercase">
+                                                        {format(app.start, 'HH:mm')}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         ))}
                     </div>
@@ -326,8 +367,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
             {/* Modals & Context Menus */}
             {contextMenu && (
                 <ContextMenu 
-                    x={contextMenu.x} 
-                    y={contextMenu.y} 
+                    x={contextMenu.x} y={contextMenu.y} 
                     onClose={() => setContextMenu(null)}
                     options={[
                         { label: 'Novo Agendamento', icon: <Plus size={16}/>, onClick: () => handleContextAction('appointment') },
