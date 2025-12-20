@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
     Plus, Users, Loader2, Search, ArrowRight, User as UserIcon, 
-    Briefcase, ShieldCheck, ShieldAlert 
+    Briefcase, ShieldCheck, ShieldAlert, RefreshCw 
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { LegacyProfessional } from '../../types';
@@ -12,33 +12,37 @@ import Toast, { ToastType } from '../shared/Toast';
 
 const EquipeView: React.FC = () => {
     const [professionals, setProfessionals] = useState<LegacyProfessional[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedProf, setSelectedProf] = useState<LegacyProfessional | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    const fetchProfessionals = async () => {
-        setLoading(true);
+    const fetchProfessionals = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
         try {
-            const { data, error } = await supabase
+            const { data, error: sbError } = await supabase
                 .from('professionals')
                 .select('*')
                 .order('name', { ascending: true });
             
-            if (error) throw error;
+            if (sbError) throw sbError;
             setProfessionals(data || []);
-        } catch (error: any) {
-            setToast({ message: `Erro ao carregar equipe: ${error.message}`, type: 'error' });
+        } catch (err: any) {
+            console.error("Fetch Staff Error:", err);
+            setError(err.message || "Erro inesperado ao carregar equipe.");
         } finally {
-            setLoading(false);
+            setIsLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
         fetchProfessionals();
-    }, []);
+    }, [fetchProfessionals]);
 
-    const handleCreateNew = async () => {
+    const handleCreateNew = useCallback(async () => {
+        setIsLoading(true);
         try {
             const payload = {
                 name: 'Novo Profissional',
@@ -51,57 +55,48 @@ const EquipeView: React.FC = () => {
                 services_enabled: []
             };
             
-            const { data, error } = await supabase
-                .from('professionals')
-                .insert([payload])
-                .select()
-                .single();
-            
+            const { data, error } = await supabase.from('professionals').insert([payload]).select().single();
             if (error) throw error;
             
+            setProfessionals(prev => [...prev, data as any]);
             setSelectedProf(data as any);
-            setToast({ message: 'Rascunho de colaborador criado!', type: 'success' });
-            fetchProfessionals();
+            setToast({ message: 'Novo rascunho criado!', type: 'success' });
         } catch (error: any) {
             setToast({ message: `Erro ao criar: ${error.message}`, type: 'error' });
+        } finally {
+            setIsLoading(false);
         }
-    };
+    }, []);
 
-    const handleToggleActive = async (id: number, currentStatus: boolean) => {
+    const handleToggleActive = useCallback(async (id: number, currentStatus: boolean) => {
         try {
-            const { error } = await supabase
-                .from('professionals')
-                .update({ active: !currentStatus })
-                .eq('id', id);
-            
+            const { error } = await supabase.from('professionals').update({ active: !currentStatus }).eq('id', id);
             if (error) throw error;
             setProfessionals(prev => prev.map(p => p.id === id ? { ...p, active: !currentStatus } : p));
-            setToast({ message: `Profissional ${!currentStatus ? 'ativado' : 'desativado'}.`, type: 'success' });
+            setToast({ message: `Status atualizado com sucesso.`, type: 'success' });
         } catch (error: any) {
             setToast({ message: 'Erro ao atualizar status.', type: 'error' });
         }
-    };
+    }, []);
+
+    // Otimização de busca com useMemo
+    const filteredProfessionals = useMemo(() => {
+        const term = searchTerm.toLowerCase();
+        return professionals.filter(p => 
+            p.name.toLowerCase().includes(term) ||
+            (p.role && p.role.toLowerCase().includes(term))
+        );
+    }, [professionals, searchTerm]);
 
     if (selectedProf) {
         return (
             <ProfessionalDetail 
                 professional={selectedProf}
-                onBack={() => {
-                    setSelectedProf(null);
-                    fetchProfessionals();
-                }}
-                onSave={() => {
-                    setSelectedProf(null);
-                    fetchProfessionals();
-                }}
+                onBack={() => { setSelectedProf(null); fetchProfessionals(); }}
+                onSave={() => { setSelectedProf(null); fetchProfessionals(); }}
             />
         );
     }
-
-    const filteredProfessionals = professionals.filter(p => 
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.role && p.role.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
 
     return (
         <div className="h-full flex flex-col bg-slate-50 relative font-sans">
@@ -110,18 +105,16 @@ const EquipeView: React.FC = () => {
             <header className="bg-white border-b border-slate-200 px-8 py-6 flex flex-col md:flex-row justify-between items-center gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                        <Users className="text-orange-500" size={28} />
-                        Gestão de Equipe
+                        <Users className="text-orange-500" size={28} /> Gestão de Equipe
                     </h1>
                     <p className="text-slate-500 text-sm font-medium">Controle de profissionais, permissões e disponibilidades.</p>
                 </div>
-                
                 <button 
                     onClick={handleCreateNew}
-                    className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-orange-200 flex items-center gap-2 transition-all active:scale-95"
+                    disabled={isLoading}
+                    className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg flex items-center gap-2 active:scale-95 disabled:opacity-50"
                 >
-                    <Plus size={20} />
-                    Adicionar Colaborador
+                    <Plus size={20} /> Adicionar Colaborador
                 </button>
             </header>
 
@@ -138,66 +131,41 @@ const EquipeView: React.FC = () => {
                         />
                     </div>
 
-                    {loading ? (
+                    {isLoading && professionals.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-64 text-slate-400">
                             <Loader2 className="animate-spin mb-4" size={48} />
                             <p className="font-medium">Carregando sua equipe...</p>
                         </div>
+                    ) : error ? (
+                        <div className="bg-white rounded-3xl p-16 text-center border border-red-100 flex flex-col items-center">
+                            <RefreshCw size={64} className="text-red-200 mb-4" />
+                            <h3 className="text-lg font-bold text-slate-700">Ops! Algo deu errado.</h3>
+                            <p className="text-slate-400 mt-2 mb-6">{error}</p>
+                            <button onClick={fetchProfessionals} className="px-6 py-2 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-900">Tentar Novamente</button>
+                        </div>
                     ) : filteredProfessionals.length === 0 ? (
                         <div className="bg-white rounded-3xl p-16 text-center border border-slate-200 border-dashed">
                             <Users size={64} className="mx-auto text-slate-200 mb-4" />
-                            <h3 className="text-lg font-bold text-slate-600">Equipe vazia</h3>
+                            <h3 className="text-lg font-bold text-slate-600">Nenhum resultado</h3>
                             <p className="text-slate-400 mt-2">Nenhum colaborador encontrado para os termos buscados.</p>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {filteredProfessionals.map(prof => (
-                                <div 
-                                    key={prof.id} 
-                                    className="bg-white rounded-[32px] border border-slate-200 p-8 shadow-sm hover:shadow-xl transition-all group relative"
-                                >
+                                <div key={prof.id} className="bg-white rounded-[32px] border border-slate-200 p-8 shadow-sm hover:shadow-xl transition-all group relative">
                                     <div className="absolute top-6 right-6">
-                                        <ToggleSwitch 
-                                            on={!!prof.active} 
-                                            onClick={() => handleToggleActive(prof.id, !!prof.active)} 
-                                        />
+                                        <ToggleSwitch on={!!prof.active} onClick={() => handleToggleActive(prof.id, !!prof.active)} />
                                     </div>
-                                    
                                     <div className="flex flex-col items-center text-center cursor-pointer" onClick={() => setSelectedProf(prof)}>
                                         <div className="relative mb-6">
                                             <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-md bg-slate-100 flex items-center justify-center">
-                                                {prof.avatarUrl || (prof as any).photo_url ? (
-                                                    <img src={prof.avatarUrl || (prof as any).photo_url} className="w-full h-full object-cover" alt="" />
-                                                ) : (
-                                                    <UserIcon size={40} className="text-slate-300" />
-                                                )}
+                                                {(prof as any).photo_url || prof.avatarUrl ? <img src={(prof as any).photo_url || prof.avatarUrl} className="w-full h-full object-cover" alt="" /> : <UserIcon size={40} className="text-slate-300" />}
                                             </div>
-                                            <div className={`absolute bottom-1 right-1 w-6 h-6 rounded-full border-2 border-white flex items-center justify-center ${prof.active ? 'bg-green-500' : 'bg-slate-300'}`}>
-                                                {prof.active ? <ShieldCheck size={12} className="text-white" /> : <ShieldAlert size={12} className="text-white" />}
-                                            </div>
+                                            <div className={`absolute bottom-1 right-1 w-6 h-6 rounded-full border-2 border-white flex items-center justify-center ${prof.active ? 'bg-green-500' : 'bg-slate-300'}`}><ShieldCheck size={12} className="text-white" /></div>
                                         </div>
-
-                                        <h3 className="text-xl font-bold text-slate-800 leading-tight mb-1 group-hover:text-orange-600 transition-colors">
-                                            {prof.name}
-                                        </h3>
-                                        <p className="text-slate-500 font-bold mb-6 uppercase tracking-widest text-[10px]">
-                                            {prof.role || 'Colaborador'}
-                                        </p>
-
-                                        <div className="w-full grid grid-cols-2 gap-2 mb-6">
-                                            <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
-                                                <p className="text-[10px] text-slate-400 font-black uppercase mb-1">Comissão</p>
-                                                <p className="text-lg font-black text-slate-700">{(prof as any).commission_rate || 0}%</p>
-                                            </div>
-                                            <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
-                                                <p className="text-[10px] text-slate-400 font-black uppercase mb-1">Status</p>
-                                                <p className={`text-xs font-bold mt-1 ${prof.active ? 'text-green-600' : 'text-slate-400'}`}>
-                                                    {prof.active ? 'Ativo' : 'Pausado'}
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        <div className="mt-auto flex items-center gap-2 text-orange-500 font-black text-xs uppercase tracking-widest py-2 px-4 rounded-full bg-orange-50 transition-colors group-hover:bg-orange-500 group-hover:text-white">
+                                        <h3 className="text-xl font-bold text-slate-800 leading-tight mb-1 group-hover:text-orange-600 transition-colors">{prof.name}</h3>
+                                        <p className="text-slate-500 font-bold mb-6 uppercase tracking-widest text-[10px]">{prof.role || 'Colaborador'}</p>
+                                        <div className="mt-auto flex items-center gap-2 text-orange-500 font-black text-xs uppercase tracking-widest py-2 px-4 rounded-full bg-orange-50 group-hover:bg-orange-500 group-hover:text-white transition-all">
                                             Gerenciar Perfil <ArrowRight size={14} />
                                         </div>
                                     </div>
