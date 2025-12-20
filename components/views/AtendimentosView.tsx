@@ -2,7 +2,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     ChevronLeft, ChevronRight, Plus, MessageSquare, 
-    ChevronDown, RefreshCw, User as UserIcon, Calendar as CalendarIcon
+    ChevronDown, RefreshCw, User as UserIcon, Calendar as CalendarIcon,
+    AlertCircle, WifiOff
 } from 'lucide-react';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { pt } from 'date-fns/locale';
@@ -89,6 +90,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const [appointments, setAppointments] = useState<LegacyAppointment[]>([]);
     const [resources, setResources] = useState<LegacyProfessional[]>([]);
     const [isLoadingData, setIsLoadingData] = useState(false);
+    const [hasError, setHasError] = useState<string | null>(null);
     const [periodType, setPeriodType] = useState<PeriodType>('Dia');
     const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = useState(false);
     const [modalState, setModalState] = useState<{ type: 'appointment' | 'block'; data: any } | null>(null);
@@ -118,24 +120,30 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 }));
                 setResources(mapped);
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error("Error fetching professionals:", e);
+            if (e.message === 'Failed to fetch') {
+                setHasError("Erro de conexão com o banco de dados. Verifique sua internet ou as chaves do Supabase.");
+            }
         }
     };
 
     const fetchAppointments = async () => {
         setIsLoadingData(true);
+        setHasError(null);
         try {
-            // Filtro opcional por data para performance futuro
             const { data, error } = await supabase
                 .from('appointments')
                 .select('*');
             
-            if (error) throw error;
+            if (error) {
+                if (error.code === '42P01') throw new Error("Tabela 'appointments' não encontrada no banco. Por favor, execute o script SQL de configuração.");
+                throw error;
+            }
+
             if (data) {
                 const mappedAppointments: LegacyAppointment[] = data.map(row => {
                     const startTime = new Date(row.date); 
-                    // Se não houver fim no banco, assume 30 min por padrão ou usa o valor salvo
                     const endTime = row.end_date ? new Date(row.end_date) : new Date(startTime.getTime() + 30 * 60000);
                     
                     let matchedProf = resources.find(p => p.id === Number(row.resource_id)) 
@@ -160,20 +168,22 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 });
                 setAppointments(mappedAppointments);
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error("Error fetching appointments:", e);
+            setHasError(e.message === 'Failed to fetch' ? "Falha na rede ao carregar agenda." : e.message);
         } finally {
             setIsLoadingData(false);
         }
     };
 
-    useEffect(() => {
-        fetchResources();
-    }, []);
+    const handleRefresh = async () => {
+        await fetchResources();
+        await fetchAppointments();
+    };
 
     useEffect(() => {
-        if (resources.length > 0) fetchAppointments();
-    }, [resources, currentDate]);
+        handleRefresh();
+    }, [currentDate]);
 
     const handleDateChange = (direction: number) => {
         if (periodType === 'Dia' || periodType === 'Lista') setCurrentDate(prev => addDays(prev, direction));
@@ -188,6 +198,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             const days = eachDayOfInterval({ start, end });
             return days.map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date', data: day }));
         }
+        
+        if (resources.length === 0) {
+             return [{ id: 1, title: 'Equipe', type: 'professional' }];
+        }
+
         return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional', data: p }));
     }, [periodType, currentDate, resources]);
 
@@ -208,7 +223,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     const getColumnForAppointment = (app: LegacyAppointment, cols: DynamicColumn[]) => {
         if (periodType === 'Semana') return cols.find(c => isSameDay(app.start, c.data));
-        return cols.find(c => c.id === app.professional.id);
+        // Se profissional ID não existe nas colunas (ex: carregou mas não bate), coloca na primeira coluna
+        const found = cols.find(c => c.id === app.professional.id);
+        return found || cols[0];
     };
 
     const timeSlots = Array.from({ length: (END_HOUR - START_HOUR) * 2 }, (_, i) => { 
@@ -226,7 +243,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 client_name: app.client?.nome || 'Cliente',
                 service_name: app.service.name,
                 professional_name: app.professional.name, 
-                resource_id: app.professional.id,            
+                resource_id: Number(app.professional.id) || 1,            
                 date: app.start.toISOString(),
                 end_date: app.end.toISOString(),
                 value: Number(app.service.price),
@@ -236,7 +253,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             };
 
             let res;
-            if (app.id && app.id < 1000000000000) { // IDs manuais do mock são altos
+            if (app.id && app.id < 1000000000000) { 
                 res = await supabase.from('appointments').update(payload).eq('id', app.id);
             } else {
                 res = await supabase.from('appointments').insert([payload]);
@@ -286,6 +303,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         Atendimentos {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-orange-400" />}
                     </h2>
                     <div className="flex items-center gap-3">
+                        <button 
+                            onClick={handleRefresh}
+                            className="p-2.5 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all"
+                            title="Recarregar Agenda"
+                        >
+                            <RefreshCw size={20} className={isLoadingData ? 'animate-spin' : ''} />
+                        </button>
                         <div className="relative">
                             <button onClick={() => setIsPeriodDropdownOpen(!isPeriodDropdownOpen)} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all">
                                 <CalendarIcon size={16} className="text-slate-400" />
@@ -320,14 +344,35 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
             <div className="flex flex-1 overflow-hidden relative">
                 <div className="flex-1 overflow-auto bg-slate-50 relative">
-                    {(periodType === 'Dia' || periodType === 'Semana') && (
+                    {hasError ? (
+                        <div className="h-full flex flex-col items-center justify-center p-8 text-center animate-in fade-in">
+                            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4">
+                                <WifiOff size={32} />
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-800">Ops! Algo deu errado</h3>
+                            <p className="text-slate-500 max-w-sm mt-2 mb-6">{hasError}</p>
+                            <button 
+                                onClick={handleRefresh}
+                                className="bg-slate-800 text-white px-6 py-2 rounded-xl font-bold hover:bg-slate-900 transition-all flex items-center gap-2"
+                            >
+                                <RefreshCw size={18} />
+                                Tentar Novamente
+                            </button>
+                        </div>
+                    ) : (periodType === 'Dia' || periodType === 'Semana') && (
                         <div className="relative min-h-full min-w-full">
                             <div className="grid sticky top-0 z-40 shadow-sm border-b border-slate-200 bg-white" style={gridStyle}>
                                 <div className="border-r border-slate-100 h-24 bg-white sticky left-0 z-50"></div>
                                 {columns.map(col => (
                                     <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-100 h-24 bg-slate-50/20">
                                         <div className="flex items-center gap-3 px-4 py-2 bg-white rounded-2xl border border-slate-200 shadow-sm min-w-[150px] max-w-[200px]">
-                                            {col.photo && <img src={col.photo} alt={col.title} className="w-10 h-10 rounded-full object-cover border-2 border-orange-100" />}
+                                            {col.photo ? (
+                                                <img src={col.photo} alt={col.title} className="w-10 h-10 rounded-full object-cover border-2 border-orange-100" />
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                                                    <UserIcon size={20} />
+                                                </div>
+                                            )}
                                             <div className="flex flex-col overflow-hidden">
                                                 <span className="text-xs font-black text-slate-800 truncate">{col.title}</span>
                                                 {col.subtitle && <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">{col.subtitle}</span>}
