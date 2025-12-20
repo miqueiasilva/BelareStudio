@@ -88,33 +88,33 @@ const LoginView: React.FC = () => {
 
     return (
         <div className="min-h-screen w-full flex items-center justify-center p-4 relative overflow-hidden bg-black">
-            {/* Background com Gradiente Radial e Orbs */}
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black z-0"></div>
-            <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-orange-500/10 rounded-full blur-[120px] z-0"></div>
-            <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-rose-500/10 rounded-full blur-[120px] z-0"></div>
+            {/* Background com Gradiente Radial Profundo */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_40%_30%,_#1e1b4b_0%,_#09090b_70%,_#000000_100%)] z-0"></div>
+            <div className="absolute top-[-5%] left-[-10%] w-[600px] h-[600px] bg-orange-600/15 rounded-full blur-[140px] z-0"></div>
+            <div className="absolute bottom-[-5%] right-[-10%] w-[600px] h-[600px] bg-rose-600/15 rounded-full blur-[140px] z-0"></div>
 
-            {/* Glassmorphism Card */}
-            <div className="w-full max-w-[440px] relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-700">
-                <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-[32px] p-8 md:p-12 shadow-2xl overflow-y-auto max-h-[95vh] scrollbar-hide">
+            {/* Glassmorphism Card com Border Radius Ampliado (Foco em Curvas Modernas) */}
+            <div className="w-full max-w-[460px] relative z-10 animate-in fade-in slide-in-from-bottom-12 duration-1000 ease-out">
+                <div className="bg-white/[0.04] backdrop-blur-[18px] border border-white/10 rounded-[44px] p-8 md:p-14 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)] overflow-y-auto max-h-[95vh] scrollbar-hide">
                     
                     {/* Header: Logo e Título */}
-                    <div className="flex flex-col items-center mb-8">
-                        <div className="w-14 h-14 bg-gradient-to-br from-[#FF8C42] to-[#F43F5E] rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/20 mb-4 transform hover:scale-105 transition-transform">
-                            <span className="text-white font-black text-3xl">B</span>
+                    <div className="flex flex-col items-center mb-10">
+                        <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#F43F5E] rounded-[22px] flex items-center justify-center shadow-[0_8px_32px_rgba(255,140,66,0.3)] mb-5 transform hover:rotate-3 transition-transform cursor-default">
+                            <span className="text-white font-black text-4xl tracking-tighter">B</span>
                         </div>
-                        <h1 className="text-2xl font-bold text-white tracking-tight">BelaApp</h1>
-                        <p className="text-slate-400 text-sm mt-1 text-center font-medium">Gestão Inteligente para Estúdios de Beleza</p>
+                        <h1 className="text-3xl font-bold text-white tracking-tight mb-2">BelaApp</h1>
+                        <p className="text-slate-200/80 text-sm text-center font-medium leading-relaxed max-w-[240px]">Gestão Inteligente para Estúdios de Beleza</p>
                     </div>
 
                     {/* Feedback Messages */}
                     {error && (
-                        <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold flex items-center gap-3 rounded-2xl animate-in zoom-in-95">
+                        <div className="mb-6 p-4 bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-bold flex items-center gap-3 rounded-2xl animate-in zoom-in-95">
                             <XCircle size={16} />
                             {error}
                         </div>
                     )}
                     {successMessage && (
-                        <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold flex items-center gap-3 rounded-2xl animate-in zoom-in-95">
+                        <div className="mb-6 p-4 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-3 rounded-2xl animate-in zoom-in-95">
                             <CheckCircle2 size={16} />
                             {successMessage}
                         </div>
@@ -126,31 +126,31 @@ const LoginView: React.FC = () => {
                             type="button"
                             onClick={handleGoogleLogin}
                             disabled={isLoading}
-                            className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 font-bold py-3.5 rounded-2xl hover:bg-slate-100 transition-all active:scale-95 disabled:opacity-50 mb-6 shadow-xl"
+                            className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 font-bold py-4 rounded-[20px] hover:bg-slate-50 transition-all active:scale-[0.97] disabled:opacity-50 mb-8 shadow-xl text-sm"
                         >
                             <GoogleIcon />
                             <span>Entrar com Google</span>
                         </button>
                     )}
 
-                    {/* Divisor */}
-                    <div className="relative flex items-center py-2 mb-6">
-                        <div className="flex-grow border-t border-white/5"></div>
-                        <span className="flex-shrink-0 mx-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">OU VIA E-MAIL</span>
-                        <div className="flex-grow border-t border-white/5"></div>
+                    {/* Divisor com Melhor Contraste */}
+                    <div className="relative flex items-center py-2 mb-8">
+                        <div className="flex-grow border-t border-white/10"></div>
+                        <span className="flex-shrink-0 mx-6 text-[10px] font-black text-slate-200/60 uppercase tracking-[0.25em]">OU VIA E-MAIL</span>
+                        <div className="flex-grow border-t border-white/10"></div>
                     </div>
 
                     {/* Form */}
-                    <form onSubmit={handleSubmit} className="space-y-4">
+                    <form onSubmit={handleSubmit} className="space-y-5">
                         {mode === 'register' && (
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nome Completo</label>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-2">Nome Completo</label>
                                 <div className="relative">
                                     <input
                                         type="text"
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
-                                        className="w-full bg-white/5 border border-slate-700/50 rounded-2xl px-5 py-3.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all font-medium"
+                                        className="w-full bg-white/[0.03] border border-white/10 rounded-[18px] px-6 py-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500/60 transition-all font-medium"
                                         placeholder="Seu nome"
                                         required
                                     />
@@ -158,17 +158,17 @@ const LoginView: React.FC = () => {
                             </div>
                         )}
 
-                        <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">E-mail</label>
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-2">E-mail</label>
                             <div className="relative group">
-                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-orange-500">
-                                    <Mail size={18} />
+                                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-[#FF8C42]">
+                                    <Mail size={19} />
                                 </div>
                                 <input
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="w-full bg-white/5 border border-slate-700/50 rounded-2xl pl-12 pr-4 py-3.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all font-medium"
+                                    className="w-full bg-white/[0.03] border border-white/10 rounded-[18px] pl-14 pr-6 py-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500/60 transition-all font-medium"
                                     placeholder="exemplo@email.com"
                                     required
                                 />
@@ -176,17 +176,17 @@ const LoginView: React.FC = () => {
                         </div>
 
                         {mode !== 'forgot' && (
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Senha</label>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-2">Senha</label>
                                 <div className="relative group">
-                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-orange-500">
-                                        <Lock size={18} />
+                                    <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-[#FF8C42]">
+                                        <Lock size={19} />
                                     </div>
                                     <input
                                         type={showPassword ? "text" : "password"}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        className="w-full bg-white/5 border border-slate-700/50 rounded-2xl pl-12 pr-12 py-3.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all font-medium"
+                                        className="w-full bg-white/[0.03] border border-white/10 rounded-[18px] pl-14 pr-14 py-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500/60 transition-all font-medium"
                                         placeholder="••••••••"
                                         required
                                         minLength={6}
@@ -194,9 +194,9 @@ const LoginView: React.FC = () => {
                                     <button
                                         type="button"
                                         onClick={() => setShowPassword(!showPassword)}
-                                        className="absolute inset-y-0 right-4 flex items-center text-slate-500 hover:text-white transition-colors"
+                                        className="absolute inset-y-0 right-5 flex items-center text-slate-500 hover:text-white transition-colors"
                                     >
-                                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                        {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
                                     </button>
                                 </div>
                             </div>
@@ -207,7 +207,7 @@ const LoginView: React.FC = () => {
                                 <button 
                                     type="button" 
                                     onClick={() => handleModeChange('forgot')} 
-                                    className="text-xs font-bold text-[#FF8C42] hover:text-[#F43F5E] transition-colors"
+                                    className="text-xs font-bold text-[#FF8C42] hover:text-[#F43F5E] transition-all"
                                 >
                                     Esqueceu a senha?
                                 </button>
@@ -217,28 +217,29 @@ const LoginView: React.FC = () => {
                         <button
                             type="submit"
                             disabled={isLoading}
-                            className="w-full bg-gradient-to-r from-[#FF8C42] to-[#F43F5E] hover:from-[#f97316] hover:to-[#e11d48] text-white font-black py-4 rounded-2xl shadow-xl shadow-orange-500/20 transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-3 mt-6"
+                            className="w-full bg-gradient-to-r from-[#FF8C42] to-[#F43F5E] hover:scale-[1.02] text-white font-black py-4.5 rounded-[22px] shadow-[0_12px_40px_rgba(255,140,66,0.3)] transition-all active:scale-[0.97] disabled:opacity-70 flex items-center justify-center gap-3 mt-8 relative group overflow-hidden"
                         >
+                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                             {isLoading ? (
-                                <Loader2 className="animate-spin h-5 w-5" />
+                                <Loader2 className="animate-spin h-6 w-6" />
                             ) : (
                                 <>
-                                    <span>{mode === 'login' ? 'Entrar' : mode === 'register' ? 'Cadastrar' : 'Recuperar'}</span>
-                                    <ArrowRight size={20} />
+                                    <span className="text-base tracking-tight">{mode === 'login' ? 'Entrar Agora' : mode === 'register' ? 'Criar Minha Conta' : 'Recuperar Acesso'}</span>
+                                    <ArrowRight size={22} className="group-hover:translate-x-1 transition-transform" />
                                 </>
                             )}
                         </button>
                     </form>
 
-                    {/* Footer Links */}
-                    <div className="mt-10 text-center">
+                    {/* Footer Links com Cores Vibrantes */}
+                    <div className="mt-12 text-center">
                         {mode === 'login' ? (
-                            <p className="text-sm text-slate-500 font-medium">
+                            <p className="text-sm text-slate-400 font-medium">
                                 Ainda não tem conta?{' '}
                                 <button 
                                     type="button" 
                                     onClick={() => handleModeChange('register')} 
-                                    className="text-white font-black hover:text-[#FF8C42] transition-colors"
+                                    className="text-white font-black hover:text-[#FF8C42] transition-colors decoration-[#FF8C42]/30 underline underline-offset-4"
                                 >
                                     Cadastre-se
                                 </button>
@@ -247,7 +248,7 @@ const LoginView: React.FC = () => {
                             <button 
                                 type="button" 
                                 onClick={() => handleModeChange('login')} 
-                                className="text-sm text-slate-300 font-bold hover:text-white transition-all"
+                                className="text-sm text-slate-300 font-bold hover:text-white transition-all bg-white/5 px-6 py-2.5 rounded-full border border-white/5"
                             >
                                 Voltar para o Login
                             </button>
