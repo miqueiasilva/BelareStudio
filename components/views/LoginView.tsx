@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Loader2, Eye, EyeOff, Mail, Lock, ArrowRight, XCircle, CheckCircle2 } from 'lucide-react';
 
@@ -26,6 +26,19 @@ const LoginView: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [showPassword, setShowPassword] = useState(false);
+
+    // --- Higiene de Sessão Preventiva ---
+    useEffect(() => {
+        // Ao carregar a tela de login, removemos qualquer token "sujo" que possa causar
+        // o travamento do AuthProvider em loading infinito.
+        const keysToRemove = Object.keys(localStorage).filter(key => 
+            key.includes('auth-token') || 
+            key.startsWith('sb-') || 
+            key === 'supabase.auth.token'
+        );
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+        sessionStorage.clear();
+    }, []);
 
     const handleModeChange = (newMode: AuthMode) => {
         setError(null);

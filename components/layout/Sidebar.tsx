@@ -25,7 +25,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         { id: 'whatsapp', icon: MessageSquare, label: 'WhatsApp' },
         { id: 'financeiro', icon: ArrowRightLeft, label: 'Fluxo de Caixa' },
         { id: 'clientes', icon: Users, label: 'Clientes' },
-        { id: 'equipe', icon: Briefcase, label: 'Equipe' }, // Added
+        { id: 'equipe', icon: Briefcase, label: 'Equipe' },
         { id: 'relatorios', icon: BarChart, label: 'Relatórios' },
         { id: 'configuracoes', icon: Settings, label: 'Configurações' },
     ];
@@ -44,22 +44,34 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         onNavigate(viewId as any);
     };
 
+    /**
+     * Logout Brutal: Força a limpeza de todo o rastro da sessão local
+     * para evitar erros de cache ou "loading infinito" causados por dados legados.
+     */
     const handleLogout = async () => {
         const confirm = window.confirm("Deseja realmente sair do sistema?");
         if (!confirm) return;
 
         try {
+            // 1. Tentar avisar o Supabase (pode falhar se a rede estiver instável)
             await supabase.auth.signOut();
-            const url = localStorage.getItem('VITE_SUPABASE_URL');
-            const key = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
+        } catch (error) {
+            console.error("Erro silencioso durante signOut:", error);
+        } finally {
+            // 2. HIGIENE TOTAL: Salvar apenas as configs do banco (VITE_) para não perder conexão
+            const savedUrl = localStorage.getItem('VITE_SUPABASE_URL');
+            const savedKey = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
+
+            // 3. Limpar TUDO (Lixo de sessão, estados antigos, cache de dados)
             localStorage.clear();
             sessionStorage.clear();
-            if (url) localStorage.setItem('VITE_SUPABASE_URL', url);
-            if (key) localStorage.setItem('VITE_SUPABASE_ANON_KEY', key);
+
+            // 4. Restaurar conexão
+            if (savedUrl) localStorage.setItem('VITE_SUPABASE_URL', savedUrl);
+            if (savedKey) localStorage.setItem('VITE_SUPABASE_ANON_KEY', savedKey);
+
+            // 5. Hard Reset da aplicação
             window.location.href = '/'; 
-        } catch (error) {
-            console.error("Erro ao sair:", error);
-            window.location.href = '/';
         }
     };
 
