@@ -4,7 +4,7 @@ import {
     Settings, User, Scissors, Clock, Bell, Store, Save, Plus, 
     Trash2, Edit2, Search, ChevronLeft, Menu, ChevronRight, 
     Loader2, MapPin, Phone, Wallet, CreditCard, DollarSign,
-    CheckCircle, Info, Calendar
+    CheckCircle, Info, Calendar, X, Smartphone, Banknote
 } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
@@ -41,6 +41,11 @@ const ConfiguracoesView: React.FC = () => {
     // --- State: Services & Payments ---
     const [services, setServices] = useState<LegacyService[]>([]);
     const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
+    
+    // --- State: New Payment Method ---
+    const [isAddingPM, setIsAddingPM] = useState(false);
+    const [newPMName, setNewPMName] = useState('');
+    const [newPMFee, setNewPMFee] = useState('0');
 
     const showToast = (message: string, type: ToastType = 'success') => {
         setToast({ message, type });
@@ -68,7 +73,7 @@ const ConfiguracoesView: React.FC = () => {
             }
 
             // 2. Services
-            const { data: svcs } = await supabase.from('services').select('*').order('name');
+            const { data: svcs } = await supabase.from('services').select('*').order('nome');
             if (svcs) setServices(svcs);
 
             // 3. Payment Methods
@@ -127,6 +132,44 @@ const ConfiguracoesView: React.FC = () => {
         } catch (e) {
             showToast("Erro ao atualizar taxa", "error");
         }
+    };
+
+    const handleCreatePaymentMethod = async () => {
+        if (!newPMName.trim()) return;
+        try {
+            const { error } = await supabase.from('payment_methods').insert([{
+                name: newPMName,
+                fee_percentage: parseFloat(newPMFee) || 0
+            }]);
+            if (error) throw error;
+            showToast("Método de pagamento adicionado!");
+            setNewPMName('');
+            setNewPMFee('0');
+            setIsAddingPM(false);
+            fetchData();
+        } catch (e: any) {
+            showToast(e.message, "error");
+        }
+    };
+
+    const handleDeletePaymentMethod = async (id: number) => {
+        if (!window.confirm("Deseja realmente excluir este método de pagamento?")) return;
+        try {
+            const { error } = await supabase.from('payment_methods').delete().eq('id', id);
+            if (error) throw error;
+            showToast("Método removido", "info");
+            fetchData();
+        } catch (e: any) {
+            showToast("Erro ao remover método", "error");
+        }
+    };
+
+    const getPaymentIcon = (name: string) => {
+        const n = name.toLowerCase();
+        if (n.includes('cartao') || n.includes('crédito') || n.includes('débito')) return <CreditCard size={18} />;
+        if (n.includes('pix')) return <Smartphone size={18} />;
+        if (n.includes('dinheiro')) return <Banknote size={18} />;
+        return <DollarSign size={18} />;
     };
 
     // --- Sub-Views ---
@@ -285,33 +328,96 @@ const ConfiguracoesView: React.FC = () => {
     );
 
     const renderFinanceTab = () => (
-        <div className="space-y-6">
-            <Card title="Taxas Administrativas" icon={<Wallet className="w-5 h-5" />}>
+        <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
+            <Card title="Gestão de Pagamentos & Taxas" icon={<Wallet className="w-5 h-5" />}>
+                <div className="flex justify-between items-center mb-6">
+                    <p className="text-sm text-slate-500 max-w-md">Configure os métodos aceitos e suas taxas. Isso afeta o cálculo líquido das comissões.</p>
+                    <button 
+                        onClick={() => setIsAddingPM(true)}
+                        className="bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-700 transition-colors"
+                    >
+                        <Plus size={16} /> Novo Método
+                    </button>
+                </div>
+
                 <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl mb-6 flex gap-3">
                     <Info className="text-blue-500 flex-shrink-0" size={20} />
-                    <p className="text-xs text-blue-700">Estas taxas são utilizadas para calcular o repasse líquido das comissões quando a opção de descontar taxas estiver ativa no perfil do colaborador.</p>
+                    <p className="text-xs text-blue-700">As taxas cadastradas aqui são descontadas automaticamente do valor bruto para gerar o faturamento real antes do cálculo das comissões da equipe.</p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {paymentMethods.map(pm => (
-                        <div key={pm.id} className="p-4 bg-white border border-slate-200 rounded-xl flex items-center justify-between shadow-sm">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-slate-100 rounded-lg text-slate-500">
-                                    {pm.name.toLowerCase().includes('cartao') ? <CreditCard size={18} /> : <DollarSign size={18} />}
-                                </div>
-                                <span className="font-bold text-slate-700">{pm.name}</span>
+
+                {/* Form to add new Payment Method */}
+                {isAddingPM && (
+                    <div className="mb-6 p-4 border-2 border-dashed border-slate-200 rounded-2xl bg-white animate-in zoom-in-95">
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="text-sm font-bold text-slate-700">Novo Método de Pagamento</h4>
+                            <button onClick={() => setIsAddingPM(false)} className="text-slate-400 hover:text-slate-600"><X size={18}/></button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nome do Método</label>
+                                <input 
+                                    value={newPMName}
+                                    onChange={e => setNewPMName(e.target.value)}
+                                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-1 focus:ring-orange-500 outline-none"
+                                    placeholder="Ex: Cartão de Crédito"
+                                />
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Taxa de Processamento (%)</label>
                                 <input 
                                     type="number"
                                     step="0.01"
-                                    value={pm.fee_percentage}
-                                    onChange={e => handleUpdatePaymentFee(pm.id, parseFloat(e.target.value))}
-                                    className="w-20 border border-slate-200 rounded-lg px-2 py-1 text-right font-bold text-orange-600 focus:ring-1 focus:ring-orange-500 outline-none"
+                                    value={newPMFee}
+                                    onChange={e => setNewPMFee(e.target.value)}
+                                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-1 focus:ring-orange-500 outline-none"
                                 />
-                                <span className="text-slate-400 font-bold">%</span>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => setIsAddingPM(false)} className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-lg">Cancelar</button>
+                            <button onClick={handleCreatePaymentMethod} className="px-4 py-2 text-xs font-bold text-white bg-orange-500 hover:bg-orange-600 rounded-lg shadow-md shadow-orange-100">Adicionar Método</button>
+                        </div>
+                    </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {paymentMethods.map(pm => (
+                        <div key={pm.id} className="p-4 bg-white border border-slate-200 rounded-xl flex items-center justify-between shadow-sm hover:border-slate-300 transition-colors group">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-slate-100 rounded-lg text-slate-500">
+                                    {getPaymentIcon(pm.name)}
+                                </div>
+                                <div>
+                                    <span className="font-bold text-slate-700 block">{pm.name}</span>
+                                    <span className="text-[10px] text-slate-400 uppercase font-black">ID: {pm.id}</span>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2">
+                                    <input 
+                                        type="number"
+                                        step="0.01"
+                                        value={pm.fee_percentage}
+                                        onChange={e => handleUpdatePaymentFee(pm.id, parseFloat(e.target.value))}
+                                        className="w-20 border border-slate-200 rounded-lg px-2 py-1 text-right font-bold text-orange-600 focus:ring-1 focus:ring-orange-500 outline-none"
+                                    />
+                                    <span className="text-slate-400 font-bold text-sm">%</span>
+                                </div>
+                                <button 
+                                    onClick={() => handleDeletePaymentMethod(pm.id)}
+                                    className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                    title="Excluir Método"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
                             </div>
                         </div>
                     ))}
+                    {paymentMethods.length === 0 && !isAddingPM && (
+                        <div className="col-span-2 py-8 text-center border-2 border-dashed border-slate-100 rounded-3xl text-slate-400">
+                            Nenhum método de pagamento configurado.
+                        </div>
+                    )}
                 </div>
             </Card>
         </div>
