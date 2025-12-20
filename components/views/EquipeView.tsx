@@ -18,9 +18,16 @@ const EquipeView: React.FC = () => {
     const [selectedProf, setSelectedProf] = useState<LegacyProfessional | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    const showToast = useCallback((message: string, type: ToastType = 'success') => {
-        const safeMessage = typeof message === 'object' ? (message as any).message || JSON.stringify(message) : String(message);
-        setToast({ message: safeMessage, type });
+    const showToast = useCallback((message: any, type: ToastType = 'success') => {
+        let finalMessage = "";
+        if (typeof message === 'string') {
+            finalMessage = message;
+        } else if (message?.message && typeof message.message === 'string') {
+            finalMessage = message.message;
+        } else {
+            finalMessage = JSON.stringify(message) || "Erro inesperado";
+        }
+        setToast({ message: finalMessage, type });
     }, []);
 
     const fetchProfessionals = useCallback(async () => {
@@ -36,7 +43,7 @@ const EquipeView: React.FC = () => {
             setProfessionals(data || []);
         } catch (err: any) {
             console.error("Fetch Staff Error:", err);
-            setError(err.message || "Erro inesperado ao carregar equipe.");
+            setError(typeof err?.message === 'string' ? err.message : "Erro inesperado ao carregar equipe.");
         } finally {
             setIsLoading(false);
         }
@@ -67,7 +74,8 @@ const EquipeView: React.FC = () => {
             setSelectedProf(data as any);
             showToast('Novo rascunho criado!');
         } catch (error: any) {
-            showToast(`Erro ao criar: ${error.message || 'Falha no banco.'}`, 'error');
+            const msg = typeof error?.message === 'string' ? error.message : "Falha no banco.";
+            showToast(`Erro ao criar: ${msg}`, 'error');
         } finally {
             setIsLoading(false);
         }
@@ -80,7 +88,8 @@ const EquipeView: React.FC = () => {
             setProfessionals(prev => prev.map(p => p.id === id ? { ...p, active: !currentStatus } : p));
             showToast(`Status atualizado com sucesso.`);
         } catch (error: any) {
-            showToast(`Erro ao atualizar status: ${error.message || 'Falha no servidor.'}`, 'error');
+            const msg = typeof error?.message === 'string' ? error.message : "Falha no servidor.";
+            showToast(`Erro ao atualizar status: ${msg}`, 'error');
         }
     }, [showToast]);
 

@@ -103,10 +103,19 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
 
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
 
-    const showToast = useCallback((message: string, type: ToastType = 'success') => {
-        // Garantir que a mensagem seja sempre uma string para evitar [object Object]
-        const safeMessage = typeof message === 'object' ? (message as any).message || JSON.stringify(message) : String(message);
-        setToast({ message: safeMessage, type });
+    const showToast = useCallback((message: any, type: ToastType = 'success') => {
+        // Garantir extração robusta de mensagem para evitar [object Object]
+        let finalMessage = "";
+        if (typeof message === 'string') {
+            finalMessage = message;
+        } else if (message?.message && typeof message.message === 'string') {
+            finalMessage = message.message;
+        } else if (message?.error_description && typeof message.error_description === 'string') {
+            finalMessage = message.error_description;
+        } else {
+            finalMessage = JSON.stringify(message) || "Erro inesperado";
+        }
+        setToast({ message: finalMessage, type });
     }, []);
 
     const fetchResources = async () => {
@@ -278,7 +287,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
             await fetchAppointments(); 
         } catch (error: any) {
             console.error("Erro ao salvar:", error);
-            const msg = error?.message || (typeof error === 'string' ? error : 'Erro inesperado ao salvar.');
+            const msg = typeof error?.message === 'string' ? error.message : "Erro inesperado ao salvar.";
             showToast(`Erro ao salvar: ${msg}`, 'error');
         }
     };
@@ -292,7 +301,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
             await fetchAppointments();
             setActiveAppointmentDetail(null);
         } catch (error: any) {
-            const msg = error?.message || 'Erro ao excluir.';
+            const msg = typeof error?.message === 'string' ? error.message : "Erro ao excluir.";
             showToast(`Erro ao excluir: ${msg}`, 'error');
         }
     };
@@ -305,7 +314,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = () => {
             await fetchAppointments();
             setActiveAppointmentDetail(null);
         } catch (error: any) {
-            const msg = error?.message || 'Erro ao atualizar status.';
+            const msg = typeof error?.message === 'string' ? error.message : "Erro ao atualizar status.";
             showToast(`Erro ao atualizar status: ${msg}`, 'error');
         }
     };

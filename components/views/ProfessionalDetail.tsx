@@ -37,9 +37,16 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
     
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const showToast = useCallback((message: string, type: ToastType = 'success') => {
-        const safeMessage = typeof message === 'object' ? (message as any).message || JSON.stringify(message) : String(message);
-        setToast({ message: safeMessage, type });
+    const showToast = useCallback((message: any, type: ToastType = 'success') => {
+        let finalMessage = "";
+        if (typeof message === 'string') {
+            finalMessage = message;
+        } else if (message?.message && typeof message.message === 'string') {
+            finalMessage = message.message;
+        } else {
+            finalMessage = JSON.stringify(message) || "Erro inesperado";
+        }
+        setToast({ message: finalMessage, type });
     }, []);
 
     // --- Initialization ---
@@ -108,7 +115,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
             showToast("Foto atualizada com sucesso!");
         } catch (error: any) {
             console.error("Upload error:", error);
-            showToast(`Erro no upload: ${error.message || 'Falha desconhecida'}`, "error");
+            const msg = typeof error?.message === 'string' ? error.message : "Falha no upload";
+            showToast(`Erro no upload: ${msg}`, "error");
         } finally {
             setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -149,7 +157,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
             onSave();
         } catch (error: any) {
             console.error("Save error:", error);
-            showToast(`Erro ao salvar: ${error.message || 'Tente novamente.'}`, "error");
+            const msg = typeof error?.message === 'string' ? error.message : "Tente novamente.";
+            showToast(`Erro ao salvar: ${msg}`, "error");
         } finally {
             setIsLoading(false);
         }
@@ -166,7 +175,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
             if (error) throw error;
             onBack();
         } catch (error: any) {
-            showToast(`Erro ao excluir: ${error.message || 'Falha no servidor.'}`, "error");
+            const msg = typeof error?.message === 'string' ? error.message : "Falha no servidor.";
+            showToast(`Erro ao excluir: ${msg}`, "error");
         } finally {
             setIsLoading(false);
         }

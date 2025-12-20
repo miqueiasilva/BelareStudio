@@ -29,7 +29,8 @@ const ServicosView: React.FC = () => {
             if (error) throw error;
             setServices(data || []);
         } catch (error: any) {
-            setToast({ message: `Error: ${error.message}`, type: 'error' });
+            const msg = typeof error?.message === 'string' ? error.message : "Erro desconhecido";
+            setToast({ message: `Erro ao buscar: ${msg}`, type: 'error' });
         } finally {
             setLoading(false);
         }
@@ -73,7 +74,8 @@ const ServicosView: React.FC = () => {
             setIsModalOpen(false);
             fetchServices();
         } catch (error: any) {
-            setToast({ message: `Erro ao salvar: ${error.message}`, type: 'error' });
+            const msg = typeof error?.message === 'string' ? error.message : "Tente novamente.";
+            setToast({ message: `Erro ao salvar: ${msg}`, type: 'error' });
         } finally {
             setIsSaving(false);
         }
@@ -88,7 +90,8 @@ const ServicosView: React.FC = () => {
             setToast({ message: 'Serviço removido.', type: 'info' });
             fetchServices();
         } catch (error: any) {
-            setToast({ message: `Erro ao excluir: ${error.message}`, type: 'error' });
+            const msg = typeof error?.message === 'string' ? error.message : "Falha na exclusão.";
+            setToast({ message: `Erro ao excluir: ${msg}`, type: 'error' });
         }
     };
 

@@ -34,9 +34,16 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    const showToast = useCallback((message: string, type: ToastType = 'success') => {
-        const safeMessage = typeof message === 'object' ? (message as any).message || JSON.stringify(message) : String(message);
-        setToast({ message: safeMessage, type });
+    const showToast = useCallback((message: any, type: ToastType = 'success') => {
+        let finalMessage = "";
+        if (typeof message === 'string') {
+            finalMessage = message;
+        } else if (message?.message && typeof message.message === 'string') {
+            finalMessage = message.message;
+        } else {
+            finalMessage = JSON.stringify(message) || "Erro inesperado";
+        }
+        setToast({ message: finalMessage, type });
     }, []);
 
     const fetchData = useCallback(async () => {
@@ -114,7 +121,8 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             fetchData();
         } catch (e: any) {
             console.error("Checkout error:", e);
-            showToast(`Erro ao finalizar: ${e.message || 'Tente novamente.'}`, 'error');
+            const msg = typeof e?.message === 'string' ? e.message : "Tente novamente.";
+            showToast(`Erro ao finalizar: ${msg}`, 'error');
         } finally {
             setIsSaving(false);
         }
