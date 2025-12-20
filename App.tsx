@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { HashRouter, Routes, Route, Navigate, useLocation, Outlet, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ViewState, FinancialTransaction } from './types';
 import EnvGate from './components/EnvGate';
@@ -27,99 +28,112 @@ import PublicBookingView from './components/views/PublicBookingView';
 
 import { mockTransactions } from './data/mockData';
 
-const AppContent: React.FC = () => {
+// --- Componente de Proteção de Rota ---
+const PrivateRoute = () => {
   const { user, loading } = useAuth();
-  const [currentView, setCurrentView] = useState<ViewState>('dashboard');
-  const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
-  const [hash, setHash] = useState(window.location.hash);
-  const [pathname, setPathname] = useState(window.location.pathname);
-
-  // Router listener
-  useEffect(() => {
-    const handleHashChange = () => setHash(window.location.hash);
-    window.addEventListener('hashchange', handleHashChange);
-    setPathname(window.location.pathname);
-    
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
-
-  // --- ROTA PÚBLICA (Deve vir antes do check de !user) ---
-  if (hash === '#/agendar') {
-    return <PublicBookingView />;
-  }
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-slate-500 font-medium">Carregando Belaflow...</p>
+          <p className="text-slate-500 font-medium">Autenticando...</p>
         </div>
       </div>
     );
   }
 
-  if (pathname === '/reset-password' || hash === '#/reset-password') {
-    return <ResetPasswordView />;
-  }
-
   if (!user) {
-    return <LoginView />;
+    return <Navigate to="/login" replace />;
   }
 
+  return <Outlet />;
+};
+
+// --- Layout Administrativo (Sync de URL com MainLayout) ---
+const AdminWrapper: React.FC<{ transactions: FinancialTransaction[], onAddTransaction: (t: FinancialTransaction) => void }> = ({ transactions, onAddTransaction }) => {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Mapeia o path atual para o ViewState esperado pelo MainLayout legado
+  const getViewFromPath = (path: string): ViewState => {
+    const cleanPath = path.replace('/', '') || 'dashboard';
+    return cleanPath as ViewState;
+  };
+
+  const currentView = getViewFromPath(location.pathname);
+
+  return (
+    <MainLayout currentView={currentView} onNavigate={(view) => navigate(`/${view}`)}>
+      <Outlet context={{ transactions, onAddTransaction }} />
+    </MainLayout>
+  );
+};
+
+const AppContent: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
+
+  // 1. BYPASS DE ROTA PÚBLICA: Verifica antes de qualquer lógica de Auth
+  const isPublicRoute = location.pathname === '/agendar' || location.pathname === '/public-preview';
+
+  if (isPublicRoute) {
+    return (
+      <Routes>
+        <Route path="/agendar" element={<PublicBookingView />} />
+        <Route path="/public-preview" element={<PublicBookingView />} />
+      </Routes>
+    );
+  }
+
+  // 2. LÓGICA PADRÃO DO SISTEMA
   const handleAddTransaction = (t: FinancialTransaction) => {
     setTransactions(prev => [t, ...prev]);
   };
 
-  const renderView = () => {
-    switch (currentView) {
-      case 'dashboard':
-        return <DashboardView onNavigate={setCurrentView} />;
-      case 'agenda':
-        return <AtendimentosView onAddTransaction={handleAddTransaction} />;
-      case 'agenda_online':
-        return <AgendaOnlineView />;
-      case 'whatsapp':
-        return <WhatsAppView />;
-      case 'financeiro':
-        return <FinanceiroView transactions={transactions} onAddTransaction={handleAddTransaction} />;
-      case 'clientes':
-        return <ClientesView />;
-      case 'relatorios':
-        return <RelatoriosView />;
-      case 'configuracoes':
-        return <ConfiguracoesView />;
-      case 'remuneracoes':
-        return <RemuneracoesView />;
-      case 'vendas':
-        return <VendasView onAddTransaction={handleAddTransaction} />;
-      case 'comandas':
-        return <ComandasView onAddTransaction={handleAddTransaction} />;
-      case 'caixa':
-        return <CaixaView />;
-      case 'produtos':
-        return <ProdutosView />;
-      case 'servicos':
-        return <ServicosView />;
-      default:
-        if ((currentView as string) === 'equipe') return <EquipeView />;
-        return <DashboardView onNavigate={setCurrentView} />;
-    }
-  };
-
   return (
-    <MainLayout currentView={currentView} onNavigate={setCurrentView}>
-      {renderView()}
-    </MainLayout>
+    <Routes>
+      {/* Rota de Login */}
+      <Route path="/login" element={<LoginView />} />
+      <Route path="/reset-password" element={<ResetPasswordView />} />
+
+      {/* Rotas Protegidas */}
+      <Route element={<PrivateRoute />}>
+        <Route element={<AdminWrapper transactions={transactions} onAddTransaction={handleAddTransaction} />}>
+          <Route index element={<DashboardView onNavigate={(v) => navigate(`/${v}`)} />} />
+          <Route path="dashboard" element={<DashboardView onNavigate={(v) => navigate(`/${v}`)} />} />
+          <Route path="agenda" element={<AtendimentosView onAddTransaction={handleAddTransaction} />} />
+          <Route path="agenda_online" element={<AgendaOnlineView />} />
+          <Route path="whatsapp" element={<WhatsAppView />} />
+          <Route path="financeiro" element={<FinanceiroView />} />
+          <Route path="clientes" element={<ClientesView />} />
+          <Route path="relatorios" element={<RelatoriosView />} />
+          <Route path="configuracoes" element={<ConfiguracoesView />} />
+          <Route path="remuneracoes" element={<RemuneracoesView />} />
+          <Route path="vendas" element={<VendasView />} />
+          <Route path="comandas" element={<ComandasView />} />
+          <Route path="caixa" element={<CaixaView />} />
+          <Route path="produtos" element={<ProdutosView />} />
+          <Route path="servicos" element={<ServicosView />} />
+          <Route path="equipe" element={<EquipeView />} />
+        </Route>
+      </Route>
+
+      {/* Fallback */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 };
 
 export default function App() {
   return (
     <EnvGate>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
+      <HashRouter>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </HashRouter>
     </EnvGate>
   );
 }

@@ -12,6 +12,11 @@ import { supabase } from '../../services/supabaseClient';
 type BookingStep = 'service' | 'professional' | 'datetime' | 'details' | 'success';
 
 const PublicBookingView: React.FC = () => {
+    // --- Diagnóstico ---
+    useEffect(() => {
+        console.log("Public View Carregou - Bypass de Auth OK");
+    }, []);
+
     // --- State ---
     const [step, setStep] = useState<BookingStep>('service');
     const [isLoading, setIsLoading] = useState(true);
@@ -31,7 +36,7 @@ const PublicBookingView: React.FC = () => {
     // Form
     const [formData, setFormData] = useState({ name: '', phone: '', email: '' });
 
-    // --- Initial Fetch ---
+    // --- Initial Fetch com Try/Catch Robusto ---
     useEffect(() => {
         const loadInitialData = async () => {
             setIsLoading(true);
@@ -42,11 +47,12 @@ const PublicBookingView: React.FC = () => {
                     supabase.from('professionals').select('*').eq('active', true).order('name')
                 ]);
 
-                if (studioRes.data) setStudio(studioRes.data);
-                if (servicesRes.data) setServices(servicesRes.data);
-                if (profRes.data) setProfessionals(profRes.data);
+                if (studioRes?.data) setStudio(studioRes.data);
+                if (servicesRes?.data) setServices(servicesRes.data);
+                if (profRes?.data) setProfessionals(profRes.data);
             } catch (err) {
                 console.error("Erro ao carregar dados públicos:", err);
+                // Fallback silencioso para não travar a UI se apenas uma tabela falhar
             } finally {
                 setIsLoading(false);
             }
