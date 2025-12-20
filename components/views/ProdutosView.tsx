@@ -87,7 +87,8 @@ const ProdutosView: React.FC = () => {
             setEditingProduct(null);
             fetchProducts();
         } catch (error: any) {
-            setToast({ message: `Erro ao salvar: ${error.message}`, type: 'error' });
+            const errorMsg = error?.message || (typeof error === 'string' ? error : 'Erro desconhecido');
+            setToast({ message: `Erro ao salvar: ${errorMsg}`, type: 'error' });
         } finally {
             setIsLoading(false);
         }

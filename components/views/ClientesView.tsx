@@ -25,7 +25,7 @@ const ClientesView: React.FC = () => {
             if (error) throw error;
             setClients(data || []);
         } catch (error: any) {
-            setToast({ message: `Erro ao buscar clientes: ${error.message}`, type: 'error' });
+            setToast({ message: `Erro ao buscar clientes: ${error?.message || 'Falha na conexão'}`, type: 'error' });
         } finally {
             setIsLoading(false);
         }
@@ -61,7 +61,8 @@ const ClientesView: React.FC = () => {
             setSelectedClient(null);
             fetchClients();
         } catch (error: any) {
-            setToast({ message: `Erro ao salvar: ${error.message}`, type: 'error' });
+            const errorMsg = error?.message || (typeof error === 'string' ? error : 'Erro desconhecido');
+            setToast({ message: `Erro ao salvar: ${errorMsg}`, type: 'error' });
         } finally {
             setIsLoading(false);
         }
