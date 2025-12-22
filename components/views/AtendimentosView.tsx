@@ -24,7 +24,6 @@ import ContextMenu from '../shared/ContextMenu';
 const START_HOUR = 8;
 const END_HOUR = 21; 
 const BASE_ROW_HEIGHT = 80; 
-const LOADING_TIMEOUT_MS = 10000;
 
 const AtendimentosView: React.FC = () => {
     // --- Estados de Dados ---
@@ -60,31 +59,8 @@ const AtendimentosView: React.FC = () => {
         setToast({ message: String(message), type });
     }, []);
 
-    // --- Helper: Renderizar Avatar com Fallback ---
-    const renderAvatar = (prof: LegacyProfessional, sizeClass = "w-10 h-10") => {
-        const nameStr = prof?.name || 'Profissional';
-        const initials = nameStr.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-        const photoUrl = (prof as any)?.photo_url || prof?.avatarUrl;
-
-        return (
-            <div className={`${sizeClass} rounded-full flex-shrink-0 border-2 border-white shadow-sm overflow-hidden bg-orange-100 flex items-center justify-center`}>
-                {photoUrl ? (
-                    <img 
-                        src={photoUrl} 
-                        alt={nameStr} 
-                        className="w-full h-full object-cover"
-                        onError={(e) => { (e.target as any).style.display = 'none'; }}
-                    />
-                ) : (
-                    <span className="text-[10px] font-black text-orange-600">{initials}</span>
-                )}
-            </div>
-        );
-    };
-
-    // --- Busca de Dados (CORREÇÃO ABORTERROR) ---
+    // --- Busca de Dados ---
     const fetchData = useCallback(async () => {
-        // Cancela requisição anterior se houver
         if (abortControllerRef.current) abortControllerRef.current.abort();
         const controller = new AbortController();
         abortControllerRef.current = controller;
@@ -113,11 +89,13 @@ const AtendimentosView: React.FC = () => {
             
             setProfessionals(mappedProfs);
 
+            // Se for a primeira carga ou troca de data, garante que IDs visíveis estejam setados
             if (visibleProfIds.length === 0 && mappedProfs.length > 0) {
                 setVisibleProfIds(mappedProfs.map(p => p.id));
             }
 
-            // 2. Carregar Agendamentos do Dia (00:00:00 até 23:59:59)
+            // 2. Carregar Agendamentos (Filtro Local 00:00 às 23:59)
+            // Usamos startOfDay e endOfDay da biblioteca date-fns para garantir cobertura total do dia
             const tStart = startOfDay(currentDate).toISOString();
             const tEnd = endOfDay(currentDate).toISOString();
 
@@ -131,7 +109,16 @@ const AtendimentosView: React.FC = () => {
             if (aErr) throw aErr;
 
             const mappedApps: LegacyAppointment[] = (apps || []).map(row => {
-                const prof = mappedProfs.find(p => p.id === Number(row.resource_id)) || mappedProfs[0] || { id: 0, name: 'Não atribuído' };
+                // NORMALIZAÇÃO CRÍTICA: row.resource_id pode vir como string ou number do Supabase
+                const resourceId = row.resource_id ? Number(row.resource_id) : null;
+                
+                // Busca o profissional ou usa um fallback para não quebrar a UI
+                const prof = mappedProfs.find(p => p.id === resourceId) || { 
+                    id: resourceId || 0, 
+                    name: row.professional_name || 'Desconhecido',
+                    avatarUrl: ''
+                };
+
                 return {
                     id: row.id,
                     start: new Date(row.date),
@@ -151,16 +138,12 @@ const AtendimentosView: React.FC = () => {
 
             setAppointments(mappedApps);
         } catch (e: any) {
-            // SE FOR ABORT ERROR, SIMPLESMENTE IGNORAMOS (Prevenção de Crash na Navegação)
-            if (e.name === 'AbortError') return;
-
-            console.error("Fetch Error:", e);
-            setFetchError(String(e?.message || "Erro ao sincronizar com o banco de dados."));
-        } finally {
-            // Apenas desativa o loading se NÃO for um cancelamento
-            if (!controller.signal.aborted) {
-                setIsLoading(false);
+            if (e.name !== 'AbortError') {
+                console.error("Fetch Error:", e);
+                setFetchError(e.message || "Erro de conexão.");
             }
+        } finally {
+            if (!controller.signal.aborted) setIsLoading(false);
         }
     }, [currentDate, visibleProfIds.length]);
 
@@ -234,6 +217,21 @@ const AtendimentosView: React.FC = () => {
 
     const onlineApps = appointments.filter(a => (a as any).origem === 'link');
 
+    const renderAvatar = (prof: LegacyProfessional, sizeClass = "w-10 h-10") => {
+        const initials = (prof?.name || 'P').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+        const photoUrl = (prof as any)?.avatarUrl || (prof as any)?.photo_url;
+
+        return (
+            <div className={`${sizeClass} rounded-full flex-shrink-0 border-2 border-white shadow-sm overflow-hidden bg-orange-100 flex items-center justify-center`}>
+                {photoUrl ? (
+                    <img src={photoUrl} alt={prof.name} className="w-full h-full object-cover" onError={(e) => (e.currentTarget.style.display = 'none')} />
+                ) : (
+                    <span className="text-[10px] font-black text-orange-600">{initials}</span>
+                )}
+            </div>
+        );
+    };
+
     const SidebarContent = () => (
         <div className="space-y-8 animate-in fade-in duration-500">
             <div className="space-y-4 bg-slate-50 p-4 rounded-3xl border border-slate-100">
@@ -305,7 +303,7 @@ const AtendimentosView: React.FC = () => {
                 {!isSidebarCollapsed && (
                     <>
                         <div className="p-6 border-b border-slate-100 h-20 flex items-center justify-between">
-                            <h2 className="text-sm font-black text-slate-800 uppercase tracking-tighter">Agenda Salão99</h2>
+                            <h2 className="text-sm font-black text-slate-800 uppercase tracking-tighter">Agenda Belaflow</h2>
                             <button onClick={() => setIsSidebarCollapsed(true)} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400"><PanelLeftClose size={20}/></button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-6 scrollbar-hide"><SidebarContent /></div>
@@ -334,13 +332,12 @@ const AtendimentosView: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-2 md:gap-4">
+                        <button onClick={fetchData} className="p-3 text-slate-400 hover:text-orange-600 transition-all active:scale-90"><RefreshCw size={22} className={isLoading ? 'animate-spin' : ''} /></button>
                         <div className="relative">
                             <button onClick={() => setIsNotificationOpen(!isNotificationOpen)} className={`p-3 rounded-2xl transition-all relative ${onlineApps.length > 0 ? 'bg-orange-50 text-orange-600 shadow-inner' : 'bg-slate-50 text-slate-400'}`}>
                                 <Bell size={22} />
                                 {onlineApps.length > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] font-black border-2 border-white shadow-lg">{onlineApps.length}</span>}
                             </button>
-
-                            {/* DROPDOWN NOTIFICAÇÕES (POSIÇÃO FIXA Z-MAX) */}
                             {isNotificationOpen && (
                                 <div className="fixed top-20 right-4 w-80 bg-white rounded-[32px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] border border-slate-100 z-[9999] p-6 animate-in fade-in slide-in-from-top-4 duration-300">
                                     <div className="flex items-center justify-between mb-4">
@@ -376,10 +373,7 @@ const AtendimentosView: React.FC = () => {
                 <div className="flex-1 flex overflow-hidden relative">
                     {isLoading && (
                         <div className="absolute inset-0 z-50 bg-white/60 backdrop-blur-sm flex items-center justify-center">
-                            <div className="flex flex-col items-center gap-3">
-                                <Loader2 className="animate-spin text-orange-500" size={40} />
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sincronizando...</p>
-                            </div>
+                            <Loader2 className="animate-spin text-orange-500" size={40} />
                         </div>
                     )}
 
@@ -387,9 +381,9 @@ const AtendimentosView: React.FC = () => {
                         <div className="absolute inset-0 z-50 bg-slate-50 flex items-center justify-center p-6 text-center">
                             <div className="max-w-xs space-y-4">
                                 <AlertTriangle className="mx-auto text-orange-500" size={48} />
-                                <h3 className="font-black text-slate-800 uppercase tracking-tight">Ops! Problema na Agenda</h3>
+                                <h3 className="font-black text-slate-800 uppercase tracking-tight">Ops! Erro ao carregar</h3>
                                 <p className="text-sm text-slate-500 leading-relaxed">{fetchError}</p>
-                                <button onClick={fetchData} className="w-full bg-slate-900 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2"><RefreshCw size={14}/> Tentar Novamente</button>
+                                <button onClick={fetchData} className="w-full bg-slate-900 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest">Tentar Novamente</button>
                             </div>
                         </div>
                     ) : (
@@ -432,16 +426,10 @@ const AtendimentosView: React.FC = () => {
                                             </div>
                                         )}
 
-                                        {/* Áreas Clicáveis */}
+                                        {/* Áreas Clicáveis para Novo Agendamento */}
                                         {timeSlots.map((time, i) => (
                                             <div 
                                                 key={i} 
-                                                onContextMenu={(e) => {
-                                                    e.preventDefault();
-                                                    const [h, m] = time.split(':').map(Number);
-                                                    const start = new Date(currentDate); start.setHours(h, m, 0, 0);
-                                                    setContextMenu({ x: e.clientX, y: e.clientY, data: { start, professional: prof } });
-                                                }}
                                                 onClick={() => {
                                                     const [h, m] = time.split(':').map(Number);
                                                     const start = new Date(currentDate); start.setHours(h, m, 0, 0);
@@ -452,7 +440,7 @@ const AtendimentosView: React.FC = () => {
                                             ></div>
                                         ))}
 
-                                        {/* Cards de Agendamento */}
+                                        {/* Cards de Agendamento - Filtro Normalizado */}
                                         {appointments.filter(app => Number(app.professional.id) === prof.id).map(app => {
                                             const isOnline = (app as any).origem === 'link';
                                             const isBlock = app.status === 'bloqueado';
@@ -479,34 +467,7 @@ const AtendimentosView: React.FC = () => {
                 </div>
             </div>
 
-            {/* DRAWER MOBILE */}
-            {isFilterDrawerOpen && (
-                <div className="fixed inset-0 z-[100] flex items-end lg:hidden animate-in fade-in duration-200">
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsFilterDrawerOpen(false)}></div>
-                    <div className="relative w-full bg-white rounded-t-[48px] p-8 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] overflow-y-auto scrollbar-hide">
-                        <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-8"></div>
-                        <div className="flex items-center justify-between mb-8">
-                            <h3 className="text-2xl font-black text-slate-800 tracking-tight">Ajustes Agenda</h3>
-                            <button onClick={() => setIsFilterDrawerOpen(false)} className="p-2.5 bg-slate-100 text-slate-400 rounded-full active:scale-90 transition-transform"><X size={28}/></button>
-                        </div>
-                        <SidebarContent />
-                    </div>
-                </div>
-            )}
-
-            {/* CONTEXT MENU */}
-            {contextMenu && (
-                <ContextMenu 
-                    x={contextMenu.x} y={contextMenu.y} 
-                    onClose={() => setContextMenu(null)}
-                    options={[
-                        { label: 'Novo Agendamento', icon: <Plus size={16}/>, onClick: () => setModalState({ type: 'appointment', data: contextMenu.data }) },
-                        { label: 'Bloquear Horário', icon: <Lock size={16}/>, onClick: () => setModalState({ type: 'appointment', data: { ...contextMenu.data, status: 'bloqueado' } }) }
-                    ]}
-                />
-            )}
-
-            {/* MODAIS (AUTO-REFRESH IMPLEMENTADO) */}
+            {/* MODAIS E OVERLAYS */}
             {modalState?.type === 'appointment' && (
                 <AppointmentModal 
                     appointment={modalState.data} 
@@ -526,16 +487,12 @@ const AtendimentosView: React.FC = () => {
                                 status: app.status || 'agendado',
                                 origem: 'interno'
                             };
-                            
                             const { error } = await supabase.from('appointments').insert([payload]);
                             if (error) throw error;
-                            
                             showToast("Agendamento salvo!");
-                            // AUTO-REFRESH
-                            fetchData();
+                            fetchData(); // RECARGA IMEDIATA
                         } catch (e: any) {
-                            const msg = e?.message || "Erro inesperado ao salvar.";
-                            alert("Erro ao salvar: " + msg);
+                            alert("Erro ao salvar: " + (e.message || "Erro inesperado"));
                         } finally {
                             setIsLoading(false);
                         }
@@ -550,22 +507,14 @@ const AtendimentosView: React.FC = () => {
                     onClose={() => setActiveDetail(null)} 
                     onEdit={(app) => setModalState({ type: 'appointment', data: app })} 
                     onDelete={async (id) => { 
-                        if(window.confirm("Excluir este agendamento?")){ 
+                        if(window.confirm("Excluir agendamento?")){ 
                             const { error } = await supabase.from('appointments').delete().eq('id', id); 
-                            if(!error) { 
-                                showToast("Agendamento removido.");
-                                fetchData(); // REFRESH
-                                setActiveDetail(null); 
-                            }
+                            if(!error) { fetchData(); setActiveDetail(null); }
                         }
                     }} 
                     onUpdateStatus={async (id, status) => { 
                         const { error } = await supabase.from('appointments').update({ status }).eq('id', id); 
-                        if(!error) { 
-                            showToast("Status atualizado.");
-                            fetchData(); // REFRESH
-                            setActiveDetail(null); 
-                        }
+                        if(!error) { fetchData(); setActiveDetail(null); }
                     }} 
                 />
             )}
