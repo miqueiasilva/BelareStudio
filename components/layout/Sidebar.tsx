@@ -36,7 +36,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     const menuItems = [
         { id: 'dashboard', icon: Home, label: 'Página principal' },
         { id: 'agenda', icon: Calendar, label: 'Atendimentos' },
-        { id: 'agenda_online', icon: Globe, label: 'Agenda Online' },
+        { id: 'agenda_online', icon: Globe, label: 'Agenda Online' }, // ITEM CORRIGIDO
         { id: 'whatsapp', icon: MessageSquare, label: 'WhatsApp' },
         { id: 'financeiro', icon: ArrowRightLeft, label: 'Fluxo de Caixa' },
         { id: 'clientes', icon: Users, label: 'Clientes' },
@@ -55,12 +55,8 @@ const Sidebar: React.FC<SidebarProps> = ({
     ];
 
     const handleNavigation = (viewId: string) => {
-        if (viewId === 'agenda_online') {
-            window.open(window.location.origin + '/#/agendar', '_blank');
-            return;
-        }
+        // CORREÇÃO: Removida lógica de window.open externa
         onNavigate(viewId as any);
-        // O fechamento ocorre via useEffect após a mudança do path
     };
 
     const handleLogout = async () => {
