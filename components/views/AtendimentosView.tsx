@@ -20,7 +20,7 @@ import { supabase } from '../../services/supabaseClient';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import ContextMenu from '../shared/ContextMenu';
 
-// --- Constantes ---
+// --- Constantes de Interface ---
 const START_HOUR = 8;
 const END_HOUR = 21; 
 const BASE_ROW_HEIGHT = 80; 
@@ -39,18 +39,15 @@ const AtendimentosView: React.FC = () => {
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
     const [isNotificationOpen, setIsNotificationOpen] = useState(false);
     
-    // Configurações da Grade
     const [isAutoWidth, setIsAutoWidth] = useState(true);
     const [manualColWidth, setManualColWidth] = useState(240);
     const [intervalMin, setIntervalMin] = useState<15 | 30 | 60>(30);
     const [visibleProfIds, setVisibleProfIds] = useState<number[]>([]);
     const [colorMode, setColorMode] = useState<'service' | 'status' | 'professional'>('professional');
     
-    // UI Tempo Real
     const [nowPosition, setNowPosition] = useState<number | null>(null);
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number, data: any } | null>(null);
 
-    // Modais e Feedback
     const [modalState, setModalState] = useState<{ type: 'appointment'; data: any } | null>(null);
     const [activeDetail, setActiveDetail] = useState<LegacyAppointment | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -67,7 +64,7 @@ const AtendimentosView: React.FC = () => {
     const renderAvatar = (prof: LegacyProfessional, sizeClass = "w-10 h-10") => {
         const nameStr = prof?.name || 'Profissional';
         const initials = nameStr.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-        const photoUrl = prof?.avatarUrl || (prof as any)?.photo_url;
+        const photoUrl = (prof as any)?.photo_url || prof?.avatarUrl;
 
         return (
             <div className={`${sizeClass} rounded-full flex-shrink-0 border-2 border-white shadow-sm overflow-hidden bg-orange-100 flex items-center justify-center`}>
@@ -85,8 +82,9 @@ const AtendimentosView: React.FC = () => {
         );
     };
 
-    // --- Busca de Dados Robusta ---
+    // --- Busca de Dados (CORREÇÃO ABORTERROR) ---
     const fetchData = useCallback(async () => {
+        // Cancela requisição anterior se houver
         if (abortControllerRef.current) abortControllerRef.current.abort();
         const controller = new AbortController();
         abortControllerRef.current = controller;
@@ -94,15 +92,8 @@ const AtendimentosView: React.FC = () => {
         setIsLoading(true);
         setFetchError(null);
 
-        const timeoutId = setTimeout(() => {
-            if (isLoading) {
-                controller.abort();
-                setIsLoading(false);
-                setFetchError("A conexão demorou demais. Verifique sua internet.");
-            }
-        }, LOADING_TIMEOUT_MS);
-
         try {
+            // 1. Carregar Profissionais
             const { data: profs, error: pErr } = await supabase
                 .from('professionals')
                 .select('*')
@@ -126,9 +117,9 @@ const AtendimentosView: React.FC = () => {
                 setVisibleProfIds(mappedProfs.map(p => p.id));
             }
 
-            const dateStr = format(currentDate, 'yyyy-MM-dd');
-            const tStart = `${dateStr}T00:00:00Z`;
-            const tEnd = `${dateStr}T23:59:59Z`;
+            // 2. Carregar Agendamentos do Dia (00:00:00 até 23:59:59)
+            const tStart = startOfDay(currentDate).toISOString();
+            const tEnd = endOfDay(currentDate).toISOString();
 
             const { data: apps, error: aErr } = await supabase
                 .from('appointments')
@@ -160,17 +151,18 @@ const AtendimentosView: React.FC = () => {
 
             setAppointments(mappedApps);
         } catch (e: any) {
-            if (e.name !== 'AbortError') {
-                console.error("Fetch Error:", e);
-                // CORREÇÃO: Garante que o erro seja sempre uma string e não o objeto literal
-                const errorMessage = e?.message || (typeof e === 'string' ? e : "Não foi possível sincronizar com o servidor.");
-                setFetchError(String(errorMessage));
-            }
+            // SE FOR ABORT ERROR, SIMPLESMENTE IGNORAMOS (Prevenção de Crash na Navegação)
+            if (e.name === 'AbortError') return;
+
+            console.error("Fetch Error:", e);
+            setFetchError(String(e?.message || "Erro ao sincronizar com o banco de dados."));
         } finally {
-            clearTimeout(timeoutId);
-            setIsLoading(false);
+            // Apenas desativa o loading se NÃO for um cancelamento
+            if (!controller.signal.aborted) {
+                setIsLoading(false);
+            }
         }
-    }, [currentDate, isLoading, visibleProfIds.length]);
+    }, [currentDate, visibleProfIds.length]);
 
     useEffect(() => {
         fetchData();
@@ -348,7 +340,7 @@ const AtendimentosView: React.FC = () => {
                                 {onlineApps.length > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] font-black border-2 border-white shadow-lg">{onlineApps.length}</span>}
                             </button>
 
-                            {/* DROPDOWN NOTIFICAÇÕES (POSIÇÃO FIXA) */}
+                            {/* DROPDOWN NOTIFICAÇÕES (POSIÇÃO FIXA Z-MAX) */}
                             {isNotificationOpen && (
                                 <div className="fixed top-20 right-4 w-80 bg-white rounded-[32px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] border border-slate-100 z-[9999] p-6 animate-in fade-in slide-in-from-top-4 duration-300">
                                     <div className="flex items-center justify-between mb-4">
@@ -514,7 +506,7 @@ const AtendimentosView: React.FC = () => {
                 />
             )}
 
-            {/* MODAIS */}
+            {/* MODAIS (AUTO-REFRESH IMPLEMENTADO) */}
             {modalState?.type === 'appointment' && (
                 <AppointmentModal 
                     appointment={modalState.data} 
@@ -534,9 +526,12 @@ const AtendimentosView: React.FC = () => {
                                 status: app.status || 'agendado',
                                 origem: 'interno'
                             };
+                            
                             const { error } = await supabase.from('appointments').insert([payload]);
                             if (error) throw error;
+                            
                             showToast("Agendamento salvo!");
+                            // AUTO-REFRESH
                             fetchData();
                         } catch (e: any) {
                             const msg = e?.message || "Erro inesperado ao salvar.";
@@ -557,12 +552,20 @@ const AtendimentosView: React.FC = () => {
                     onDelete={async (id) => { 
                         if(window.confirm("Excluir este agendamento?")){ 
                             const { error } = await supabase.from('appointments').delete().eq('id', id); 
-                            if(!error) { fetchData(); setActiveDetail(null); }
+                            if(!error) { 
+                                showToast("Agendamento removido.");
+                                fetchData(); // REFRESH
+                                setActiveDetail(null); 
+                            }
                         }
                     }} 
                     onUpdateStatus={async (id, status) => { 
                         const { error } = await supabase.from('appointments').update({ status }).eq('id', id); 
-                        if(!error) { fetchData(); setActiveDetail(null); }
+                        if(!error) { 
+                            showToast("Status atualizado.");
+                            fetchData(); // REFRESH
+                            setActiveDetail(null); 
+                        }
                     }} 
                 />
             )}
