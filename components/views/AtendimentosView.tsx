@@ -4,7 +4,7 @@ import {
     ChevronLeft, ChevronRight, Plus, RefreshCw, 
     User as UserIcon, Settings, Bell, 
     X, Lock, Clock, PanelLeftClose, PanelLeftOpen, Maximize2,
-    Palette, AlertTriangle, Loader2, Globe
+    Palette, AlertTriangle, Loader2, Globe, MessageSquare
 } from 'lucide-react';
 import { format, addDays, startOfDay, endOfDay, isSameDay } from 'date-fns';
 import { pt } from 'date-fns/locale';
@@ -18,23 +18,55 @@ import ToggleSwitch from '../shared/ToggleSwitch';
 
 const START_HOUR = 8;
 const END_HOUR = 21; 
-const BASE_ROW_HEIGHT = 80; 
+const ROW_HEIGHT = 50; // Pixels por cada 30 minutos
+
+// --- Estilos de Status (Estilo Salão 99) ---
+const statusClasses: { [key in AppointmentStatus]: string } = {
+    confirmado: 'bg-cyan-500 border-cyan-600 text-white',
+    confirmado_whatsapp: 'bg-teal-500 border-teal-600 text-white',
+    agendado: 'bg-orange-400 border-orange-500 text-white',
+    chegou: 'bg-purple-500 border-purple-600 text-white',
+    concluido: 'bg-emerald-500 border-emerald-600 text-white',
+    cancelado: 'bg-slate-300 border-slate-400 text-slate-500 line-through opacity-60',
+    bloqueado: 'bg-slate-200 border-slate-300 text-slate-600 pattern-diagonal-lines-sm opacity-50',
+    faltou: 'bg-rose-500 border-rose-600 text-white',
+    em_atendimento: 'bg-indigo-500 border-indigo-600 text-white ring-2 ring-white animate-pulse',
+    em_espera: 'bg-amber-400 border-amber-500 text-white',
+};
+
+// --- Linha do Tempo em Tempo Real ---
+const TimelineIndicator = () => {
+    const [now, setNow] = useState(new Date());
+
+    useEffect(() => {
+        const timer = setInterval(() => setNow(new Date()), 60000);
+        return () => clearInterval(timer);
+    }, []);
+
+    const startMins = START_HOUR * 60;
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+    
+    if (currentMins < startMins || currentMins > END_HOUR * 60) return null;
+
+    const top = ((currentMins - startMins) / 30) * ROW_HEIGHT;
+
+    return (
+        <div className="absolute left-0 right-0 z-20 pointer-events-none" style={{ top: `${top}px` }}>
+            <div className="border-t-2 border-red-500 w-full relative">
+                <div className="absolute -left-1.5 -top-1.5 w-3 h-3 bg-red-500 rounded-full shadow-sm ring-2 ring-white"></div>
+            </div>
+        </div>
+    );
+};
 
 const AtendimentosView: React.FC = () => {
-    // --- Estados de Dados ---
+    // --- Estados ---
     const [currentDate, setCurrentDate] = useState(new Date());
     const [appointments, setAppointments] = useState<LegacyAppointment[]>([]);
     const [professionals, setProfessionals] = useState<LegacyProfessional[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [fetchError, setFetchError] = useState<string | null>(null);
-
-    // --- Estados de Layout ---
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-    const [isAutoWidth, setIsAutoWidth] = useState(true);
-    const [manualColWidth, setManualColWidth] = useState(240);
-    const [intervalMin, setIntervalMin] = useState<15 | 30 | 60>(30);
     const [visibleProfIds, setVisibleProfIds] = useState<number[]>([]);
-    const [colorMode, setColorMode] = useState<'service' | 'status' | 'professional'>('professional');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalInitialData, setModalInitialData] = useState<any>(null);
     const [activeDetail, setActiveDetail] = useState<LegacyAppointment | null>(null);
@@ -43,12 +75,8 @@ const AtendimentosView: React.FC = () => {
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
     const abortControllerRef = useRef<AbortController | null>(null);
 
-    const showToast = useCallback((message: string, type: ToastType = 'success') => {
-        setToast({ message: String(message), type });
-    }, []);
-
     // --- Busca de Dados ---
-    const fetchAppointments = useCallback(async () => {
+    const fetchData = useCallback(async () => {
         if (abortControllerRef.current) abortControllerRef.current.abort();
         const controller = new AbortController();
         abortControllerRef.current = controller;
@@ -58,7 +86,7 @@ const AtendimentosView: React.FC = () => {
             // 1. Profissionais
             const { data: profs } = await supabase.from('professionals').select('*').eq('active', true).order('display_order');
             const mappedProfs: LegacyProfessional[] = (profs || []).map(p => ({
-                id: p.id, name: p.name, avatarUrl: p.photo_url, color: p.color || '#F97316'
+                id: p.id, name: p.name, avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`, color: p.color || '#F97316'
             } as any));
             setProfessionals(mappedProfs);
             if (visibleProfIds.length === 0) setVisibleProfIds(mappedProfs.map(p => p.id));
@@ -83,26 +111,25 @@ const AtendimentosView: React.FC = () => {
 
             setAppointments(mappedApps);
         } catch (e: any) {
-            if (e.name !== 'AbortError') setFetchError(e.message);
+            if (e.name !== 'AbortError') console.error("Erro na agenda:", e.message);
         } finally {
             if (!controller.signal.aborted) setIsLoading(false);
         }
     }, [currentDate, visibleProfIds.length]);
 
     useEffect(() => {
-        fetchAppointments();
+        fetchData();
         return () => abortControllerRef.current?.abort();
-    }, [fetchAppointments]);
+    }, [fetchData]);
 
-    const currentColWidth = useMemo(() => isAutoWidth ? (window.innerWidth < 1024 ? 180 : 220) : manualColWidth, [isAutoWidth, manualColWidth]);
-    
     const timeSlots = useMemo(() => {
         const slots = [];
         for (let h = START_HOUR; h < END_HOUR; h++) {
-            for (let m = 0; m < 60; m += intervalMin) slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+            slots.push(`${String(h).padStart(2, '0')}:00`);
+            slots.push(`${String(h).padStart(2, '0')}:30`);
         }
         return slots;
-    }, [intervalMin]);
+    }, []);
 
     const handleOpenModal = (prof?: LegacyProfessional, time?: string) => {
         let start = new Date(currentDate);
@@ -116,97 +143,121 @@ const AtendimentosView: React.FC = () => {
         setIsModalOpen(true);
     };
 
+    const filteredProfs = professionals.filter(p => visibleProfIds.includes(p.id));
+
     return (
         <div className="flex h-screen bg-slate-50 overflow-hidden font-sans select-none relative">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-            {/* SIDEBAR */}
-            <aside className={`hidden lg:flex bg-white border-r border-slate-200 flex-col flex-shrink-0 z-40 transition-all duration-300 ${isSidebarCollapsed ? 'w-0' : 'w-72'}`}>
-                {!isSidebarCollapsed && (
-                    <div className="p-6 overflow-y-auto scrollbar-hide space-y-8">
-                        <div className="bg-slate-50 p-4 rounded-3xl border border-slate-100 space-y-4">
-                            <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Auto-Largura</span>
-                                <ToggleSwitch on={isAutoWidth} onClick={() => setIsAutoWidth(!isAutoWidth)} />
-                            </div>
-                            {!isAutoWidth && <input type="range" min="150" max="400" value={manualColWidth} onChange={e => setManualColWidth(Number(e.target.value))} className="w-full h-1.5 accent-orange-500" />}
-                        </div>
-                        <div className="space-y-4">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><UserIcon size={14} /> Equipe</label>
-                            {professionals.map(p => (
-                                <label key={p.id} className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-2xl cursor-pointer">
-                                    <input type="checkbox" checked={visibleProfIds.includes(p.id)} onChange={() => setVisibleProfIds(prev => prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id])} className="w-5 h-5 rounded-lg text-orange-500" />
-                                    <span className="text-xs font-bold text-slate-700">{p.name}</span>
-                                </label>
-                            ))}
-                        </div>
+            {/* SIDEBAR DE FILTROS */}
+            <aside className={`bg-white border-r border-slate-200 flex flex-col flex-shrink-0 z-40 transition-all duration-300 ${isSidebarCollapsed ? 'w-0 overflow-hidden' : 'w-64'}`}>
+                <div className="p-6 space-y-8">
+                    <div className="flex items-center justify-between">
+                         <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Profissionais</h3>
+                         <button onClick={() => setIsSidebarCollapsed(true)} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400"><PanelLeftClose size={18}/></button>
                     </div>
-                )}
-                <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="absolute top-6 left-full ml-4 p-3 bg-white shadow-xl rounded-2xl text-orange-600 z-50">
-                    {isSidebarCollapsed ? <PanelLeftOpen size={24} /> : <PanelLeftClose size={24} />}
-                </button>
+                    
+                    <div className="space-y-2">
+                        {professionals.map(p => (
+                            <label key={p.id} className={`flex items-center gap-3 p-2.5 rounded-2xl cursor-pointer transition-all border ${visibleProfIds.includes(p.id) ? 'bg-orange-50 border-orange-100' : 'bg-white border-transparent hover:bg-slate-50'}`}>
+                                <input 
+                                    type="checkbox" 
+                                    checked={visibleProfIds.includes(p.id)} 
+                                    onChange={() => setVisibleProfIds(prev => prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id])} 
+                                    className="w-5 h-5 rounded-lg text-orange-500 border-slate-300 focus:ring-orange-500" 
+                                />
+                                <div className="flex items-center gap-2">
+                                    <img src={p.avatarUrl} className="w-8 h-8 rounded-full border border-white shadow-sm" alt="" />
+                                    <span className="text-xs font-bold text-slate-700 truncate max-w-[120px]">{p.name}</span>
+                                </div>
+                            </label>
+                        ))}
+                    </div>
+                </div>
             </aside>
 
-            {/* CONTEÚDO */}
+            {/* CONTEÚDO PRINCIPAL (AGENDA) */}
             <div className="flex-1 flex flex-col min-w-0 relative">
-                <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-8 z-30">
+                {isSidebarCollapsed && (
+                    <button onClick={() => setIsSidebarCollapsed(false)} className="absolute top-6 left-6 p-3 bg-white shadow-xl rounded-2xl text-orange-600 z-50 hover:scale-110 transition-transform">
+                        <PanelLeftOpen size={24} />
+                    </button>
+                )}
+
+                <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-8 z-30 shadow-sm">
                     <div className="flex items-center bg-slate-50 p-1.5 rounded-[22px] border border-slate-100">
-                        <button onClick={() => setCurrentDate(prev => addDays(prev, -1))} className="p-2 hover:bg-white rounded-xl text-slate-400"><ChevronLeft size={20} /></button>
+                        <button onClick={() => setCurrentDate(prev => addDays(prev, -1))} className="p-2 hover:bg-white rounded-xl text-slate-400 hover:text-slate-600 transition-all"><ChevronLeft size={20} /></button>
                         <div className="flex flex-col items-center min-w-[160px]">
                             <span className="text-[11px] font-black text-slate-800 capitalize leading-none">{format(currentDate, "EEEE", { locale: pt })}</span>
                             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">{format(currentDate, "dd 'de' MMMM", { locale: pt })}</span>
                         </div>
-                        <button onClick={() => setCurrentDate(prev => addDays(prev, 1))} className="p-2 hover:bg-white rounded-xl text-slate-400"><ChevronRight size={20} /></button>
+                        <button onClick={() => setCurrentDate(prev => addDays(prev, 1))} className="p-2 hover:bg-white rounded-xl text-slate-400 hover:text-slate-600 transition-all"><ChevronRight size={20} /></button>
                     </div>
 
                     <div className="flex items-center gap-4">
-                        <button onClick={fetchAppointments} className="p-3 text-slate-400 hover:text-orange-600 transition-all"><RefreshCw size={22} className={isLoading ? 'animate-spin' : ''} /></button>
+                        <button onClick={fetchData} className="p-3 text-slate-400 hover:text-orange-600 transition-all"><RefreshCw size={22} className={isLoading ? 'animate-spin' : ''} /></button>
                         <button onClick={() => handleOpenModal()} className="bg-slate-900 hover:bg-black text-white font-black text-xs px-6 py-3.5 rounded-2xl shadow-xl flex items-center gap-2 transition-all active:scale-95">
                             <Plus size={22} /> <span className="uppercase tracking-widest">Agendar</span>
                         </button>
                     </div>
                 </header>
 
-                <div className="flex-1 overflow-auto scrollbar-hide bg-slate-50 relative">
-                    {isLoading && <div className="absolute inset-0 z-50 bg-white/60 backdrop-blur-sm flex items-center justify-center"><Loader2 className="animate-spin text-orange-500" size={40} /></div>}
+                {/* GRADE DA AGENDA */}
+                <div className="flex-1 overflow-auto bg-slate-50 relative scrollbar-hide">
+                    {isLoading && <div className="sticky top-0 left-0 w-full h-1 bg-orange-500 animate-pulse z-50"></div>}
                     
-                    <div className="inline-grid min-w-full" style={{ gridTemplateColumns: `60px repeat(${visibleProfIds.length}, ${currentColWidth}px)` }}>
-                        <div className="sticky top-0 z-40 bg-white/80 h-20 border-b border-slate-200"></div>
-                        {professionals.filter(p => visibleProfIds.includes(p.id)).map(prof => (
-                            <div key={prof.id} className="sticky top-0 z-40 bg-white/80 border-b border-r border-slate-200 h-20 flex items-center justify-center p-2">
-                                <div className="bg-white px-3 py-2 rounded-2xl border border-slate-100 shadow-sm w-full text-center">
-                                    <span className="text-[10px] font-black text-slate-800 uppercase truncate block">{prof.name.split(' ')[0]}</span>
-                                </div>
+                    <div className="inline-grid min-w-full" style={{ gridTemplateColumns: `70px repeat(${filteredProfs.length}, minmax(200px, 1fr))` }}>
+                        {/* Header de Profissionais */}
+                        <div className="sticky top-0 z-40 bg-white/95 backdrop-blur-md h-24 border-b border-slate-200"></div>
+                        {filteredProfs.map(prof => (
+                            <div key={prof.id} className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-r border-slate-200 h-24 flex flex-col items-center justify-center p-2">
+                                <img src={prof.avatarUrl} className="w-12 h-12 rounded-full border-2 border-orange-100 shadow-sm mb-1" alt="" />
+                                <span className="text-[10px] font-black text-slate-800 uppercase truncate w-full text-center tracking-tighter">{prof.name.split(' ')[0]}</span>
                             </div>
                         ))}
 
-                        <div className="border-r border-slate-200 bg-white/50">
+                        {/* Coluna de Horários */}
+                        <div className="border-r border-slate-200 bg-white/50 relative">
                             {timeSlots.map(time => (
-                                <div key={time} className="text-right pr-3 text-[10px] font-black text-slate-500 border-b border-slate-100/30 border-dashed" style={{ height: `${(intervalMin / 60) * BASE_ROW_HEIGHT}px` }}>
-                                    {time.endsWith(':00') && time}
+                                <div key={time} className="text-right pr-4 text-[10px] font-black text-slate-400 border-b border-slate-100/50" style={{ height: `${ROW_HEIGHT}px`, lineHeight: `${ROW_HEIGHT}px` }}>
+                                    {time.endsWith(':00') ? time : ''}
                                 </div>
                             ))}
                         </div>
 
-                        {professionals.filter(p => visibleProfIds.includes(p.id)).map(prof => (
-                            <div key={prof.id} className="relative border-r border-slate-100 min-h-full">
+                        {/* Colunas de Atendimento */}
+                        {filteredProfs.map(prof => (
+                            <div key={prof.id} className="relative border-r border-slate-100 bg-white/30">
+                                <TimelineIndicator />
+                                
                                 {timeSlots.map(time => (
-                                    <div key={time} onClick={() => handleOpenModal(prof, time)} className="border-b border-slate-100/20 border-dashed cursor-cell hover:bg-orange-50/30 transition-colors" style={{ height: `${(intervalMin / 60) * BASE_ROW_HEIGHT}px` }}></div>
+                                    <div 
+                                        key={time} 
+                                        onClick={() => handleOpenModal(prof, time)} 
+                                        className="border-b border-slate-100/30 cursor-cell hover:bg-orange-50/50 transition-colors" 
+                                        style={{ height: `${ROW_HEIGHT}px` }}
+                                    ></div>
                                 ))}
 
                                 {appointments.filter(app => Number(app.professional.id) === prof.id).map(app => {
                                     const startMins = app.start.getHours() * 60 + app.start.getMinutes();
-                                    const top = (startMins - START_HOUR * 60) * (BASE_ROW_HEIGHT / 60);
+                                    const endMins = app.end.getHours() * 60 + app.end.getMinutes();
+                                    const top = ((startMins - START_HOUR * 60) / 30) * ROW_HEIGHT;
+                                    const height = ((endMins - startMins) / 30) * ROW_HEIGHT;
+
                                     return (
                                         <div
                                             key={app.id}
                                             ref={(el) => appointmentRefs.current.set(app.id, el)}
                                             onClick={(e) => { e.stopPropagation(); setActiveDetail(app); }}
-                                            className="absolute left-1/2 -translate-x-1/2 w-[95%] rounded-2xl shadow-lg p-2.5 cursor-pointer z-10 text-white font-black text-[10px] uppercase border border-white/20"
-                                            style={{ top: `${top}px`, height: '78px', backgroundColor: prof.color }}
+                                            className={`absolute left-1/2 -translate-x-1/2 w-[94%] rounded-xl shadow-lg p-2 cursor-pointer z-10 font-bold border-l-4 transition-all hover:scale-[1.02] hover:z-20 ${statusClasses[app.status]}`}
+                                            style={{ top: `${top + 2}px`, height: `${height - 4}px` }}
                                         >
-                                            <p className="truncate">{app.client?.nome}</p>
-                                            <p className="opacity-80 font-bold mt-1 truncate">{app.service.name}</p>
+                                            <div className="flex justify-between items-start">
+                                                <p className="text-[10px] uppercase truncate leading-tight flex-1">{app.client?.nome}</p>
+                                                {app.origem === 'link' && <Globe size={10} className="opacity-60 shrink-0" />}
+                                            </div>
+                                            <p className="text-[9px] opacity-90 truncate mt-0.5 font-medium">{app.service.name}</p>
                                         </div>
                                     );
                                 })}
@@ -216,11 +267,19 @@ const AtendimentosView: React.FC = () => {
                 </div>
             </div>
 
-            {/* MODAIS */}
+            {/* BOTÃO FLUTUANTE JACIBOT */}
+            <div className="absolute bottom-8 right-8 z-50">
+                <button className="w-16 h-16 bg-slate-900 text-white rounded-2xl shadow-2xl flex items-center justify-center hover:bg-black hover:-translate-y-1 transition-all active:scale-95 group">
+                    <MessageSquare size={28} className="group-hover:rotate-12 transition-transform" />
+                    <span className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full border-2 border-white text-[10px] font-black flex items-center justify-center">2</span>
+                </button>
+            </div>
+
+            {/* MODAIS E POPOVERS */}
             <NewAppointmentModal 
                 isOpen={isModalOpen} 
                 onClose={() => setIsModalOpen(false)} 
-                onSuccess={fetchAppointments} 
+                onSuccess={fetchData} 
                 initialData={modalInitialData}
             />
 
@@ -231,13 +290,15 @@ const AtendimentosView: React.FC = () => {
                     onClose={() => setActiveDetail(null)} 
                     onEdit={() => {}} 
                     onDelete={async (id) => { 
-                        await supabase.from('appointments').delete().eq('id', id); 
-                        fetchAppointments(); 
-                        setActiveDetail(null); 
+                        if(confirm("Deseja cancelar este agendamento?")){
+                            await supabase.from('appointments').delete().eq('id', id); 
+                            fetchData(); 
+                            setActiveDetail(null); 
+                        }
                     }} 
                     onUpdateStatus={async (id, status) => { 
                         await supabase.from('appointments').update({ status }).eq('id', id); 
-                        fetchAppointments(); 
+                        fetchData(); 
                         setActiveDetail(null); 
                     }} 
                 />
