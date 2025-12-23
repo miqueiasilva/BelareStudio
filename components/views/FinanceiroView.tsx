@@ -48,9 +48,14 @@ const FinanceiroView: React.FC = () => {
             setTransactions(mapped);
         } catch (error: any) {
             if (error.name === 'AbortError' || error.message?.includes('aborted')) return;
-            console.error("Financeiro Fetch Error:", error);
-            const msg = error?.message || "Erro ao carregar extrato financeiro.";
-            setToast({ message: String(msg), type: 'error' });
+            
+            const errorMessage = error.message || (typeof error === 'string' ? error : JSON.stringify(error));
+            console.error("Financeiro Fetch Error Details:", errorMessage);
+            
+            setToast({ 
+                message: `Falha ao carregar extrato: ${errorMessage}`, 
+                type: 'error' 
+            });
         } finally {
             if (abortControllerRef.current === controller) {
                 setIsLoading(false);

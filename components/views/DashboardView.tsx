@@ -61,7 +61,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
             ]);
 
             setStats({
-                revenueToday: revRes.data?.reduce((acc, curr) => acc + curr.amount, 0) || 0,
+                revenueToday: revRes.data?.reduce((acc: any, curr: any) => acc + curr.amount, 0) || 0,
                 appointmentsCount: appRes.count || 0,
                 clientsCount: cliRes.count || 0
             });
@@ -69,7 +69,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
 
         } catch (error: any) {
             if (error.name === 'AbortError' || error.message?.includes('aborted')) return;
-            console.error("Dashboard Error:", error);
+            const errorMessage = error.message || (typeof error === 'string' ? error : JSON.stringify(error));
+            console.error("Dashboard Fetch Error:", errorMessage);
         } finally {
             if (abortControllerRef.current === controller) {
                 setIsLoading(false);
