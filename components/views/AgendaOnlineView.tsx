@@ -1,337 +1,351 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { 
-    Globe, Eye, Save, Palette, Settings2, Star, TrendingUp, 
-    Copy, Upload, Camera, Clock, Calendar, AlertTriangle, 
-    MessageCircle, Users, MousePointer2, CheckCircle2, 
-    ArrowRight, MessageSquare, Share2, Info
+    Globe, Settings, MessageSquare, BarChart2, ExternalLink, 
+    Copy, CheckCircle, Share2, Save, Eye, Star, MessageCircle 
 } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
-import Toast, { ToastType } from '../shared/Toast';
+import { mockOnlineConfig, mockReviews, mockAnalytics } from '../../data/mockData';
+import { Review } from '../../types';
+import { format } from 'date-fns';
+import { pt } from 'date-fns/locale';
 
-type TabId = 'aparencia' | 'regras' | 'avaliacoes' | 'desempenho';
+// Helper for Tabs
+const TabButton = ({ id, label, active, onClick, icon: Icon }: any) => (
+    <button
+        onClick={() => onClick(id)}
+        className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors font-medium text-sm ${
+            active ? 'border-orange-500 text-orange-600 bg-orange-50' : 'border-transparent text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+        }`}
+    >
+        <Icon className="w-4 h-4" />
+        {label}
+    </button>
+);
 
 const AgendaOnlineView: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<TabId>('aparencia');
-    const [isSaving, setIsSaving] = useState(false);
-    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-
-    // Form States
-    const [isActive, setIsActive] = useState(true);
-    const [studioName, setStudioName] = useState('Belaflow Studio');
-    const [description, setDescription] = useState('Especialistas em realçar sua beleza natural com as melhores técnicas do mercado.');
-    const [interval, setInterval] = useState(30);
-
-    const showToast = useCallback((message: string, type: ToastType = 'success') => {
-        setToast({ message, type });
-    }, []);
+    const [activeTab, setActiveTab] = useState<'geral' | 'regras' | 'avaliacoes' | 'analytics'>('geral');
+    const [config, setConfig] = useState(mockOnlineConfig);
+    const [reviews, setReviews] = useState(mockReviews);
+    const [replyText, setReplyText] = useState<{ [key: number]: string }>({});
 
     const handleCopyLink = () => {
-        navigator.clipboard.writeText('belaapp.com/belaflow-studio');
-        showToast("Link copiado!");
+        const baseUrl = window.location.href.split('#')[0];
+        navigator.clipboard.writeText(`${baseUrl}#/public-preview`);
+        alert('Link copiado para a área de transferência!');
     };
 
-    const handleSave = () => {
-        setIsSaving(true);
-        setTimeout(() => {
-            setIsSaving(false);
-            showToast("Configurações salvas com sucesso!");
-        }, 8000);
+    const handleReplySubmit = (reviewId: number) => {
+        const text = replyText[reviewId];
+        if (!text) return;
+        
+        setReviews(prev => prev.map(r => r.id === reviewId ? { ...r, reply: text } : r));
+        setReplyText(prev => ({ ...prev, [reviewId]: '' }));
+        alert('Resposta enviada com sucesso!');
     };
 
-    const tabs = [
-        { id: 'aparencia', label: 'Geral & Aparência', icon: Palette },
-        { id: 'regras', label: 'Regras de Agendamento', icon: Settings2 },
-        { id: 'avaliacoes', label: 'Avaliações', icon: Star },
-        { id: 'desempenho', label: 'Desempenho', icon: TrendingUp },
-    ];
+    const openPreview = () => {
+        // Navigate in the current tab via hash to avoid sandbox 404/blob errors
+        window.location.hash = '/public-preview';
+    };
 
     return (
-        <div className="h-full flex flex-col bg-slate-50 font-sans overflow-hidden">
-            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
-            {/* HEADER */}
-            <header className="bg-white border-b border-slate-200 px-8 py-6 flex flex-col md:flex-row justify-between items-center gap-4 shrink-0 z-20">
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-orange-50 text-orange-500 rounded-xl">
-                        <Globe size={24} />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-black text-slate-800 uppercase tracking-tight">Agenda Online</h1>
-                        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-0.5">Configurações da sua vitrine pública</p>
-                    </div>
+        <div className="h-full flex flex-col bg-slate-50">
+            {/* Top Header */}
+            <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                        <Globe className="text-blue-500" />
+                        Agenda Online
+                    </h1>
+                    <p className="text-slate-500 text-sm">Gerencie como seus clientes agendam pelo link público.</p>
                 </div>
-                
-                <div className="flex items-center gap-3">
-                    <button className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-all">
-                        <Eye size={18} /> Visualizar
+                <div className="flex gap-3">
+                     <button onClick={openPreview} className="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-semibold rounded-lg hover:bg-slate-50 flex items-center gap-2">
+                        <Eye className="w-4 h-4" />
+                        Visualizar
                     </button>
-                    <button 
-                        onClick={handleSave}
-                        disabled={isSaving}
-                        className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-orange-500 text-white font-black text-sm hover:bg-orange-600 shadow-lg shadow-orange-100 transition-all active:scale-95 disabled:opacity-50"
-                    >
-                        {isSaving ? <span className="animate-pulse">Salvando...</span> : <><Save size={18} /> Salvar Alterações</>}
+                    <button className="px-4 py-2 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 shadow-sm flex items-center gap-2">
+                        <Save className="w-4 h-4" />
+                        Salvar Alterações
                     </button>
                 </div>
             </header>
 
-            {/* TAB NAVIGATION */}
-            <div className="bg-white border-b border-slate-100 px-8 flex gap-8 shrink-0 overflow-x-auto scrollbar-hide">
-                {tabs.map(tab => (
-                    <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id as TabId)}
-                        className={`flex items-center gap-2 py-5 border-b-2 font-black text-xs uppercase tracking-[0.15em] transition-all whitespace-nowrap ${
-                            activeTab === tab.id 
-                            ? 'border-orange-500 text-orange-600' 
-                            : 'border-transparent text-slate-400 hover:text-slate-600'
-                        }`}
-                    >
-                        <tab.icon size={16} /> {tab.label}
-                    </button>
-                ))}
+            {/* Tabs */}
+            <div className="bg-white border-b border-slate-200 px-6 flex gap-2">
+                <TabButton id="geral" label="Geral & Aparência" icon={Settings} active={activeTab === 'geral'} onClick={setActiveTab} />
+                <TabButton id="regras" label="Regras de Agendamento" icon={CheckCircle} active={activeTab === 'regras'} onClick={setActiveTab} />
+                <TabButton id="avaliacoes" label="Avaliações" icon={Star} active={activeTab === 'avaliacoes'} onClick={setActiveTab} />
+                <TabButton id="analytics" label="Desempenho" icon={BarChart2} active={activeTab === 'analytics'} onClick={setActiveTab} />
             </div>
 
-            {/* CONTENT AREA */}
-            <main className="flex-1 overflow-y-auto p-8 scrollbar-hide">
-                <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    
-                    {/* ABA 1: GERAL & APARÊNCIA */}
-                    {activeTab === 'aparencia' && (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            <Card title="Status da Agenda" icon={<Globe size={18} />}>
-                                <div className="space-y-6">
-                                    <div className="flex items-center justify-between p-5 bg-slate-50 rounded-3xl border border-slate-100">
-                                        <div>
-                                            <p className="font-bold text-slate-700 text-sm">Aceitar agendamentos online?</p>
-                                            <p className="text-xs text-slate-400 mt-0.5">Ative para permitir que clientes reservem sozinhos.</p>
-                                        </div>
-                                        <ToggleSwitch on={isActive} onClick={() => setIsActive(!isActive)} />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Seu Link Público</label>
-                                        <div className="flex gap-2">
-                                            <div className="flex-1 bg-white border border-slate-200 px-4 py-3 rounded-2xl flex items-center gap-3 overflow-hidden">
-                                                <Globe size={16} className="text-slate-300" />
-                                                <span className="text-sm font-bold text-slate-500 truncate">belaapp.com/belaflow-studio</span>
-                                            </div>
-                                            <button onClick={handleCopyLink} className="p-4 bg-slate-900 text-white rounded-2xl hover:bg-black transition-all">
-                                                <Copy size={18} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl flex items-start gap-3">
-                                        <Info size={16} className="text-blue-500 mt-0.5 shrink-0" />
-                                        <p className="text-[10px] text-blue-700 leading-relaxed font-medium uppercase tracking-tight">Dica: Adicione este link na bio do seu Instagram para aumentar suas reservas.</p>
-                                    </div>
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto p-6">
+                
+                {/* TAB: GERAL */}
+                {activeTab === 'geral' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-6xl mx-auto">
+                        <Card title="Status da Agenda Online">
+                            <div className="flex items-center justify-between mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                <div>
+                                    <p className="font-bold text-slate-800">Aceitar agendamentos online</p>
+                                    <p className="text-sm text-slate-500">Se desativado, o link mostrará que o estúdio está fechado temporariamente.</p>
                                 </div>
-                            </Card>
-
-                            <Card title="Identidade Visual" icon={<Palette size={18} />}>
-                                <div className="space-y-5">
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome do Estúdio</label>
-                                        <input value={studioName} onChange={e => setStudioName(e.target.value)} className="w-full border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-orange-100" />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Descrição Curta</label>
-                                        <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} className="w-full border border-slate-200 rounded-2xl px-4 py-3 text-sm font-medium text-slate-500 outline-none focus:ring-2 focus:ring-orange-100 resize-none" />
-                                    </div>
-                                    <div className="flex items-center gap-4 pt-2">
-                                        <div className="w-20 h-20 rounded-3xl bg-slate-100 flex items-center justify-center border-2 border-dashed border-slate-300 relative group overflow-hidden">
-                                            <Camera size={24} className="text-slate-400 group-hover:scale-110 transition-transform" />
-                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
-                                                <Upload size={20} className="text-white" />
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-700">Logo do Estúdio</p>
-                                            <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest font-black">PNG ou JPG até 2MB</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </Card>
-                        </div>
-                    )}
-
-                    {/* ABA 2: REGRAS DE AGENDAMENTO */}
-                    {activeTab === 'regras' && (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            <Card title="Intervalos e Horários" icon={<Clock size={18} />}>
-                                <div className="space-y-8">
-                                    <div className="space-y-3">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Intervalo da Grade</label>
-                                        <div className="grid grid-cols-4 gap-2">
-                                            {[15, 20, 30, 60].map(m => (
-                                                <button key={m} onClick={() => setInterval(m)} className={`py-3 rounded-2xl text-xs font-black transition-all ${interval === m ? 'bg-orange-500 text-white shadow-lg' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}>{m}m</button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Antecedência Mínima</label>
-                                            <select className="w-full border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 outline-none bg-white">
-                                                <option>1 hora antes</option>
-                                                <option selected>2 horas antes</option>
-                                                <option>No dia anterior</option>
-                                            </select>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Agenda Aberta até</label>
-                                            <select className="w-full border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 outline-none bg-white">
-                                                <option>15 dias futuros</option>
-                                                <option selected>30 dias futuros</option>
-                                                <option>90 dias futuros</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                            </Card>
-
-                            <Card title="Política de Cancelamento" icon={<AlertTriangle size={18} />}>
-                                <div className="space-y-6">
-                                    <div className="p-5 bg-amber-50 border border-amber-100 rounded-[32px] flex gap-4">
-                                        <div className="w-10 h-10 bg-amber-400 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-lg shadow-amber-200">
-                                            <Info size={20} />
-                                        </div>
-                                        <p className="text-xs text-amber-800 leading-relaxed font-medium italic">"Políticas claras evitam buracos na agenda. Defina um tempo justo para que você possa reocupar o horário vago."</p>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Limite para cancelamento grátis</label>
-                                        <select className="w-full border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 outline-none bg-white">
-                                            <option>Até 2h antes</option>
-                                            <option>Até 12h antes</option>
-                                            <option selected>Até 24h antes</option>
-                                            <option>Não permite cancelar online</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </Card>
-                        </div>
-                    )}
-
-                    {/* ABA 3: AVALIAÇÕES */}
-                    {activeTab === 'avaliacoes' && (
-                        <div className="space-y-4">
-                            {[
-                                { name: 'Juliana Paes', rating: 5, service: 'Design com Henna', date: 'Há 2 dias', comment: 'Atendimento impecável! A Jacilene é uma profissional incrível, amei o resultado das minhas sobrancelhas.', reply: 'Muito obrigada, Juliana! É sempre um prazer receber você.' },
-                                { name: 'Marina Ruy Barbosa', rating: 5, service: 'Volume Egípcio', date: 'Há 5 dias', comment: 'Melhor estúdio de cílios da região. Super recomendo!', reply: null },
-                                { name: 'Bruna Marquezine', rating: 4, service: 'Limpeza de Pele Premium', date: 'Há 1 semana', comment: 'Gostei muito, mas o café estava frio. O serviço em si nota 10!', reply: null }
-                            ].map((review, i) => (
-                                <div key={i} className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm space-y-4">
-                                    <div className="flex justify-between items-start">
-                                        <div className="flex gap-4">
-                                            <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-black text-slate-400">{review.name.charAt(0)}</div>
-                                            <div>
-                                                <h4 className="font-bold text-slate-800">{review.name}</h4>
-                                                <div className="flex items-center gap-3 mt-0.5">
-                                                    <div className="flex text-amber-400 gap-0.5">
-                                                        {[...Array(5)].map((_, star) => <Star key={star} size={12} fill={star < review.rating ? 'currentColor' : 'none'} />)}
-                                                    </div>
-                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">• {review.service}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">{review.date}</span>
-                                    </div>
-                                    <p className="text-sm text-slate-600 leading-relaxed font-medium italic">"{review.comment}"</p>
-                                    
-                                    {review.reply ? (
-                                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex gap-3">
-                                            <MessageSquare size={14} className="text-orange-500 mt-1" />
-                                            <p className="text-xs text-slate-500 font-bold">Sua Resposta: <span className="font-medium italic text-slate-400">"{review.reply}"</span></p>
-                                        </div>
-                                    ) : (
-                                        <div className="pt-2">
-                                            <textarea placeholder="Escrever resposta para a cliente..." className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs outline-none focus:ring-2 focus:ring-orange-100 transition-all resize-none" rows={2} />
-                                            <div className="flex justify-end mt-2">
-                                                <button className="text-[10px] font-black text-orange-600 uppercase tracking-widest py-2 px-4 hover:bg-orange-50 rounded-lg transition-all">Enviar Resposta</button>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    {/* ABA 4: DESEMPENHO */}
-                    {activeTab === 'desempenho' && (
-                        <div className="space-y-8">
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                {[
-                                    { label: 'Visualizações', val: '1.250', icon: Eye, color: 'bg-blue-500' },
-                                    { label: 'Iniciaram', val: '180', icon: MousePointer2, color: 'bg-purple-500' },
-                                    { label: 'Concluídos', val: '65', icon: CheckCircle2, color: 'bg-emerald-500' },
-                                    { label: 'Taxa Conv.', val: '36.1%', icon: TrendingUp, color: 'bg-orange-500' }
-                                ].map((kpi, i) => (
-                                    <div key={i} className="bg-white p-5 rounded-[28px] border border-slate-200 shadow-sm flex items-center justify-between">
-                                        <div>
-                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{kpi.label}</p>
-                                            <h4 className="text-2xl font-black text-slate-800 mt-1">{kpi.val}</h4>
-                                        </div>
-                                        <div className={`p-3 rounded-2xl text-white shadow-lg ${kpi.color}`}>
-                                            <kpi.icon size={18} />
-                                        </div>
-                                    </div>
-                                ))}
+                                <ToggleSwitch on={config.isActive} onClick={() => setConfig({...config, isActive: !config.isActive})} />
                             </div>
 
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                <div className="lg:col-span-2">
-                                    <Card title="Funil de Agendamento" icon={<TrendingUp size={18} />}>
-                                        <div className="space-y-6 py-4">
-                                            {[
-                                                { label: 'Acessaram a página', val: '100%', count: 1250, color: 'bg-blue-400' },
-                                                { label: 'Clicaram em agendar', val: '14.4%', count: 180, color: 'bg-purple-400' },
-                                                { label: 'Finalizaram reserva', val: '5.2%', count: 65, color: 'bg-orange-500' }
-                                            ].map((step, i) => (
-                                                <div key={i} className="space-y-2">
-                                                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500">
-                                                        <span>{step.label}</span>
-                                                        <span className="text-slate-800">{step.count} ({step.val})</span>
-                                                    </div>
-                                                    <div className="h-4 bg-slate-100 rounded-full overflow-hidden">
-                                                        <div className={`h-full transition-all duration-1000 ${step.color}`} style={{ width: step.val }} />
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </Card>
-                                </div>
-
-                                <div className="space-y-6">
-                                    <div className="bg-emerald-500 p-8 rounded-[40px] shadow-xl shadow-emerald-100 flex flex-col items-center text-center text-white space-y-4">
-                                        <div className="w-16 h-16 bg-white/20 rounded-[24px] flex items-center justify-center border border-white/30 backdrop-blur-sm">
-                                            <MessageCircle size={32} />
-                                        </div>
-                                        <div>
-                                            <h4 className="text-4xl font-black">42</h4>
-                                            <p className="text-[10px] font-black uppercase tracking-widest opacity-80 mt-1">Cliques no WhatsApp</p>
-                                        </div>
-                                        <p className="text-xs font-medium opacity-70">Clientes que preferiram tirar dúvidas antes de agendar online.</p>
+                            <div className="space-y-4">
+                                <label className="block text-sm font-bold text-slate-700">Seu Link Público</label>
+                                <div className="flex gap-2">
+                                    <div className="flex-1 flex items-center px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-600 text-sm overflow-hidden">
+                                        <span className="truncate">
+                                            {window.location.host}/.../{config.slug}
+                                        </span>
                                     </div>
+                                    <button onClick={handleCopyLink} className="p-2 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-600" title="Copiar">
+                                        <Copy className="w-5 h-5" />
+                                    </button>
+                                    <button className="p-2 bg-green-500 text-white rounded-lg hover:bg-green-600 shadow-sm" title="Compartilhar WhatsApp">
+                                        <Share2 className="w-5 h-5" />
+                                    </button>
+                                </div>
+                                <p className="text-xs text-slate-500 flex items-center gap-1">
+                                    <ExternalLink className="w-3 h-3" />
+                                    Este link é a porta de entrada para seus clientes.
+                                </p>
+                            </div>
+                        </Card>
 
-                                    <div className="bg-slate-900 p-8 rounded-[40px] shadow-xl text-white relative overflow-hidden group">
-                                        <div className="relative z-10">
-                                            <h4 className="font-bold text-lg leading-tight">Deseja impulsionar <br/> suas vendas?</h4>
-                                            <p className="text-xs text-slate-400 mt-2">Crie campanhas de desconto exclusivas para agendamento online.</p>
-                                            <button className="mt-6 flex items-center gap-2 text-[10px] font-black text-orange-500 uppercase tracking-widest hover:translate-x-1 transition-transform">
-                                                Criar Campanha <ArrowRight size={14} />
+                        <Card title="Identidade Visual">
+                             <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-1">Nome do Estúdio</label>
+                                    <input 
+                                        value={config.studioName} 
+                                        onChange={(e) => setConfig({...config, studioName: e.target.value})}
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-1">Descrição Curta</label>
+                                    <textarea 
+                                        value={config.description} 
+                                        onChange={(e) => setConfig({...config, description: e.target.value})}
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none h-24 resize-none"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    <img src={config.logoUrl} alt="Logo" className="w-16 h-16 rounded-full border border-slate-200" />
+                                    <button className="text-sm text-blue-600 font-semibold hover:underline">Alterar Logo</button>
+                                </div>
+                             </div>
+                        </Card>
+                    </div>
+                )}
+
+                {/* TAB: REGRAS */}
+                {activeTab === 'regras' && (
+                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-6xl mx-auto">
+                        <Card title="Intervalos e Horários">
+                             <div className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Intervalo entre agendamentos (Grade)</label>
+                                    <div className="flex gap-2">
+                                        {[15, 20, 30, 60].map(min => (
+                                            <button
+                                                key={min}
+                                                onClick={() => setConfig({...config, timeIntervalMinutes: min as any})}
+                                                className={`px-4 py-2 rounded-lg border text-sm font-semibold ${
+                                                    config.timeIntervalMinutes === min 
+                                                    ? 'bg-orange-500 text-white border-orange-600' 
+                                                    : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                {min} min
                                             </button>
-                                        </div>
-                                        <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform">
-                                            <Share2 size={120} />
-                                        </div>
+                                        ))}
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-2">Isso define como os horários aparecem para o cliente (ex: 09:00, 09:30...).</p>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Antecedência Mínima (horas)</label>
+                                        <input 
+                                            type="number" 
+                                            value={config.minAdvanceHours}
+                                            onChange={(e) => setConfig({...config, minAdvanceHours: Number(e.target.value)})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Agenda Aberta até (dias)</label>
+                                        <input 
+                                            type="number" 
+                                            value={config.maxFutureDays}
+                                            onChange={(e) => setConfig({...config, maxFutureDays: Number(e.target.value)})}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                                        />
+                                    </div>
+                                </div>
+                             </div>
+                        </Card>
+
+                        <Card title="Política de Cancelamento">
+                            <div className="p-4 bg-orange-50 rounded-lg border border-orange-100 mb-4">
+                                <div className="flex gap-3">
+                                    <MessageSquare className="text-orange-500 flex-shrink-0" />
+                                    <div>
+                                        <h4 className="font-bold text-orange-800 text-sm">Mensagem Automática</h4>
+                                        <p className="text-xs text-orange-700 mt-1">
+                                            O JaciBot enviará um lembrete 24h antes informando sobre a taxa de cancelamento caso o cliente desista fora do prazo.
+                                        </p>
                                     </div>
                                 </div>
                             </div>
+                            
+                             <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">Limite para cancelamento grátis (horas antes)</label>
+                                <select 
+                                    value={config.cancellationPolicyHours}
+                                    onChange={(e) => setConfig({...config, cancellationPolicyHours: Number(e.target.value)})}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none bg-white"
+                                >
+                                    <option value={2}>2 horas</option>
+                                    <option value={4}>4 horas</option>
+                                    <option value={12}>12 horas</option>
+                                    <option value={24}>24 horas</option>
+                                    <option value={48}>48 horas</option>
+                                </select>
+                            </div>
+                        </Card>
+                     </div>
+                )}
+
+                {/* TAB: AVALIAÇÕES */}
+                {activeTab === 'avaliacoes' && (
+                     <div className="max-w-4xl mx-auto space-y-6">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-bold text-slate-700">Últimas Avaliações</h3>
+                            <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-full border shadow-sm">
+                                <span className="text-sm font-bold">4.8</span>
+                                <div className="flex text-amber-400"><Star className="w-4 h-4 fill-current"/><Star className="w-4 h-4 fill-current"/><Star className="w-4 h-4 fill-current"/><Star className="w-4 h-4 fill-current"/><Star className="w-4 h-4 fill-current opacity-50"/></div>
+                                <span className="text-xs text-slate-400">(32 avaliações)</span>
+                            </div>
                         </div>
-                    )}
-                </div>
-            </main>
+
+                        {reviews.map(review => (
+                            <div key={review.id} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                <div className="flex justify-between items-start mb-3">
+                                    <div>
+                                        <p className="font-bold text-slate-800">{review.clientName}</p>
+                                        <p className="text-xs text-slate-500">{format(review.date, "dd 'de' MMMM, yyyy", {locale: pt})} • {review.serviceName}</p>
+                                    </div>
+                                    <div className="flex text-amber-400">
+                                        {[...Array(5)].map((_, i) => (
+                                            <Star key={i} className={`w-4 h-4 ${i < review.rating ? 'fill-current' : 'text-slate-200'}`} />
+                                        ))}
+                                    </div>
+                                </div>
+                                <p className="text-slate-600 text-sm mb-4">"{review.comment}"</p>
+                                
+                                {review.reply ? (
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-sm">
+                                        <p className="font-bold text-slate-700 text-xs mb-1">Sua resposta:</p>
+                                        <p className="text-slate-600">{review.reply}</p>
+                                    </div>
+                                ) : (
+                                    <div className="mt-4">
+                                        <textarea 
+                                            placeholder="Escreva uma resposta pública..."
+                                            value={replyText[review.id] || ''}
+                                            onChange={(e) => setReplyText({...replyText, [review.id]: e.target.value})}
+                                            className="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none mb-2"
+                                        />
+                                        <button 
+                                            onClick={() => handleReplySubmit(review.id)}
+                                            className="text-xs font-bold bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700"
+                                        >
+                                            Responder
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                     </div>
+                )}
+
+                {/* TAB: ANALYTICS */}
+                {activeTab === 'analytics' && (
+                    <div className="max-w-6xl mx-auto space-y-8">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                             <div className="bg-white p-4 rounded-xl border shadow-sm">
+                                 <p className="text-slate-500 text-xs uppercase font-bold">Visualizações (Perfil)</p>
+                                 <p className="text-2xl font-bold text-slate-800">{mockAnalytics.pageViews.profile}</p>
+                             </div>
+                             <div className="bg-white p-4 rounded-xl border shadow-sm">
+                                 <p className="text-slate-500 text-xs uppercase font-bold">Iniciaram Agendamento</p>
+                                 <p className="text-2xl font-bold text-slate-800">{mockAnalytics.conversion.started}</p>
+                             </div>
+                             <div className="bg-white p-4 rounded-xl border shadow-sm">
+                                 <p className="text-slate-500 text-xs uppercase font-bold">Concluídos</p>
+                                 <p className="text-2xl font-bold text-green-600">{mockAnalytics.conversion.completed}</p>
+                             </div>
+                             <div className="bg-white p-4 rounded-xl border shadow-sm">
+                                 <p className="text-slate-500 text-xs uppercase font-bold">Taxa de Conversão</p>
+                                 <p className="text-2xl font-bold text-blue-600">
+                                     {((mockAnalytics.conversion.completed / mockAnalytics.conversion.started) * 100).toFixed(1)}%
+                                 </p>
+                             </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <Card title="Funil de Agendamento">
+                                <div className="space-y-4 mt-2">
+                                    <div className="relative pt-1">
+                                        <div className="flex mb-2 items-center justify-between">
+                                            <span className="text-xs font-semibold inline-block uppercase text-slate-600">Acessaram o Perfil</span>
+                                            <span className="text-xs font-semibold inline-block text-slate-600">100%</span>
+                                        </div>
+                                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-slate-200">
+                                            <div style={{ width: "100%" }} className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-slate-400"></div>
+                                        </div>
+                                    </div>
+                                     <div className="relative pt-1">
+                                        <div className="flex mb-2 items-center justify-between">
+                                            <span className="text-xs font-semibold inline-block uppercase text-slate-600">Clicaram em Agendar</span>
+                                            <span className="text-xs font-semibold inline-block text-slate-600">14.4%</span>
+                                        </div>
+                                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-slate-200">
+                                            <div style={{ width: "14.4%" }} className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500"></div>
+                                        </div>
+                                    </div>
+                                     <div className="relative pt-1">
+                                        <div className="flex mb-2 items-center justify-between">
+                                            <span className="text-xs font-semibold inline-block uppercase text-slate-600">Finalizaram</span>
+                                            <span className="text-xs font-semibold inline-block text-slate-600">5.2%</span>
+                                        </div>
+                                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-slate-200">
+                                            <div style={{ width: "5.2%" }} className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-green-500"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </Card>
+
+                            <Card title="Cliques no WhatsApp">
+                                <div className="flex flex-col items-center justify-center h-48">
+                                    <MessageCircle className="w-16 h-16 text-green-500 mb-4" />
+                                    <p className="text-4xl font-bold text-slate-800">{mockAnalytics.conversion.whatsappClicks}</p>
+                                    <p className="text-slate-500 text-sm mt-2">Clientes iniciaram conversa direta</p>
+                                </div>
+                            </Card>
+                        </div>
+                    </div>
+                )}
+
+            </div>
         </div>
     );
 };
