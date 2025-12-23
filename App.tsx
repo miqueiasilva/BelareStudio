@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, useLocation, Outlet, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ViewState, FinancialTransaction } from './types';
@@ -29,42 +29,63 @@ import PublicBookingView from './components/views/PublicBookingView';
 
 import { mockTransactions } from './data/mockData';
 
-// --- 1. TELA DE CARREGAMENTO ROBUSTA ---
+// --- TELA DE CARREGAMENTO COM FALLBACK ---
 const LoadingScreen = () => {
+  const [showFallback, setShowFallback] = useState(false);
+
+  useEffect(() => {
+    // Se o sistema não carregar em 8 segundos, mostra o botão de reinicialização forçada
+    const timer = setTimeout(() => setShowFallback(true), 8000);
+    return () => clearTimeout(timer);
+  }, []);
+
   const forceLogout = async () => {
     try {
       await supabase.auth.signOut();
     } catch (e) {}
     localStorage.clear();
     sessionStorage.clear();
-    window.location.href = '/';
+    window.location.reload(); // Recarga física da página
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-slate-50 gap-4 font-sans">
-      <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-      <div className="text-center">
-        <p className="text-slate-600 font-bold text-lg">Sincronizando Belaflow...</p>
-        <p className="text-slate-400 text-xs mt-1 px-8 max-w-xs">
-          Verificando sua conta e preparando o ambiente de trabalho.
+    <div className="flex flex-col items-center justify-center h-screen bg-slate-50 gap-4 font-sans p-6 text-center">
+      <div className="relative">
+        <div className="w-16 h-16 border-4 border-orange-100 rounded-full"></div>
+        <div className="absolute top-0 w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+      
+      <div className="mt-4 animate-pulse">
+        <p className="text-slate-700 font-black text-xl tracking-tight">Sincronizando Belaflow...</p>
+        <p className="text-slate-400 text-sm mt-1 max-w-xs mx-auto">
+          Preparando seu estúdio para o dia de hoje.
         </p>
       </div>
-      <button 
-        onClick={forceLogout}
-        className="mt-12 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-red-500 transition-colors border border-slate-200 px-4 py-2 rounded-full"
-      >
-        O sistema travou? Clique aqui para reiniciar
-      </button>
+
+      {showFallback && (
+        <div className="mt-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="bg-white p-6 rounded-[32px] shadow-xl border border-orange-100 max-w-sm">
+            <p className="text-xs text-slate-500 font-medium mb-4">
+              A conexão está demorando mais do que o esperado. Isso pode ser instabilidade na rede ou sessão expirada.
+            </p>
+            <button 
+              onClick={forceLogout}
+              className="w-full bg-slate-900 text-white font-black text-xs uppercase tracking-widest py-4 rounded-2xl hover:bg-black transition-all shadow-lg active:scale-95"
+            >
+              Reiniciar Sistema
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-// --- 2. WRAPPER PARA ÁREA ADMINISTRATIVA ---
+// --- WRAPPER PARA ÁREA ADMINISTRATIVA ---
 const AdminWrapper: React.FC<{ transactions: FinancialTransaction[], onAddTransaction: (t: FinancialTransaction) => void }> = ({ transactions, onAddTransaction }) => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Mapeia o path atual para o ViewState esperado pelo MainLayout legado
   const currentView = (location.pathname.replace('/', '') || 'dashboard') as ViewState;
 
   return (
@@ -74,37 +95,35 @@ const AdminWrapper: React.FC<{ transactions: FinancialTransaction[], onAddTransa
   );
 };
 
-// --- 3. GERENCIADOR DE ROTAS INTERNO (LÓGICA BLINDADA) ---
+// --- GERENCIADOR DE ROTAS INTERNO ---
 function AppRoutes() {
-  const location = useLocation();
   const { user, loading } = useAuth();
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
+  const location = useLocation();
   
   const path = location.pathname;
 
-  // LÓGICA DE PRIORIDADE:
-  
-  // 1. ROTAS PÚBLICAS (Bypass absoluto - Sem check de auth ou loading)
+  // 1. ROTAS PÚBLICAS
   if (path === '/agendar' || path === '/public-preview') {
     return <PublicBookingView />;
   }
 
-  // 2. RECUPERAÇÃO DE SENHA (Bypass auth check)
+  // 2. RECUPERAÇÃO DE SENHA
   if (path === '/reset-password') {
     return <ResetPasswordView />;
   }
 
-  // 3. ESTADO DE CARREGAMENTO (Apenas para rotas protegidas)
+  // 3. ESTADO DE CARREGAMENTO
   if (loading) {
     return <LoadingScreen />;
   }
 
-  // 4. NÃO AUTENTICADO -> LOGIN
+  // 4. NÃO AUTENTICADO
   if (!user) {
     return <LoginView />;
   }
 
-  // 5. AUTENTICADO -> ÁREA ADMINISTRATIVA
+  // 5. AUTENTICADO
   const handleAddTransaction = (t: FinancialTransaction) => {
     setTransactions(prev => [t, ...prev]);
   };
@@ -114,7 +133,7 @@ function AppRoutes() {
       <Route element={<AdminWrapper transactions={transactions} onAddTransaction={handleAddTransaction} />}>
         <Route index element={<DashboardView onNavigate={(v) => window.location.hash = `#/${v}`} />} />
         <Route path="dashboard" element={<DashboardView onNavigate={(v) => window.location.hash = `#/${v}`} />} />
-        <Route path="agenda" element={<AtendimentosView onAddTransaction={handleAddTransaction} />} />
+        <Route path="agenda" element={<AtendimentosView />} />
         <Route path="agenda_online" element={<AgendaOnlineView />} />
         <Route path="whatsapp" element={<WhatsAppView />} />
         <Route path="financeiro" element={<FinanceiroView />} />
@@ -129,13 +148,11 @@ function AppRoutes() {
         <Route path="servicos" element={<ServicosView />} />
         <Route path="equipe" element={<EquipeView />} />
       </Route>
-      {/* Fallback para home caso a rota não exista */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
 
-// --- 4. APLICAÇÃO PRINCIPAL ---
 export default function App() {
   return (
     <EnvGate>

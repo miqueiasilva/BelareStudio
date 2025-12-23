@@ -8,20 +8,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Belaflow — Gestão Inteligente para Estúdios de Beleza</title>
 
-    <!-- Tailwind is handled by Vite via PostCSS, but keeping CDN for fallback if config misses -->
-    <script src="https://cdn.tailwindcss.com"></script>
-
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
-
     <style>
+      @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+      
       body {
         font-family: 'Poppins', sans-serif;
+        background-color: #f8fafc;
       }
       .scrollbar-hide::-webkit-scrollbar {
         display: none;
@@ -31,6 +23,21 @@
         scrollbar-width: none;
       }
     </style>
+
+    <!-- Tailwind CDN com configuração de segurança -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Poppins', 'sans-serif'],
+            },
+          }
+        }
+      }
+    </script>
+
 <script type="importmap">
 {
   "imports": {
