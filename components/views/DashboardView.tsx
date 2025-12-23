@@ -68,11 +68,12 @@ const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
             setUpcomingApps(upRes.data || []);
 
         } catch (error: any) {
-            if (error.name !== 'AbortError') {
-                console.error("Dashboard Error:", error);
-            }
+            if (error.name === 'AbortError' || error.message?.includes('aborted')) return;
+            console.error("Dashboard Error:", error);
         } finally {
-            setIsLoading(false);
+            if (abortControllerRef.current === controller) {
+                setIsLoading(false);
+            }
         }
     }, []);
 

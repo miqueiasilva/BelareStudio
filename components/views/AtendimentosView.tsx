@@ -84,7 +84,15 @@ const AtendimentosView: React.FC = () => {
         setIsLoading(true);
         try {
             // 1. Profissionais
-            const { data: profs } = await supabase.from('professionals').select('*').eq('active', true).order('display_order');
+            const { data: profs, error: profError } = await supabase
+                .from('professionals')
+                .select('*')
+                .eq('active', true)
+                .order('display_order')
+                .abortSignal(controller.signal);
+
+            if (profError) throw profError;
+
             const mappedProfs: LegacyProfessional[] = (profs || []).map(p => ({
                 id: p.id, name: p.name, avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`, color: p.color || '#F97316'
             } as any));
@@ -111,9 +119,13 @@ const AtendimentosView: React.FC = () => {
 
             setAppointments(mappedApps);
         } catch (e: any) {
-            if (e.name !== 'AbortError') console.error("Erro na agenda:", e.message);
+            // Ignora silenciosamente se o erro for de cancelamento da requisição
+            if (e.name === 'AbortError' || e.message?.includes('aborted')) return;
+            console.error("Erro na agenda:", e);
         } finally {
-            if (!controller.signal.aborted) setIsLoading(false);
+            if (abortControllerRef.current === controller) {
+                setIsLoading(false);
+            }
         }
     }, [currentDate, visibleProfIds.length]);
 

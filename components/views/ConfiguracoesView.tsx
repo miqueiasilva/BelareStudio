@@ -53,14 +53,16 @@ const ConfiguracoesView: React.FC = () => {
                 setPaymentMethods(data || []);
             }
         } catch (e: any) {
-            if (e.name === 'AbortError') {
-                setErrorMsg("Tempo limite excedido. Clique para tentar novamente.");
+            if (e.name === 'AbortError' || e.message?.includes('aborted')) {
+                // Requisição cancelada propositalmente, ignoramos
             } else {
                 setErrorMsg(e.message || "Falha ao carregar configurações.");
             }
         } finally {
             clearTimeout(timeoutId);
-            setIsLoading(false);
+            if (abortControllerRef.current === controller) {
+                setIsLoading(false);
+            }
         }
     }, []);
 

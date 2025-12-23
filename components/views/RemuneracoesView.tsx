@@ -44,11 +44,12 @@ const RemuneracoesView: React.FC = () => {
             setProfessionals(pRes.data || []);
             setAppointments(aRes.data || []);
         } catch (e: any) {
-            if (e.name !== 'AbortError') {
-                setToast({ message: 'Erro ao sincronizar remunerações: ' + e.message, type: 'error' });
-            }
+            if (e.name === 'AbortError' || e.message?.includes('aborted')) return;
+            setToast({ message: 'Erro ao sincronizar remunerações: ' + e.message, type: 'error' });
         } finally {
-            setIsLoading(false);
+            if (abortControllerRef.current === controller) {
+                setIsLoading(false);
+            }
         }
     }, [currentDate]);
 

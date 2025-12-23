@@ -35,11 +35,12 @@ const ServicosView: React.FC = () => {
             if (error) throw error;
             setServices(data || []);
         } catch (error: any) {
-            if (error.name !== 'AbortError') {
-                console.error("Erro serviços:", error);
-            }
+            if (error.name === 'AbortError' || error.message?.includes('aborted')) return;
+            console.error("Erro serviços:", error);
         } finally {
-            setLoading(false);
+            if (abortControllerRef.current === controller) {
+                setLoading(false);
+            }
         }
     }, []);
 

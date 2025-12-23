@@ -27,7 +27,6 @@ const ClientesView: React.FC = () => {
 
         setIsLoading(true);
         try {
-            // FIX: Garantia de uso da tabela correta 'clients'
             const { data, error } = await supabase
                 .from('clients')
                 .select('*')
@@ -37,13 +36,13 @@ const ClientesView: React.FC = () => {
             if (error) throw error;
             setClients(data || []);
         } catch (error: any) {
-            if (error.name !== 'AbortError') {
-                console.error("Erro fetch clients:", error);
-                setToast({ message: "Não foi possível carregar a lista de clientes.", type: 'error' });
-            }
+            if (error.name === 'AbortError' || error.message?.includes('aborted')) return;
+            console.error("Erro fetch clients:", error);
+            setToast({ message: "Não foi possível carregar a lista de clientes.", type: 'error' });
         } finally {
-            // FIX: Bloqueia o carregamento eterno desativando o loader mesmo em caso de erro
-            setIsLoading(false);
+            if (abortControllerRef.current === controller) {
+                setIsLoading(false);
+            }
         }
     }, []);
 

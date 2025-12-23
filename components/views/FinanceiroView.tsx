@@ -47,13 +47,14 @@ const FinanceiroView: React.FC = () => {
             }));
             setTransactions(mapped);
         } catch (error: any) {
-            if (error.name !== 'AbortError') {
-                console.error("Financeiro Fetch Error:", error);
-                const msg = error?.message || "Erro ao carregar extrato financeiro.";
-                setToast({ message: String(msg), type: 'error' });
-            }
+            if (error.name === 'AbortError' || error.message?.includes('aborted')) return;
+            console.error("Financeiro Fetch Error:", error);
+            const msg = error?.message || "Erro ao carregar extrato financeiro.";
+            setToast({ message: String(msg), type: 'error' });
         } finally {
-            setIsLoading(false);
+            if (abortControllerRef.current === controller) {
+                setIsLoading(false);
+            }
         }
     }, []);
 

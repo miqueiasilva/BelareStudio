@@ -45,14 +45,16 @@ const EquipeView: React.FC = () => {
             if (sbError) throw sbError;
             setProfessionals(data || []);
         } catch (err: any) {
-            if (err.name === 'AbortError') {
-                setError("O servidor demorou muito para responder. Tente novamente.");
+            if (err.name === 'AbortError' || err.message?.includes('aborted')) {
+                // Requisição abortada silenciosamente
             } else {
                 setError(err.message || "Erro inesperado ao carregar equipe.");
             }
         } finally {
             clearTimeout(timeoutId);
-            setIsLoading(false);
+            if (abortControllerRef.current === controller) {
+                setIsLoading(false);
+            }
         }
     }, []);
 
