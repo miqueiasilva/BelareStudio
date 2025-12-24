@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ViewState, FinancialTransaction } from './types';
@@ -33,55 +32,47 @@ const AppContent: React.FC = () => {
   const [hash, setHash] = useState(window.location.hash);
   const [pathname, setPathname] = useState(window.location.pathname);
 
-  // Sincronização de Rotas e Views
+  // Router listener
   useEffect(() => {
-    const handleHashChange = () => {
-      const newHash = window.location.hash;
-      setHash(newHash);
-      
-      // Se o hash for limpo, força a volta para o Dashboard administrativo
-      if (newHash === '' || newHash === '#/') {
-        setCurrentView('dashboard');
-      }
-    };
-    
+    const handleHashChange = () => setHash(window.location.hash);
     window.addEventListener('hashchange', handleHashChange);
+    // Pathname might change if Vercel redirects for reset password
     setPathname(window.location.pathname);
     
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Tela de Carregamento Estruturada
+  // Handle Loading State
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-slate-500 font-medium font-sans">Carregando BelaApp...</p>
+          <p className="text-slate-500 font-medium">Carregando BelaApp...</p>
         </div>
       </div>
     );
   }
 
-  // --- ROTAS PÚBLICAS & ESPECIAIS ---
+  // --- PUBLIC & AUTH ROUTES ---
   
-  // Página de Agendamento Público (Cliente Final)
-  if (hash === '#/public-preview' || hash === '#/public-booking') {
+  // Public Booking Page
+  if (hash === '#/public-preview') {
     return <PublicBookingPreview />;
   }
 
-  // Fluxo de Redefinição de Senha
+  // Password Reset Flow (Priority over login)
   if (pathname === '/reset-password' || hash === '#/reset-password') {
     return <ResetPasswordView />;
   }
 
-  // --- VERIFICAÇÃO DE AUTENTICAÇÃO ---
+  // --- AUTHENTICATION CHECK ---
   
   if (!user) {
     return <LoginView />;
   }
 
-  // --- APLICATIVO ADMINISTRATIVO ---
+  // --- PROTECTED APP ---
 
   const handleAddTransaction = (t: FinancialTransaction) => {
     setTransactions(prev => [t, ...prev]);
@@ -118,7 +109,6 @@ const AppContent: React.FC = () => {
       case 'servicos':
         return <ServicosView />;
       case 'public_preview':
-        // Navegação via código para a prévia pública
         window.location.hash = '/public-preview';
         return null;
       default:
