@@ -9,9 +9,10 @@ import {
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth, setHours, setMinutes } from 'date-fns';
 import { pt } from 'date-fns/locale';
 
-import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
+import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional, LegacyService } from '../../types';
 import AppointmentModal from '../modals/AppointmentModal';
 import BlockTimeModal from '../modals/BlockTimeModal';
+import NewTransactionModal from '../modals/NewTransactionModal';
 import JaciBotPanel from '../JaciBotPanel';
 import AppointmentDetailPopover from '../shared/AppointmentDetailPopover';
 import Toast, { ToastType } from '../shared/Toast';
@@ -98,12 +99,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const [viewType] = useState<ViewType>('Profissional');
     const [periodType, setPeriodType] = useState<PeriodType>('Dia');
     const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = useState(false);
-    const [modalState, setModalState] = useState<{ type: 'appointment' | 'block'; data: any } | null>(null);
+    const [modalState, setModalState] = useState<{ type: 'appointment' | 'block' | 'sale'; data: any } | null>(null);
     const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
     const [isJaciBotOpen, setIsJaciBotOpen] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     
-    // Estado para o Menu de Seleção (Popover)
     const [selectionMenu, setSelectionMenu] = useState<{ 
         x: number, 
         y: number, 
@@ -144,7 +144,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             if (data) {
                 const mappedAppointments: LegacyAppointment[] = data.map(row => {
                     const startTime = new Date(row.date); 
-                    const endTime = new Date(startTime.getTime() + 30 * 60000);
+                    const duration = row.duration_min || 30;
+                    const endTime = new Date(startTime.getTime() + duration * 60000);
                     let matchedProf = resources.find(p => p.id === Number(row.resource_id)) 
                                     || resources.find(p => p.name === row.professional_name)
                                     || { id: row.resource_id || 0, name: row.professional_name || 'Profissional', avatarUrl: '' };
@@ -156,7 +157,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         notas: row.notes || '',
                         client: { id: 0, nome: row.client_name || 'Cliente', consent: true },
                         professional: matchedProf as LegacyProfessional,
-                        service: { id: 0, name: row.service_name || 'Serviço', price: parseFloat(row.value || 0), duration: 30, color: '#3b82f6' }
+                        service: { 
+                            id: 0, 
+                            name: row.service_name || 'Serviço', 
+                            price: parseFloat(row.value || 0), 
+                            duration: duration, 
+                            color: row.status === 'bloqueado' ? '#64748b' : '#3b82f6' 
+                        }
                     };
                 });
                 setAppointments(mappedAppointments);
@@ -236,7 +243,19 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     });
 
     const handleSaveAppointment = async (app: LegacyAppointment) => {
+        // Optimistic UI: Adiciona ao estado local imediatamente
+        setAppointments(prev => {
+            const index = prev.findIndex(p => p.id === app.id);
+            if (index >= 0) {
+                const newApps = [...prev];
+                newApps[index] = app;
+                return newApps;
+            }
+            return [...prev, { ...app, id: app.id || Date.now() }];
+        });
+        
         setModalState(null); 
+        
         try {
             const payload = {
                 client_name: app.client?.nome || 'Cliente',
@@ -246,27 +265,29 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 date: app.start.toISOString(),
                 value: typeof app.service.price === 'number' ? app.service.price : parseFloat(app.service.price || '0'),
                 status: app.status || 'agendado',
-                notes: app.notas || ''
+                notes: app.notas || '',
+                duration_min: app.service.duration || 30
             };
-            if (app.id && app.id < 1000000000000) await supabase.from('appointments').update(payload).eq('id', app.id);
-            else await supabase.from('appointments').insert([payload]);
+
+            if (app.id && app.id < 1000000000000) {
+                await supabase.from('appointments').update(payload).eq('id', app.id);
+            } else {
+                await supabase.from('appointments').insert([payload]);
+            }
+            
             await fetchAppointments(); 
-            setToast({ message: 'Agendamento salvo!', type: 'success' });
+            setToast({ message: 'Agendamento salvo com sucesso!', type: 'success' });
         } catch (error: any) {
-            setToast({ message: `Erro: ${error.message}`, type: 'error' });
+            setToast({ message: `Erro ao salvar: ${error.message}`, type: 'error' });
+            fetchAppointments(); // Reverte para o estado do servidor em caso de erro
         }
     };
 
-    // --- LOGICA DO MENU DE SELEÇÃO ---
     const handleGridClick = (e: React.MouseEvent, professional: LegacyProfessional, colDate?: Date) => {
         const rect = e.currentTarget.getBoundingClientRect();
         const offsetY = e.clientY - rect.top;
-        
-        // Calcula o horário baseado no clique
         const minutes = (offsetY / PIXELS_PER_MINUTE);
         const totalMinutesFromDayStart = (START_HOUR * 60) + minutes;
-        
-        // Arredonda para blocos de 15 minutos para melhor UX
         const roundedMinutes = Math.round(totalMinutesFromDayStart / 15) * 15;
         
         const targetDate = new Date(colDate || currentDate);
@@ -341,7 +362,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                         key={col.id} 
                                         className={`relative border-r border-slate-200 min-h-[1000px] cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/10'}`}
                                         onClick={(e) => {
-                                            // Se clicar no fundo da coluna (espaço vazio)
                                             if (e.target === e.currentTarget) {
                                                 const prof = col.type === 'professional' ? col.data : resources[0];
                                                 const date = col.type === 'date' ? col.data : currentDate;
@@ -355,7 +375,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                                 key={app.id}
                                                 ref={(el) => { appointmentRefs.current.set(app.id, el); }}
                                                 onClick={(e) => {
-                                                    e.stopPropagation(); // Previne clique no fundo da grade
+                                                    e.stopPropagation();
                                                     setActiveAppointmentDetail(app);
                                                 }}
                                                 className={`absolute w-[94%] left-1/2 -translate-x-1/2 rounded-2xl shadow-sm border p-2 cursor-pointer hover:scale-[1.01] transition-all z-10 ${getStatusColor(app.status)}`}
@@ -363,7 +383,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                             >
                                                 <div style={{ backgroundColor: app.service.color }} className="absolute left-0 top-0 bottom-0 w-2 rounded-l-2xl"></div>
                                                 <div className="pl-2">
-                                                    <p className="font-black text-slate-900 truncate text-sm">{app.client?.nome}</p>
+                                                    <p className="font-black text-slate-900 truncate text-sm">{app.client?.nome || (app.status === 'bloqueado' ? 'Bloqueado' : 'Cliente')}</p>
                                                     <p className="text-[11px] font-bold text-slate-600 truncate">{app.service.name}</p>
                                                 </div>
                                             </div>
@@ -377,10 +397,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 </div>
             </div>
 
-            {/* MODAL DE SELEÇÃO (POPOVER) */}
             {selectionMenu && (
                 <>
-                    {/* Overlay invisível para fechar ao clicar fora */}
                     <div className="fixed inset-0 z-[100]" onClick={() => setSelectionMenu(null)} />
                     <div 
                         className="fixed z-[101] bg-white rounded-2xl shadow-2xl border border-slate-100 w-64 py-2 animate-in fade-in zoom-in-95 duration-150 overflow-hidden"
@@ -399,21 +417,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             }}
                             className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"
                         >
-                            <div className="p-1.5 bg-orange-100 rounded-lg text-orange-600">
-                                <CalendarIcon size={16} />
-                            </div>
+                            <div className="p-1.5 bg-orange-100 rounded-lg text-orange-600"><CalendarIcon size={16} /></div>
                             Novo Agendamento
                         </button>
                         <button 
                             onClick={() => {
-                                console.log('Nova Venda direta iniciada');
+                                setModalState({ type: 'sale', data: { professionalId: selectionMenu.professional.id } });
                                 setSelectionMenu(null);
                             }}
                             className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-green-50 hover:text-green-600 transition-colors"
                         >
-                            <div className="p-1.5 bg-green-100 rounded-lg text-green-600">
-                                <ShoppingBag size={16} />
-                            </div>
+                            <div className="p-1.5 bg-green-100 rounded-lg text-green-600"><ShoppingBag size={16} /></div>
                             Nova Venda
                         </button>
                         <button 
@@ -423,18 +437,60 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             }}
                             className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition-colors"
                         >
-                            <div className="p-1.5 bg-rose-100 rounded-lg text-rose-600">
-                                <Ban size={16} />
-                            </div>
+                            <div className="p-1.5 bg-rose-100 rounded-lg text-rose-600"><Ban size={16} /></div>
                             Bloqueio de Horário
                         </button>
                     </div>
                 </>
             )}
 
-            {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />}
-            {modalState?.type === 'block' && <BlockTimeModal professional={modalState.data.professional} startTime={modalState.data.start} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />}
-            {activeAppointmentDetail && <AppointmentDetailPopover appointment={activeAppointmentDetail} targetElement={appointmentRefs.current.get(activeAppointmentDetail.id) || null} onClose={() => setActiveAppointmentDetail(null)} onEdit={(app) => setModalState({ type: 'appointment', data: app })} onDelete={async (id) => { await supabase.from('appointments').delete().eq('id', id); fetchAppointments(); setActiveAppointmentDetail(null); }} onUpdateStatus={async (id, status) => { await supabase.from('appointments').update({ status }).eq('id', id); fetchAppointments(); setActiveAppointmentDetail(null); }} />}
+            {modalState?.type === 'appointment' && (
+                <AppointmentModal 
+                    appointment={modalState.data} 
+                    onClose={() => setModalState(null)} 
+                    onSave={handleSaveAppointment} 
+                />
+            )}
+            {modalState?.type === 'block' && (
+                <BlockTimeModal 
+                    professional={modalState.data.professional} 
+                    startTime={modalState.data.start} 
+                    onClose={() => setModalState(null)} 
+                    onSave={handleSaveAppointment} 
+                />
+            )}
+            {modalState?.type === 'sale' && (
+                <NewTransactionModal 
+                    type="receita"
+                    onClose={() => setModalState(null)}
+                    onSave={(t) => {
+                        onAddTransaction(t);
+                        setModalState(null);
+                        setToast({ message: 'Venda registrada com sucesso!', type: 'success' });
+                    }}
+                />
+            )}
+
+            {activeAppointmentDetail && (
+                <AppointmentDetailPopover 
+                    appointment={activeAppointmentDetail} 
+                    targetElement={appointmentRefs.current.get(activeAppointmentDetail.id) || null} 
+                    onClose={() => setActiveAppointmentDetail(null)} 
+                    onEdit={(app) => setModalState({ type: 'appointment', data: app })} 
+                    onDelete={async (id) => { 
+                        setAppointments(prev => prev.filter(p => p.id !== id));
+                        await supabase.from('appointments').delete().eq('id', id); 
+                        setActiveAppointmentDetail(null); 
+                        setToast({ message: 'Agendamento removido.', type: 'info' });
+                    }} 
+                    onUpdateStatus={async (id, status) => { 
+                        setAppointments(prev => prev.map(p => p.id === id ? { ...p, status } : p));
+                        await supabase.from('appointments').update({ status }).eq('id', id); 
+                        setActiveAppointmentDetail(null); 
+                    }} 
+                />
+            )}
+            
             <JaciBotPanel isOpen={isJaciBotOpen} onClose={() => setIsJaciBotOpen(false)} />
             <div className="fixed bottom-8 right-8 z-[70]"><button onClick={() => setIsJaciBotOpen(true)} className="w-16 h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all"><MessageSquare className="w-8 h-8" /></button></div>
         </div>
