@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import { ViewState } from '../../types';
@@ -41,19 +40,19 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, currentView, onNaviga
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden relative">
       
-      {/* Mobile Backdrop */}
+      {/* Mobile Backdrop - Aumentado z-index para z-[9998] */}
       {isMobile && isSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-30 transition-opacity"
+          className="fixed inset-0 bg-black/50 z-[9998] transition-opacity"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar Container */}
+      {/* Sidebar Container - Aumentado z-index para z-[9999] no mobile */}
       <div 
         className={`
-          flex flex-col h-full bg-white border-r border-slate-200 transition-all duration-300 ease-in-out z-40
-          ${isMobile ? 'fixed inset-y-0 left-0 shadow-2xl' : 'relative'}
+          flex flex-col h-full bg-white border-r border-slate-200 transition-all duration-300 ease-in-out
+          ${isMobile ? 'fixed inset-y-0 left-0 shadow-2xl z-[9999]' : 'relative z-40'}
           ${isSidebarOpen ? 'w-64 translate-x-0' : isMobile ? '-translate-x-full w-64' : 'w-0 overflow-hidden'}
         `}
       >
