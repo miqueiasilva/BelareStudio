@@ -6,7 +6,7 @@ import {
     CheckCircle, DollarSign, FileText, Calendar as CalendarIcon, RefreshCw, User as UserIcon,
     ShoppingBag, Ban
 } from 'lucide-react';
-import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth, setHours, setMinutes } from 'date-fns';
+import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth, setHours, setMinutes, differenceInMinutes } from 'date-fns';
 import { pt } from 'date-fns/locale';
 
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional, LegacyService } from '../../types';
@@ -36,22 +36,22 @@ const getAppointmentStyle = (start: Date, end: Date) => {
     const endMinutes = end.getHours() * 60 + end.getMinutes();
     const top = (startMinutes - START_HOUR * 60) * PIXELS_PER_MINUTE;
     const height = (endMinutes - startMinutes) * PIXELS_PER_MINUTE;
-    return { top: `${top}px`, height: `${height - 4}px` };
+    return { top: `${top}px`, height: `${height - 2}px` };
 };
 
 const getStatusColor = (status: AppointmentStatus) => {
     switch (status) {
-        case 'concluido': return 'bg-green-100 border-green-300 text-green-800 hover:ring-green-400';
-        case 'bloqueado': return 'bg-slate-200 border-slate-300 text-slate-700 hover:ring-slate-400 pattern-diagonal-lines-sm pattern-slate-400 pattern-bg-slate-200';
-        case 'confirmado': return 'bg-cyan-100 border-cyan-300 text-cyan-800 hover:ring-cyan-400';
-        case 'confirmado_whatsapp': return 'bg-teal-100 border-teal-300 text-teal-800 hover:ring-teal-400';
-        case 'chegou': return 'bg-purple-100 border-purple-300 text-purple-800 hover:ring-purple-400';
-        case 'em_atendimento': return 'bg-indigo-100 border-indigo-300 text-indigo-800 hover:ring-indigo-400 animate-pulse';
-        case 'faltou': return 'bg-orange-100 border-orange-300 text-orange-800 hover:ring-orange-400';
-        case 'cancelado': return 'bg-rose-100 border-rose-300 text-rose-800 hover:ring-rose-400 line-through';
-        case 'em_espera': return 'bg-stone-100 border-stone-300 text-stone-700 hover:ring-stone-400';
+        case 'concluido': return 'bg-green-50 border-green-200 text-green-900';
+        case 'bloqueado': return 'bg-slate-100 border-slate-300 text-slate-500 pattern-diagonal-lines-sm pattern-slate-200 pattern-bg-slate-100 opacity-80';
+        case 'confirmado': return 'bg-cyan-50 border-cyan-200 text-cyan-900';
+        case 'confirmado_whatsapp': return 'bg-teal-50 border-teal-200 text-teal-900';
+        case 'chegou': return 'bg-purple-50 border-purple-200 text-purple-900';
+        case 'em_atendimento': return 'bg-indigo-50 border-indigo-200 text-indigo-900 animate-pulse';
+        case 'faltou': return 'bg-orange-50 border-orange-200 text-orange-900';
+        case 'cancelado': return 'bg-rose-50 border-rose-200 text-rose-800 opacity-60';
+        case 'em_espera': return 'bg-stone-50 border-stone-200 text-stone-900';
         case 'agendado':
-        default: return 'bg-blue-100 border-blue-300 text-blue-800 hover:ring-blue-400';
+        default: return 'bg-blue-50 border-blue-200 text-blue-900';
     }
 }
 
@@ -392,28 +392,38 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                         }}
                                     >
                                         {timeSlots.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
-                                        {filteredAppointments.filter(app => getColumnForAppointment(app, columns)?.id === col.id).map(app => (
-                                            <div
-                                                key={app.id}
-                                                ref={(el) => { appointmentRefs.current.set(app.id, el); }}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setActiveAppointmentDetail(app);
-                                                }}
-                                                className={`absolute w-[94%] left-1/2 -translate-x-1/2 rounded-2xl shadow-sm border p-2 cursor-pointer hover:scale-[1.01] transition-all z-10 overflow-hidden ${getStatusColor(app.status)}`}
-                                                style={getAppointmentStyle(app.start, app.end)}
-                                            >
-                                                <div style={{ backgroundColor: app.service.color }} className="absolute left-0 top-0 bottom-0 w-2 rounded-l-2xl"></div>
-                                                <div className="pl-2">
-                                                    <p className="font-black text-slate-900 text-sm whitespace-normal break-words leading-tight">
+                                        {filteredAppointments.filter(app => getColumnForAppointment(app, columns)?.id === col.id).map(app => {
+                                            const duration = differenceInMinutes(app.end, app.start);
+                                            const isShort = duration <= 30;
+                                            
+                                            return (
+                                                <div
+                                                    key={app.id}
+                                                    ref={(el) => { appointmentRefs.current.set(app.id, el); }}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setActiveAppointmentDetail(app);
+                                                    }}
+                                                    className={`absolute left-0 right-0 mx-1 rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer flex flex-col hover:shadow-md hover:brightness-95 transition-all z-10 overflow-hidden ${getStatusColor(app.status)}`}
+                                                    style={{ 
+                                                        ...getAppointmentStyle(app.start, app.end),
+                                                        borderLeftColor: app.service.color 
+                                                    }}
+                                                >
+                                                    <span className="text-[10px] font-bold opacity-70 leading-none mb-0.5">
+                                                        {format(app.start, 'HH:mm')}
+                                                    </span>
+                                                    <p className="font-bold text-slate-900 text-xs truncate leading-tight">
                                                         {app.client?.nome || (app.status === 'bloqueado' ? 'Bloqueado' : 'Cliente')}
                                                     </p>
-                                                    <p className="text-[11px] font-bold text-slate-600 whitespace-normal break-words leading-tight">
-                                                        {app.service.name}
-                                                    </p>
+                                                    {!isShort && (
+                                                        <p className="text-[10px] font-medium text-slate-600 truncate leading-tight mt-0.5">
+                                                            {app.service.name}
+                                                        </p>
+                                                    )}
                                                 </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 ))}
                                 <TimelineIndicator />
