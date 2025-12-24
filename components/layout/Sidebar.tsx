@@ -2,11 +2,12 @@
 import React from 'react';
 import { 
     Home, Calendar, MessageSquare, ShoppingCart, ClipboardList, ArrowRightLeft, Archive,
-    Star, Package, Users, Settings, BarChart, Globe, Banknote, LogOut
+    Star, Package, Users, Settings, BarChart, Globe, Banknote, LogOut, Briefcase
 } from 'lucide-react';
 import { ViewState, UserRole } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { hasAccess } from '../../utils/permissions';
+import { supabase } from '../../services/supabaseClient';
 
 interface SidebarProps {
     currentView: ViewState;
@@ -15,7 +16,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = '' }) => {
-    const { user, signOut } = useAuth();
+    const { user } = useAuth();
     
     const menuItems = [
         { id: 'dashboard', icon: Home, label: 'Página principal' },
@@ -24,6 +25,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         { id: 'whatsapp', icon: MessageSquare, label: 'WhatsApp' },
         { id: 'financeiro', icon: ArrowRightLeft, label: 'Fluxo de Caixa' },
         { id: 'clientes', icon: Users, label: 'Clientes' },
+        { id: 'equipe', icon: Briefcase, label: 'Equipe' }, // Added
         { id: 'relatorios', icon: BarChart, label: 'Relatórios' },
         { id: 'configuracoes', icon: Settings, label: 'Configurações' },
     ];
@@ -39,15 +41,29 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
 
     const handleNavigation = (e: React.MouseEvent, viewId: string) => {
         e.preventDefault();
-        onNavigate(viewId as ViewState);
+        onNavigate(viewId as any);
     };
 
-    const handleLogout = () => {
-        signOut();
+    const handleLogout = async () => {
+        const confirm = window.confirm("Deseja realmente sair do sistema?");
+        if (!confirm) return;
+
+        try {
+            await supabase.auth.signOut();
+            const url = localStorage.getItem('VITE_SUPABASE_URL');
+            const key = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
+            localStorage.clear();
+            sessionStorage.clear();
+            if (url) localStorage.setItem('VITE_SUPABASE_URL', url);
+            if (key) localStorage.setItem('VITE_SUPABASE_ANON_KEY', key);
+            window.location.href = '/'; 
+        } catch (error) {
+            console.error("Erro ao sair:", error);
+            window.location.href = '/';
+        }
     };
 
-    // Filter function based on permissions
-    const filterItems = (items: typeof menuItems) => {
+    const filterItems = (items: any[]) => {
         return items.filter(item => hasAccess(user?.papel as UserRole, item.id as ViewState));
     };
 
@@ -59,13 +75,13 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         const isActive = currentView === item.id;
         
         return (
-            <li key={item.label}>
+            <li key={item.id}>
                 <button 
                     onClick={(e) => handleNavigation(e, item.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${
                     isActive 
-                    ? 'bg-orange-100 text-orange-600' 
-                    : 'text-slate-600 hover:bg-slate-200'
+                    ? 'bg-orange-100 text-orange-600 shadow-sm border border-orange-200' 
+                    : 'text-slate-500 hover:bg-slate-100'
                 }`}>
                     <Icon className="w-5 h-5" />
                     <span>{item.label}</span>
@@ -76,49 +92,50 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
 
     return (
         <aside className={`bg-white border-r border-slate-200 flex flex-col h-full ${className}`}>
-            <div className="h-16 flex items-center px-4 gap-3 border-b border-slate-200 flex-shrink-0">
-                <div className="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center font-bold text-white text-xl shadow-sm shadow-orange-200">
+            <div className="h-16 flex items-center px-6 gap-3 border-b border-slate-100 flex-shrink-0">
+                <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center font-black text-white text-xl shadow-lg shadow-orange-100">
                     B
                 </div>
                 <div>
-                    <h1 className="font-bold text-slate-800 text-md leading-tight">BelaApp</h1>
-                    <p className="text-[10px] text-slate-500 font-medium">Studio {user?.nome?.split(' ')[0] || 'Beleza'}</p>
+                    <h1 className="font-black text-slate-800 text-base leading-tight tracking-tight">BelaApp</h1>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Painel Administrativo</p>
                 </div>
             </div>
             
-            <nav className="flex-1 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-slate-200">
-                <div className="mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider px-3 mt-2">Principal</div>
-                <ul className="space-y-0.5">
+            <nav className="flex-1 overflow-y-auto p-4 scrollbar-hide">
+                <div className="mb-2 text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] px-3 mt-2">Principal</div>
+                <ul className="space-y-1">
                     {filteredMenu.map(renderItem)}
                 </ul>
 
                 {filteredSecondary.length > 0 && (
                     <>
-                        <div className="mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider px-3 mt-6">Operacional</div>
-                        <ul className="space-y-0.5">
+                        <div className="mb-2 text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] px-3 mt-8">Operacional</div>
+                        <ul className="space-y-1">
                             {filteredSecondary.map(renderItem)}
                         </ul>
                     </>
                 )}
             </nav>
 
-            <div className="p-4 border-t border-slate-200 bg-slate-50">
-                <div className="flex items-center gap-3 w-full p-2 rounded-lg text-slate-600">
+            <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+                <div className="flex items-center gap-3 w-full p-3 rounded-2xl bg-white border border-slate-100 shadow-sm">
                     <img 
-                        src={user?.avatar_url || `https://ui-avatars.com/api/?name=${user?.nome || 'User'}`} 
+                        src={user?.avatar_url || `https://ui-avatars.com/api/?name=${user?.nome || 'User'}&background=random`} 
                         alt="User" 
-                        className="w-9 h-9 rounded-full border border-slate-300"
+                        className="w-10 h-10 rounded-full border-2 border-orange-100 shadow-sm object-cover"
                     />
                     <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-slate-700 truncate">{user?.nome || 'Usuário'}</p>
-                        <p className="text-xs text-slate-500 capitalize">{user?.papel || 'Visitante'}</p>
+                        <p className="text-sm font-black text-slate-700 truncate leading-none mb-1">{user?.nome || 'Usuário'}</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase truncate">{user?.papel || 'Visitante'}</p>
                     </div>
+                    
                     <button 
                         onClick={handleLogout}
-                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors group" 
+                        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all cursor-pointer flex-shrink-0" 
                         title="Sair do Sistema"
                     >
-                        <LogOut size={20} className="group-hover:scale-110 transition-transform" />
+                        <LogOut size={20} />
                     </button>
                 </div>
             </div>

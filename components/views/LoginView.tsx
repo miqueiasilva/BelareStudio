@@ -1,11 +1,10 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Loader2, Lock, Mail, Eye, EyeOff, ArrowRight, CheckCircle2, XCircle, User, ArrowLeft, Send } from 'lucide-react';
+import { Loader2, Eye, EyeOff, Mail, Lock, ArrowRight, XCircle, CheckCircle2 } from 'lucide-react';
 
 type AuthMode = 'login' | 'register' | 'forgot';
 
-// Google Icon SVG
 const GoogleIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -18,26 +17,19 @@ const GoogleIcon = () => (
 const LoginView: React.FC = () => {
     const { signIn, signUp, resetPassword, signInWithGoogle } = useAuth();
     
-    // Form State
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [name, setName] = useState(''); // For registration
+    const [name, setName] = useState('');
     
-    // UI State
     const [mode, setMode] = useState<AuthMode>('login');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [showPassword, setShowPassword] = useState(false);
 
-    const resetForm = () => {
+    const handleModeChange = (newMode: AuthMode) => {
         setError(null);
         setSuccessMessage(null);
-        setPassword('');
-    };
-
-    const handleModeChange = (newMode: AuthMode) => {
-        resetForm();
         setMode(newMode);
     };
 
@@ -48,8 +40,7 @@ const LoginView: React.FC = () => {
             const { error } = await signInWithGoogle();
             if (error) throw error;
         } catch (err: any) {
-            console.error(err);
-            setError("Erro ao conectar com Google. Verifique a configuração do Supabase.");
+            setError("Falha na autenticação com Google.");
             setIsLoading(false);
         }
     };
@@ -67,178 +58,180 @@ const LoginView: React.FC = () => {
             } else if (mode === 'register') {
                 const { error } = await signUp(email, password, name);
                 if (error) throw error;
-                setSuccessMessage("Conta criada! Verifique seu e-mail para confirmar.");
+                setSuccessMessage("Conta criada! Verifique seu e-mail.");
             } else if (mode === 'forgot') {
                 const { error } = await resetPassword(email);
                 if (error) throw error;
-                setSuccessMessage("Link de recuperação enviado para o e-mail.");
+                setSuccessMessage("Instruções enviadas para seu e-mail.");
             }
         } catch (err: any) {
-            console.error(err);
             setError(err.message === "Invalid login credentials" ? "E-mail ou senha incorretos." : err.message);
         } finally {
             setIsLoading(false);
         }
     };
 
-    const getTitle = () => {
-        switch (mode) {
-            case 'register': return 'Criar Conta';
-            case 'forgot': return 'Recuperar Senha';
-            default: return 'BelaApp';
-        }
-    };
-
     return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-900 relative overflow-hidden">
-            {/* Background */}
-            <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0">
-                <div className="absolute -top-32 -left-32 w-96 h-96 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
-                <div className="absolute top-0 -right-32 w-96 h-96 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
-                <div className="absolute -bottom-32 left-20 w-96 h-96 bg-pink-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
-            </div>
+        <div className="min-h-screen bg-[#0f1219] flex items-center justify-center p-6 font-sans relative overflow-hidden">
+            {/* Background Decorative Blurs */}
+            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 rounded-full blur-[120px]"></div>
+            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/20 rounded-full blur-[120px]"></div>
 
-            <div className="w-full max-w-md p-8 relative z-10">
-                <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl p-8">
-                    
-                    <div className="text-center mb-6">
-                        <div className="w-16 h-16 bg-gradient-to-tr from-orange-400 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-                            <span className="text-white font-bold text-3xl">B</span>
+            <div className="w-full max-w-[420px] bg-[#1a1e26]/80 backdrop-blur-xl rounded-[32px] p-8 md:p-10 shadow-2xl border border-white/5 relative z-10">
+                
+                {/* Logo Section */}
+                <div className="text-center mb-8">
+                    <div className="w-16 h-16 bg-gradient-to-tr from-orange-500 to-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-500/20 transition-transform hover:scale-105 duration-300">
+                        <span className="text-white font-black text-3xl">B</span>
+                    </div>
+                    <h1 className="text-3xl font-bold text-white tracking-tight">BelaApp</h1>
+                    <p className="text-slate-400 mt-2 text-sm font-medium">Gestão Inteligente para Estúdios de Beleza</p>
+                </div>
+
+                {/* Social Login */}
+                <div className="space-y-4">
+                    <button
+                        type="button"
+                        onClick={handleGoogleLogin}
+                        disabled={isLoading}
+                        className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 font-bold py-3.5 rounded-xl hover:bg-slate-100 transition-all active:scale-[0.98] disabled:opacity-50"
+                    >
+                        <GoogleIcon />
+                        <span>Entrar com Google</span>
+                    </button>
+
+                    <div className="relative flex items-center py-4">
+                        <div className="flex-grow border-t border-white/5"></div>
+                        <span className="flex-shrink-0 mx-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">ou via e-mail</span>
+                        <div className="flex-grow border-t border-white/5"></div>
+                    </div>
+                </div>
+
+                {/* Feedback Messages */}
+                {error && (
+                    <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold flex items-center gap-3 rounded-xl animate-in fade-in slide-in-from-top-2">
+                        <XCircle size={16} />
+                        {error}
+                    </div>
+                )}
+                {successMessage && (
+                    <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold flex items-center gap-3 rounded-xl animate-in fade-in slide-in-from-top-2">
+                        <CheckCircle2 size={16} />
+                        {successMessage}
+                    </div>
+                )}
+
+                {/* Form */}
+                <form onSubmit={handleSubmit} className="space-y-5">
+                    {mode === 'register' && (
+                        <div>
+                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Nome Completo</label>
+                            <div className="relative group">
+                                <input
+                                    type="text"
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    className="w-full bg-[#242936] border border-white/5 rounded-xl pl-4 pr-4 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all"
+                                    placeholder="Seu nome"
+                                    required={mode === 'register'}
+                                />
+                            </div>
                         </div>
-                        <h1 className="text-2xl font-bold text-white mb-2">{getTitle()}</h1>
-                        {mode === 'login' && <p className="text-slate-300 text-sm">Gestão Inteligente para Estúdios de Beleza</p>}
+                    )}
+
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">E-mail</label>
+                        <div className="relative group">
+                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-orange-400 transition-colors" size={18} />
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                className="w-full bg-[#242936] border border-white/5 rounded-xl pl-12 pr-4 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all"
+                                placeholder="seu@email.com"
+                                required
+                            />
+                        </div>
                     </div>
 
-                    <div className="space-y-5">
-                        {error && (
-                            <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-xl text-red-200 text-sm flex items-center gap-2">
-                                <XCircle className="w-4 h-4 flex-shrink-0" />
-                                {error}
+                    {mode !== 'forgot' && (
+                        <div>
+                            <div className="flex justify-between items-center mb-2 ml-1">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Senha</label>
                             </div>
-                        )}
-                        {successMessage && (
-                            <div className="p-3 bg-green-500/10 border border-green-500/50 rounded-xl text-green-200 text-sm flex items-center gap-2">
-                                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                                {successMessage}
-                            </div>
-                        )}
-
-                        {/* Google Button */}
-                        {(mode === 'login' || mode === 'register') && (
-                            <>
+                            <div className="relative group">
+                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-orange-400 transition-colors" size={18} />
+                                <input
+                                    type={showPassword ? "text" : "password"}
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="w-full bg-[#242936] border border-white/5 rounded-xl pl-12 pr-12 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all"
+                                    placeholder="••••••••"
+                                    required={mode !== 'forgot'}
+                                    minLength={6}
+                                />
                                 <button
                                     type="button"
-                                    onClick={handleGoogleLogin}
-                                    disabled={isLoading}
-                                    className="w-full flex items-center justify-center gap-3 bg-white text-slate-700 font-bold py-3.5 rounded-xl hover:bg-slate-50 transition-all shadow-sm active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute inset-y-0 right-4 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
                                 >
-                                    {isLoading ? <Loader2 className="animate-spin w-5 h-5 text-slate-400"/> : <GoogleIcon />}
-                                    <span>{mode === 'login' ? 'Entrar com Google' : 'Cadastrar com Google'}</span>
+                                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                                 </button>
-
-                                <div className="relative flex items-center py-2">
-                                    <div className="flex-grow border-t border-slate-600/50"></div>
-                                    <span className="flex-shrink-0 mx-4 text-xs font-semibold text-slate-400 uppercase">ou via e-mail</span>
-                                    <div className="flex-grow border-t border-slate-600/50"></div>
-                                </div>
-                            </>
-                        )}
-
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            {mode === 'register' && (
-                                <div className="space-y-1">
-                                    <label className="text-xs font-semibold text-slate-300 uppercase ml-1">Nome</label>
-                                    <div className="relative">
-                                        <User className="absolute left-3 top-3.5 h-5 w-5 text-slate-400" />
-                                        <input
-                                            type="text"
-                                            value={name}
-                                            onChange={(e) => setName(e.target.value)}
-                                            className="block w-full pl-10 pr-3 py-3 bg-slate-800/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
-                                            placeholder="Seu Nome"
-                                            required={mode === 'register'}
-                                        />
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="space-y-1">
-                                <label className="text-xs font-semibold text-slate-300 uppercase ml-1">E-mail</label>
-                                <div className="relative">
-                                    <Mail className="absolute left-3 top-3.5 h-5 w-5 text-slate-400" />
-                                    <input
-                                        type="email"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        className="block w-full pl-10 pr-3 py-3 bg-slate-800/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
-                                        placeholder="seu@email.com"
-                                        required
-                                    />
-                                </div>
                             </div>
-
-                            {(mode === 'login' || mode === 'register') && (
-                                <div className="space-y-1">
-                                    <label className="text-xs font-semibold text-slate-300 uppercase ml-1">Senha</label>
-                                    <div className="relative">
-                                        <Lock className="absolute left-3 top-3.5 h-5 w-5 text-slate-400" />
-                                        <input
-                                            type={showPassword ? "text" : "password"}
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
-                                            className="block w-full pl-10 pr-10 py-3 bg-slate-800/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
-                                            placeholder="••••••"
-                                            required
-                                            minLength={6}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowPassword(!showPassword)}
-                                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white"
-                                        >
-                                            {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-
                             {mode === 'login' && (
-                                <div className="flex justify-end text-sm">
-                                    <button type="button" onClick={() => handleModeChange('forgot')} className="text-orange-400 hover:text-orange-300">
+                                <div className="flex justify-end mt-3">
+                                    <button 
+                                        type="button" 
+                                        onClick={() => handleModeChange('forgot')} 
+                                        className="text-xs font-bold text-orange-400 hover:text-orange-300 transition-colors"
+                                    >
                                         Esqueceu a senha?
                                     </button>
                                 </div>
                             )}
-
-                            <button
-                                type="submit"
-                                disabled={isLoading}
-                                className="w-full flex justify-center items-center gap-2 py-3.5 px-4 rounded-xl shadow-lg text-sm font-bold text-white bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 transition-all active:scale-95 disabled:opacity-70"
-                            >
-                                {isLoading ? (
-                                    <Loader2 className="animate-spin h-5 w-5" />
-                                ) : (
-                                    <>
-                                        {mode === 'login' && <>Entrar <ArrowRight className="h-5 w-5" /></>}
-                                        {mode === 'register' && <>Criar Conta <CheckCircle2 className="h-5 w-5" /></>}
-                                        {mode === 'forgot' && <>Enviar Link <Send className="h-4 w-4" /></>}
-                                    </>
-                                )}
-                            </button>
-                        </form>
-                        
-                        <div className="flex justify-center mt-4">
-                            {mode === 'login' ? (
-                                <p className="text-sm text-slate-400">
-                                    Não tem conta? <button type="button" onClick={() => handleModeChange('register')} className="text-white font-bold hover:underline">Cadastre-se</button>
-                                </p>
-                            ) : (
-                                <button type="button" onClick={() => handleModeChange('login')} className="text-sm text-slate-400 flex items-center gap-1 hover:text-white">
-                                    <ArrowLeft className="w-4 h-4" /> Voltar para login
-                                </button>
-                            )}
                         </div>
-                    </div>
+                    )}
+
+                    <button
+                        type="submit"
+                        disabled={isLoading}
+                        className="w-full bg-gradient-to-r from-orange-500 to-rose-500 text-white font-black py-4 rounded-xl shadow-lg shadow-orange-500/20 hover:opacity-90 transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-3 mt-4"
+                    >
+                        {isLoading ? (
+                            <Loader2 className="animate-spin h-5 w-5" />
+                        ) : (
+                            <>
+                                <span>{mode === 'login' ? 'Entrar' : mode === 'register' ? 'Criar Conta' : 'Redefinir Senha'}</span>
+                                <ArrowRight size={20} />
+                            </>
+                        )}
+                    </button>
+                </form>
+
+                {/* Footer Links */}
+                <div className="mt-8 text-center">
+                    {mode === 'login' ? (
+                        <p className="text-sm text-slate-500 font-medium">
+                            Não tem conta?{' '}
+                            <button type="button" onClick={() => handleModeChange('register')} className="text-white font-bold hover:underline">
+                                Cadastre-se
+                            </button>
+                        </p>
+                    ) : (
+                        <button 
+                            type="button" 
+                            onClick={() => handleModeChange('login')} 
+                            className="text-sm text-white font-bold hover:underline inline-flex items-center gap-2"
+                        >
+                            Voltar para o Login
+                        </button>
+                    )}
+                </div>
+
+                <div className="mt-10 text-center opacity-30">
+                    <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">
+                        BelaApp &copy; 2025 &bull; Todos os direitos reservados
+                    </p>
                 </div>
             </div>
         </div>

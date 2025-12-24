@@ -21,6 +21,7 @@ import ComandasView from './components/views/ComandasView';
 import CaixaView from './components/views/CaixaView';
 import ProdutosView from './components/views/ProdutosView';
 import ServicosView from './components/views/ServicosView';
+import EquipeView from './components/views/EquipeView';
 import PublicBookingPreview from './components/views/PublicBookingPreview';
 
 import { mockTransactions } from './data/mockData';
@@ -32,47 +33,46 @@ const AppContent: React.FC = () => {
   const [hash, setHash] = useState(window.location.hash);
   const [pathname, setPathname] = useState(window.location.pathname);
 
-  // Router listener
   useEffect(() => {
-    const handleHashChange = () => setHash(window.location.hash);
-    window.addEventListener('hashchange', handleHashChange);
-    // Pathname might change if Vercel redirects for reset password
-    setPathname(window.location.pathname);
+    const handleHashChange = () => {
+      const newHash = window.location.hash;
+      setHash(newHash);
+      
+      // Se voltar para a raiz, garante o Dashboard
+      if (newHash === '' || newHash === '#/') {
+        setCurrentView('dashboard');
+      }
+    };
     
+    window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Handle Loading State
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-slate-500 font-medium">Carregando BelaApp...</p>
+          <p className="text-slate-500 font-medium font-sans">Carregando BelaApp...</p>
         </div>
       </div>
     );
   }
 
-  // --- PUBLIC & AUTH ROUTES ---
-  
-  // Public Booking Page
+  // Se estiver na pré-visualização pública
   if (hash === '#/public-preview') {
     return <PublicBookingPreview />;
   }
 
-  // Password Reset Flow (Priority over login)
+  // Redefinição de senha
   if (pathname === '/reset-password' || hash === '#/reset-password') {
     return <ResetPasswordView />;
   }
 
-  // --- AUTHENTICATION CHECK ---
-  
+  // Se não estiver logado, vai para login
   if (!user) {
     return <LoginView />;
   }
-
-  // --- PROTECTED APP ---
 
   const handleAddTransaction = (t: FinancialTransaction) => {
     setTransactions(prev => [t, ...prev]);
@@ -112,6 +112,7 @@ const AppContent: React.FC = () => {
         window.location.hash = '/public-preview';
         return null;
       default:
+        if ((currentView as string) === 'equipe') return <EquipeView />;
         return <DashboardView onNavigate={setCurrentView} />;
     }
   };

@@ -26,21 +26,18 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Helper to fetch extra profile data from 'public.profiles'
-  // Designed to NOT crash if the table doesn't exist yet
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('full_name, papel, avatar_url')
         .eq('id', authUser.id)
-        .maybeSingle(); // Use maybeSingle to avoid errors if 0 rows
+        .maybeSingle();
 
       if (error || !data) {
-        // Fallback: Use metadata if profile table row is missing
         return {
             ...authUser,
-            papel: 'admin', // Default role for first user/fallback
+            papel: 'admin',
             nome: authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
             avatar_url: authUser.user_metadata?.avatar_url
         };
@@ -53,7 +50,6 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         avatar_url: data.avatar_url || authUser.user_metadata?.avatar_url
       };
     } catch (e) {
-      // Ultimate fallback
       return { ...authUser, papel: 'admin', nome: 'Usuário' };
     }
   };
@@ -61,16 +57,26 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    // 1. Check active session
     const getInitialSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          // FIX: Se o refresh token falhar, limpa a sessão para evitar erro persistente
+          if (error.message.includes('Refresh Token Not Found') || error.message.includes('refresh_token_not_found')) {
+             console.warn("Sessão inválida detectada, limpando armazenamento...");
+             await supabase.auth.signOut();
+             if (mounted) setUser(null);
+          }
+          throw error;
+        }
+
         if (session?.user && mounted) {
           const appUser = await fetchProfile(session.user);
           setUser(appUser);
         }
       } catch (error) {
-        console.error("Auth init error:", error);
+        console.error("Erro na inicialização da sessão:", error);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -78,7 +84,6 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
 
     getInitialSession();
 
-    // 2. Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         const appUser = await fetchProfile(session.user);
@@ -105,7 +110,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         email, 
         password,
         options: {
-            data: { full_name: name } // This metadata triggers the profile creation in SQL if configured
+            data: { full_name: name }
         }
     });
   };
@@ -115,10 +120,6 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/`,
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
-        },
       },
     });
   };
