@@ -113,6 +113,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
     const periodDropdownRef = useRef<HTMLDivElement>(null);
+    const isMounted = useRef(true);
+
+    useEffect(() => {
+        isMounted.current = true;
+        fetchResources();
+        return () => {
+            isMounted.current = false;
+        };
+    }, []);
 
     const fetchResources = async () => {
         try {
@@ -122,7 +131,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 .order('name');
             
             if (error) throw error;
-            if (data) {
+            if (data && isMounted.current) {
                 const mapped = data.map((p: any) => ({
                     id: p.id,
                     name: p.name,
@@ -137,11 +146,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     };
 
     const fetchAppointments = async () => {
+        if (!isMounted.current) return;
         setIsLoadingData(true);
         try {
             const { data, error } = await supabase.from('appointments').select('*');
             if (error) throw error;
-            if (data) {
+            if (data && isMounted.current) {
                 const mappedAppointments: LegacyAppointment[] = data.map(row => {
                     const startTime = new Date(row.date); 
                     const duration = row.duration || row.duration_min || 30;
@@ -171,13 +181,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         } catch (e) {
             console.error("Error fetching appointments:", e);
         } finally {
-            setIsLoadingData(false);
+            if (isMounted.current) setIsLoadingData(false);
         }
     };
-
-    useEffect(() => {
-        fetchResources();
-    }, []);
 
     useEffect(() => {
         if (resources.length > 0) fetchAppointments();
@@ -210,7 +216,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         return [];
     }, [viewType, periodType, currentDate, resources]);
 
-    // AJUSTE: Largura mínima aumentada para 220px para evitar sobreposição e compressão visual
     const gridStyle = useMemo(() => {
         const colsCount = columns.length || 1;
         return { gridTemplateColumns: `60px repeat(${colsCount}, minmax(220px, 1fr))` };
@@ -278,18 +283,22 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             } else {
                 const { data, error } = await supabase.from('appointments').insert([payload]).select();
                 if (error) throw error;
-                if (data && data[0]) {
+                if (data && data[0] && isMounted.current) {
                     setAppointments(prev => prev.map(p => p.id === tempId ? { ...optimisticItem, id: data[0].id } : p));
                 }
             }
             
-            setToast({ message: 'Agendamento salvo com sucesso!', type: 'success' });
-            setTimeout(() => fetchAppointments(), 1000); 
+            if (isMounted.current) setToast({ message: 'Agendamento salvo com sucesso!', type: 'success' });
+            setTimeout(() => {
+                if (isMounted.current) fetchAppointments();
+            }, 1000); 
 
         } catch (error: any) {
             console.error("Erro ao salvar agendamento:", error);
-            setToast({ message: `Erro ao salvar no banco: ${error.message}`, type: 'error' });
-            fetchAppointments(); 
+            if (isMounted.current) {
+                setToast({ message: `Erro ao salvar no banco: ${error.message}`, type: 'error' });
+                fetchAppointments(); 
+            }
         }
     };
 
@@ -480,7 +489,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     onSave={(t) => {
                         onAddTransaction(t);
                         setModalState(null);
-                        setToast({ message: 'Venda registrada com sucesso!', type: 'success' });
+                        if (isMounted.current) setToast({ message: 'Venda registrada com sucesso!', type: 'success' });
                     }}
                 />
             )}
@@ -494,13 +503,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     onDelete={async (id) => { 
                         setAppointments(prev => prev.filter(p => p.id !== id));
                         await supabase.from('appointments').delete().eq('id', id); 
-                        setActiveAppointmentDetail(null); 
-                        setToast({ message: 'Agendamento removido.', type: 'info' });
+                        if (isMounted.current) {
+                            setActiveAppointmentDetail(null); 
+                            setToast({ message: 'Agendamento removido.', type: 'info' });
+                        }
                     }} 
                     onUpdateStatus={async (id, status) => { 
                         setAppointments(prev => prev.map(p => p.id === id ? { ...p, status } : p));
                         await supabase.from('appointments').update({ status }).eq('id', id); 
-                        setActiveAppointmentDetail(null); 
+                        if (isMounted.current) setActiveAppointmentDetail(null); 
                     }} 
                 />
             )}

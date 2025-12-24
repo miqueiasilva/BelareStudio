@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
     Plus, Users, Loader2, Search, ArrowRight, User as UserIcon, 
     Briefcase, ShieldCheck, ShieldAlert 
@@ -16,8 +16,10 @@ const EquipeView: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedProf, setSelectedProf] = useState<LegacyProfessional | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+    const isMounted = useRef(true);
 
     const fetchProfessionals = async () => {
+        if (!isMounted.current) return;
         setLoading(true);
         try {
             const { data, error } = await supabase
@@ -26,16 +28,20 @@ const EquipeView: React.FC = () => {
                 .order('name', { ascending: true });
             
             if (error) throw error;
-            setProfessionals(data || []);
+            if (isMounted.current) setProfessionals(data || []);
         } catch (error: any) {
-            setToast({ message: `Erro ao carregar equipe: ${error.message}`, type: 'error' });
+            if (isMounted.current) setToast({ message: `Erro ao carregar equipe: ${error.message}`, type: 'error' });
         } finally {
-            setLoading(false);
+            if (isMounted.current) setLoading(false);
         }
     };
 
     useEffect(() => {
+        isMounted.current = true;
         fetchProfessionals();
+        return () => {
+            isMounted.current = false;
+        };
     }, []);
 
     const handleCreateNew = async () => {
@@ -59,11 +65,13 @@ const EquipeView: React.FC = () => {
             
             if (error) throw error;
             
-            setSelectedProf(data as any);
-            setToast({ message: 'Rascunho de colaborador criado!', type: 'success' });
-            fetchProfessionals();
+            if (isMounted.current) {
+                setSelectedProf(data as any);
+                setToast({ message: 'Rascunho de colaborador criado!', type: 'success' });
+                fetchProfessionals();
+            }
         } catch (error: any) {
-            setToast({ message: `Erro ao criar: ${error.message}`, type: 'error' });
+            if (isMounted.current) setToast({ message: `Erro ao criar: ${error.message}`, type: 'error' });
         }
     };
 
@@ -75,10 +83,12 @@ const EquipeView: React.FC = () => {
                 .eq('id', id);
             
             if (error) throw error;
-            setProfessionals(prev => prev.map(p => p.id === id ? { ...p, active: !currentStatus } : p));
-            setToast({ message: `Profissional ${!currentStatus ? 'ativado' : 'desativado'}.`, type: 'success' });
+            if (isMounted.current) {
+                setProfessionals(prev => prev.map(p => p.id === id ? { ...p, active: !currentStatus } : p));
+                setToast({ message: `Profissional ${!currentStatus ? 'ativado' : 'desativado'}.`, type: 'success' });
+            }
         } catch (error: any) {
-            setToast({ message: 'Erro ao atualizar status.', type: 'error' });
+            if (isMounted.current) setToast({ message: 'Erro ao atualizar status.', type: 'error' });
         }
     };
 
@@ -87,12 +97,16 @@ const EquipeView: React.FC = () => {
             <ProfessionalDetail 
                 professional={selectedProf}
                 onBack={() => {
-                    setSelectedProf(null);
-                    fetchProfessionals();
+                    if (isMounted.current) {
+                        setSelectedProf(null);
+                        fetchProfessionals();
+                    }
                 }}
                 onSave={() => {
-                    setSelectedProf(null);
-                    fetchProfessionals();
+                    if (isMounted.current) {
+                        setSelectedProf(null);
+                        fetchProfessionals();
+                    }
                 }}
             />
         );
