@@ -3,7 +3,8 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     ChevronLeft, ChevronRight, Plus, Lock, MessageSquare, 
     Share2, Bell, RotateCcw, ChevronDown, List, Clock, 
-    CheckCircle, DollarSign, FileText, Calendar as CalendarIcon, RefreshCw, User as UserIcon
+    CheckCircle, DollarSign, FileText, Calendar as CalendarIcon, RefreshCw, User as UserIcon,
+    ShoppingBag, Ban
 } from 'lucide-react';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth, setHours, setMinutes } from 'date-fns';
 import { pt } from 'date-fns/locale';
@@ -101,6 +102,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
     const [isJaciBotOpen, setIsJaciBotOpen] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+    
+    // Estado para o Menu de Seleção (Popover)
+    const [selectionMenu, setSelectionMenu] = useState<{ 
+        x: number, 
+        y: number, 
+        time: Date, 
+        professional: LegacyProfessional 
+    } | null>(null);
 
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
     const periodDropdownRef = useRef<HTMLDivElement>(null);
@@ -248,6 +257,32 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     };
 
+    // --- LOGICA DO MENU DE SELEÇÃO ---
+    const handleGridClick = (e: React.MouseEvent, professional: LegacyProfessional, colDate?: Date) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const offsetY = e.clientY - rect.top;
+        
+        // Calcula o horário baseado no clique
+        const minutes = (offsetY / PIXELS_PER_MINUTE);
+        const totalMinutesFromDayStart = (START_HOUR * 60) + minutes;
+        
+        // Arredonda para blocos de 15 minutos para melhor UX
+        const roundedMinutes = Math.round(totalMinutesFromDayStart / 15) * 15;
+        
+        const targetDate = new Date(colDate || currentDate);
+        targetDate.setHours(Math.floor(roundedMinutes / 60));
+        targetDate.setMinutes(roundedMinutes % 60);
+        targetDate.setSeconds(0);
+        targetDate.setMilliseconds(0);
+
+        setSelectionMenu({
+            x: e.clientX,
+            y: e.clientY,
+            time: targetDate,
+            professional
+        });
+    };
+
     return (
         <div className="flex h-full bg-white relative flex-col overflow-visible font-sans">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -302,13 +337,27 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                     {timeSlots.map(time => <div key={time} className="h-20 text-right pr-3 text-[11px] text-slate-400 font-bold pt-2 border-b border-slate-50/50 border-dashed"><span>{time}</span></div>)}
                                 </div>
                                 {columns.map((col, idx) => (
-                                    <div key={col.id} className={`relative border-r border-slate-200 min-h-[1000px] ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/10'}`}>
-                                        {timeSlots.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed"></div>)}
+                                    <div 
+                                        key={col.id} 
+                                        className={`relative border-r border-slate-200 min-h-[1000px] cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/10'}`}
+                                        onClick={(e) => {
+                                            // Se clicar no fundo da coluna (espaço vazio)
+                                            if (e.target === e.currentTarget) {
+                                                const prof = col.type === 'professional' ? col.data : resources[0];
+                                                const date = col.type === 'date' ? col.data : currentDate;
+                                                handleGridClick(e, prof, date);
+                                            }
+                                        }}
+                                    >
+                                        {timeSlots.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
                                         {filteredAppointments.filter(app => getColumnForAppointment(app, columns)?.id === col.id).map(app => (
                                             <div
                                                 key={app.id}
                                                 ref={(el) => { appointmentRefs.current.set(app.id, el); }}
-                                                onClick={() => setActiveAppointmentDetail(app)}
+                                                onClick={(e) => {
+                                                    e.stopPropagation(); // Previne clique no fundo da grade
+                                                    setActiveAppointmentDetail(app);
+                                                }}
                                                 className={`absolute w-[94%] left-1/2 -translate-x-1/2 rounded-2xl shadow-sm border p-2 cursor-pointer hover:scale-[1.01] transition-all z-10 ${getStatusColor(app.status)}`}
                                                 style={getAppointmentStyle(app.start, app.end)}
                                             >
@@ -328,7 +377,63 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 </div>
             </div>
 
+            {/* MODAL DE SELEÇÃO (POPOVER) */}
+            {selectionMenu && (
+                <>
+                    {/* Overlay invisível para fechar ao clicar fora */}
+                    <div className="fixed inset-0 z-[100]" onClick={() => setSelectionMenu(null)} />
+                    <div 
+                        className="fixed z-[101] bg-white rounded-2xl shadow-2xl border border-slate-100 w-64 py-2 animate-in fade-in zoom-in-95 duration-150 overflow-hidden"
+                        style={{ 
+                            top: Math.min(selectionMenu.y, window.innerHeight - 200), 
+                            left: Math.min(selectionMenu.x, window.innerWidth - 260) 
+                        }}
+                    >
+                        <div className="px-4 py-2 border-b border-slate-50 mb-1">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Opções para as {format(selectionMenu.time, 'HH:mm')}</p>
+                        </div>
+                        <button 
+                            onClick={() => {
+                                setModalState({ type: 'appointment', data: { start: selectionMenu.time, professional: selectionMenu.professional } });
+                                setSelectionMenu(null);
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"
+                        >
+                            <div className="p-1.5 bg-orange-100 rounded-lg text-orange-600">
+                                <CalendarIcon size={16} />
+                            </div>
+                            Novo Agendamento
+                        </button>
+                        <button 
+                            onClick={() => {
+                                console.log('Nova Venda direta iniciada');
+                                setSelectionMenu(null);
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-green-50 hover:text-green-600 transition-colors"
+                        >
+                            <div className="p-1.5 bg-green-100 rounded-lg text-green-600">
+                                <ShoppingBag size={16} />
+                            </div>
+                            Nova Venda
+                        </button>
+                        <button 
+                            onClick={() => {
+                                setModalState({ type: 'block', data: { start: selectionMenu.time, professional: selectionMenu.professional } });
+                                setSelectionMenu(null);
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                        >
+                            <div className="p-1.5 bg-rose-100 rounded-lg text-rose-600">
+                                <Ban size={16} />
+                            </div>
+                            Bloqueio de Horário
+                        </button>
+                    </div>
+                </>
+            )}
+
             {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />}
+            {modalState?.type === 'block' && <BlockTimeModal professional={modalState.data.professional} startTime={modalState.data.start} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />}
             {activeAppointmentDetail && <AppointmentDetailPopover appointment={activeAppointmentDetail} targetElement={appointmentRefs.current.get(activeAppointmentDetail.id) || null} onClose={() => setActiveAppointmentDetail(null)} onEdit={(app) => setModalState({ type: 'appointment', data: app })} onDelete={async (id) => { await supabase.from('appointments').delete().eq('id', id); fetchAppointments(); setActiveAppointmentDetail(null); }} onUpdateStatus={async (id, status) => { await supabase.from('appointments').update({ status }).eq('id', id); fetchAppointments(); setActiveAppointmentDetail(null); }} />}
             <JaciBotPanel isOpen={isJaciBotOpen} onClose={() => setIsJaciBotOpen(false)} />
             <div className="fixed bottom-8 right-8 z-[70]"><button onClick={() => setIsJaciBotOpen(true)} className="w-16 h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all"><MessageSquare className="w-8 h-8" /></button></div>
