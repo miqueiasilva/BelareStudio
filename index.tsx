@@ -1,3 +1,7 @@
+/**
+ * BelaApp - Versão Gold Master (Estável)
+ * Status: Rollback concluído com sucesso.
+ */
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
