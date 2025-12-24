@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { services, mockOnlineConfig } from '../../data/mockData';
 import { 
     ChevronLeft, Calendar, Clock, Check, Star, 
@@ -10,22 +10,13 @@ import { pt } from 'date-fns/locale';
 import { supabase } from '../../services/supabaseClient';
 import { LegacyService } from '../../types';
 
-// --- Configuration ---
-
-const PROFISSIONAIS = [
-  { id: '1', title: 'Jacilene Félix', avatar: 'https://i.pravatar.cc/150?img=1', role: 'Especialista' },
-  { id: '2', title: 'Graziela Oliveira', avatar: 'https://i.pravatar.cc/150?img=5', role: 'Especialista' },
-  { id: '3', title: 'Jéssica Félix', avatar: 'https://i.pravatar.cc/150?img=9', role: 'Designer' },
-  { id: '4', title: 'Glezia', avatar: 'https://i.pravatar.cc/150?img=4', role: 'Manicure' },
-  { id: '5', title: 'Elda Priscila', avatar: 'https://i.pravatar.cc/150?img=12', role: 'Esteticista' },
-  { id: '6', title: 'Herlon', avatar: 'https://i.pravatar.cc/150?img=11', role: 'Cabeleireiro' }
-];
-
 type Step = 'service' | 'professional' | 'datetime' | 'form' | 'success';
 
 const PublicBookingPreview: React.FC = () => {
     // --- State ---
     const [step, setStep] = useState<Step>('service');
+    const [professionalsList, setProfessionalsList] = useState<any[]>([]);
+    const [isLoadingStaff, setIsLoadingStaff] = useState(true);
     const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
     const [selectedProfessionalId, setSelectedProfessionalId] = useState<string | null>(null);
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -38,6 +29,28 @@ const PublicBookingPreview: React.FC = () => {
         'Sobrancelhas': true,
         'Geral': true
     });
+
+    // --- Data Fetching ---
+    useEffect(() => {
+        const fetchRealStaff = async () => {
+            setIsLoadingStaff(true);
+            try {
+                // Fetch active professionals from DB
+                const { data, error } = await supabase
+                    .from('professionals')
+                    .select('id, name, photo_url, role')
+                    .eq('active', true);
+                
+                if (error) throw error;
+                setProfessionalsList(data || []);
+            } catch (e) {
+                console.error("Erro ao carregar profissionais públicos:", e);
+            } finally {
+                setIsLoadingStaff(false);
+            }
+        };
+        fetchRealStaff();
+    }, []);
 
     // --- Derived Data ---
     const selectedServicesList = useMemo(() => {
@@ -97,9 +110,9 @@ const PublicBookingPreview: React.FC = () => {
         
         setIsSaving(true);
         try {
-            const profId = selectedProfessionalId || '1';
-            const profObj = PROFISSIONAIS.find(p => p.id === profId);
-            const professionalName = profObj ? profObj.title : 'Profissional do Estúdio';
+            const profId = selectedProfessionalId;
+            const profObj = professionalsList.find(p => String(p.id) === String(profId));
+            const professionalName = profObj ? profObj.name : 'Profissional do Estúdio';
 
             const [hours, minutes] = (selectedTime || '09:00').split(':').map(Number);
             const startDateTime = new Date(selectedDate);
@@ -114,10 +127,10 @@ const PublicBookingPreview: React.FC = () => {
                 client_email: clientForm.email,
                 service_name: serviceNames,
                 professional_name: professionalName,
-                resource_id: Number(profId),
+                resource_id: profId ? Number(profId) : null,
                 date: startDateTime.toISOString(),
                 value: totalStats.price,
-                duration: totalStats.duration, // Corrigido: usando a coluna duration correta
+                duration: totalStats.duration,
                 status: 'agendado',
                 notes: notes,
                 origem: 'link'
@@ -223,7 +236,6 @@ const PublicBookingPreview: React.FC = () => {
                                 </button>
                                 {expandedCategories[cat] && (
                                     <div className="divide-y divide-slate-50">
-                                        {/* FIX: Explicitly cast 'items' as LegacyService[] to fix TypeScript error reported on line 226 where 'items' was inferred as unknown. */}
                                         {(items as LegacyService[]).map(service => {
                                             const isSelected = selectedServiceIds.includes(service.id);
                                             return (
@@ -250,18 +262,41 @@ const PublicBookingPreview: React.FC = () => {
                             <div className="text-sm text-orange-900 space-y-1 mb-3">{selectedServicesList.map(s => <div key={s.id}>• {s.name}</div>)}</div>
                             <div className="flex justify-between items-center pt-2 border-t border-orange-200/50 text-sm font-bold text-orange-800"><span>Total Estimado</span><span>R$ {totalStats.price.toFixed(2)}</span></div>
                         </div>
-                        <button onClick={() => { setSelectedProfessionalId(null); setStep('datetime'); }} className="w-full bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 hover:border-orange-300 transition-all group">
-                            <div className="w-14 h-14 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-xl group-hover:bg-orange-500 group-hover:text-white transition-colors">?</div>
-                            <div className="text-left"><h3 className="font-bold text-slate-800">Qualquer Profissional</h3><p className="text-xs text-slate-500">Máxima disponibilidade</p></div>
-                            <ChevronDown className="-rotate-90 ml-auto text-slate-300" />
-                        </button>
-                        {PROFISSIONAIS.map(prof => (
-                            <button key={prof.id} onClick={() => { setSelectedProfessionalId(prof.id); setStep('datetime'); }} className="w-full bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 hover:border-orange-300 transition-all text-left group">
-                                <img src={prof.avatar} alt={prof.title} className="w-14 h-14 rounded-full object-cover border-2 border-slate-50" />
-                                <div className="flex-1"><h3 className="font-bold text-slate-800">{prof.title}</h3><p className="text-xs text-slate-500">{prof.role}</p><div className="flex items-center gap-1 mt-1 text-amber-400"><Star size={10} fill="currentColor" /><span className="text-xs font-bold text-slate-600">4.9</span></div></div>
-                                <ChevronDown className="-rotate-90 text-slate-300 group-hover:text-orange-400" />
-                            </button>
-                        ))}
+                        
+                        {isLoadingStaff ? (
+                            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                                <Loader2 className="animate-spin mb-4" />
+                                <p className="text-sm">Buscando profissionais disponíveis...</p>
+                            </div>
+                        ) : (
+                            <>
+                                <button onClick={() => { setSelectedProfessionalId(null); setStep('datetime'); }} className="w-full bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 hover:border-orange-300 transition-all group">
+                                    <div className="w-14 h-14 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-xl group-hover:bg-orange-500 group-hover:text-white transition-colors">?</div>
+                                    <div className="text-left"><h3 className="font-bold text-slate-800">Qualquer Profissional</h3><p className="text-xs text-slate-500">Máxima disponibilidade</p></div>
+                                    <ChevronDown className="-rotate-90 ml-auto text-slate-300" />
+                                </button>
+                                {professionalsList.map(prof => (
+                                    <button key={prof.id} onClick={() => { setSelectedProfessionalId(String(prof.id)); setStep('datetime'); }} className="w-full bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 hover:border-orange-300 transition-all text-left group">
+                                        <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-slate-50 bg-slate-100 flex items-center justify-center">
+                                            {prof.photo_url ? (
+                                                <img src={prof.photo_url} alt={prof.name} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <User className="text-slate-300" size={24} />
+                                            )}
+                                        </div>
+                                        <div className="flex-1">
+                                            <h3 className="font-bold text-slate-800">{prof.name}</h3>
+                                            <p className="text-xs text-slate-500">{prof.role || 'Especialista'}</p>
+                                            <div className="flex items-center gap-1 mt-1 text-amber-400">
+                                                <Star size={10} fill="currentColor" />
+                                                <span className="text-xs font-bold text-slate-600">5.0</span>
+                                            </div>
+                                        </div>
+                                        <ChevronDown className="-rotate-90 text-slate-300 group-hover:text-orange-400" />
+                                    </button>
+                                ))}
+                            </>
+                        )}
                     </div>
                 )}
 
@@ -299,7 +334,7 @@ const PublicBookingPreview: React.FC = () => {
                             <h3 className="font-bold text-slate-800 mb-4 text-lg">Resumo</h3>
                             <div className="space-y-3 text-sm">
                                 <div className="flex justify-between"><span className="text-slate-500">Serviço</span><span className="font-semibold text-slate-900 text-right w-1/2">{selectedServicesList.map(s => s.name).join(', ')}</span></div>
-                                <div className="flex justify-between"><span className="text-slate-500">Profissional</span><span className="font-semibold text-slate-900">{selectedProfessionalId ? PROFISSIONAIS.find(p=>p.id===selectedProfessionalId)?.title : 'Qualquer Profissional'}</span></div>
+                                <div className="flex justify-between"><span className="text-slate-500">Profissional</span><span className="font-semibold text-slate-900">{selectedProfessionalId ? professionalsList.find(p=>String(p.id)===String(selectedProfessionalId))?.name : 'Qualquer Profissional'}</span></div>
                                 <div className="flex justify-between"><span className="text-slate-500">Data e Hora</span><span className="font-semibold text-slate-900">{format(selectedDate, "dd/MM", { locale: pt })} às {selectedTime}</span></div>
                                 <div className="border-t border-slate-100 pt-3 flex justify-between items-center mt-2"><span className="font-bold text-slate-500">Total</span><span className="font-bold text-xl text-green-600">R$ {totalStats.price.toFixed(2)}</span></div>
                             </div>

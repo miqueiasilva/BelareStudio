@@ -1,18 +1,40 @@
-
-import React, { useState, useMemo } from 'react';
-import { initialAppointments, professionals } from '../../data/mockData';
+import React, { useState, useMemo, useEffect } from 'react';
+import { initialAppointments } from '../../data/mockData';
 import { format, isSameMonth, addMonths } from 'date-fns';
 import { pt } from 'date-fns/locale';
-import { Wallet, ChevronDown, ChevronUp, Download, CheckCircle } from 'lucide-react';
+import { Wallet, ChevronDown, ChevronUp, Download, CheckCircle, Loader2, User } from 'lucide-react';
+import { supabase } from '../../services/supabaseClient';
 
 const DEFAULT_COMMISSION_RATE = 0.5; // 50%
 
 const RemuneracoesView: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [professionals, setProfessionals] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const handlePrevMonth = () => setCurrentDate(prev => addMonths(prev, -1));
   const handleNextMonth = () => setCurrentDate(prev => addMonths(prev, 1));
+
+  // Fetch real professionals from database
+  useEffect(() => {
+    const fetchStaff = async () => {
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('professionals')
+                .select('*')
+                .order('name');
+            if (error) throw error;
+            setProfessionals(data || []);
+        } catch (e) {
+            console.error("Erro ao carregar equipe para remunerações:", e);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+    fetchStaff();
+  }, []);
 
   const filteredAppointments = useMemo(() => {
     return initialAppointments.filter(app => 
@@ -23,9 +45,9 @@ const RemuneracoesView: React.FC = () => {
 
   const reportData = useMemo(() => {
     return professionals.map(prof => {
-      const apps = filteredAppointments.filter(a => a.professional.id === prof.id);
+      const apps = filteredAppointments.filter(a => Number(a.professional.id) === Number(prof.id));
       const totalRevenue = apps.reduce((acc, curr) => acc + curr.service.price, 0);
-      const commission = totalRevenue * DEFAULT_COMMISSION_RATE;
+      const commission = totalRevenue * (prof.commission_rate / 100 || DEFAULT_COMMISSION_RATE);
       return {
         professional: prof,
         appointments: apps,
@@ -34,13 +56,22 @@ const RemuneracoesView: React.FC = () => {
         count: apps.length
       };
     }).sort((a, b) => b.totalRevenue - a.totalRevenue);
-  }, [filteredAppointments]);
+  }, [filteredAppointments, professionals]);
 
   const totalMonthRevenue = reportData.reduce((acc, curr) => acc + curr.totalRevenue, 0);
   const totalMonthCommission = reportData.reduce((acc, curr) => acc + curr.commission, 0);
 
+  if (isLoading) {
+    return (
+        <div className="h-full flex flex-col items-center justify-center text-slate-400">
+            <Loader2 className="animate-spin w-10 h-10 mb-4 text-orange-500" />
+            <p className="font-medium">Carregando dados financeiros...</p>
+        </div>
+    );
+  }
+
   return (
-    <div className="p-6 h-full overflow-y-auto bg-slate-50/50">
+    <div className="p-6 h-full overflow-y-auto bg-slate-50/50 font-sans">
        {/* Header */}
       <header className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <div>
@@ -98,7 +129,13 @@ const RemuneracoesView: React.FC = () => {
                     onClick={() => setExpandedId(expandedId === item.professional.id ? null : item.professional.id)}
                 >
                     <div className="flex items-center gap-4">
-                        <img src={item.professional.avatarUrl} alt={item.professional.name} className="w-12 h-12 rounded-full border-2 border-white shadow-sm" />
+                        <div className="w-12 h-12 rounded-full border-2 border-white shadow-sm overflow-hidden bg-slate-100 flex items-center justify-center">
+                            {item.professional.photo_url ? (
+                                <img src={item.professional.photo_url} alt={item.professional.name} className="w-full h-full object-cover" />
+                            ) : (
+                                <User size={24} className="text-slate-300" />
+                            )}
+                        </div>
                         <div>
                             <h3 className="font-bold text-slate-800">{item.professional.name}</h3>
                             <p className="text-xs text-slate-500">{item.count} serviços realizados</p>
@@ -112,7 +149,7 @@ const RemuneracoesView: React.FC = () => {
                         </div>
                         
                         <div className="text-right min-w-[120px]">
-                            <p className="text-xs text-slate-400 uppercase font-semibold">A Pagar (50%)</p>
+                            <p className="text-xs text-slate-400 uppercase font-semibold">A Pagar ({item.professional.commission_rate || 50}%)</p>
                             <p className="text-lg font-bold text-green-600">{item.commission.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                         </div>
 
@@ -145,7 +182,7 @@ const RemuneracoesView: React.FC = () => {
                                                 {app.service.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                             </td>
                                             <td className="px-4 py-2 text-right text-green-600 font-medium">
-                                                + {(app.service.price * DEFAULT_COMMISSION_RATE).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                + {(app.service.price * (item.professional.commission_rate / 100 || DEFAULT_COMMISSION_RATE)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                             </td>
                                         </tr>
                                     ))}
