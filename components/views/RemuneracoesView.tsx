@@ -1,7 +1,9 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { initialAppointments } from '../../data/mockData';
 import { format, isSameMonth, addMonths } from 'date-fns';
-import { pt } from 'date-fns/locale';
+// FIX: Corrected locale import from 'pt' to 'ptBR' as 'pt' is not exported by date-fns/locale.
+import { ptBR as pt } from 'date-fns/locale';
 import { Wallet, ChevronDown, ChevronUp, Download, CheckCircle, Loader2, User } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 

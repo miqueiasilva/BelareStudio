@@ -1,14 +1,16 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
-    ChevronLeft, ChevronRight, Plus, Lock, MessageSquare, 
-    Share2, Bell, RotateCcw, ChevronDown, List, Clock, 
-    CheckCircle, DollarSign, FileText, Calendar as CalendarIcon, RefreshCw, User as UserIcon,
+    ChevronLeft, ChevronRight, MessageSquare, 
+    ChevronDown, RefreshCw, Calendar as CalendarIcon,
     ShoppingBag, Ban
 } from 'lucide-react';
-import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth, setHours, setMinutes, differenceInMinutes } from 'date-fns';
-import { pt } from 'date-fns/locale';
+// FIX: Ensured startOfWeek and startOfMonth are imported correctly from 'date-fns'.
+import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth, differenceInMinutes } from 'date-fns';
+// FIX: Corrected locale import from 'pt' to 'ptBR' as 'pt' is not exported by date-fns/locale.
+import { ptBR as pt } from 'date-fns/locale';
 
-import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional, LegacyService } from '../../types';
+import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
 import AppointmentModal from '../modals/AppointmentModal';
 import BlockTimeModal from '../modals/BlockTimeModal';
 import NewTransactionModal from '../modals/NewTransactionModal';
@@ -27,7 +29,7 @@ interface DynamicColumn {
     subtitle?: string;
     photo?: string; 
     type: 'professional' | 'status' | 'payment' | 'date';
-    data?: any; 
+    data?: LegacyProfessional | Date; 
 }
 
 const getAppointmentStyle = (start: Date, end: Date) => {
@@ -41,7 +43,7 @@ const getAppointmentStyle = (start: Date, end: Date) => {
 const getStatusColor = (status: AppointmentStatus) => {
     switch (status) {
         case 'concluido': return 'bg-green-50 border-green-200 text-green-900';
-        case 'bloqueado': return 'bg-slate-100 border-slate-300 text-slate-500 pattern-diagonal-lines-sm pattern-slate-200 pattern-bg-slate-100 opacity-80';
+        case 'bloqueado': return 'bg-slate-100 border-slate-300 text-slate-500 opacity-80';
         case 'confirmado': return 'bg-cyan-50 border-cyan-200 text-cyan-900';
         case 'confirmado_whatsapp': return 'bg-teal-50 border-teal-200 text-teal-900';
         case 'chegou': return 'bg-purple-50 border-purple-200 text-purple-900';
@@ -131,7 +133,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             
             if (error) throw error;
             if (data && isMounted.current) {
-                const mapped = data.map((p: any) => ({
+                const mapped: LegacyProfessional[] = data.map((p: any) => ({
                     id: p.id,
                     name: p.name,
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
@@ -236,7 +238,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     }, [appointments, periodType, currentDate]);
 
     const getColumnForAppointment = (app: LegacyAppointment, cols: DynamicColumn[]) => {
-        if (periodType === 'Semana') return cols.find(c => isSameDay(app.start, c.data));
+        if (periodType === 'Semana') return cols.find(c => isSameDay(app.start, c.data as Date));
         if (viewType === 'Profissional') return cols.find(c => c.id === app.professional.id || c.title === app.professional.name);
         return null;
     };
@@ -295,7 +297,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         } catch (error: any) {
             console.error("Erro ao salvar agendamento:", error);
             if (isMounted.current) {
-                setToast({ message: `Erro ao salvar no banco: ${error.message}`, type: 'error' });
+                setToast({ message: `Erro ao salvar: ${error.message}`, type: 'error' });
                 fetchAppointments(); 
             }
         }
@@ -381,8 +383,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                         className={`relative border-r border-slate-200 min-h-[1000px] cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/10'}`}
                                         onClick={(e) => {
                                             if (e.target === e.currentTarget) {
-                                                const prof = col.type === 'professional' ? col.data : resources[0];
-                                                const date = col.type === 'date' ? col.data : currentDate;
+                                                const prof = col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0];
+                                                const date = col.type === 'date' ? (col.data as Date) : currentDate;
                                                 handleGridClick(e, prof, date);
                                             }
                                         }}

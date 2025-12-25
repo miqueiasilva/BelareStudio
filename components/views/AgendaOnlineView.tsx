@@ -9,7 +9,8 @@ import ToggleSwitch from '../shared/ToggleSwitch';
 import { mockOnlineConfig, mockReviews, mockAnalytics } from '../../data/mockData';
 import { Review } from '../../types';
 import { format } from 'date-fns';
-import { pt } from 'date-fns/locale';
+// FIX: Corrected locale import from 'pt' to 'ptBR' as 'pt' is not exported by date-fns/locale.
+import { ptBR as pt } from 'date-fns/locale';
 
 // Helper for Tabs
 const TabButton = ({ id, label, active, onClick, icon: Icon }: any) => (

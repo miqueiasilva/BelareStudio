@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { services, mockOnlineConfig } from '../../data/mockData';
 import { 
@@ -6,7 +7,8 @@ import {
     Loader2, MapPin, Phone, User, Mail, Heart
 } from 'lucide-react';
 import { format, addDays, isSameDay } from 'date-fns';
-import { pt } from 'date-fns/locale';
+// FIX: Corrected locale import from 'pt' to 'ptBR' as 'pt' is not exported by date-fns/locale.
+import { ptBR as pt } from 'date-fns/locale';
 import { supabase } from '../../services/supabaseClient';
 import { LegacyService } from '../../types';
 
@@ -143,6 +145,7 @@ const PublicBookingPreview: React.FC = () => {
             console.error('Erro ao agendar:', error);
             alert(`Erro ao realizar agendamento: ${error.message || 'Tente novamente.'}`);
         } finally {
+            } finally {
             setIsSaving(false);
         }
     };

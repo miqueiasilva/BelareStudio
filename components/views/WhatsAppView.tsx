@@ -8,7 +8,8 @@ import {
 import { mockConversations } from '../../data/mockData';
 import { ChatConversation, ChatMessage } from '../../types';
 import { format } from 'date-fns';
-import { pt } from 'date-fns/locale';
+// FIX: Corrected locale import from 'pt' to 'ptBR' as 'pt' is not exported by date-fns/locale.
+import { ptBR as pt } from 'date-fns/locale';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import Toast, { ToastType } from '../shared/Toast';
 

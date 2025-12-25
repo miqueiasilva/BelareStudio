@@ -1,14 +1,25 @@
 
 import React, { useState, useMemo, useRef } from 'react';
 import { 
-  UserPlus, Search, Filter, Phone, Mail, Tag, Edit, 
-  Trash2, User, FileUp, MoreVertical, Cake, History, Users
+  UserPlus, Search, Phone, Edit, 
+  Trash2, FileUp, MoreVertical, Cake, History, Users
 } from 'lucide-react';
 import { clients as initialClients, initialAppointments } from '../../data/mockData';
 import { Client } from '../../types';
 import ClientModal from '../modals/ClientModal';
 import Toast, { ToastType } from '../shared/Toast';
-import { format, differenceInDays, isSameMonth, isSameDay } from 'date-fns';
+import { differenceInDays, isSameMonth } from 'date-fns';
+
+interface ClientStats {
+  totalSpent: number;
+  visits: number;
+  lastVisitDate: Date | null;
+  status: 'Novo' | 'Ativo' | 'Inativo' | 'Recuperar';
+}
+
+interface EnrichedClient extends Client {
+  stats: ClientStats;
+}
 
 const ClientesView: React.FC = () => {
   const [clients, setClients] = useState<Client[]>(initialClients);
@@ -21,7 +32,7 @@ const ClientesView: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const enrichedClients = useMemo(() => {
+  const enrichedClients = useMemo<EnrichedClient[]>(() => {
     return clients.map(client => {
       const clientApps = initialAppointments.filter(app => app.client?.id === client.id && app.status === 'concluido');
       const totalSpent = clientApps.reduce((acc, app) => acc + app.service.price, 0);
@@ -91,9 +102,9 @@ const ClientesView: React.FC = () => {
   return (
     <div className="h-full flex flex-col bg-slate-50 relative font-sans overflow-hidden">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-      <input type="file" accept=".csv" ref={fileInputRef} className="hidden" />
+      <input type="file" accept=".csv" ref={fileInputRef} className="hidden" aria-hidden="true" />
 
-      {/* Header - Compacto para Mobile */}
+      {/* Header */}
       <header className="bg-white border-b border-slate-200 px-4 py-4 md:px-6 flex flex-col md:flex-row justify-between items-center gap-4 flex-shrink-0">
         <div>
           <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
@@ -115,7 +126,7 @@ const ClientesView: React.FC = () => {
         </div>
       </header>
 
-      {/* KPI Cards - Rolagem Horizontal no Mobile */}
+      {/* KPI Cards */}
       <div className="flex md:grid md:grid-cols-3 gap-4 p-4 overflow-x-auto scrollbar-hide flex-shrink-0">
         <div className="min-w-[200px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
            <div className="bg-blue-50 p-2.5 rounded-lg text-blue-500"><Users size={20}/></div>
@@ -132,7 +143,7 @@ const ClientesView: React.FC = () => {
            </div>
         </div>
         <div className="min-w-[200px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
-           <div className="bg-orange-50 p-2.5 rounded-lg text-orange-500"><Tag size={20}/></div>
+           <div className="bg-orange-50 p-2.5 rounded-lg text-orange-500"><Users size={20}/></div>
            <div>
              <p className="text-[10px] font-bold text-slate-400 uppercase">Ticket Médio</p>
              <p className="text-lg font-bold text-slate-800">R$ 145</p>
@@ -140,7 +151,7 @@ const ClientesView: React.FC = () => {
         </div>
       </div>
 
-      {/* List Container - flex-1 garante que ocupe o resto da tela e seja scrollável */}
+      {/* List Container */}
       <div className="flex-1 flex flex-col min-h-0 bg-white md:mx-4 md:mb-4 md:rounded-2xl border-t md:border border-slate-200 shadow-sm overflow-hidden">
         
         {/* Abas e Busca */}
@@ -199,6 +210,7 @@ const ClientesView: React.FC = () => {
                                 <button 
                                     onClick={() => setOpenMenuId(openMenuId === client.id ? null : client.id)}
                                     className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-all"
+                                    aria-label="Menu de opções"
                                 >
                                     <MoreVertical size={20} />
                                 </button>

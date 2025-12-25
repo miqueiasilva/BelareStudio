@@ -5,7 +5,8 @@ import Card from '../shared/Card';
 import { LegacyAppointment as Appointment, LegacyService as Service, LegacyProfessional as Professional, Client, AppointmentStatus } from '../../types';
 import { Calendar, Clock, User, Scissors, DollarSign, Tag, Info, X } from 'lucide-react';
 import { format } from 'date-fns';
-import { pt } from 'date-fns/locale';
+// FIX: Corrected locale import from 'pt' to 'ptBR' as 'pt' is not exported by date-fns/locale.
+import { ptBR as pt } from 'date-fns/locale';
 
 // Mock Data
 // FIX: Update mock client data to use 'nome' instead of 'name' and add 'consent' property to match the Client type.

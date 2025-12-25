@@ -3,7 +3,8 @@ import React, { useRef, useEffect, useState } from 'react';
 import { LegacyAppointment, AppointmentStatus } from '../../types';
 import { Calendar, Tag, DollarSign, Send, Edit, Trash2, User, MoreVertical, X } from 'lucide-react';
 import { format } from 'date-fns';
-import { pt } from 'date-fns/locale';
+// FIX: Corrected locale import from 'pt' to 'ptBR' as 'pt' is not exported by date-fns/locale.
+import { ptBR as pt } from 'date-fns/locale';
 import StatusUpdatePopover from './StatusUpdatePopover';
 
 interface AppointmentDetailPopoverProps {

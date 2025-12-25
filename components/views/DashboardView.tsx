@@ -6,7 +6,8 @@ import { getDashboardInsight } from '../../services/geminiService';
 import { initialAppointments, professionals } from '../../data/mockData';
 import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, ArrowRight, Clock, Globe } from 'lucide-react';
 import { format } from 'date-fns';
-import { pt } from 'date-fns/locale';
+// FIX: Corrected locale import from 'pt' to 'ptBR' as 'pt' is not exported by date-fns/locale.
+import { ptBR as pt } from 'date-fns/locale';
 import { safe, toNumber } from '../../utils/normalize';
 import SafePie from '../charts/SafePie';
 import SafeBar from '../charts/SafeBar';
@@ -65,7 +66,7 @@ const GoalRing = ({ current, target }: { current: number, target: number }) => {
             <div className="z-10 mt-4">
                 <p className="text-xs text-slate-300 mb-1">Progresso atual</p>
                 <div className="w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
-                    <div className="bg-orange-500 h-full rounded-full transition-all duration-1000" style={{ width: `${percentage}%` }}></div>
+                    <div className="bg-orange-50 h-full rounded-full transition-all duration-1000" style={{ width: `${percentage}%` }}></div>
                 </div>
                 {percentage >= 100 && <p className="text-xs text-green-400 mt-2 font-bold">🎉 Meta batida! Parabéns!</p>}
             </div>
