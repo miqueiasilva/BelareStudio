@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Save, Upload, User, Scissors, DollarSign, Clock, Palette, Tag, Trash2, Camera } from 'lucide-react';
 import { LegacyService, LegacyProfessional } from '../../types';
@@ -21,7 +20,7 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCa
         category: ''
     });
 
-    // Local state for split duration
+    // Local state for split duration (HH:MM)
     const [hours, setHours] = useState(0);
     const [minutes, setMinutes] = useState(30);
 
@@ -43,31 +42,16 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCa
         }
     }, [service]);
 
-    const handleDurationChange = (type: 'hours' | 'minutes', value: string) => {
-        const num = Math.max(0, parseInt(value) || 0);
-        let newH = hours;
-        let newM = minutes;
-
-        if (type === 'hours') {
-            setHours(num);
-            newH = num;
-        } else {
-            setMinutes(num);
-            newM = num;
-        }
-        
-        setFormData(prev => ({ ...prev, duration: (newH * 60) + newM }));
-    };
-
     const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#10b981', '#64748b'];
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        const totalDuration = (Number(hours) * 60) + Number(minutes);
         onSave({
             id: service?.id || Date.now(),
             name: formData.name || 'Novo Serviço',
             price: Number(formData.price),
-            duration: Number(formData.duration),
+            duration: totalDuration,
             color: formData.color || '#3b82f6',
             category: formData.category || 'Geral'
         });
@@ -75,7 +59,7 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCa
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                 <header className="p-4 border-b bg-slate-50 flex justify-between items-center">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2">
                         <Scissors className="w-5 h-5 text-orange-500" />
@@ -111,7 +95,6 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCa
                                 ))}
                             </datalist>
                         </div>
-                        <p className="text-[10px] text-slate-400 mt-1 ml-1">Digite para criar uma nova categoria.</p>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -128,33 +111,34 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCa
                             </div>
                         </div>
                         <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Duração</label>
-                            <div className="flex gap-2 items-center">
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Duração do Serviço</label>
+                            <div className="flex items-center gap-2">
                                 <div className="relative flex-1">
                                     <input 
                                         type="number"
                                         min="0"
                                         value={hours}
-                                        onChange={e => handleDurationChange('hours', e.target.value)}
-                                        className="w-full border border-slate-300 rounded-lg px-2 py-2 text-center focus:ring-2 focus:ring-orange-500 outline-none"
+                                        onChange={e => setHours(Math.max(0, parseInt(e.target.value) || 0))}
+                                        className="w-full border border-slate-300 rounded-lg px-2 py-2 text-center font-mono font-bold focus:ring-2 focus:ring-orange-500 outline-none"
                                         placeholder="0"
                                     />
-                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">h</span>
+                                    <span className="absolute right-2 top-2 text-[10px] text-slate-400 font-bold uppercase">h</span>
                                 </div>
-                                <span className="text-slate-400 font-bold">:</span>
+                                <span className="text-xl font-bold text-slate-300">:</span>
                                 <div className="relative flex-1">
                                     <input 
                                         type="number"
                                         min="0"
-                                        step="5"
+                                        max="59"
                                         value={minutes}
-                                        onChange={e => handleDurationChange('minutes', e.target.value)}
-                                        className="w-full border border-slate-300 rounded-lg px-2 py-2 text-center focus:ring-2 focus:ring-orange-500 outline-none"
+                                        onChange={e => setMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                                        className="w-full border border-slate-300 rounded-lg px-2 py-2 text-center font-mono font-bold focus:ring-2 focus:ring-orange-500 outline-none"
                                         placeholder="00"
                                     />
-                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">m</span>
+                                    <span className="absolute right-2 top-2 text-[10px] text-slate-400 font-bold uppercase">m</span>
                                 </div>
                             </div>
+                            <p className="text-[9px] text-slate-400 mt-1 text-right">Total: {(Number(hours) * 60) + Number(minutes)} min</p>
                         </div>
                     </div>
                     <div>
@@ -171,9 +155,9 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCa
                             ))}
                         </div>
                     </div>
-                    <div className="pt-4 flex justify-end gap-3">
+                    <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
                         <button type="button" onClick={onClose} className="px-4 py-2 text-slate-600 font-semibold hover:bg-slate-50 rounded-lg">Cancelar</button>
-                        <button type="submit" className="px-4 py-2 bg-orange-500 text-white font-bold rounded-lg hover:bg-orange-600 shadow-sm flex items-center gap-2">
+                        <button type="submit" className="px-4 py-2 bg-orange-500 text-white font-bold rounded-lg hover:bg-orange-600 shadow-sm flex items-center gap-2 transition-all active:scale-95">
                             <Save size={18} /> Salvar
                         </button>
                     </div>
@@ -233,7 +217,7 @@ export const ProfessionalModal: React.FC<ProfessionalModalProps> = ({ profession
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
                 <header className="p-4 border-b bg-slate-50 flex justify-between items-center">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2">
                         <User className="w-5 h-5 text-blue-500" />
@@ -299,9 +283,9 @@ export const ProfessionalModal: React.FC<ProfessionalModalProps> = ({ profession
                         />
                     </div>
 
-                    <div className="pt-2 flex justify-end gap-3">
+                    <div className="pt-2 flex justify-end gap-3 border-t border-slate-100 pt-4">
                         <button type="button" onClick={onClose} className="px-4 py-2 text-slate-600 font-semibold hover:bg-slate-50 rounded-lg">Cancelar</button>
-                        <button type="submit" className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-sm flex items-center gap-2">
+                        <button type="submit" className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-sm flex items-center gap-2 transition-all active:scale-95">
                             <Save size={18} /> Salvar
                         </button>
                     </div>

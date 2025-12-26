@@ -16,6 +16,10 @@ const ServicosView: React.FC = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [editingService, setEditingService] = useState<Partial<Service> | null>(null);
+    
+    // Estados para o Seletor de Tempo (HH:MM)
+    const [localHours, setLocalHours] = useState(0);
+    const [localMinutes, setLocalMinutes] = useState(30);
 
     const isMounted = useRef(true);
     const abortControllerRef = useRef<AbortController | null>(null);
@@ -29,11 +33,10 @@ const ServicosView: React.FC = () => {
         setLoading(true);
         setError(null);
 
-        // Safety Timeout (8s) to prevent stuck loader
         const watchdog = setTimeout(() => {
             if (isMounted.current && loading) {
                 setLoading(false);
-                setError("O tempo limite de conexão foi excedido (8s). Verifique se o Supabase está respondendo.");
+                setError("O tempo limite de conexão foi excedido (8s).");
             }
         }, 8000);
 
@@ -69,21 +72,36 @@ const ServicosView: React.FC = () => {
         };
     }, []);
 
+    // Atualiza o tempo local quando abre o modal ou muda o serviço
+    useEffect(() => {
+        if (editingService?.duracao_min !== undefined) {
+            setLocalHours(Math.floor(editingService.duracao_min / 60));
+            setLocalMinutes(editingService.duracao_min % 60);
+        }
+    }, [editingService]);
+
     const handleOpenModal = (service?: Service) => {
-        setEditingService(service || { nome: '', preco: 0, duracao_min: 30, cor_hex: '#f97316', ativo: true });
+        const targetService = service || { nome: '', preco: 0, duracao_min: 30, cor_hex: '#f97316', ativo: true };
+        setEditingService(targetService);
         setIsModalOpen(true);
     };
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!editingService?.nome) return;
+        
         setIsSaving(true);
+        
+        // Converte horas/minutos de volta para o total de minutos
+        const totalMinutes = (Number(localHours) * 60) + Number(localMinutes);
+        const payload = { ...editingService, duracao_min: totalMinutes };
+
         try {
-            if (editingService.id) {
-                const { error } = await supabase.from('services').update(editingService).eq('id', editingService.id);
+            if (payload.id) {
+                const { error } = await supabase.from('services').update(payload).eq('id', payload.id);
                 if (error) throw error;
             } else {
-                const { error } = await supabase.from('services').insert([editingService]);
+                const { error } = await supabase.from('services').insert([payload]);
                 if (error) throw error;
             }
             setToast({ message: 'Serviço salvo com sucesso!', type: 'success' });
@@ -178,7 +196,10 @@ const ServicosView: React.FC = () => {
                                     <div className="space-y-3">
                                         <div className="flex items-center gap-2 text-slate-600 text-sm font-medium">
                                             <Clock size={16} className="text-slate-400" />
-                                            <span>{service.duracao_min} minutos</span>
+                                            <span>
+                                                {Math.floor(service.duracao_min / 60) > 0 ? `${Math.floor(service.duracao_min / 60)}h ` : ''}
+                                                {service.duracao_min % 60} minutos
+                                            </span>
                                         </div>
                                         <div className="flex items-center gap-2 text-slate-600 text-sm font-bold">
                                             <DollarSign size={16} className="text-green-500" />
@@ -224,14 +245,41 @@ const ServicosView: React.FC = () => {
                                     />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Duração (min)</label>
-                                    <input 
-                                        required 
-                                        type="number" 
-                                        value={editingService.duracao_min} 
-                                        onChange={e => setEditingService({...editingService, duracao_min: parseInt(e.target.value)})} 
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-bold text-slate-800" 
-                                    />
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Duração do Serviço</label>
+                                    <div className="flex items-center gap-2">
+                                        {/* Campo Horas */}
+                                        <div className="relative flex-1 group">
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={localHours}
+                                                onChange={(e) => setLocalHours(Math.max(0, parseInt(e.target.value) || 0))}
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-mono text-center text-lg font-bold"
+                                                placeholder="0"
+                                            />
+                                            <span className="absolute right-3 top-4 text-slate-400 text-[10px] font-black uppercase pointer-events-none group-focus-within:text-orange-500">h</span>
+                                        </div>
+
+                                        <span className="text-xl font-bold text-slate-300">:</span>
+
+                                        {/* Campo Minutos */}
+                                        <div className="relative flex-1 group">
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="59"
+                                                value={localMinutes}
+                                                onChange={(e) => setLocalMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-mono text-center text-lg font-bold"
+                                                placeholder="00"
+                                            />
+                                            <span className="absolute right-3 top-4 text-slate-400 text-[10px] font-black uppercase pointer-events-none group-focus-within:text-orange-500">m</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between px-1 mt-1">
+                                        <span className="text-[10px] text-slate-400 font-medium">Total: {(Number(localHours) * 60) + Number(localMinutes)} min</span>
+                                        <span className="text-[10px] text-slate-400 font-medium italic">Máx 59min no campo à direita</span>
+                                    </div>
                                 </div>
                             </div>
 
