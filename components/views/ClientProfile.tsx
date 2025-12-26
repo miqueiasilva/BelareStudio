@@ -71,7 +71,11 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         photo_url: (client as any).photo_url || null,
         online_booking_enabled: (client as any).online_booking_enabled ?? true,
         origem: (client as any).origem || 'Instagram',
-        id: client.id || null
+        id: client.id || null,
+        // Campos de métricas reais (Database)
+        total_appointments: (client as any).total_appointments || 0,
+        avg_ticket: (client as any).avg_ticket || 0,
+        balance: (client as any).balance || 0
     });
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -89,6 +93,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             const fileName = `avatar_${formData.id || 'new'}_${Date.now()}.${fileExt}`;
             const filePath = `${fileName}`;
 
+            // Bucket 'avatars' configurado no Supabase
             const { error: uploadError } = await supabase.storage
                 .from('avatars')
                 .upload(filePath, file);
@@ -103,8 +108,9 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             
         } catch (error: any) {
             console.error("Falha no upload do avatar:", error);
-            alert(`Erro no upload: ${error.message}`);
+            alert(`Erro ao salvar foto: ${error.message}`);
         } finally {
+            // ESSENCIAL: Destrava o spinner em qualquer cenário
             setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
@@ -205,19 +211,19 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                     </div>
                 </div>
 
-                {/* KPIs - ZERADOS PARA NOVOS CLIENTES */}
+                {/* KPIs - DADOS REAIS OU ZERADOS */}
                 <div className="grid grid-cols-3 gap-2 py-2">
                     <div className="text-center p-3 bg-slate-50/50 rounded-2xl border border-slate-50">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Atendimentos</p>
-                        <p className="text-lg font-black text-slate-700">{isNew ? '0' : '12'}</p>
+                        <p className="text-lg font-black text-slate-700">{formData.total_appointments || 0}</p>
                     </div>
                     <div className="text-center p-3 bg-slate-50/50 rounded-2xl border border-slate-50">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Ticket Médio</p>
-                        <p className="text-lg font-black text-slate-700">R$ {isNew ? '0' : '85'}</p>
+                        <p className="text-lg font-black text-slate-700">R$ {(formData.avg_ticket || 0).toFixed(0)}</p>
                     </div>
                     <div className="text-center p-3 bg-rose-50 rounded-2xl border border-rose-100">
                         <p className="text-[10px] font-bold text-rose-400 uppercase tracking-tighter">Saldo</p>
-                        <p className="text-lg font-black text-rose-600">R$ 0</p>
+                        <p className="text-lg font-black text-rose-600">R$ {(formData.balance || 0).toFixed(0)}</p>
                     </div>
                 </div>
             </header>
@@ -251,7 +257,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                             <EditField label="Nome Completo" name="nome" value={formData.nome} onChange={handleInputChange} placeholder="Ex: Maria Souza" span="col-span-full md:col-span-2" />
                                             <EditField label="Apelido" name="apelido" value={formData.apelido} onChange={handleInputChange} placeholder="Como gosta de ser chamada" />
                                             <EditField label="CPF" name="cpf" value={formData.cpf} onChange={handleInputChange} placeholder="000.000.000-00" />
-                                            <EditField label="RG" name="rg" value={formData.rg} onChange={handleInputChange} placeholder="00.000.000-0" />
+                                            <EditField label="RG" name="rg" value={formData.rg} onChange={handleInputChange} placeholder="000.000.000-0" />
                                             <EditField label="Data Nascimento" name="nascimento" type="date" value={formData.nascimento} onChange={handleInputChange} />
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Sexo</label>
