@@ -4,7 +4,7 @@ import {
   Trash2, FileUp, MoreVertical, Cake, Users, History, Loader2, RefreshCw, AlertCircle, ChevronRight
 } from 'lucide-react';
 import { Client } from '../../types';
-import ClientProfile from './ClientProfile'; // Importando o novo componente
+import ClientProfile from './ClientProfile'; 
 import Toast, { ToastType } from '../shared/Toast';
 import { supabase } from '../../services/supabaseClient';
 
@@ -37,24 +37,53 @@ const ClientesView: React.FC = () => {
   const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
   const handleSaveClient = async (clientData: Client) => {
+    console.log("Iniciando persistência de cliente. Dados recebidos:", clientData);
+    
+    // Payload limpo para evitar erros de tipos no Postgres
+    const payload = { ...clientData };
+    const isEditing = !!payload.id;
+
     try {
-        const { data: savedRow, error } = await supabase
-            .from('clients')
-            .upsert(clientData)
-            .select() 
-            .single();
+        if (isEditing) {
+            // OPERAÇÃO: EDITAR
+            console.log("Modo: EDIÇÃO. ID:", payload.id);
+            const { data, error } = await supabase
+                .from('clients')
+                .update(payload)
+                .eq('id', payload.id)
+                .select()
+                .single();
 
-        if (error) throw error;
+            if (error) throw error;
+            
+            setClients(prev => prev.map(c => c.id === data.id ? data : c));
+            showToast('Perfil atualizado com sucesso!');
+        } else {
+            // OPERAÇÃO: NOVO
+            console.log("Modo: CRIAÇÃO (Novo Registro)");
+            // Remove o ID para o banco gerar automaticamente
+            delete (payload as any).id;
+            
+            const { data, error } = await supabase
+                .from('clients')
+                .insert([payload])
+                .select()
+                .single();
 
-        setClients(prev => {
-            const exists = prev.find(c => c.id === savedRow.id);
-            if (exists) return prev.map(c => c.id === savedRow.id ? savedRow : c);
-            return [savedRow, ...prev];
-        });
+            if (error) throw error;
 
-        showToast('Perfil atualizado com sucesso!');
+            setClients(prev => [data, ...prev]);
+            showToast('Novo cliente cadastrado com sucesso!');
+        }
+        
+        // Fecha o modal após sucesso
+        setSelectedClient(null);
+
     } catch (e: any) {
-        showToast("Erro ao salvar dados.", 'error');
+        console.error("ERRO CRÍTICO NA PERSISTÊNCIA:", e);
+        // Alert exibe o erro real vindo do Supabase (ex: RLS, Constraint, Type error)
+        alert(`Erro ao salvar no banco: ${e.message || 'Erro desconhecido'}`);
+        showToast("Falha ao salvar dados.", 'error');
     }
   };
 
