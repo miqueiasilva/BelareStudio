@@ -4,7 +4,7 @@ import {
     ChevronDown, RefreshCw, Calendar as CalendarIcon,
     ShoppingBag, Ban
 } from 'lucide-react';
-import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, differenceInMinutes } from 'date-fns';
+import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
@@ -111,10 +111,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     const isMounted = useRef(true);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
-    const periodDropdownRef = useRef<HTMLDivElement>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
 
-    // Lifecycle: Cleanup Rigoroso de Canais e Conexões
     useEffect(() => {
         isMounted.current = true;
         fetchResources();
@@ -127,7 +125,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
         return () => {
             isMounted.current = false;
-            if (abortControllerRef.current) abortControllerRef.current.abort();
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+            }
+            // CRITICAL CLEANUP: Unsubscribe to free database connections
             supabase.removeChannel(channel);
         };
     }, []);
@@ -144,19 +145,25 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     role: p.role
                 })));
             }
-        } catch (e) { console.error("Error resources:", e); }
+        } catch (e) { 
+            console.error("Error resources:", e); 
+        }
     };
 
     const fetchAppointments = async () => {
         if (!isMounted.current) return;
         
-        // Cancela requisição anterior se ainda estiver rodando
+        // Use AbortController to cancel previous request if user navigates away fast
         if (abortControllerRef.current) abortControllerRef.current.abort();
         abortControllerRef.current = new AbortController();
 
         setIsLoadingData(true);
         try {
-            const { data, error } = await supabase.from('appointments').select('*');
+            const { data, error } = await supabase
+                .from('appointments')
+                .select('*')
+                .abortSignal(abortControllerRef.current.signal);
+
             if (error) throw error;
             if (data && isMounted.current) {
                 const mapped = data.map(row => {
@@ -176,7 +183,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 setAppointments(mapped);
             }
         } catch (e: any) {
-            if (e.name !== 'AbortError') console.error("Fetch error:", e);
+            if (e.name !== 'AbortError') {
+                console.error("Fetch error:", e);
+            }
         } finally {
             if (isMounted.current) setIsLoadingData(false);
         }
@@ -235,6 +244,24 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         setSelectionMenu({ x: e.clientX, y: e.clientY, time: targetDate, professional });
     };
 
+    const handleSaveAppointment = async (app: LegacyAppointment) => {
+        setAppointments(prev => {
+            const idx = prev.findIndex(p => p.id === app.id);
+            if (idx >= 0) return prev.map(p => p.id === app.id ? app : p);
+            return [...prev, app];
+        });
+        setModalState(null);
+        setToast({ message: 'Agendamento salvo com sucesso!', type: 'success' });
+        fetchAppointments();
+    };
+
+    const handleSaveBlock = async (app: LegacyAppointment) => {
+        setAppointments(prev => [...prev, app]);
+        setModalState(null);
+        setToast({ message: 'Horário bloqueado com sucesso!', type: 'success' });
+        fetchAppointments();
+    };
+
     return (
         <div className="flex h-full bg-white relative flex-col font-sans">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -245,7 +272,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         Atendimentos {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}
                     </h2>
                     <div className="flex items-center gap-2">
-                        <div className="relative" ref={periodDropdownRef}>
+                        <div className="relative">
                             <button onClick={() => setIsPeriodDropdownOpen(!isPeriodDropdownOpen)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium">
                                 {periodType} <ChevronDown size={16} />
                             </button>
@@ -360,6 +387,31 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         await supabase.from('appointments').update({ status }).eq('id', id); 
                         setActiveAppointmentDetail(null); 
                     }} 
+                />
+            )}
+
+            {modalState?.type === 'appointment' && (
+                <AppointmentModal 
+                    appointment={modalState.data} 
+                    onClose={() => setModalState(null)} 
+                    onSave={handleSaveAppointment} 
+                />
+            )}
+
+            {modalState?.type === 'block' && (
+                <BlockTimeModal 
+                    professional={modalState.data.professional} 
+                    startTime={modalState.data.start} 
+                    onClose={() => setModalState(null)} 
+                    onSave={handleSaveBlock} 
+                />
+            )}
+
+            {modalState?.type === 'sale' && (
+                <NewTransactionModal 
+                    type="receita"
+                    onClose={() => setModalState(null)}
+                    onSave={(t) => { onAddTransaction(t); setModalState(null); setToast({ message: 'Venda registrada!', type: 'success' }); }}
                 />
             )}
             
