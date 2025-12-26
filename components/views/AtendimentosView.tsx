@@ -148,10 +148,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     }, []);
 
     useEffect(() => {
-        if (resources.length > 0) {
+        if (resources.length > 0 && orderedProfessionals.length === 0) {
             setOrderedProfessionals(resources);
         }
-    }, [resources]);
+    }, [resources, orderedProfessionals]);
 
     const fetchResources = async () => {
         try {
@@ -168,6 +168,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         } catch (e) { console.error("Error resources:", e); }
     };
 
+    // FUNÇÃO DE REORDENAÇÃO
     const moveProfessional = (index: number, direction: 'left' | 'right') => {
         const newOrder = [...orderedProfessionals];
         const targetIndex = direction === 'left' ? index - 1 : index + 1;
@@ -362,11 +363,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
             <div className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar">
                 <div className="min-w-full">
-                    {/* Header Grid */}
+                    {/* Header Grid: Sticky Top + Sticky Left corner */}
                     <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        <div className="sticky left-0 z-50 bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-sm">
+                        {/* CANTO SUPERIOR ESQUERDO FIXO (z-60 para ser o mais alto) */}
+                        <div className="sticky left-0 top-0 z-[60] bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-sm">
                             <Maximize2 size={16} className="text-slate-300" />
                         </div>
+                        
                         {columns.map((col, idx) => (
                             <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-100 h-24 bg-slate-50/10 group relative">
                                 <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-slate-200 shadow-sm w-full max-w-[200px] overflow-hidden">
@@ -383,7 +386,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                         {idx > 0 && (
                                             <button 
                                                 onClick={(e) => { e.stopPropagation(); moveProfessional(idx, 'left'); }}
-                                                className="p-1 bg-white text-slate-400 hover:text-orange-500 rounded border border-slate-200 shadow-sm transition-colors"
+                                                className="p-1 bg-white text-slate-400 hover:text-orange-500 rounded border border-slate-200 shadow-sm transition-colors active:scale-95"
                                             >
                                                 <ChevronLeft size={14} />
                                             </button>
@@ -391,7 +394,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                         {idx < columns.length - 1 && (
                                             <button 
                                                 onClick={(e) => { e.stopPropagation(); moveProfessional(idx, 'right'); }}
-                                                className="p-1 bg-white text-slate-400 hover:text-orange-500 rounded border border-slate-200 shadow-sm transition-colors"
+                                                className="p-1 bg-white text-slate-400 hover:text-orange-500 rounded border border-slate-200 shadow-sm transition-colors active:scale-95"
                                             >
                                                 <ChevronRight size={14} />
                                             </button>
@@ -404,10 +407,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
                     {/* Main Grid Body */}
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        {/* Time Column Sticky */}
-                        <div className="sticky left-0 z-20 bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_12px_rgba(0,0,0,0.05)]">
+                        
+                        {/* COLUNA DE HORÁRIOS FIXA (Sticky Left) */}
+                        <div className="sticky left-0 z-[40] bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.05)]">
                             {timeSlotsLabels.map(time => (
-                                <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-100/50 border-dashed">
+                                <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-100/50 border-dashed bg-white">
                                     <span>{time}</span>
                                 </div>
                             ))}
