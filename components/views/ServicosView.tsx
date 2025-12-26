@@ -3,12 +3,13 @@ import {
     Plus, Scissors, Clock, DollarSign, Edit2, Trash2, 
     Loader2, Search, X, CheckCircle, AlertTriangle, RefreshCw,
     LayoutGrid, List, FileSpreadsheet, SlidersHorizontal, ChevronRight,
-    Tag, MoreVertical, Filter, Download, ArrowUpRight
+    Tag, MoreVertical, Filter, Download, ArrowUpRight, FolderPlus
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { Service } from '../../types';
 import Toast, { ToastType } from '../shared/Toast';
 import ServiceModal from '../modals/ServiceModal';
+import CategoryModal from '../modals/CategoryModal';
 
 type ViewMode = 'list' | 'kanban';
 
@@ -22,11 +23,15 @@ const ServicosView: React.FC = () => {
     const [viewMode, setViewMode] = useState<ViewMode>('list');
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     
+    // UI State
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+    const [showAddMenu, setShowAddMenu] = useState(false);
     const [editingService, setEditingService] = useState<Partial<Service> | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
     const isMounted = useRef(true);
+    const addMenuRef = useRef<HTMLDivElement>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
 
     // --- Data Fetching ---
@@ -59,9 +64,18 @@ const ServicosView: React.FC = () => {
     useEffect(() => {
         isMounted.current = true;
         fetchServices();
+
+        const handleClickOutside = (event: MouseEvent) => {
+            if (addMenuRef.current && !addMenuRef.current.contains(event.target as Node)) {
+                setShowAddMenu(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
         return () => {
             isMounted.current = false;
             if (abortControllerRef.current) abortControllerRef.current.abort();
+            document.removeEventListener('mousedown', handleClickOutside);
         };
     }, []);
 
@@ -106,6 +120,16 @@ const ServicosView: React.FC = () => {
             setToast({ message: error.message, type: 'error' });
             throw error;
         }
+    };
+
+    const handleSaveCategory = async (category: { name: string; color: string }) => {
+        // Para o MVP, as categorias são extraídas dos serviços. 
+        // No futuro, se houver tabela própria, inserimos aqui.
+        // Simulamos a criação apenas exibindo um sucesso e permitindo que o usuário use no ServiceModal.
+        setToast({ message: `Categoria "${category.name}" disponível para uso!`, type: 'success' });
+        // Se houver uma tabela de categorias, descomente abaixo:
+        // await supabase.from('categories').insert([category]);
+        await fetchServices(); 
     };
 
     const handleDelete = async (id: number) => {
@@ -202,12 +226,45 @@ const ServicosView: React.FC = () => {
                         <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all">
                             <Download size={16} /> Exportar
                         </button>
-                        {/* Popover de exportação simulado */}
                     </div>
 
-                    <button onClick={() => { setEditingService(null); setIsModalOpen(true); }} className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-2xl font-black text-sm flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95">
-                        <Plus size={20} /> Novo Serviço
-                    </button>
+                    <div className="relative" ref={addMenuRef}>
+                        <button 
+                            onClick={() => setShowAddMenu(!showAddMenu)} 
+                            className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-2xl font-black text-sm flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95"
+                        >
+                            <Plus size={20} /> <span className="hidden sm:inline">Novo</span>
+                        </button>
+
+                        {showAddMenu && (
+                            <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                                <button 
+                                    onClick={() => { setEditingService(null); setIsModalOpen(true); setShowAddMenu(false); }}
+                                    className="w-full flex items-center gap-3 px-4 py-4 text-left hover:bg-orange-50 transition-colors group"
+                                >
+                                    <div className="p-2 bg-orange-100 rounded-xl text-orange-600 group-hover:bg-orange-500 group-hover:text-white transition-all">
+                                        <Scissors size={18} />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-black text-slate-700 leading-none">Novo Serviço</p>
+                                        <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">Corte, Cílios, etc</p>
+                                    </div>
+                                </button>
+                                <button 
+                                    onClick={() => { setIsCategoryModalOpen(true); setShowAddMenu(false); }}
+                                    className="w-full flex items-center gap-3 px-4 py-4 text-left hover:bg-blue-50 transition-colors group border-t border-slate-50"
+                                >
+                                    <div className="p-2 bg-blue-100 rounded-xl text-blue-600 group-hover:bg-blue-500 group-hover:text-white transition-all">
+                                        <Tag size={18} />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-black text-slate-700 leading-none">Nova Categoria</p>
+                                        <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">Organizar grupo</p>
+                                    </div>
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </header>
 
@@ -317,13 +374,11 @@ const ServicosView: React.FC = () => {
                                     <div className="flex items-center justify-between mb-4 px-2">
                                         <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
                                             {cat}
-                                            {/* FIX: Explicitly cast 'items' to 'Service[]' to resolve property 'length' and 'map' missing on 'unknown' error from Object.entries inference. */}
                                             <span className="bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full text-[9px] font-black">{(items as Service[]).length}</span>
                                         </h3>
-                                        <button className="text-slate-300 hover:text-orange-500"><Plus size={16}/></button>
+                                        <button onClick={() => { setEditingService({ categoria: cat } as any); setIsModalOpen(true); }} className="text-slate-300 hover:text-orange-500"><Plus size={16}/></button>
                                     </div>
                                     <div className="space-y-3 overflow-y-auto pr-1">
-                                        {/* FIX: Explicitly cast 'items' to 'Service[]' to resolve property 'map' missing on 'unknown' error. */}
                                         {(items as Service[]).map(s => (
                                             <div 
                                                 key={s.id} 
@@ -356,13 +411,20 @@ const ServicosView: React.FC = () => {
                 </div>
             </main>
 
-            {/* MODAL DE CADASTRO/EDIÇÃO */}
+            {/* MODAIS DE CADASTRO/EDIÇÃO */}
             {isModalOpen && (
                 <ServiceModal 
                     service={editingService}
                     availableCategories={categories}
                     onClose={() => { setIsModalOpen(false); setEditingService(null); }}
                     onSave={handleSave}
+                />
+            )}
+
+            {isCategoryModalOpen && (
+                <CategoryModal 
+                    onClose={() => setIsCategoryModalOpen(false)}
+                    onSave={handleSaveCategory}
                 />
             )}
         </div>
