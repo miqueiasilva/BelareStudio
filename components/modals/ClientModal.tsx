@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Phone, Mail, Calendar, Tag, Plus, Save, Loader2, Instagram, MapPin, Briefcase, CreditCard, Share2 } from 'lucide-react';
+import { X, User, Phone, Mail, Calendar, Tag, Plus, Save, Loader2, Instagram, MapPin, Briefcase, CreditCard, Share2, Home } from 'lucide-react';
 import { Client } from '../../types';
 
 interface ClientModalProps {
   client?: Client | null;
   onClose: () => void;
-  onSave: (client: Client) => Promise<void>; // Agora é async
+  onSave: (client: Client) => Promise<void>;
 }
 
-// FIX: Componentes movidos para fora para evitar perda de foco (Focus Loss Bug)
 const InputField = ({ label, name, value, type = "text", placeholder, icon: Icon, required = false, onChange }: any) => (
   <div className="space-y-1">
     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">{label}</label>
@@ -59,13 +58,22 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
 
   useEffect(() => {
     if (client) {
-      setFormData({ ...formData, ...client });
+      // Garantimos que campos de endereço existam no estado para evitar erros de undefined
+      setFormData({ 
+        ...formData, 
+        ...client,
+        cep: client.cep || '',
+        endereco: client.endereco || '',
+        numero: client.numero || '',
+        bairro: client.bairro || '',
+        cidade: client.cidade || ''
+      });
     }
   }, [client]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev: any) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -74,13 +82,14 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
 
     setIsSaving(true);
     try {
+        // O Payload agora é montado explicitamente com todos os campos, incluindo endereço
         const savedClient: Client = {
             ...formData,
-            id: client?.id || undefined, // Supabase gera ID se for novo
+            id: client?.id || undefined,
         };
         await onSave(savedClient);
     } catch (err) {
-        console.error("Erro ao salvar no modal:", err);
+        console.error("Erro crítico no salvamento:", err);
     } finally {
         setIsSaving(false);
     }
@@ -102,7 +111,7 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
           </button>
         </header>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
+        <form id="client-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <InputField label="Nome Completo" name="nome" value={formData.nome} onChange={handleChange} placeholder="Ex: Maria das Dores" required icon={User} />
@@ -115,28 +124,6 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
                 <InputField label="Telefone / WhatsApp" name="whatsapp" value={formData.whatsapp} onChange={handleChange} placeholder="(00) 00000-0000" icon={Phone} />
                 <InputField label="E-mail" name="email" value={formData.email} onChange={handleChange} type="email" placeholder="email@exemplo.com" icon={Mail} />
                 <InputField label="Instagram" name="instagram" value={formData.instagram} onChange={handleChange} placeholder="@usuario" icon={Instagram} />
-                
-                <div className="space-y-1">
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">Origem do Cliente</label>
-                    <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 focus-within:bg-white focus-within:ring-2 focus-within:ring-orange-100 focus-within:border-orange-300 transition-all">
-                        <Share2 size={16} className="text-slate-300" />
-                        <select 
-                            name="origem" 
-                            value={formData.origem} 
-                            onChange={handleChange}
-                            className="w-full bg-transparent outline-none text-sm text-slate-700 font-medium"
-                        >
-                            <option value="">Selecione a Origem</option>
-                            <option value="instagram">Instagram</option>
-                            <option value="indicacao">Indicação</option>
-                            <option value="google">Google</option>
-                            <option value="whatsapp">WhatsApp</option>
-                            <option value="trafego_pago">Tráfego Pago (Anúncio)</option>
-                            <option value="passagem">Passagem / Vitrine</option>
-                            <option value="outros">Outros</option>
-                        </select>
-                    </div>
-                </div>
             </div>
           </div>
 
@@ -144,23 +131,22 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
             <h4 className="text-orange-500 font-black text-xs uppercase tracking-[0.2em] border-b border-orange-50 pb-2">Seção 2: Informações Pessoais</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <InputField label="Data de Nascimento" name="nascimento" type="date" value={formData.nascimento} onChange={handleChange} icon={Calendar} />
-                <div className="space-y-1">
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">Sexo</label>
-                    <select 
-                        name="sexo" 
-                        value={formData.sexo} 
-                        onChange={handleChange}
-                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 outline-none text-sm text-slate-700 font-medium focus:ring-2 focus:ring-orange-100 focus:border-orange-300 transition-all"
-                    >
-                        <option value="">Selecione</option>
-                        <option value="feminino">Feminino</option>
-                        <option value="masculino">Masculino</option>
-                        <option value="outro">Outro / Prefere não dizer</option>
-                    </select>
-                </div>
                 <InputField label="CPF" name="cpf" value={formData.cpf} onChange={handleChange} placeholder="000.000.000-00" icon={CreditCard} />
-                <InputField label="RG" name="rg" value={formData.rg} onChange={handleChange} placeholder="00.000.000-0" />
                 <InputField label="Profissão" name="profissao" value={formData.profissao} onChange={handleChange} placeholder="Ex: Designer" icon={Briefcase} />
+            </div>
+          </div>
+
+          {/* RESTAURAÇÃO DA SEÇÃO 3: ENDEREÇO */}
+          <div className="space-y-6">
+            <h4 className="text-orange-500 font-black text-xs uppercase tracking-[0.2em] border-b border-orange-50 pb-2">Seção 3: Localização</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <InputField label="CEP" name="cep" value={formData.cep} onChange={handleChange} placeholder="00000-000" icon={MapPin} />
+                <div className="md:col-span-2">
+                    <InputField label="Logradouro" name="endereco" value={formData.endereco} onChange={handleChange} placeholder="Rua, Avenida, etc." icon={Home} />
+                </div>
+                <InputField label="Número" name="numero" value={formData.numero} onChange={handleChange} placeholder="123" />
+                <InputField label="Bairro" name="bairro" value={formData.bairro} onChange={handleChange} placeholder="Bairro" />
+                <InputField label="Cidade" name="cidade" value={formData.cidade} onChange={handleChange} placeholder="Cidade" />
             </div>
           </div>
         </form>
@@ -170,7 +156,8 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
             Cancelar
           </button>
           <button 
-            onClick={handleSubmit}
+            form="client-form"
+            type="submit"
             disabled={isSaving || !formData.nome}
             className="px-8 py-3 rounded-2xl bg-orange-500 text-white font-black shadow-xl shadow-orange-100 hover:bg-orange-600 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
           >
