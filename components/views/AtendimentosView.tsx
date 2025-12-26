@@ -4,8 +4,7 @@ import {
     ChevronLeft, ChevronRight, MessageSquare, 
     ChevronDown, RefreshCw, Calendar as CalendarIcon,
     ShoppingBag, Ban, Settings as SettingsIcon, Maximize2, 
-    LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock,
-    ArrowLeft, ArrowRight
+    LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock
 } from 'lucide-react';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -199,7 +198,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         
         if (targetIndex < 0 || targetIndex >= newResources.length) return;
         
-        // Troca de posição
+        // Troca de posição (Swap)
         [newResources[index], newResources[targetIndex]] = [newResources[targetIndex], newResources[index]];
         setResources(newResources);
     };
@@ -358,7 +357,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 <div className="min-w-full">
                     {/* Header Grid */}
                     <div className="grid sticky top-0 z-20 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        <div className="sticky left-0 z-[60] bg-white border-r border-slate-200 h-20 min-w-[60px] flex items-center justify-center shadow-[2px_0_8px_rgba(0,0,0,0.05)]">
+                        {/* CANTO SUPERIOR ESQUERDO FIXO */}
+                        <div className="sticky left-0 z-[70] bg-white border-r border-slate-200 h-20 min-w-[60px] flex items-center justify-center shadow-[4px_0_8px_rgba(0,0,0,0.05)]">
                             <Maximize2 size={16} className="text-slate-300" />
                         </div>
                         {columns.map((col, index) => (
@@ -371,23 +371,27 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                     </div>
                                 </div>
                                 
-                                {/* CONTROLES DE REORDENAÇÃO (Apenas modo Profissional) */}
+                                {/* CONTROLES DE REORDENAÇÃO */}
                                 {periodType === 'Dia' && col.type === 'professional' && (
-                                    <div className="absolute inset-x-0 bottom-0.5 flex justify-center gap-8 opacity-0 group-hover/header:opacity-100 transition-opacity">
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); moveProfessional(index, 'left'); }}
-                                            disabled={index === 0}
-                                            className="p-1 bg-white/80 hover:bg-orange-500 hover:text-white rounded-full text-slate-400 disabled:opacity-0 transition-all shadow-sm"
-                                        >
-                                            <ChevronLeft size={10} />
-                                        </button>
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); moveProfessional(index, 'right'); }}
-                                            disabled={index === columns.length - 1}
-                                            className="p-1 bg-white/80 hover:bg-orange-500 hover:text-white rounded-full text-slate-400 disabled:opacity-0 transition-all shadow-sm"
-                                        >
-                                            <ChevronRight size={10} />
-                                        </button>
+                                    <div className="absolute inset-x-0 bottom-1 flex justify-center gap-4 opacity-0 group-hover/header:opacity-100 transition-opacity">
+                                        {index > 0 && (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); moveProfessional(index, 'left'); }}
+                                                className="p-1 bg-white hover:bg-orange-500 hover:text-white rounded-full text-slate-400 shadow-sm transition-all"
+                                                title="Mover para esquerda"
+                                            >
+                                                <ChevronLeft size={12} />
+                                            </button>
+                                        )}
+                                        {index < columns.length - 1 && (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); moveProfessional(index, 'right'); }}
+                                                className="p-1 bg-white hover:bg-orange-500 hover:text-white rounded-full text-slate-400 shadow-sm transition-all"
+                                                title="Mover para direita"
+                                            >
+                                                <ChevronRight size={12} />
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -397,7 +401,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     {/* Main Grid Body */}
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         {/* COLUNA DE HORÁRIOS FIXA (STICKY) */}
-                        <div className="sticky left-0 z-50 bg-slate-50 border-r border-slate-200 min-w-[60px] shadow-[4px_0_12px_rgba(0,0,0,0.03)]">
+                        <div className="sticky left-0 z-50 bg-slate-50 border-r border-slate-200 min-w-[60px] shadow-[4px_0_12px_rgba(0,0,0,0.05)]">
                             {timeSlotsLabels.map(time => (
                                 <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-white/50 border-dashed bg-slate-50">
                                     <span>{time}</span>
@@ -451,7 +455,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 </div>
             </div>
 
-            {/* Modals */}
+            {/* Modals e Popovers... */}
             {isConfigModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsConfigModalOpen(false)}></div>
