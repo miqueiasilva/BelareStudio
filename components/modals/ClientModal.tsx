@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { X, User, Phone, Mail, Calendar, Tag, Plus, Save, Loader2, Instagram, MapPin, Briefcase, CreditCard, Share2, Home } from 'lucide-react';
 import { Client } from '../../types';
@@ -58,7 +59,6 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
 
   useEffect(() => {
     if (client) {
-      // Garantimos que campos de endereço existam no estado para evitar erros de undefined
       setFormData({ 
         ...formData, 
         ...client,
@@ -76,18 +76,20 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
     setFormData((prev: any) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.nome) return;
+  const handleManualSave = async () => {
+    if (!formData.nome) {
+        alert("Por favor, preencha o nome do cliente.");
+        return;
+    }
 
     setIsSaving(true);
     try {
-        // O Payload agora é montado explicitamente com todos os campos, incluindo endereço
         const savedClient: Client = {
             ...formData,
             id: client?.id || undefined,
         };
         await onSave(savedClient);
+        // O fechamento ocorre no callback onSave do pai se bem sucedido
     } catch (err) {
         console.error("Erro crítico no salvamento:", err);
     } finally {
@@ -111,7 +113,7 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
           </button>
         </header>
 
-        <form id="client-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <InputField label="Nome Completo" name="nome" value={formData.nome} onChange={handleChange} placeholder="Ex: Maria das Dores" required icon={User} />
@@ -136,7 +138,6 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
             </div>
           </div>
 
-          {/* RESTAURAÇÃO DA SEÇÃO 3: ENDEREÇO */}
           <div className="space-y-6">
             <h4 className="text-orange-500 font-black text-xs uppercase tracking-[0.2em] border-b border-orange-50 pb-2">Seção 3: Localização</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -149,15 +150,15 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
                 <InputField label="Cidade" name="cidade" value={formData.cidade} onChange={handleChange} placeholder="Cidade" />
             </div>
           </div>
-        </form>
+        </div>
 
         <footer className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3 flex-shrink-0">
           <button type="button" onClick={onClose} className="px-6 py-3 rounded-2xl text-slate-500 font-bold hover:bg-slate-200 transition-all">
             Cancelar
           </button>
           <button 
-            form="client-form"
-            type="submit"
+            type="button"
+            onClick={handleManualSave}
             disabled={isSaving || !formData.nome}
             className="px-8 py-3 rounded-2xl bg-orange-500 text-white font-black shadow-xl shadow-orange-100 hover:bg-orange-600 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
           >

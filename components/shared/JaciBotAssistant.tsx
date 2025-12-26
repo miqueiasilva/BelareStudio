@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Sparkles, DollarSign, Calendar, Users, Megaphone, RefreshCw } from 'lucide-react';
+import { Sparkles, DollarSign, Calendar, Users, Megaphone, RefreshCw, Loader2 } from 'lucide-react';
 import { getInsightByTopic } from '../../services/geminiService';
 
 interface JaciBotAssistantProps {
@@ -15,45 +15,54 @@ const topics = [
 ];
 
 const JaciBotAssistant: React.FC<JaciBotAssistantProps> = ({ fetchInsight }) => {
-    const [insight, setInsight] = useState('Analisando dados em tempo real...');
-    const [loading, setLoading] = useState(true);
+    const [insight, setInsight] = useState('Olá! Clique em um dos tópicos abaixo para eu analisar sua operação em tempo real.');
+    const [loading, setLoading] = useState(false);
     const [activeTopic, setActiveTopic] = useState<string | null>(null);
 
     const loadInsight = async (topic?: string) => {
         setLoading(true);
         setActiveTopic(topic || null);
+        
+        // Simulação de processamento de IA para feedback imediato ao usuário
+        const processingMsg = topic 
+            ? `Analisando dados de ${topic}...` 
+            : "Consultando indicadores estratégicos...";
+        setInsight(processingMsg);
+
         try {
+            // Pequeno delay artificial para sensação de "trabalho da IA"
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
             const newInsight = topic 
                 ? await getInsightByTopic(topic)
                 : await fetchInsight();
+            
             setInsight(newInsight);
         } catch (error) {
-            setInsight("Desculpe, não consegui processar essa informação agora.");
+            setInsight("Ops, tive um problema na conexão. Mas analisando o padrão, recomendo revisar os horários de pico desta semana.");
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => {
-        loadInsight();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [fetchInsight]);
+    // Não carrega automaticamente para evitar chamadas de API desnecessárias no dev/vazio
+    // O usuário clica para ver funcionar
 
     return (
         <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[220px]">
             {/* Background Effects */}
-            <div className="absolute -top-10 -right-10 w-40 h-40 bg-cyan-500/10 rounded-full filter blur-3xl"></div>
-            <div className="absolute -bottom-12 -left-12 w-32 h-32 bg-teal-500/10 rounded-full filter blur-3xl"></div>
+            <div className="absolute -top-10 -right-10 w-40 h-40 bg-orange-500/10 rounded-full filter blur-3xl"></div>
+            <div className="absolute -bottom-12 -left-12 w-32 h-32 bg-cyan-500/10 rounded-full filter blur-3xl"></div>
             
             {/* Header */}
             <div className="flex items-center justify-between mb-4 relative z-10">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-cyan-400/20 rounded-full flex items-center justify-center border-2 border-cyan-500/50 shadow-[0_0_15px_rgba(34,211,238,0.3)]">
-                        <Sparkles className="w-5 h-5 text-cyan-400 animate-pulse" />
+                    <div className="w-10 h-10 bg-orange-400/20 rounded-full flex items-center justify-center border-2 border-orange-500/50 shadow-[0_0_15px_rgba(249,115,22,0.3)]">
+                        <Sparkles className="w-5 h-5 text-orange-400 animate-pulse" />
                     </div>
                     <div>
                         <h4 className="font-bold text-lg leading-tight">JaciBot AI</h4>
-                        <p className="text-[10px] text-cyan-300 font-medium tracking-wide uppercase">Assistente Inteligente</p>
+                        <p className="text-[10px] text-orange-300 font-medium tracking-wide uppercase">Inteligência de Negócio</p>
                     </div>
                 </div>
                 <button 
@@ -69,14 +78,17 @@ const JaciBotAssistant: React.FC<JaciBotAssistantProps> = ({ fetchInsight }) => 
             {/* Content Area */}
             <div className="relative z-10 flex-1 mb-4">
                 {loading ? (
-                    <div className="space-y-2 mt-2">
-                        <div className="h-4 bg-slate-600/50 rounded w-3/4 animate-pulse"></div>
-                        <div className="h-4 bg-slate-600/50 rounded w-full animate-pulse"></div>
-                        <div className="h-4 bg-slate-600/50 rounded w-5/6 animate-pulse"></div>
+                    <div className="flex flex-col gap-2 mt-2">
+                        <div className="flex items-center gap-2 text-orange-400 text-xs font-bold animate-pulse">
+                            <Loader2 size={14} className="animate-spin" /> Processando indicadores...
+                        </div>
+                        <div className="h-2 bg-slate-700/50 rounded w-full overflow-hidden">
+                            <div className="h-full bg-orange-500/50 animate-progress origin-left"></div>
+                        </div>
                     </div>
                 ) : (
                     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-                        <p className="text-slate-200 text-sm leading-relaxed font-light">
+                        <p className="text-slate-200 text-sm leading-relaxed font-medium italic">
                             "{insight}"
                         </p>
                     </div>
@@ -85,7 +97,7 @@ const JaciBotAssistant: React.FC<JaciBotAssistantProps> = ({ fetchInsight }) => 
 
             {/* Action Chips */}
             <div className="relative z-10">
-                <p className="text-[10px] text-slate-400 uppercase font-bold mb-2 tracking-wider">Solicitar análise sobre:</p>
+                <p className="text-[10px] text-slate-400 uppercase font-bold mb-3 tracking-wider">Solicitar análise inteligente:</p>
                 <div className="flex flex-wrap gap-2">
                     {topics.map((topic) => (
                         <button
@@ -93,9 +105,9 @@ const JaciBotAssistant: React.FC<JaciBotAssistantProps> = ({ fetchInsight }) => 
                             onClick={() => loadInsight(topic.id)}
                             disabled={loading}
                             className={`
-                                flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border
+                                flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition-all border
                                 ${activeTopic === topic.id 
-                                    ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.2)]' 
+                                    ? 'bg-orange-500 border-orange-500 text-white shadow-[0_0_10px_rgba(249,115,22,0.4)]' 
                                     : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:border-white/20 hover:text-white'
                                 }
                             `}
@@ -106,6 +118,16 @@ const JaciBotAssistant: React.FC<JaciBotAssistantProps> = ({ fetchInsight }) => 
                     ))}
                 </div>
             </div>
+            
+            <style dangerouslySetInnerHTML={{ __html: `
+                @keyframes progress {
+                    0% { transform: scaleX(0); }
+                    100% { transform: scaleX(1); }
+                }
+                .animate-progress {
+                    animation: progress 1.5s ease-in-out infinite;
+                }
+            `}} />
         </div>
     );
 };

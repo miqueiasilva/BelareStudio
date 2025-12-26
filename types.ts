@@ -63,6 +63,23 @@ export interface Client {
   nascimento?: string; // "YYYY-MM-DD"
   tags?: string[];
   consent: boolean;
+  // Campos Adicionais para Perfil Completo
+  apelido?: string;
+  cpf?: string;
+  rg?: string;
+  sexo?: string;
+  profissao?: string;
+  instagram?: string;
+  origem?: string;
+  photo_url?: string;
+  online_booking_enabled?: boolean;
+  // Endereço
+  cep?: string;
+  endereco?: string;
+  numero?: string;
+  bairro?: string;
+  cidade?: string;
+  estado?: string;
 }
 
 export interface Appointment {
