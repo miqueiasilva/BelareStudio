@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import Card from '../shared/Card';
 import JaciBotAssistant from '../shared/JaciBotAssistant';
+import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import { getDashboardInsight } from '../../services/geminiService';
 import { initialAppointments, professionals } from '../../data/mockData';
 import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, ArrowRight, Clock, Globe } from 'lucide-react';
@@ -12,7 +13,7 @@ import SafeBar from '../charts/SafeBar';
 import { ViewState } from '../../types';
 
 const StatCard = ({ title, value, trend, icon: Icon, colorClass }: any) => (
-    <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-100 shadow-sm flex items-start justify-between hover:shadow-md transition-shadow">
+    <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-100 shadow-sm flex items-start justify-between hover:shadow-md transition-shadow text-left">
         <div className="min-w-0">
             <p className="text-slate-500 text-[10px] sm:text-xs font-black uppercase tracking-wider truncate">{title}</p>
             <h3 className="text-xl sm:text-2xl font-black text-slate-800 mt-1 truncate">{value}</h3>
@@ -55,9 +56,9 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
 
     return (
         <div className="p-4 sm:p-6 h-full overflow-y-auto bg-slate-50/50 custom-scrollbar font-sans">
-            {/* Header: Melhorado para Mobile */}
+            {/* Header */}
             <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 sm:mb-8 gap-4">
-                <div>
+                <div className="text-left">
                     <div className="flex items-center gap-2 text-slate-400 text-[10px] sm:text-xs font-bold uppercase tracking-widest mb-1">
                         <Calendar size={14} className="text-orange-500" />
                         <span className="capitalize">{format(today, "EEEE, dd 'de' MMMM", { locale: pt })}</span>
@@ -73,13 +74,13 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 </div>
             </header>
 
-            {/* KPI Grid: 2 colunas no mobile, 4 no desktop */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6 sm:mb-8">
+            {/* KPI Grid */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6 sm:mb-8 text-left">
                 <StatCard title="Faturamento" value={`R$ ${kpis.revenue.toFixed(0)}`} trend={12} icon={DollarSign} colorClass="bg-green-500" />
                 <StatCard title="Concluídos" value={kpis.count} trend={5} icon={Users} colorClass="bg-blue-500" />
                 <StatCard title="Agendados" value={kpis.scheduled} icon={Calendar} colorClass="bg-purple-500" />
                 <div className="bg-slate-800 p-4 sm:p-5 rounded-2xl text-white flex flex-col justify-between shadow-lg">
-                    <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Meta</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Meta do Mês</p>
                     <div className="flex items-end justify-between mt-1">
                         <h3 className="text-xl font-black">75%</h3>
                         <div className="w-8 h-8 rounded-full border-2 border-orange-500 border-t-transparent animate-spin-slow"></div>
@@ -89,7 +90,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
-                    {/* Quick Actions: Grid adaptável */}
+                    {/* Quick Actions */}
                     <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 sm:gap-4">
                         <QuickAction icon={UserPlus} label="Cliente" color="bg-blue-500" onClick={() => onNavigate('clientes')} />
                         <QuickAction icon={Globe} label="Link" color="bg-purple-500" onClick={() => onNavigate('agenda_online')} />
@@ -99,6 +100,18 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     </div>
 
                     <JaciBotAssistant fetchInsight={getDashboardInsight} />
+                    
+                    {/* Placeholder para outros gráficos ou métricas */}
+                    <Card title="Desempenho Semanal">
+                        <div className="h-40 flex items-center justify-center text-slate-300 font-bold uppercase tracking-widest text-xs">
+                             Gráfico de Atendimentos em breve
+                        </div>
+                    </Card>
+                </div>
+
+                {/* Coluna Lateral: Agenda do Dia */}
+                <div className="lg:col-span-1">
+                    <TodayScheduleWidget onNavigate={onNavigate} />
                 </div>
             </div>
         </div>
