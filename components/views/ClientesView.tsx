@@ -22,6 +22,7 @@ interface EnrichedClient extends Client {
   stats: ClientStats;
 }
 
+// Mock sparkline data for UI aesthetics
 const sparkData = [
     { v: 40 }, { v: 30 }, { v: 60 }, { v: 80 }, { v: 50 }, { v: 90 }, { v: 100 }
 ];
@@ -109,11 +110,12 @@ const ClientesView: React.FC = () => {
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <input type="file" accept=".csv" ref={fileInputRef} className="hidden" aria-hidden="true" />
 
+      {/* Header com marcador de versão para debug de deploy */}
       <header className="bg-white border-b border-slate-200 px-4 py-4 md:px-6 flex flex-col md:flex-row justify-between items-center gap-4 flex-shrink-0">
         <div>
           <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
             <Users className="text-orange-500" size={24} />
-            Clientes
+            Gestão de Clientes <span className="text-[10px] bg-orange-500 text-white px-2 py-0.5 rounded-full font-black tracking-tighter">v2.0</span>
           </h1>
         </div>
         
@@ -130,7 +132,7 @@ const ClientesView: React.FC = () => {
         </div>
       </header>
 
-      {/* KPI Cards: Altura fixa obrigatória nas divs dos Sparklines */}
+      {/* KPI Cards com Sparklines Protegidos por Altura Fixa */}
       <div className="flex md:grid md:grid-cols-3 gap-4 p-4 overflow-x-auto scrollbar-hide flex-shrink-0">
         <div className="min-w-[240px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3 h-24">
            <div className="flex items-center gap-3">
@@ -140,8 +142,8 @@ const ClientesView: React.FC = () => {
                  <p className="text-lg font-bold text-slate-800">{clients.length}</p>
                </div>
            </div>
-           {/* Fix: div com altura e largura explícitas para o Recharts */}
-           <div className="h-10 w-24">
+           {/* Fix: div com altura fixa h-12 para evitar dimension error no Recharts */}
+           <div className="h-12 w-24 flex-shrink-0">
                <ResponsiveContainer width="100%" height="100%">
                    <AreaChart data={sparkData}>
                        <Area type="monotone" dataKey="v" stroke="#3b82f6" fill="#dbeafe" strokeWidth={2} isAnimationActive={false} />
@@ -158,7 +160,7 @@ const ClientesView: React.FC = () => {
                  <p className="text-lg font-bold text-slate-800">3</p>
                </div>
            </div>
-           <div className="h-10 w-24">
+           <div className="h-12 w-24 flex-shrink-0">
                <ResponsiveContainer width="100%" height="100%">
                    <AreaChart data={sparkData}>
                        <Area type="monotone" dataKey="v" stroke="#10b981" fill="#dcfce7" strokeWidth={2} isAnimationActive={false} />
@@ -175,7 +177,7 @@ const ClientesView: React.FC = () => {
                  <p className="text-lg font-bold text-slate-800">R$ 145</p>
                </div>
            </div>
-           <div className="h-10 w-24">
+           <div className="h-12 w-24 flex-shrink-0">
                <ResponsiveContainer width="100%" height="100%">
                    <AreaChart data={sparkData}>
                        <Area type="monotone" dataKey="v" stroke="#f97316" fill="#ffedd5" strokeWidth={2} isAnimationActive={false} />
@@ -190,13 +192,15 @@ const ClientesView: React.FC = () => {
             <div className="flex p-1 bg-slate-100 rounded-xl self-start">
                 <button 
                     onClick={() => setActiveTab('todos')}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'todos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'todos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-50'}`}
+                    style={{ color: activeTab === 'todos' ? '' : '#64748b' }}
                 >
                     Todos os Clientes
                 </button>
                 <button 
                     onClick={() => setActiveTab('aniversariantes')}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${activeTab === 'aniversariantes' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${activeTab === 'aniversariantes' ? 'bg-white text-orange-600 shadow-sm' : ''}`}
+                    style={{ color: activeTab === 'aniversariantes' ? '' : '#64748b' }}
                 >
                     <Cake size={14} /> Aniversariantes
                 </button>
@@ -225,7 +229,7 @@ const ClientesView: React.FC = () => {
                     {filteredClients.map(client => (
                         <div key={client.id} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
                             <div className="flex items-center gap-4 min-w-0">
-                                <div className="w-12 h-12 rounded-full bg-slate-100 flex-shrink-0 flex items-center justify-center text-slate-400 font-bold border border-slate-200 overflow-hidden">
+                                <div className="w-12 h-12 rounded-full bg-slate-100 flex-shrink-0 flex items-center justify-center text-slate-400 font-bold border border-slate-200 overflow-hidden text-lg">
                                     {client.nome.charAt(0).toUpperCase()}
                                 </div>
                                 <div className="min-w-0">
