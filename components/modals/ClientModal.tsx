@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Phone, Mail, Calendar, Tag, Plus, Save, Loader2, Instagram, MapPin, Briefcase, CreditCard } from 'lucide-react';
+import { X, User, Phone, Mail, Calendar, Tag, Plus, Save, Loader2, Instagram, MapPin, Briefcase, CreditCard, Share2 } from 'lucide-react';
 import { Client } from '../../types';
 
 interface ClientModalProps {
@@ -15,6 +15,7 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
     whatsapp: '',
     email: '',
     instagram: '',
+    origem: '',
     nascimento: '',
     sexo: '',
     cpf: '',
@@ -100,13 +101,35 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
             <InputField label="Apelido" name="apelido" value={formData.apelido} placeholder="Ex: Dona Maria" icon={Smile} />
           </div>
 
-          {/* SEÇÃO 1: CONTATO */}
+          {/* SEÇÃO 1: CONTATO E ORIGEM */}
           <div className="space-y-6">
-            <h4 className="text-orange-500 font-black text-xs uppercase tracking-[0.2em] border-b border-orange-50 pb-2">Seção 1: Contato</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <h4 className="text-orange-500 font-black text-xs uppercase tracking-[0.2em] border-b border-orange-50 pb-2">Seção 1: Contato e Origem</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <InputField label="Telefone / WhatsApp" name="whatsapp" value={formData.whatsapp} placeholder="(00) 00000-0000" icon={Phone} />
                 <InputField label="E-mail" name="email" value={formData.email} type="email" placeholder="email@exemplo.com" icon={Mail} />
                 <InputField label="Instagram" name="instagram" value={formData.instagram} placeholder="@usuario" icon={Instagram} />
+                
+                <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider ml-1">Origem do Cliente</label>
+                    <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 focus-within:bg-white focus-within:ring-2 focus-within:ring-orange-100 focus-within:border-orange-300 transition-all">
+                        <Share2 size={16} className="text-slate-300" />
+                        <select 
+                            name="origem" 
+                            value={formData.origem} 
+                            onChange={handleChange}
+                            className="w-full bg-transparent outline-none text-sm text-slate-700 font-medium"
+                        >
+                            <option value="">Selecione a Origem</option>
+                            <option value="instagram">Instagram</option>
+                            <option value="indicacao">Indicação</option>
+                            <option value="google">Google</option>
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="trafego_pago">Tráfego Pago (Anúncio)</option>
+                            <option value="passagem">Passagem / Vitrine</option>
+                            <option value="outros">Outros</option>
+                        </select>
+                    </div>
+                </div>
             </div>
           </div>
 
@@ -185,4 +208,3 @@ const Smile = ({ size, className }: any) => (
 );
 
 export default ClientModal;
-// Updated to BelaFlow

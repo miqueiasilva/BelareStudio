@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef } from 'react';
 import { 
   UserPlus, Search, Phone, Edit, 
@@ -110,12 +109,12 @@ const ClientesView: React.FC = () => {
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <input type="file" accept=".csv" ref={fileInputRef} className="hidden" aria-hidden="true" />
 
-      {/* Header com Marcador Visual v2.0 para confirmação de deploy */}
+      {/* Header */}
       <header className="bg-white border-b border-slate-200 px-4 py-4 md:px-6 flex flex-col md:flex-row justify-between items-center gap-4 flex-shrink-0">
         <div>
           <h1 className="text-xl font-bold text-slate-800 flex items-center">
             <Users className="text-orange-500 mr-2" size={24} />
-            Gestão de Clientes <span className="ml-3 text-xs bg-orange-500 text-white px-2 py-1 rounded-full font-bold shadow-sm">v2.0</span>
+            Gestão de Clientes
           </h1>
         </div>
         
@@ -132,7 +131,7 @@ const ClientesView: React.FC = () => {
         </div>
       </header>
 
-      {/* KPI Cards: Blindagem com containers de 100px para evitar width(-1) */}
+      {/* KPI Cards */}
       <div className="flex md:grid md:grid-cols-3 gap-4 p-4 overflow-x-auto scrollbar-hide flex-shrink-0">
         <div className="min-w-[240px] bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
            <div className="flex items-center justify-between mb-2">
@@ -144,7 +143,6 @@ const ClientesView: React.FC = () => {
                    </div>
                </div>
            </div>
-           {/* Blindagem Recharts: Altura fixa de 100px */}
            <div className="h-[100px] w-full mt-2">
                <ResponsiveContainer width="100%" height="100%">
                    <AreaChart data={sparkData}>
