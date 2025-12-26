@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   UserPlus, Search, Phone, Edit, 
@@ -18,6 +19,7 @@ const ClientesView: React.FC = () => {
   const fetchClients = async () => {
     setLoading(true);
     try {
+        // Busca explícita incluindo photo_url para garantir a exibição do avatar
         const { data, error } = await supabase
             .from('clients')
             .select('*')
@@ -136,8 +138,16 @@ const ClientesView: React.FC = () => {
                         className="p-5 flex items-center justify-between hover:bg-orange-50/30 cursor-pointer transition-all active:scale-[0.99]"
                     >
                         <div className="flex items-center gap-4">
-                            <div className="w-14 h-14 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-orange-600 font-black text-xl shadow-sm">
-                                {client.nome.charAt(0)}
+                            <div className="w-14 h-14 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-orange-600 font-black text-xl shadow-sm overflow-hidden">
+                                {client.photo_url ? (
+                                    <img 
+                                        src={client.photo_url} 
+                                        className="w-full h-full object-cover" 
+                                        alt={client.nome} 
+                                    />
+                                ) : (
+                                    client.nome.charAt(0)
+                                )}
                             </div>
                             <div>
                                 <h4 className="font-bold text-slate-800 text-base">{client.nome}</h4>
