@@ -330,19 +330,39 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                 }}
                             >
                                 {timeSlots.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
-                                {filteredAppointments.filter(app => (periodType === 'Semana' ? isSameDay(app.start, col.data as Date) : (app.professional.id === col.id || app.professional.name === col.title))).map(app => (
-                                    <div
-                                        key={app.id}
-                                        ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }}
-                                        onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }}
-                                        className={`absolute left-0 right-0 mx-1 rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer z-10 hover:brightness-95 transition-all ${getStatusColor(app.status)}`}
-                                        style={{ ...getAppointmentStyle(app.start, app.end), borderLeftColor: app.service.color }}
-                                    >
-                                        <span className="text-[10px] font-bold opacity-70 leading-none">{format(app.start, 'HH:mm')}</span>
-                                        <p className="font-bold text-slate-900 text-xs truncate leading-tight">{app.client?.nome || 'Bloqueado'}</p>
-                                        <p className="text-[10px] font-medium text-slate-600 truncate leading-tight">{app.service.name}</p>
-                                    </div>
-                                ))}
+                                {filteredAppointments.filter(app => (periodType === 'Semana' ? isSameDay(app.start, col.data as Date) : (app.professional.id === col.id || app.professional.name === col.title))).map(app => {
+                                    const durationInMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
+                                    const isVeryShort = durationInMinutes <= 20;
+                                    const isShort = durationInMinutes <= 35;
+
+                                    return (
+                                        <div
+                                            key={app.id}
+                                            ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }}
+                                            onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }}
+                                            title={`${format(app.start, 'HH:mm')} - ${app.client?.nome || 'Bloqueado'} (${app.service.name})`}
+                                            className={`absolute left-0 right-0 mx-1 rounded-md shadow-sm border border-l-4 p-1 cursor-pointer z-10 hover:brightness-95 transition-all overflow-hidden flex flex-col ${isVeryShort ? 'justify-center' : 'justify-start'} ${getStatusColor(app.status)}`}
+                                            style={{ ...getAppointmentStyle(app.start, app.end), borderLeftColor: app.service.color }}
+                                        >
+                                            <div className="flex items-center gap-1 overflow-hidden">
+                                                <span className="text-[9px] font-bold opacity-70 leading-none flex-shrink-0">{format(app.start, 'HH:mm')}</span>
+                                                {isVeryShort && <span className="font-bold text-slate-900 text-[10px] truncate leading-none flex-1">{app.client?.nome || 'Bloqueado'}</span>}
+                                            </div>
+                                            
+                                            {!isVeryShort && (
+                                                <p className="font-bold text-slate-900 text-[11px] truncate leading-tight mt-0.5">
+                                                    {app.client?.nome || 'Bloqueado'}
+                                                </p>
+                                            )}
+                                            
+                                            {!isShort && (
+                                                <p className="text-[10px] font-medium text-slate-600 truncate leading-tight">
+                                                    {app.service.name}
+                                                </p>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         ))}
                         <TimelineIndicator />
