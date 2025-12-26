@@ -49,7 +49,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const [activeTab, setActiveTab] = useState<'geral' | 'consumo' | 'atividades'>('geral');
     const fileInputRef = useRef<HTMLInputElement>(null);
     
-    // Estado do formulário centralizado e reativo
     const [formData, setFormData] = useState<any>({
         ...client,
         apelido: (client as any).apelido || '',
@@ -68,13 +67,12 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         origem: (client as any).origem || 'Instagram'
     });
 
-    // Função universal de mudança de input
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setFormData((prev: any) => ({ ...prev, [name]: value }));
     };
 
-    // Lógica de Upload de Avatar
+    // CORREÇÃO DO UPLOAD (Prevenção de Loop Infinito)
     const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -85,32 +83,43 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             const fileName = `avatar_${client.id || 'new'}_${Date.now()}.${fileExt}`;
             const filePath = `${fileName}`;
 
-            // 1. Upload para o bucket 'avatars'
             const { error: uploadError } = await supabase.storage
                 .from('avatars')
                 .upload(filePath, file);
 
             if (uploadError) throw uploadError;
 
-            // 2. Obter URL Pública
             const { data: { publicUrl } } = supabase.storage
                 .from('avatars')
                 .getPublicUrl(filePath);
 
-            // 3. Atualizar Estado Local (isso será salvo no DB ao clicar em Salvar Alterações)
             setFormData((prev: any) => ({ ...prev, photo_url: publicUrl }));
+            console.log("Upload concluído com sucesso. URL gerada:", publicUrl);
             
         } catch (error: any) {
+            console.error("Falha no upload do avatar:", error);
             alert(`Erro no upload: ${error.message}`);
         } finally {
+            // ESSENCIAL: Garante que o loading pare independente do resultado
             setIsUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
+    // CORREÇÃO DO SALVAMENTO (Debug e Persistência)
     const handleSave = async () => {
-        console.log("Persistindo Payload Completo:", formData);
-        await onSave(formData);
-        setIsEditing(false);
+        console.log("Botão 'Salvar' acionado. Iniciando persistência...");
+        console.log("Payload para o banco:", formData);
+        
+        try {
+            // A prop onSave chama o upsert no ClientesView.tsx
+            await onSave(formData);
+            setIsEditing(false);
+            console.log("Dados salvos com sucesso.");
+        } catch (error: any) {
+            console.error("Erro crítico ao persistir dados do cliente:", error);
+            alert(`Erro ao salvar: ${error.message}`);
+        }
     };
 
     const clientAge = useMemo(() => {
@@ -138,7 +147,12 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                         ) : (
                             <div className="flex gap-2">
                                 <button onClick={() => setIsEditing(false)} className="px-4 py-2.5 text-slate-500 font-bold text-sm">Cancelar</button>
-                                <button onClick={handleSave} className="px-6 py-2.5 bg-orange-600 text-white font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95">
+                                {/* CORREÇÃO: Mudança de submit para button para evitar bloqueios invisíveis de abas ocultas */}
+                                <button 
+                                    type="button" 
+                                    onClick={handleSave} 
+                                    className="px-6 py-2.5 bg-orange-600 text-white font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95"
+                                >
                                     <Save size={18} /> Salvar Alterações
                                 </button>
                             </div>
@@ -147,7 +161,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 </div>
 
                 <div className="flex items-center gap-5">
-                    {/* AVATAR INTERATIVO COM UPLOAD */}
                     <div className="relative group">
                         <div 
                             onClick={() => isEditing && fileInputRef.current?.click()}
