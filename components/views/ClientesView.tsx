@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   UserPlus, Search, Phone, Edit, 
-  Trash2, FileUp, MoreVertical, Cake, Users, History, Loader2, RefreshCw, AlertCircle
+  Trash2, FileUp, MoreVertical, Cake, Users, History, Loader2, RefreshCw, AlertCircle, ChevronRight
 } from 'lucide-react';
 import { Client } from '../../types';
-import ClientModal from '../modals/ClientModal';
+import ClientProfile from './ClientProfile'; // Importando o novo componente
 import Toast, { ToastType } from '../shared/Toast';
 import { supabase } from '../../services/supabaseClient';
 
@@ -12,7 +12,6 @@ const ClientesView: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
@@ -27,8 +26,7 @@ const ClientesView: React.FC = () => {
         if (error) throw error;
         setClients(data || []);
     } catch (e: any) {
-        console.error("Erro ao carregar clientes do banco:", e);
-        showToast("Falha ao sincronizar com o servidor", 'error');
+        console.error("Erro ao carregar clientes:", e);
     } finally {
         setLoading(false);
     }
@@ -38,78 +36,26 @@ const ClientesView: React.FC = () => {
 
   const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
-  /**
-   * FUNÇÃO REFATORADA: handleSaveClient
-   * Objetivo: Garantir persistência real antes do feedback visual.
-   */
   const handleSaveClient = async (clientData: Client) => {
-    const isUpdate = !!clientData.id;
-    
-    // 1. Limpeza de Payload: Garantimos que campos nulos não quebrem o DB
-    const payload = {
-        nome: clientData.nome,
-        whatsapp: clientData.whatsapp || null,
-        email: clientData.email || null,
-        nascimento: clientData.nascimento || null,
-        instagram: (clientData as any).instagram || null,
-        origem: (clientData as any).origem || 'link',
-        consent: true
-    };
-
     try {
-        // 2. Operação Assíncrona com Await
-        // .select() é crucial para retornar o objeto atualizado do banco
         const { data: savedRow, error } = await supabase
             .from('clients')
-            .upsert(isUpdate ? { id: clientData.id, ...payload } : payload)
+            .upsert(clientData)
             .select() 
             .single();
 
-        // 3. Validação Rigorosa da Resposta
-        if (error) {
-            // Se houver erro de rede ou de constraint do banco, cai aqui
-            throw new Error(`DB Error: ${error.message}`);
-        }
+        if (error) throw error;
 
-        if (!savedRow) {
-            throw new Error("O servidor não retornou os dados salvos.");
-        }
-
-        // 4. Sincronização de Estado (Evita Stale Data)
-        // Em vez de dar F5, atualizamos o array local com o dado real vindo do DB
         setClients(prev => {
-            if (isUpdate) {
-                return prev.map(c => c.id === savedRow.id ? savedRow : c);
-            } else {
-                return [savedRow, ...prev];
-            }
+            const exists = prev.find(c => c.id === savedRow.id);
+            if (exists) return prev.map(c => c.id === savedRow.id ? savedRow : c);
+            return [savedRow, ...prev];
         });
 
-        // 5. Sucesso real confirmado
-        showToast(isUpdate ? 'Perfil atualizado!' : 'Cliente cadastrado!');
-        setIsModalOpen(false);
-        setSelectedClient(null);
-
+        showToast('Perfil atualizado com sucesso!');
     } catch (e: any) {
-        // 6. Tratamento de Erros Silenciosos
-        console.error("CRITICAL ERROR NO SALVAMENTO:", {
-            error: e,
-            payload: payload,
-            timestamp: new Date().toISOString()
-        });
-
-        showToast(
-            e.message.includes("violates check constraint") 
-            ? "Dados inválidos. Verifique os campos." 
-            : "Erro de conexão. Os dados NÃO foram salvos.", 
-            'error'
-        );
+        showToast("Erro ao salvar dados.", 'error');
     }
-  };
-
-  const handleEdit = (client: Client) => {
-    setSelectedClient(client);
-    setIsModalOpen(true);
   };
 
   const filteredClients = clients.filter(c => 
@@ -122,26 +68,26 @@ const ClientesView: React.FC = () => {
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
       <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center flex-shrink-0">
-        <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <Users className="text-orange-500" /> Gestão de Clientes
+        <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
+            <Users className="text-orange-500" /> Clientes
         </h1>
         <button 
-          onClick={() => { setSelectedClient(null); setIsModalOpen(true); }}
+          onClick={() => setSelectedClient({ nome: '', consent: true } as any)}
           className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-orange-100"
         >
-          <UserPlus size={18} /> Novo Cliente
+          <UserPlus size={18} /> Novo
         </button>
       </header>
 
       <div className="p-4 border-b bg-white">
-        <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+        <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
             <input 
                 type="text" 
-                placeholder="Buscar por nome ou celular..." 
+                placeholder="Nome ou celular..." 
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-100 outline-none"
+                className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-orange-100 outline-none font-medium"
             />
         </div>
       </div>
@@ -150,34 +96,41 @@ const ClientesView: React.FC = () => {
         {loading ? (
             <div className="flex flex-col items-center justify-center h-64 text-slate-400">
                 <Loader2 className="animate-spin mb-2" />
-                <p className="text-sm">Carregando base de clientes...</p>
+                <p className="text-[10px] font-black uppercase tracking-widest">Sincronizando base...</p>
             </div>
         ) : (
             <div className="divide-y divide-slate-100">
                 {filteredClients.map(client => (
-                    <div key={client.id} className="p-4 flex items-center justify-between hover:bg-slate-50">
+                    <div 
+                        key={client.id} 
+                        onClick={() => setSelectedClient(client)}
+                        className="p-5 flex items-center justify-between hover:bg-orange-50/30 cursor-pointer transition-all active:scale-[0.99]"
+                    >
                         <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 font-bold">
+                            <div className="w-14 h-14 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-orange-600 font-black text-xl shadow-sm">
                                 {client.nome.charAt(0)}
                             </div>
                             <div>
-                                <h4 className="font-bold text-slate-800">{client.nome}</h4>
-                                <p className="text-xs text-slate-500">{client.whatsapp || 'Sem celular'}</p>
+                                <h4 className="font-bold text-slate-800 text-base">{client.nome}</h4>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <p className="text-xs text-slate-400 font-medium">{client.whatsapp || 'Sem celular'}</p>
+                                    {(client as any).online_booking_enabled && (
+                                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" title="Link Ativo"></span>
+                                    )}
+                                </div>
                             </div>
                         </div>
-                        <button onClick={() => handleEdit(client)} className="p-2 text-slate-400 hover:text-orange-500 transition-colors">
-                            <Edit size={18} />
-                        </button>
+                        <ChevronRight className="text-slate-300" size={20} />
                     </div>
                 ))}
             </div>
         )}
       </div>
 
-      {isModalOpen && (
-        <ClientModal 
+      {selectedClient && (
+        <ClientProfile 
           client={selectedClient} 
-          onClose={() => setIsModalOpen(false)} 
+          onClose={() => setSelectedClient(null)} 
           onSave={handleSaveClient} 
         />
       )}
