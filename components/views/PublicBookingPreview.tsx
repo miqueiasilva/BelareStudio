@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { services, mockOnlineConfig } from '../../data/mockData';
 import { 
@@ -7,7 +6,6 @@ import {
     Loader2, MapPin, Phone, User, Mail, Heart
 } from 'lucide-react';
 import { format, addDays, isSameDay } from 'date-fns';
-// FIX: Corrected locale import path to 'date-fns/locale/pt-BR' to resolve "no exported member 'ptBR'" error.
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
 import { LegacyService } from '../../types';
@@ -31,13 +29,25 @@ const PublicBookingPreview: React.FC = () => {
         'Sobrancelhas': true,
         'Geral': true
     });
+    
+    // Branding
+    const [customCoverUrl, setCustomCoverUrl] = useState<string | null>(null);
 
     // --- Data Fetching ---
     useEffect(() => {
-        const fetchRealStaff = async () => {
+        const fetchPublicData = async () => {
             setIsLoadingStaff(true);
             try {
-                // Fetch active professionals from DB
+                // 1. Fetch Branding
+                const { data: coverSetting } = await supabase
+                    .from('settings')
+                    .select('value')
+                    .eq('key', 'public_cover_image')
+                    .maybeSingle();
+                
+                if (coverSetting) setCustomCoverUrl(coverSetting.value);
+
+                // 2. Fetch active professionals from DB
                 const { data, error } = await supabase
                     .from('professionals')
                     .select('id, name, photo_url, role')
@@ -46,12 +56,12 @@ const PublicBookingPreview: React.FC = () => {
                 if (error) throw error;
                 setProfessionalsList(data || []);
             } catch (e) {
-                console.error("Erro ao carregar profissionais públicos:", e);
+                console.error("Erro ao carregar dados públicos:", e);
             } finally {
                 setIsLoadingStaff(false);
             }
         };
-        fetchRealStaff();
+        fetchPublicData();
     }, []);
 
     // --- Derived Data ---
@@ -191,19 +201,37 @@ const PublicBookingPreview: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-[#F8F9FA] pb-32 font-sans relative">
-            <div className="bg-white p-6 shadow-sm sticky top-0 z-20">
+            
+            {/* Dynamic Cover Section */}
+            {step === 'service' && (
+                <div className="w-full h-48 md:h-64 relative overflow-hidden bg-slate-900 animate-in fade-in duration-700">
+                    <img 
+                        src={customCoverUrl || mockOnlineConfig.coverUrl} 
+                        className="w-full h-full object-cover opacity-60 transition-all"
+                        alt="Capa do Estúdio"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent"></div>
+                    <div className="absolute bottom-6 left-6 right-6">
+                        <div className="max-w-md mx-auto flex items-center gap-4">
+                            <img src={mockOnlineConfig.logoUrl} className="w-16 h-16 rounded-2xl border-4 border-white shadow-xl object-cover" alt="Logo" />
+                            <div>
+                                <h1 className="text-xl font-black text-white leading-tight drop-shadow-md">{mockOnlineConfig.studioName}</h1>
+                                <div className="flex items-center gap-1 text-slate-200 text-xs mt-0.5"><MapPin size={10} /><span>Centro, São Paulo</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="bg-white p-4 shadow-sm sticky top-0 z-20">
                 <div className="max-w-md mx-auto">
                     {step === 'service' ? (
-                        <div className="flex gap-4 items-center">
-                            <div className="relative">
-                                <img src={mockOnlineConfig.logoUrl} className="w-16 h-16 rounded-full border border-slate-100 shadow-sm object-cover" alt="Logo" />
-                                <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
+                        <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                                <div className="flex text-amber-400"><Star size={14} fill="currentColor"/> 5.0</div>
+                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">(128 avaliações)</span>
                             </div>
-                            <div>
-                                <h1 className="font-bold text-lg text-slate-900 leading-tight">{mockOnlineConfig.studioName}</h1>
-                                <div className="flex items-center gap-1 text-slate-500 text-xs mt-1"><MapPin size={12} /><span>Centro, São Paulo</span></div>
-                                <div className="flex gap-1 mt-2"><div className="flex text-amber-400"><Star size={12} fill="currentColor"/> 5.0</div><span className="text-xs text-slate-400">(128 avaliações)</span></div>
-                            </div>
+                            <button className="p-2 text-slate-400 hover:text-orange-500"><Share2 size={18}/></button>
                         </div>
                     ) : (
                         <div className="flex items-center justify-between w-full">
@@ -322,7 +350,7 @@ const PublicBookingPreview: React.FC = () => {
                              <h2 className="font-bold text-slate-800 mb-4 text-sm uppercase tracking-wide">Horários Disponíveis</h2>
                              <div className="grid grid-cols-4 gap-3">
                                 {timeSlots.map(time => (
-                                    <button key={time} onClick={() => setSelectedTime(time)} className={`py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${selectedTime === time ? 'bg-orange-500 text-white border-orange-500 shadow-md transform scale-105' : 'bg-white text-slate-600 border-slate-100 hover:border-orange-200'}`}>{time}</button>
+                                    <button key={time} onClick={() => setSelectedTime(time)} className={`py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${selectedTime === time ? 'bg-orange-500 text-white border-orange-500 shadow-md transform scale-105' : 'bg-white text-slate-600 border-slate-100 hover:bg-orange-200'}`}>{time}</button>
                                 ))}
                              </div>
                         </div>

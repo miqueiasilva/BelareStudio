@@ -1,10 +1,9 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
     Settings, User, Scissors, Clock, Bell, Store, Save, Plus, 
     Trash2, Edit2, Search, ChevronLeft, Menu, ChevronRight, 
     Loader2, MapPin, Phone, Wallet, CreditCard, DollarSign,
-    CheckCircle, Info, Calendar
+    CheckCircle, Info, Calendar, Image as ImageIcon, Camera, Globe
 } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
@@ -27,6 +26,10 @@ const ConfiguracoesView: React.FC = () => {
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [isUploadingCover, setIsUploadingCover] = useState(false);
+    const [publicCoverUrl, setPublicCoverUrl] = useState<string | null>(null);
+
+    const coverInputRef = useRef<HTMLInputElement>(null);
 
     // --- State: Studio Data ---
     const [studioData, setStudioData] = useState({
@@ -67,11 +70,20 @@ const ConfiguracoesView: React.FC = () => {
                 });
             }
 
-            // 2. Services
+            // 2. Public Cover from generic settings table
+            const { data: coverSetting } = await supabase
+                .from('settings')
+                .select('value')
+                .eq('key', 'public_cover_image')
+                .maybeSingle();
+            
+            if (coverSetting) setPublicCoverUrl(coverSetting.value);
+
+            // 3. Services
             const { data: svcs } = await supabase.from('services').select('*').order('name');
             if (svcs) setServices(svcs);
 
-            // 3. Payment Methods
+            // 4. Payment Methods
             const { data: payments } = await supabase.from('payment_methods').select('*').order('id');
             if (payments) setPaymentMethods(payments);
 
@@ -115,6 +127,45 @@ const ConfiguracoesView: React.FC = () => {
             showToast(e.message, "error");
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsUploadingCover(true);
+        try {
+            const fileExt = file.name.split('.').pop();
+            const fileName = `public_cover_${Date.now()}.${fileExt}`;
+            const filePath = `covers/${fileName}`;
+
+            // 1. Upload to 'branding' bucket
+            const { error: uploadError } = await supabase.storage
+                .from('branding')
+                .upload(filePath, file);
+
+            if (uploadError) throw uploadError;
+
+            // 2. Get Public URL
+            const { data: { publicUrl } } = supabase.storage
+                .from('branding')
+                .getPublicUrl(filePath);
+
+            // 3. Update settings table
+            const { error: dbError } = await supabase
+                .from('settings')
+                .upsert({ key: 'public_cover_image', value: publicUrl });
+
+            if (dbError) throw dbError;
+
+            setPublicCoverUrl(publicUrl);
+            showToast("Capa da página atualizada!");
+        } catch (error: any) {
+            console.error(error);
+            showToast(`Erro no upload: ${error.message}`, "error");
+        } finally {
+            setIsUploadingCover(false);
         }
     };
 
@@ -167,6 +218,39 @@ const ConfiguracoesView: React.FC = () => {
                                 placeholder="Rua, Número, Bairro, Cidade - UF"
                             />
                         </div>
+                    </div>
+                </div>
+            </Card>
+
+            <Card title="Página Pública: Identidade Visual" icon={<Globe className="w-5 h-5" />}>
+                <div className="space-y-4">
+                    <p className="text-xs text-slate-500">Escolha uma foto impactante para ser a capa da sua página de agendamentos online.</p>
+                    
+                    <div className="relative w-full h-48 bg-slate-100 rounded-2xl overflow-hidden border border-slate-200 group">
+                        {publicCoverUrl ? (
+                            <img src={publicCoverUrl} className="w-full h-full object-cover" alt="Capa" />
+                        ) : (
+                            <div className="flex flex-col items-center justify-center h-full text-slate-300">
+                                <ImageIcon size={48} />
+                                <span className="text-xs font-bold mt-2">Sem imagem de capa</span>
+                            </div>
+                        )}
+                        
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button 
+                                onClick={() => coverInputRef.current?.click()}
+                                disabled={isUploadingCover}
+                                className="bg-white text-slate-800 px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg"
+                            >
+                                {isUploadingCover ? <Loader2 className="animate-spin" size={18} /> : <Camera size={18} />}
+                                Alterar Capa
+                            </button>
+                        </div>
+                    </div>
+                    <input type="file" ref={coverInputRef} className="hidden" onChange={handleCoverUpload} accept="image/*" />
+                    
+                    <div className="flex items-center gap-2 text-[10px] text-amber-600 font-bold uppercase bg-amber-50 p-2 rounded-lg border border-amber-100">
+                        <Info size={14} /> Recomendado: 1200x600px (JPG/PNG)
                     </div>
                 </div>
             </Card>
@@ -325,7 +409,7 @@ const ConfiguracoesView: React.FC = () => {
                 Para gerenciar permissões, serviços habilitados e horários individuais da equipe, utilize o menu "Clientes / Equipe" no menu principal.
             </p>
             <button 
-                onClick={() => window.location.hash = '#/clientes'}
+                onClick={() => window.location.hash = '#/equipe'}
                 className="bg-orange-500 text-white px-6 py-2 rounded-xl font-bold hover:bg-orange-600 transition flex items-center gap-2 mx-auto"
             >
                 Acessar Gestão de Equipe <ChevronRight size={16} />
