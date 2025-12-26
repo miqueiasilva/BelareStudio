@@ -2,13 +2,14 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { 
   UserPlus, Search, Phone, Edit, 
-  Trash2, FileUp, MoreVertical, Cake, History, Users
+  Trash2, FileUp, MoreVertical, Cake, Users
 } from 'lucide-react';
 import { clients as initialClients, initialAppointments } from '../../data/mockData';
 import { Client } from '../../types';
 import ClientModal from '../modals/ClientModal';
 import Toast, { ToastType } from '../shared/Toast';
 import { differenceInDays, isSameMonth } from 'date-fns';
+import { ResponsiveContainer, AreaChart, Area } from 'recharts';
 
 interface ClientStats {
   totalSpent: number;
@@ -20,6 +21,11 @@ interface ClientStats {
 interface EnrichedClient extends Client {
   stats: ClientStats;
 }
+
+// Mock sparkline data for UI aesthetics
+const sparkData = [
+    { v: 40 }, { v: 30 }, { v: 60 }, { v: 80 }, { v: 50 }, { v: 90 }, { v: 100 }
+];
 
 const ClientesView: React.FC = () => {
   const [clients, setClients] = useState<Client[]>(initialClients);
@@ -126,27 +132,57 @@ const ClientesView: React.FC = () => {
         </div>
       </header>
 
-      {/* KPI Cards */}
+      {/* KPI Cards com Sparklines Corrigidos */}
       <div className="flex md:grid md:grid-cols-3 gap-4 p-4 overflow-x-auto scrollbar-hide flex-shrink-0">
-        <div className="min-w-[200px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
-           <div className="bg-blue-50 p-2.5 rounded-lg text-blue-500"><Users size={20}/></div>
-           <div>
-             <p className="text-[10px] font-bold text-slate-400 uppercase">Total</p>
-             <p className="text-lg font-bold text-slate-800">{clients.length}</p>
+        <div className="min-w-[240px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3">
+           <div className="flex items-center gap-3">
+               <div className="bg-blue-50 p-2.5 rounded-lg text-blue-500"><Users size={20}/></div>
+               <div>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase">Total</p>
+                 <p className="text-lg font-bold text-slate-800">{clients.length}</p>
+               </div>
+           </div>
+           {/* Fix: Explicit height container for Recharts */}
+           <div className="h-10 w-20">
+               <ResponsiveContainer width="100%" height="100%">
+                   <AreaChart data={sparkData}>
+                       <Area type="monotone" dataKey="v" stroke="#3b82f6" fill="#dbeafe" strokeWidth={2} isAnimationActive={false} />
+                   </AreaChart>
+               </ResponsiveContainer>
            </div>
         </div>
-        <div className="min-w-[200px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
-           <div className="bg-green-50 p-2.5 rounded-lg text-green-500"><UserPlus size={20}/></div>
-           <div>
-             <p className="text-[10px] font-bold text-slate-400 uppercase">Novos (Mês)</p>
-             <p className="text-lg font-bold text-slate-800">3</p>
+
+        <div className="min-w-[240px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3">
+           <div className="flex items-center gap-3">
+               <div className="bg-green-50 p-2.5 rounded-lg text-green-500"><UserPlus size={20}/></div>
+               <div>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase">Novos (Mês)</p>
+                 <p className="text-lg font-bold text-slate-800">3</p>
+               </div>
+           </div>
+           <div className="h-10 w-20">
+               <ResponsiveContainer width="100%" height="100%">
+                   <AreaChart data={sparkData}>
+                       <Area type="monotone" dataKey="v" stroke="#10b981" fill="#dcfce7" strokeWidth={2} isAnimationActive={false} />
+                   </AreaChart>
+               </ResponsiveContainer>
            </div>
         </div>
-        <div className="min-w-[200px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
-           <div className="bg-orange-50 p-2.5 rounded-lg text-orange-500"><Users size={20}/></div>
-           <div>
-             <p className="text-[10px] font-bold text-slate-400 uppercase">Ticket Médio</p>
-             <p className="text-lg font-bold text-slate-800">R$ 145</p>
+
+        <div className="min-w-[240px] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between gap-3">
+           <div className="flex items-center gap-3">
+               <div className="bg-orange-50 p-2.5 rounded-lg text-orange-500"><Users size={20}/></div>
+               <div>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase">Ticket Médio</p>
+                 <p className="text-lg font-bold text-slate-800">R$ 145</p>
+               </div>
+           </div>
+           <div className="h-10 w-20">
+               <ResponsiveContainer width="100%" height="100%">
+                   <AreaChart data={sparkData}>
+                       <Area type="monotone" dataKey="v" stroke="#f97316" fill="#ffedd5" strokeWidth={2} isAnimationActive={false} />
+                   </AreaChart>
+               </ResponsiveContainer>
            </div>
         </div>
       </div>
@@ -252,3 +288,5 @@ const ClientesView: React.FC = () => {
 };
 
 export default ClientesView;
+
+// Fix Chart Rendering

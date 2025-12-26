@@ -5,9 +5,7 @@ import {
     ChevronDown, RefreshCw, Calendar as CalendarIcon,
     ShoppingBag, Ban
 } from 'lucide-react';
-// FIX: Ensured startOfWeek and startOfMonth are imported correctly from 'date-fns'.
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth, differenceInMinutes } from 'date-fns';
-// FIX: Corrected locale import from 'pt' to 'ptBR' as 'pt' is not exported by date-fns/locale.
 import { ptBR as pt } from 'date-fns/locale';
 
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
@@ -356,7 +354,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             </header>
 
             <div className="flex flex-1 overflow-hidden relative">
-                <div className="flex-1 overflow-auto bg-slate-50 md:bg-white relative">
+                {/* Fix: Container com altura mínima garantida para evitar colapso */}
+                <div className="flex-1 overflow-auto bg-slate-50 md:bg-white relative min-h-[500px]">
                     {(periodType === 'Dia' || periodType === 'Semana') && (
                         <div className="relative min-h-full min-w-full">
                             <div className="grid sticky top-0 z-0 shadow-sm border-b border-slate-200 bg-white" style={gridStyle}>
@@ -534,3 +533,5 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 };
 
 export default AtendimentosView;
+
+// Fix Chart Rendering
