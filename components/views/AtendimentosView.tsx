@@ -38,21 +38,15 @@ const getAppointmentPosition = (start: Date, end: Date) => {
     return { top: `${top}px`, height: `${height - 2}px` };
 };
 
-/**
- * Função centralizada para determinar o estilo visual dos cards
- * Baseado no modo de visualização selecionado pelo usuário.
- */
 const getCardStyle = (app: LegacyAppointment, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
     const baseClasses = "absolute left-0 right-0 mx-1 rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer z-10 hover:brightness-95 transition-all overflow-hidden flex flex-col";
     
-    // 1. Modo Pagamento (Foco financeiro)
     if (viewMode === 'pagamento') {
-        const isPaid = app.status === 'concluido'; // Mock: Concluído = Pago
+        const isPaid = app.status === 'concluido'; 
         if (isPaid) return `${baseClasses} bg-emerald-50 border-emerald-500 text-emerald-900`;
         return `${baseClasses} bg-rose-50 border-rose-500 text-rose-900`;
     }
 
-    // 2. Modo Andamento (Foco operacional/fluxo)
     if (viewMode === 'andamento') {
         switch (app.status) {
             case 'concluido': return `${baseClasses} bg-green-100 border-green-600 text-green-900`;
@@ -65,7 +59,6 @@ const getCardStyle = (app: LegacyAppointment, viewMode: 'profissional' | 'andame
         }
     }
 
-    // 3. Modo Profissional (Padrão BelaFlow)
     switch (app.status) {
         case 'concluido': return `${baseClasses} bg-green-50 border-green-200 text-green-900`;
         case 'bloqueado': return `${baseClasses} bg-slate-100 border-slate-300 text-slate-500 opacity-80`;
@@ -127,7 +120,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
 
-    // --- Estados de Visualização ---
     const [viewMode, setViewMode] = useState<ViewMode>('profissional');
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [colWidth, setColWidth] = useState(220);
@@ -350,8 +342,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
             <div className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar">
                 <div className="min-w-full">
-                    <div className="grid sticky top-0 z-10 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        <div className="sticky left-0 z-30 border-r border-slate-200 h-20 bg-white min-w-[60px] flex items-center justify-center shadow-sm">
+                    {/* Header Grid */}
+                    <div className="grid sticky top-0 z-20 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
+                        {/* CRITICAL FIX: Higher Z-Index for sticky header corner to overlap the time column when scrolling */}
+                        <div className="sticky left-0 z-[60] bg-white border-r border-slate-200 h-20 min-w-[60px] flex items-center justify-center shadow-[2px_0_8px_rgba(0,0,0,0.05)]">
                             <Maximize2 size={16} className="text-slate-300" />
                         </div>
                         {columns.map(col => (
@@ -366,14 +360,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             </div>
                         ))}
                     </div>
+
+                    {/* Main Grid Body */}
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        <div className="border-r border-slate-200 bg-white sticky left-0 z-10 min-w-[60px] shadow-md">
+                        {/* CRITICAL FIX: Higher Z-Index for time column and right shadow to stand above scrolling professional columns */}
+                        <div className="sticky left-0 z-50 bg-white border-r border-slate-200 min-w-[60px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                             {timeSlotsLabels.map(time => (
                                 <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-50/50 border-dashed bg-white">
                                     <span>{time}</span>
                                 </div>
                             ))}
                         </div>
+                        
                         {columns.map((col, idx) => (
                             <div 
                                 key={col.id} 
@@ -420,9 +418,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 </div>
             </div>
 
-            {/* --- MODAIS DE SOBREPOSIÇÃO FIXA (FIXED OVERLAYS) --- */}
-
-            {/* Modal de Configurações da Grade */}
+            {/* Modals */}
             {isConfigModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsConfigModalOpen(false)}></div>
@@ -469,7 +465,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 </div>
             )}
 
-            {/* Modal de Seleção de Período */}
             {isPeriodModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPeriodModalOpen(false)}></div>
