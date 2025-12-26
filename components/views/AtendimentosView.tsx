@@ -1,9 +1,10 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
     ChevronDown, RefreshCw, Calendar as CalendarIcon,
     ShoppingBag, Ban, Settings as SettingsIcon, Maximize2, 
-    LayoutGrid, PlayCircle, CreditCard, Check
+    LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal
 } from 'lucide-react';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -43,7 +44,7 @@ const getStatusColor = (status: AppointmentStatus) => {
         case 'concluido': return 'bg-green-50 border-green-200 text-green-900';
         case 'bloqueado': return 'bg-slate-100 border-slate-300 text-slate-500 opacity-80';
         case 'confirmado': return 'bg-cyan-50 border-cyan-200 text-cyan-900';
-        case 'confirmado_whatsapp': return 'bg-teal-50 border-teal-200 text-teal-900';
+        case 'confirmado_whatsapp': return 'bg-teal-100 border-teal-200 text-teal-900';
         case 'chegou': return 'bg-purple-50 border-purple-200 text-purple-900';
         case 'em_atendimento': return 'bg-indigo-50 border-indigo-200 text-indigo-900 animate-pulse';
         case 'faltou': return 'bg-orange-50 border-orange-200 text-orange-900';
@@ -111,10 +112,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
 
-    // --- Novos Estados de Visualização ---
+    // --- Novos Estados de Visualização (Ref: image_afd05e.png) ---
     const [viewMode, setViewMode] = useState<ViewMode>('profissional');
     const [showConfig, setShowConfig] = useState(false);
-    const [colWidth, setColWidth] = useState(250);
+    const [colWidth, setColWidth] = useState(220);
     const [isAutoWidth, setIsAutoWidth] = useState(false);
     const [timeSlot, setTimeSlot] = useState(30);
 
@@ -194,6 +195,70 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         } finally { if (isMounted.current) setIsLoadingData(false); }
     };
 
+    // FIX: Implement handleSaveAppointment to save appointments to Supabase and update state
+    const handleSaveAppointment = async (app: LegacyAppointment) => {
+        setIsLoadingData(true);
+        try {
+            const payload = {
+                client_name: app.client?.nome,
+                resource_id: app.professional.id,
+                professional_name: app.professional.name,
+                service_name: app.service.name,
+                value: app.service.price,
+                duration: app.service.duration,
+                date: app.start.toISOString(),
+                status: app.status,
+                notes: app.notas,
+                origem: 'interno'
+            };
+
+            if (app.id && appointments.some(a => a.id === app.id)) {
+                const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase.from('appointments').insert([payload]);
+                if (error) throw error;
+            }
+            
+            setToast({ message: 'Agendamento salvo com sucesso!', type: 'success' });
+            setModalState(null);
+            fetchAppointments();
+        } catch (e: any) {
+            setToast({ message: 'Erro ao salvar agendamento.', type: 'error' });
+        } finally {
+            setIsLoadingData(false);
+        }
+    };
+
+    // FIX: Implement handleSaveBlock to save time blocks to Supabase and update state
+    const handleSaveBlock = async (block: LegacyAppointment) => {
+        setIsLoadingData(true);
+        try {
+            const payload = {
+                resource_id: block.professional.id,
+                professional_name: block.professional.name,
+                service_name: 'Bloqueio',
+                value: 0,
+                duration: block.service.duration,
+                date: block.start.toISOString(),
+                status: 'bloqueado',
+                notes: block.notas,
+                origem: 'interno'
+            };
+
+            const { error } = await supabase.from('appointments').insert([payload]);
+            if (error) throw error;
+
+            setToast({ message: 'Horário bloqueado!', type: 'info' });
+            setModalState(null);
+            fetchAppointments();
+        } catch (e: any) {
+            setToast({ message: 'Erro ao bloquear horário.', type: 'error' });
+        } finally {
+            setIsLoadingData(false);
+        }
+    };
+
     useEffect(() => { if (resources.length > 0) fetchAppointments(); }, [resources, currentDate]);
 
     const handleDateChange = (direction: number) => {
@@ -203,14 +268,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     };
 
     const columns = useMemo<DynamicColumn[]>(() => {
-        // Lógica de colunas baseada no modo de visualização
-        if (viewMode === 'andamento') {
-            const prosWithActive = resources.filter(p => 
-                appointments.some(a => a.professional.id === p.id && a.status === 'em_atendimento' && isSameDay(a.start, currentDate))
-            );
-            return (prosWithActive.length > 0 ? prosWithActive : resources).map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional', data: p }));
-        }
-
         if (periodType === 'Semana') {
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
             const end = endOfWeek(currentDate, { weekStartsOn: 1 });
@@ -223,33 +280,30 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             }));
         }
         return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional', data: p }));
-    }, [periodType, currentDate, resources, viewMode, appointments]);
+    }, [periodType, currentDate, resources]);
 
     const filteredAppointments = useMemo(() => {
-        let filtered = appointments;
-        if (viewMode === 'pagamento') filtered = appointments.filter(a => a.status === 'concluido');
-        
-        if (periodType === 'Dia' || periodType === 'Lista') return filtered.filter(a => isSameDay(a.start, currentDate));
+        if (periodType === 'Dia' || periodType === 'Lista') return appointments.filter(a => isSameDay(a.start, currentDate));
         if (periodType === 'Semana') {
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
             const end = endOfWeek(currentDate, { weekStartsOn: 1 });
-            return filtered.filter(a => isWithinInterval(a.start, { start, end }));
+            return appointments.filter(a => isWithinInterval(a.start, { start, end }));
         }
-        if (periodType === 'Mês') return filtered.filter(a => isSameMonth(a.start, currentDate));
-        return filtered;
-    }, [appointments, periodType, currentDate, viewMode]);
+        if (periodType === 'Mês') return appointments.filter(a => isSameMonth(a.start, currentDate));
+        return appointments;
+    }, [appointments, periodType, currentDate]);
 
-    const timeSlots = useMemo(() => {
-        const slots = [];
+    const timeSlotsLabels = useMemo(() => {
+        const labels = [];
         const totalMinutes = (END_HOUR - START_HOUR) * 60;
-        const count = totalMinutes / timeSlot;
-        for (let i = 0; i < count; i++) {
-            const totalMins = (START_HOUR * 60) + (i * timeSlot);
-            const hour = Math.floor(totalMins / 60);
-            const minute = totalMins % 60;
-            slots.push(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+        const slotsCount = totalMinutes / timeSlot;
+        for (let i = 0; i < slotsCount; i++) {
+            const minutesFromStart = i * timeSlot;
+            const hour = START_HOUR + Math.floor(minutesFromStart / 60);
+            const min = minutesFromStart % 60;
+            labels.push(`${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`);
         }
-        return slots;
+        return labels;
     }, [timeSlot]);
 
     const handleGridClick = (e: React.MouseEvent, professional: LegacyProfessional, colDate?: Date) => {
@@ -267,14 +321,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         <div className="flex h-full bg-white relative flex-col font-sans">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
-            <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-30">
+            <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-40">
                 <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4">
                     <div className="flex items-center gap-4">
                         <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                             Agenda {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}
                         </h2>
-                        
-                        {/* Seletor de Modo de Visualização */}
+
+                        {/* Dropdown Visualização (Ref image_afd05e) */}
                         <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
                             <button 
                                 onClick={() => setViewMode('profissional')}
@@ -298,22 +352,24 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     </div>
 
                     <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
+                        {/* Painel Configurações Rápidas */}
                         <div className="relative" ref={configRef}>
                             <button 
                                 onClick={() => setShowConfig(!showConfig)}
                                 className={`p-2 rounded-lg border transition-all ${showConfig ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-50'}`}
+                                title="Configurações de Exibição"
                             >
-                                <SettingsIcon size={20} />
+                                <SlidersHorizontal size={20} />
                             </button>
                             {showConfig && (
                                 <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 p-5 animate-in fade-in zoom-in-95">
-                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Configurações da Grade</h4>
+                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Aparência da Grade</h4>
                                     
                                     <div className="space-y-6">
                                         <div>
                                             <div className="flex justify-between items-center mb-2">
                                                 <label className="text-sm font-bold text-slate-700">Largura das Colunas</label>
-                                                <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-mono">{colWidth}px</span>
+                                                <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-mono font-bold text-slate-500">{colWidth}px</span>
                                             </div>
                                             <input 
                                                 type="range" min="150" max="450" step="10" 
@@ -322,18 +378,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                                 className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-500 disabled:opacity-30"
                                             />
                                             <div className="flex items-center gap-2 mt-2">
-                                                <input type="checkbox" id="autoWidth" checked={isAutoWidth} onChange={e => setIsAutoWidth(e.target.checked)} className="rounded text-orange-500" />
-                                                <label htmlFor="autoWidth" className="text-xs font-medium text-slate-500 cursor-pointer">Ajustar automaticamente</label>
+                                                <input type="checkbox" id="autoWidth" checked={isAutoWidth} onChange={e => setIsAutoWidth(e.target.checked)} className="rounded text-orange-500 border-slate-300 focus:ring-orange-500" />
+                                                <label htmlFor="autoWidth" className="text-xs font-medium text-slate-500 cursor-pointer">Ajustar ao conteúdo</label>
                                             </div>
                                         </div>
 
                                         <div>
-                                            <label className="text-sm font-bold text-slate-700 block mb-2">Intervalo de Tempo</label>
+                                            <label className="text-sm font-bold text-slate-700 block mb-2">Intervalo (Visual)</label>
                                             <div className="grid grid-cols-3 gap-2">
                                                 {[15, 30, 60].map(min => (
                                                     <button 
                                                         key={min} onClick={() => setTimeSlot(min)}
-                                                        className={`py-1.5 rounded-lg border text-[10px] font-bold uppercase transition-all ${timeSlot === min ? 'bg-orange-500 border-orange-600 text-white shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                                                        className={`py-1.5 rounded-lg border text-[10px] font-bold transition-all ${timeSlot === min ? 'bg-orange-500 border-orange-600 text-white shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
                                                     >
                                                         {min} min
                                                     </button>
@@ -373,6 +429,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             <div className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar">
                 <div className="min-w-full">
                     <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
+                        {/* Header Corner (Fixed) */}
                         <div className="sticky left-0 z-50 border-r border-slate-200 h-20 bg-white min-w-[60px] flex items-center justify-center">
                             <Maximize2 size={16} className="text-slate-300" />
                         </div>
@@ -389,8 +446,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         ))}
                     </div>
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
+                        {/* Time Column (Fixed Left) */}
                         <div className="border-r border-slate-100 bg-white sticky left-0 z-30 min-w-[60px]">
-                            {timeSlots.map(time => (
+                            {timeSlotsLabels.map(time => (
                                 <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-50/50 border-dashed bg-white">
                                     <span>{time}</span>
                                 </div>
@@ -408,7 +466,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                     }
                                 }}
                             >
-                                {timeSlots.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
+                                {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
                                 {filteredAppointments.filter(app => (periodType === 'Semana' ? isSameDay(app.start, col.data as Date) : (app.professional.id === col.id || app.professional.name === col.title))).map(app => {
                                     const durationInMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
                                     const isVeryShort = durationInMinutes <= 20;
@@ -420,17 +478,28 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                             ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }}
                                             onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }}
                                             title={`${format(app.start, 'HH:mm')} - ${app.client?.nome || 'Bloqueado'} (${app.service.name})`}
-                                            className={`absolute left-0 right-0 mx-1 rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer z-10 hover:brightness-95 transition-all overflow-hidden flex flex-col ${isVeryShort ? 'justify-center' : 'justify-start'} ${getStatusColor(app.status)} ${viewMode === 'pagamento' && app.status === 'concluido' ? 'ring-2 ring-green-400 ring-offset-1' : ''}`}
+                                            className={`absolute left-0 right-0 mx-1 rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer z-10 hover:brightness-95 transition-all overflow-hidden flex flex-col ${isVeryShort ? 'justify-center' : 'justify-start'} ${getStatusColor(app.status)} ${viewMode === 'pagamento' && app.status === 'concluido' ? 'ring-2 ring-green-400 ring-offset-2' : ''}`}
                                             style={{ ...getAppointmentStyle(app.start, app.end), borderLeftColor: app.service.color }}
                                         >
                                             <div className="flex items-center gap-1 overflow-hidden">
                                                 <span className="text-[9px] font-bold opacity-70 leading-none flex-shrink-0">{format(app.start, 'HH:mm')}</span>
                                                 {isVeryShort && <span className="font-bold text-slate-900 text-[10px] truncate leading-none flex-1">{app.client?.nome || 'Bloqueado'}</span>}
                                             </div>
-                                            {!isVeryShort && <p className="font-bold text-slate-900 text-[11px] truncate leading-tight mt-0.5">{app.client?.nome || 'Bloqueado'}</p>}
-                                            {!isShort && <p className="text-[10px] font-medium text-slate-600 truncate leading-tight">{app.service.name}</p>}
+                                            
+                                            {!isVeryShort && (
+                                                <p className="font-bold text-slate-900 text-[11px] truncate leading-tight mt-0.5">
+                                                    {app.client?.nome || 'Bloqueado'}
+                                                </p>
+                                            )}
+                                            
+                                            {!isShort && (
+                                                <p className="text-[10px] font-medium text-slate-600 truncate leading-tight">
+                                                    {app.service.name}
+                                                </p>
+                                            )}
+                                            
                                             {viewMode === 'pagamento' && app.status === 'concluido' && (
-                                                <div className="absolute top-1 right-1"><CreditCard size={12} className="text-green-600 opacity-50" /></div>
+                                                <div className="absolute top-1 right-1 text-green-600"><Check size={12} /></div>
                                             )}
                                         </div>
                                     );
@@ -481,9 +550,34 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     }} 
                 />
             )}
+
+            {modalState?.type === 'appointment' && (
+                <AppointmentModal 
+                    appointment={modalState.data} 
+                    onClose={() => setModalState(null)} 
+                    onSave={handleSaveAppointment} 
+                />
+            )}
+
+            {modalState?.type === 'block' && (
+                <BlockTimeModal 
+                    professional={modalState.data.professional} 
+                    startTime={modalState.data.start} 
+                    onClose={() => setModalState(null)} 
+                    onSave={handleSaveBlock} 
+                />
+            )}
+
+            {modalState?.type === 'sale' && (
+                <NewTransactionModal 
+                    type="receita"
+                    onClose={() => setModalState(null)}
+                    onSave={(t) => { onAddTransaction(t); setModalState(null); setToast({ message: 'Venda registrada!', type: 'success' }); }}
+                />
+            )}
             
             <JaciBotPanel isOpen={isJaciBotOpen} onClose={() => setIsJaciBotOpen(false)} />
-            <div className="fixed bottom-8 right-8 z-20"><button onClick={() => setIsJaciBotOpen(true)} className="w-16 h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all"><MessageSquare className="w-8 h-8" /></button></div>
+            <div className="fixed bottom-8 right-8 z-10"><button onClick={() => setIsJaciBotOpen(true)} className="w-16 h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all"><MessageSquare className="w-8 h-8" /></button></div>
         </div>
     );
 };
