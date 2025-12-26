@@ -21,6 +21,15 @@ const EquipeView: React.FC = () => {
     const fetchProfessionals = async () => {
         if (!isMounted.current) return;
         setLoading(true);
+        
+        // Watchdog Timer: Se o Supabase não responder em 8s, libera a UI
+        const watchdog = setTimeout(() => {
+            if (loading && isMounted.current) {
+                setLoading(false);
+                setToast({ message: "O carregamento está demorando mais que o esperado. Verifique sua conexão.", type: "info" });
+            }
+        }, 8000);
+
         try {
             const { data, error } = await supabase
                 .from('professionals')
@@ -32,6 +41,7 @@ const EquipeView: React.FC = () => {
         } catch (error: any) {
             if (isMounted.current) setToast({ message: `Erro ao carregar equipe: ${error.message}`, type: 'error' });
         } finally {
+            clearTimeout(watchdog);
             if (isMounted.current) setLoading(false);
         }
     };

@@ -25,7 +25,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         { id: 'whatsapp', icon: MessageSquare, label: 'WhatsApp' },
         { id: 'financeiro', icon: ArrowRightLeft, label: 'Fluxo de Caixa' },
         { id: 'clientes', icon: Users, label: 'Clientes' },
-        { id: 'equipe', icon: Briefcase, label: 'Equipe' }, // Added
+        { id: 'equipe', icon: Briefcase, label: 'Equipe' }, 
         { id: 'relatorios', icon: BarChart, label: 'Relatórios' },
         { id: 'configuracoes', icon: Settings, label: 'Configurações' },
     ];
@@ -49,17 +49,24 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         if (!confirm) return;
 
         try {
-            await supabase.auth.signOut();
-            const url = localStorage.getItem('VITE_SUPABASE_URL');
-            const key = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
+            // Tenta o signOut mas não bloqueia a main thread se o servidor não responder
+            await Promise.race([
+                supabase.auth.signOut(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
+            ]);
+        } catch (error) {
+            console.warn("Logout suave expirou, forçando limpeza local.");
+        } finally {
+            // Lógica de Hard Logout - Limpa TUDO e força reload
             localStorage.clear();
             sessionStorage.clear();
+            // Preserva apenas chaves críticas de configuração se existirem
+            const url = localStorage.getItem('VITE_SUPABASE_URL');
+            const key = localStorage.getItem('VITE_SUPABASE_ANON_KEY');
             if (url) localStorage.setItem('VITE_SUPABASE_URL', url);
             if (key) localStorage.setItem('VITE_SUPABASE_ANON_KEY', key);
-            window.location.href = '/'; 
-        } catch (error) {
-            console.error("Erro ao sair:", error);
-            window.location.href = '/';
+            
+            window.location.href = '/'; // Hard reload para estado inicial
         }
     };
 

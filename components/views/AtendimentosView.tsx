@@ -56,8 +56,11 @@ const getStatusColor = (status: AppointmentStatus) => {
 
 const TimelineIndicator = () => {
     const [topPosition, setTopPosition] = useState(0);
+    
     useEffect(() => {
+        let isMounted = true;
         const calculatePosition = () => {
+            if (!isMounted) return;
             const now = new Date();
             const startOfDayMinutes = START_HOUR * 60;
             const nowMinutes = now.getHours() * 60 + now.getMinutes();
@@ -67,9 +70,14 @@ const TimelineIndicator = () => {
             const top = (nowMinutes - startOfDayMinutes) * PIXELS_PER_MINUTE;
             setTopPosition(top);
         };
+        
         calculatePosition();
-        const intervalId = setInterval(calculatePosition, 60000);
-        return () => clearInterval(intervalId);
+        const intervalId = setInterval(calculatePosition, 30000); // Check every 30s
+        
+        return () => {
+            isMounted = false;
+            clearInterval(intervalId); // CRITICAL: Kill timer on unmount
+        };
     }, []);
     
     if (topPosition < 0) return null;
@@ -118,7 +126,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         isMounted.current = true;
         fetchResources();
         return () => {
-            isMounted.current = false;
+            isMounted.current = false; // Kill any pending state updates
         };
     }, []);
 
