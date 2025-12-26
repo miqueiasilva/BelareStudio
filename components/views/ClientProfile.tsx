@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     X, User, Phone, Mail, Calendar, Edit2, Save, 
     ArrowLeft, Globe, ShoppingBag, History, MoreVertical,
@@ -51,10 +51,13 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const [activeTab, setActiveTab] = useState<'geral' | 'consumo' | 'atividades'>('geral');
     const fileInputRef = useRef<HTMLInputElement>(null);
     
+    // Inicialização Limpa: Se for novo, campos vazios. Se for edição, usa dados do cliente.
     const [formData, setFormData] = useState<any>({
-        ...client,
         nome: client.nome || '',
         apelido: (client as any).apelido || '',
+        whatsapp: client.whatsapp || '',
+        email: client.email || '',
+        nascimento: client.nascimento || '',
         cpf: (client as any).cpf || '',
         rg: (client as any).rg || '',
         sexo: (client as any).sexo || '',
@@ -67,7 +70,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         estado: (client as any).estado || '',
         photo_url: (client as any).photo_url || null,
         online_booking_enabled: (client as any).online_booking_enabled ?? true,
-        origem: (client as any).origem || 'Instagram'
+        origem: (client as any).origem || 'Instagram',
+        id: client.id || null
     });
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -82,7 +86,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         setIsUploading(true);
         try {
             const fileExt = file.name.split('.').pop();
-            const fileName = `avatar_${client.id || 'new'}_${Date.now()}.${fileExt}`;
+            const fileName = `avatar_${formData.id || 'new'}_${Date.now()}.${fileExt}`;
             const filePath = `${fileName}`;
 
             const { error: uploadError } = await supabase.storage
@@ -108,7 +112,13 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
     const handleSave = async () => {
         try {
-            await onSave(formData);
+            // Payload Sanitizado: Remove ID se for novo para evitar erros de chave primária no Supabase
+            const payload = { ...formData };
+            if (isNew) {
+                delete payload.id;
+            }
+
+            await onSave(payload);
             setIsEditing(false);
         } catch (error: any) {
             console.error("Erro crítico ao persistir dados do cliente:", error);
@@ -238,8 +248,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                         </>
                                     ) : (
                                         <>
-                                            <EditField label="Nome Completo" name="nome" value={formData.nome} onChange={handleInputChange} placeholder="Nome e Sobrenome" span="col-span-full md:col-span-2" />
-                                            <EditField label="Apelido" name="apelido" value={formData.apelido} onChange={handleInputChange} placeholder="Ex: Gabi" />
+                                            <EditField label="Nome Completo" name="nome" value={formData.nome} onChange={handleInputChange} placeholder="Ex: Maria Souza" span="col-span-full md:col-span-2" />
+                                            <EditField label="Apelido" name="apelido" value={formData.apelido} onChange={handleInputChange} placeholder="Como gosta de ser chamada" />
                                             <EditField label="CPF" name="cpf" value={formData.cpf} onChange={handleInputChange} placeholder="000.000.000-00" />
                                             <EditField label="RG" name="rg" value={formData.rg} onChange={handleInputChange} placeholder="00.000.000-0" />
                                             <EditField label="Data Nascimento" name="nascimento" type="date" value={formData.nascimento} onChange={handleInputChange} />
@@ -252,7 +262,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                                     <option value="Outro">Outro</option>
                                                 </select>
                                             </div>
-                                            <EditField label="Profissão" name="profissao" value={formData.profissao} onChange={handleInputChange} placeholder="Ex: Professora" span="md:col-span-2" />
+                                            <EditField label="Profissão" name="profissao" value={formData.profissao} onChange={handleInputChange} placeholder="Ex: Autônoma" span="md:col-span-2" />
                                         </>
                                     )}
                                 </div>
@@ -268,7 +278,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                     ) : (
                                         <>
                                             <EditField label="WhatsApp" name="whatsapp" value={formData.whatsapp} onChange={handleInputChange} placeholder="(00) 00000-0000" />
-                                            <EditField label="E-mail" name="email" type="email" value={formData.email} onChange={handleInputChange} placeholder="cliente@email.com" />
+                                            <EditField label="E-mail" name="email" type="email" value={formData.email} onChange={handleInputChange} placeholder="cliente@provedor.com" />
                                         </>
                                     )}
                                 </div>
@@ -288,10 +298,10 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                     ) : (
                                         <>
                                             <EditField label="CEP" name="cep" value={formData.cep} onChange={handleInputChange} placeholder="00000-000" />
-                                            <EditField label="Logradouro" name="endereco" value={formData.endereco} onChange={handleInputChange} placeholder="Rua, Av..." span="col-span-full md:col-span-3" />
-                                            <EditField label="Número" name="numero" value={formData.numero} onChange={handleInputChange} placeholder="123" />
+                                            <EditField label="Logradouro" name="endereco" value={formData.endereco} onChange={handleInputChange} placeholder="Rua, Avenida, Praça..." span="col-span-full md:col-span-3" />
+                                            <EditField label="Número" name="numero" value={formData.numero} onChange={handleInputChange} placeholder="Nº" />
                                             <EditField label="Bairro" name="bairro" value={formData.bairro} onChange={handleInputChange} placeholder="Bairro" />
-                                            <EditField label="Cidade" name="cidade" value={formData.cidade} onChange={handleInputChange} placeholder="Sua Cidade" />
+                                            <EditField label="Cidade" name="cidade" value={formData.cidade} onChange={handleInputChange} placeholder="Cidade" />
                                             <EditField label="Estado" name="estado" value={formData.estado} onChange={handleInputChange} placeholder="UF" />
                                         </>
                                     )}
