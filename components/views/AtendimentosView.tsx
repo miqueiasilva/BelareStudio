@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
@@ -44,7 +43,7 @@ const getStatusColor = (status: AppointmentStatus) => {
         case 'concluido': return 'bg-green-50 border-green-200 text-green-900';
         case 'bloqueado': return 'bg-slate-100 border-slate-300 text-slate-500 opacity-80';
         case 'confirmado': return 'bg-cyan-50 border-cyan-200 text-cyan-900';
-        case 'confirmado_whatsapp': return 'bg-teal-100 border-teal-200 text-teal-900';
+        case 'confirmado_whatsapp': return 'bg-teal-50 border-teal-200 text-teal-900';
         case 'chegou': return 'bg-purple-50 border-purple-200 text-purple-900';
         case 'em_atendimento': return 'bg-indigo-50 border-indigo-200 text-indigo-900 animate-pulse';
         case 'faltou': return 'bg-orange-50 border-orange-200 text-orange-900';
@@ -112,7 +111,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
 
-    // --- Novos Estados de Visualização (Ref: image_afd05e.png) ---
+    // --- Estados de Visualização ---
     const [viewMode, setViewMode] = useState<ViewMode>('profissional');
     const [showConfig, setShowConfig] = useState(false);
     const [colWidth, setColWidth] = useState(220);
@@ -195,7 +194,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         } finally { if (isMounted.current) setIsLoadingData(false); }
     };
 
-    // FIX: Implement handleSaveAppointment to save appointments to Supabase and update state
     const handleSaveAppointment = async (app: LegacyAppointment) => {
         setIsLoadingData(true);
         try {
@@ -230,7 +228,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     };
 
-    // FIX: Implement handleSaveBlock to save time blocks to Supabase and update state
     const handleSaveBlock = async (block: LegacyAppointment) => {
         setIsLoadingData(true);
         try {
@@ -328,7 +325,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             Agenda {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}
                         </h2>
 
-                        {/* Dropdown Visualização (Ref image_afd05e) */}
                         <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
                             <button 
                                 onClick={() => setViewMode('profissional')}
@@ -352,7 +348,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     </div>
 
                     <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
-                        {/* Painel Configurações Rápidas */}
                         <div className="relative" ref={configRef}>
                             <button 
                                 onClick={() => setShowConfig(!showConfig)}
@@ -428,9 +423,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
             <div className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar">
                 <div className="min-w-full">
+                    {/* Header Row: z-40 to stay above grid but below corner */}
                     <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        {/* Header Corner (Fixed) */}
-                        <div className="sticky left-0 z-50 border-r border-slate-200 h-20 bg-white min-w-[60px] flex items-center justify-center">
+                        {/* Header Corner (Sticky Top + Left): z-[60] - Highest Priority */}
+                        <div className="sticky left-0 z-[60] border-r border-slate-200 h-20 bg-white min-w-[60px] flex items-center justify-center shadow-sm">
                             <Maximize2 size={16} className="text-slate-300" />
                         </div>
                         {columns.map(col => (
@@ -446,8 +442,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         ))}
                     </div>
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        {/* Time Column (Fixed Left) */}
-                        <div className="border-r border-slate-100 bg-white sticky left-0 z-30 min-w-[60px]">
+                        {/* Time Column (Sticky Left): z-50 - Stays above professional columns during horiz scroll */}
+                        <div className="border-r border-slate-200 bg-white sticky left-0 z-50 min-w-[60px] shadow-md">
                             {timeSlotsLabels.map(time => (
                                 <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-50/50 border-dashed bg-white">
                                     <span>{time}</span>
@@ -457,7 +453,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         {columns.map((col, idx) => (
                             <div 
                                 key={col.id} 
-                                className={`relative border-r border-slate-200 min-h-[1000px] cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`}
+                                className={`relative border-r border-slate-200 min-h-[1000px] cursor-crosshair z-0 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`}
                                 onClick={(e) => {
                                     if (e.target === e.currentTarget) {
                                         const prof = col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0];
