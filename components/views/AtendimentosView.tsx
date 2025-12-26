@@ -139,6 +139,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
                 if (isMounted.current) fetchAppointments();
             })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'professionals' }, () => {
+                if (isMounted.current) fetchResources();
+            })
             .subscribe();
         return () => {
             isMounted.current = false;
@@ -148,24 +151,29 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     }, []);
 
     useEffect(() => {
-        if (resources.length > 0 && orderedProfessionals.length === 0) {
+        if (resources.length > 0) {
             setOrderedProfessionals(resources);
         }
-    }, [resources, orderedProfessionals]);
+    }, [resources]);
 
     const fetchResources = async () => {
         try {
-            const { data, error } = await supabase.from('professionals').select('id, name, photo_url, role').order('name');
+            // Seleciona incluindo order_index e ordena por ele
+            const { data, error } = await supabase
+                .from('professionals')
+                .select('id, name, photo_url, role, order_index')
+                .order('order_index', { ascending: true });
+
             if (error) throw error;
             if (data && isMounted.current) {
                 const mapped = data.map((p: any) => ({
                     id: p.id,
                     name: p.name,
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
-                    role: p.role
+                    role: p.role,
+                    order_index: p.order_index // Mantemos no objeto para facilitar a troca
                 }));
                 setResources(mapped);
-                setOrderedProfessionals(mapped);
             }
         } catch (e) { console.error("Error resources:", e); }
     };
@@ -200,18 +208,64 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         } finally { if (isMounted.current) setIsLoadingData(false); }
     };
 
+    const persistProfessionalOrder = async (pA: any, pB: any) => {
+        try {
+            // Upsert dos dois registros com os índices trocados
+            const { error } = await supabase
+                .from('professionals')
+                .upsert([
+                    { id: pA.id, order_index: pA.order_index },
+                    { id: pB.id, order_index: pB.order_index }
+                ]);
+            if (error) throw error;
+        } catch (e) {
+            console.error("Erro ao persistir ordem:", e);
+            setToast({ message: 'Erro ao salvar ordem no servidor.', type: 'error' });
+        }
+    };
+
     const moverEsq = (index: number) => {
         if (index === 0) return;
-        const newOrder = [...orderedProfessionals];
-        [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+        const newOrder = [...orderedProfessionals] as any[];
+        
+        // Elementos envolvidos
+        const currentProf = { ...newOrder[index] };
+        const neighborProf = { ...newOrder[index - 1] };
+
+        // Troca os índices de ordenação
+        const tempIndex = currentProf.order_index;
+        currentProf.order_index = neighborProf.order_index;
+        neighborProf.order_index = tempIndex;
+
+        // Atualiza UI instantaneamente
+        newOrder[index] = neighborProf;
+        newOrder[index - 1] = currentProf;
         setOrderedProfessionals(newOrder);
+
+        // Persiste no Banco
+        persistProfessionalOrder(currentProf, neighborProf);
     };
 
     const moverDir = (index: number) => {
         if (index === orderedProfessionals.length - 1) return;
-        const newOrder = [...orderedProfessionals];
-        [newOrder[index + 1], newOrder[index]] = [newOrder[index], newOrder[index + 1]];
+        const newOrder = [...orderedProfessionals] as any[];
+        
+        // Elementos envolvidos
+        const currentProf = { ...newOrder[index] };
+        const neighborProf = { ...newOrder[index + 1] };
+
+        // Troca os índices de ordenação
+        const tempIndex = currentProf.order_index;
+        currentProf.order_index = neighborProf.order_index;
+        neighborProf.order_index = tempIndex;
+
+        // Atualiza UI instantaneamente
+        newOrder[index] = neighborProf;
+        newOrder[index + 1] = currentProf;
         setOrderedProfessionals(newOrder);
+
+        // Persiste no Banco
+        persistProfessionalOrder(currentProf, neighborProf);
     };
 
     const handleSaveAppointment = async (app: LegacyAppointment) => {
