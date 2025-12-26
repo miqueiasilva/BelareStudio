@@ -1,14 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
     X, User, Phone, Mail, Calendar, Edit2, Save, 
     ArrowLeft, Globe, ShoppingBag, History, MoreVertical,
     Plus, CheckCircle, MapPin, Tag, Smartphone, MessageCircle,
-    CreditCard, Briefcase, Home, Map, Hash, Info, Settings
+    CreditCard, Briefcase, Home, Map, Hash, Info, Settings, Camera, Loader2
 } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import { Client } from '../../types';
 import { differenceInYears, parseISO, isValid } from 'date-fns';
+import { supabase } from '../../services/supabaseClient';
 
 interface ClientProfileProps {
     client: Client;
@@ -44,9 +45,11 @@ const EditField = ({ label, name, value, onChange, type = "text", placeholder, s
 
 const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }) => {
     const [isEditing, setIsEditing] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
     const [activeTab, setActiveTab] = useState<'geral' | 'consumo' | 'atividades'>('geral');
+    const fileInputRef = useRef<HTMLInputElement>(null);
     
-    // Estado do formulário enriquecido com todos os campos da versão anterior
+    // Estado do formulário centralizado e reativo
     const [formData, setFormData] = useState<any>({
         ...client,
         apelido: (client as any).apelido || '',
@@ -60,16 +63,52 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         bairro: (client as any).bairro || '',
         cidade: (client as any).cidade || '',
         estado: (client as any).estado || '',
+        photo_url: (client as any).photo_url || null,
         online_booking_enabled: (client as any).online_booking_enabled ?? true,
         origem: (client as any).origem || 'Instagram'
     });
 
+    // Função universal de mudança de input
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setFormData((prev: any) => ({ ...prev, [name]: value }));
     };
 
+    // Lógica de Upload de Avatar
+    const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        try {
+            const fileExt = file.name.split('.').pop();
+            const fileName = `avatar_${client.id || 'new'}_${Date.now()}.${fileExt}`;
+            const filePath = `${fileName}`;
+
+            // 1. Upload para o bucket 'avatars'
+            const { error: uploadError } = await supabase.storage
+                .from('avatars')
+                .upload(filePath, file);
+
+            if (uploadError) throw uploadError;
+
+            // 2. Obter URL Pública
+            const { data: { publicUrl } } = supabase.storage
+                .from('avatars')
+                .getPublicUrl(filePath);
+
+            // 3. Atualizar Estado Local (isso será salvo no DB ao clicar em Salvar Alterações)
+            setFormData((prev: any) => ({ ...prev, photo_url: publicUrl }));
+            
+        } catch (error: any) {
+            alert(`Erro no upload: ${error.message}`);
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
     const handleSave = async () => {
+        console.log("Persistindo Payload Completo:", formData);
         await onSave(formData);
         setIsEditing(false);
     };
@@ -108,16 +147,35 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 </div>
 
                 <div className="flex items-center gap-5">
-                    <div className="relative">
-                        <div className="w-20 h-20 rounded-[24px] bg-orange-100 flex items-center justify-center text-orange-600 text-2xl font-black border-4 border-white shadow-xl">
-                            {formData.nome?.charAt(0) || '?'}
+                    {/* AVATAR INTERATIVO COM UPLOAD */}
+                    <div className="relative group">
+                        <div 
+                            onClick={() => isEditing && fileInputRef.current?.click()}
+                            className={`w-20 h-20 rounded-[24px] flex items-center justify-center text-2xl font-black border-4 border-white shadow-xl overflow-hidden transition-all ${isEditing ? 'cursor-pointer hover:brightness-90 ring-2 ring-orange-100' : ''} ${formData.photo_url ? 'bg-white' : 'bg-orange-100 text-orange-600'}`}
+                        >
+                            {isUploading ? (
+                                <Loader2 className="animate-spin text-orange-500" />
+                            ) : formData.photo_url ? (
+                                <img src={formData.photo_url} className="w-full h-full object-cover" alt="Avatar" />
+                            ) : (
+                                formData.nome?.charAt(0) || '?'
+                            )}
+
+                            {isEditing && (
+                                <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Camera className="text-white" size={24} />
+                                </div>
+                            )}
                         </div>
+                        <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleAvatarUpload} />
+                        
                         {formData.online_booking_enabled && (
                             <div className="absolute -bottom-1 -right-1 bg-blue-500 text-white p-1 rounded-full border-2 border-white shadow-sm" title="Agendamento Online Habilitado">
                                 <Globe size={12} />
                             </div>
                         )}
                     </div>
+
                     <div className="flex-1">
                         <h2 className="text-2xl font-black text-slate-800 leading-tight">{formData.nome}</h2>
                         <div className="flex items-center gap-3 mt-1">
@@ -239,7 +297,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                             </Card>
 
                             {/* SEÇÃO 4: CONFIGURAÇÕES */}
-                            {/* FIX: Corrected missing 'Settings' icon import from lucide-react */}
                             <Card title="Configurações e Origem" icon={<Settings size={18} />}>
                                 <div className="space-y-6">
                                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
@@ -252,7 +309,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                         </div>
                                         <ToggleSwitch 
                                             on={formData.online_booking_enabled} 
-                                            onClick={() => setFormData({...formData, online_booking_enabled: !formData.online_booking_enabled})} 
+                                            onClick={() => setFormData((prev: any) => ({...prev, online_booking_enabled: !prev.online_booking_enabled}))} 
                                         />
                                     </div>
 
