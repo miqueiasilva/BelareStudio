@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { User as SupabaseUser } from '@supabase/supabase-js';
@@ -63,17 +62,10 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-          // Captura específica de erro de token inválido ou não encontrado
-          const isTokenError = 
-            error.message?.toLowerCase().includes('refresh token') || 
-            error.message?.toLowerCase().includes('refresh_token_not_found') ||
-            error.status === 400 || error.status === 401;
-
-          if (isTokenError) {
-             console.warn("Sessão expirada ou inválida detectada. Limpando credenciais locais...");
-             // Limpeza forçada: Remove do storage e da memória
-             await supabase.auth.signOut({ scope: 'local' });
-             localStorage.removeItem('sb-rxtwmwrgcilmsldtqdfe-auth-token'); // Chave específica do projeto se necessário
+          // FIX: Se o refresh token falhar, limpa a sessão para evitar erro persistente
+          if (error.message.includes('Refresh Token Not Found') || error.message.includes('refresh_token_not_found')) {
+             console.warn("Sessão inválida detectada, limpando armazenamento...");
+             await supabase.auth.signOut();
              if (mounted) setUser(null);
           }
           throw error;
@@ -100,7 +92,6 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         if (mounted) setUser(null);
       }
       
-      // Sempre define como false após qualquer evento de mudança (login, logout, erro)
       if (mounted) setLoading(false);
     });
 
@@ -146,7 +137,6 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
-    localStorage.clear(); // Limpeza total garantida no logout manual
   };
 
   const value = useMemo(() => ({
