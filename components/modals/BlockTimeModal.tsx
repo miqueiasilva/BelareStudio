@@ -2,22 +2,25 @@
 import React, { useState } from 'react';
 import { LegacyAppointment, LegacyProfessional } from '../../types';
 import { services as serviceMap } from '../../data/mockData';
-import { X } from 'lucide-react';
+import { X, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { supabase } from '../../services/supabaseClient';
 
 interface BlockTimeModalProps {
   professional: LegacyProfessional;
   startTime: Date;
   onClose: () => void;
-  onSave: (appointment: LegacyAppointment) => void;
+  onSave?: (appointment: LegacyAppointment) => void;
+  onSuccess?: () => void;
 }
 
-const BlockTimeModal: React.FC<BlockTimeModalProps> = ({ professional, startTime, onClose, onSave }) => {
+const BlockTimeModal: React.FC<BlockTimeModalProps> = ({ professional, startTime, onClose, onSuccess }) => {
   const [startTimeStr, setStartTimeStr] = useState(format(startTime, 'HH:mm'));
   const [endTime, setEndTime] = useState('');
   const [notes, setNotes] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!endTime || !startTimeStr) {
       alert('Por favor, defina um horário de início e término.');
       return;
@@ -38,16 +41,29 @@ const BlockTimeModal: React.FC<BlockTimeModalProps> = ({ professional, startTime
     
     const duration = (finalEndTime.getTime() - finalStartTime.getTime()) / (1000 * 60);
 
-    const blockAppointment: LegacyAppointment = {
-      id: Date.now(),
-      professional,
-      service: { ...serviceMap.bloqueio, name: notes || "Horário Bloqueado", duration },
-      start: finalStartTime,
-      end: finalEndTime,
-      status: 'bloqueado',
-      notas: notes,
-    };
-    onSave(blockAppointment);
+    setIsSaving(true);
+    try {
+        const payload = {
+            resource_id: professional.id,
+            professional_name: professional.name,
+            service_name: 'Bloqueio',
+            value: 0,
+            duration: duration,
+            date: finalStartTime.toISOString(),
+            status: 'bloqueado',
+            notes: notes || 'Horário Bloqueado'
+        };
+
+        const { error } = await supabase.from('appointments').insert([payload]);
+        if (error) throw error;
+
+        if (onSuccess) onSuccess();
+        onClose();
+    } catch (err: any) {
+        alert("Erro ao bloquear horário: " + err.message);
+    } finally {
+        setIsSaving(false);
+    }
   };
 
   return (
@@ -78,8 +94,11 @@ const BlockTimeModal: React.FC<BlockTimeModalProps> = ({ professional, startTime
           </div>
         </div>
         <div className="p-5 bg-slate-50 flex justify-end gap-3 rounded-b-xl">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-semibold bg-white border rounded-md hover:bg-slate-100">Cancelar</button>
-          <button onClick={handleSave} className="px-4 py-2 text-sm font-semibold bg-rose-600 text-white rounded-md hover:bg-rose-700">Bloquear Horário</button>
+          <button onClick={onClose} className="px-4 py-2 text-sm font-semibold bg-white border rounded-md hover:bg-slate-100" disabled={isSaving}>Cancelar</button>
+          <button onClick={handleSave} className="px-4 py-2 text-sm font-semibold bg-rose-600 text-white rounded-md hover:bg-rose-700 flex items-center gap-2" disabled={isSaving}>
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            Bloquear Horário
+          </button>
         </div>
       </div>
     </div>

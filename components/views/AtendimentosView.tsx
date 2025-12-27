@@ -107,10 +107,6 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
     const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     
-    /**
-     * Fix for "Cannot find name 'showToast'" error. 
-     * Added showToast helper for consistency and ease of use.
-     */
     const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
     
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
@@ -545,10 +541,6 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                                 <div className="p-2.5 text-slate-400"><LinkIcon size={20} /></div>
                                 <input readOnly value="https://belaflow.app/studio-jacilene-felix" className="flex-1 bg-transparent border-none text-sm font-bold text-slate-700 outline-none" />
                                 <button 
-                                    /**
-                                     * Fix for "Cannot find name 'showToast'".
-                                     * Using showToast helper function defined above.
-                                     */
                                     onClick={() => { navigator.clipboard.writeText("https://belaflow.app/studio-jacilene-felix"); showToast("Link copiado!", "success"); }}
                                     className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-black flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-100"
                                 >
@@ -585,17 +577,14 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
             )}
 
             {/* Modals Core */}
-            {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={async (app) => {
-                const payload = { client_name: app.client?.nome, resource_id: app.professional.id, professional_name: app.professional.name, service_name: app.service.name, value: app.service.price, duration: app.service.duration, date: app.start.toISOString(), status: app.status, notes: app.notas, origem: 'interno' };
-                if (app.id) await supabase.from('appointments').update(payload).eq('id', app.id); else await supabase.from('appointments').insert([payload]);
+            {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSuccess={() => {
                 showToast("Agenda atualizada com sucesso!", "success"); 
-                setModalState(null); 
                 refreshCalendar();
             }} />}
 
-            {modalState?.type === 'block' && <BlockTimeModal professional={modalState.data.professional} startTime={modalState.data.start} onClose={() => setModalState(null)} onSave={async (block) => {
-                await supabase.from('appointments').insert([{ resource_id: block.professional.id, professional_name: block.professional.name, service_name: 'Bloqueio', value: 0, duration: block.service.duration, date: block.start.toISOString(), status: 'bloqueado', notes: block.notas }]);
-                showToast("Horário bloqueado!", "info"); setModalState(null); refreshCalendar();
+            {modalState?.type === 'block' && <BlockTimeModal professional={modalState.data.professional} startTime={modalState.data.start} onClose={() => setModalState(null)} onSuccess={() => {
+                showToast("Horário bloqueado!", "info"); 
+                refreshCalendar();
             }} />}
         </div>
     );
