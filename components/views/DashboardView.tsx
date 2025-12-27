@@ -1,11 +1,11 @@
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import Card from '../shared/Card';
 import JaciBotAssistant from '../shared/JaciBotAssistant';
 import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import WeeklyChart from '../charts/WeeklyChart';
 import { getDashboardInsight } from '../../services/geminiService';
-import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Edit3, Loader2, BarChart3 } from 'lucide-react';
+import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Edit3, Loader2, BarChart3, RefreshCw, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { toNumber } from '../../utils/normalize';
@@ -66,15 +66,29 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const today = new Date();
     const [dbData, setDbData] = useState<DashboardData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const isMounted = useRef(true);
 
     const fetchDashboardData = async () => {
+        if (!isMounted.current) return;
+        
         setIsLoading(true);
+        setError(null);
+
+        // Watchdog de 8 segundos
+        const watchdog = setTimeout(() => {
+            if (isMounted.current && isLoading) {
+                setIsLoading(false);
+                setError("O tempo de conexão excedeu o limite. Verifique sua internet.");
+            }
+        }, 8000);
+
         try {
-            // 1. Busca resumo via RPC (Função otimizada no Postgres)
-            const { data, error } = await supabase.rpc('get_dashboard_summary');
-            if (error) throw error;
+            const { data, error: rpcError } = await supabase.rpc('get_dashboard_summary');
             
-            if (data) {
+            if (rpcError) throw rpcError;
+            
+            if (data && isMounted.current) {
                 setDbData({
                     today_revenue: data.today_revenue || 0,
                     month_revenue: data.month_revenue || 0,
@@ -84,15 +98,23 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     week_chart_data: data.week_chart_data || []
                 });
             }
-        } catch (e) {
-            console.error("Erro ao carregar Dashboard:", e);
+        } catch (e: any) {
+            console.error("Erro detalhado no Dashboard:", e);
+            if (isMounted.current) {
+                setError(e.message || "Erro desconhecido ao carregar indicadores.");
+            }
         } finally {
-            setIsLoading(false);
+            clearTimeout(watchdog);
+            if (isMounted.current) {
+                setIsLoading(false);
+            }
         }
     };
 
     useEffect(() => {
+        isMounted.current = true;
         fetchDashboardData();
+        return () => { isMounted.current = false; };
     }, []);
 
     // Cálculo da Meta Mensal
@@ -110,19 +132,16 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         if (input !== null && !isNaN(parseFloat(input))) {
             const newGoal = parseFloat(input);
             try {
-                // Atualiza no banco de dados (tabela única de configurações)
                 const { error } = await supabase
                     .from('studio_settings')
                     .update({ monthly_revenue_goal: newGoal })
-                    .neq('id', 0); // Seleciona a linha existente
+                    .neq('id', 0);
 
                 if (error) throw error;
-                
-                // Recarrega para atualizar os cards e porcentagens
                 fetchDashboardData();
                 alert("Meta mensal atualizada com sucesso! 🚀");
             } catch (e: any) {
-                alert("Erro ao salvar meta: " + e.message);
+                alert("Erro ao salvar meta: " + (e.message || e));
             }
         }
     };
@@ -132,6 +151,24 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
             <div className="h-full flex flex-col items-center justify-center text-slate-400">
                 <Loader2 className="animate-spin text-orange-500 mb-4" size={40} />
                 <p className="text-xs font-black uppercase tracking-widest">Calculando indicadores...</p>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-slate-50">
+                <div className="bg-white p-10 rounded-[40px] shadow-xl border border-slate-100 max-w-md w-full animate-in zoom-in-95">
+                    <AlertTriangle className="w-16 h-16 text-rose-500 mx-auto mb-6" />
+                    <h3 className="font-extrabold text-slate-800 text-xl mb-2">Falha na Sincronização</h3>
+                    <p className="text-slate-500 text-sm mb-8 leading-relaxed">{error}</p>
+                    <button 
+                        onClick={fetchDashboardData} 
+                        className="w-full bg-slate-900 hover:bg-black text-white font-black py-4 rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-lg"
+                    >
+                        <RefreshCw size={20} /> Tentar Reconectar
+                    </button>
+                </div>
             </div>
         );
     }
@@ -153,7 +190,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 </button>
             </header>
 
-            {/* KPI Grid Dinâmico */}
+            {/* KPI Grid */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6 sm:mb-8">
                 <StatCard 
                     title="Faturamento Hoje" 
@@ -177,7 +214,6 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     subtext="Atendimentos finalizados"
                 />
                 
-                {/* Meta Mensal Card */}
                 <div className="bg-slate-800 p-4 sm:p-5 rounded-2xl text-white flex flex-col justify-between shadow-lg relative overflow-hidden group">
                     <div className="flex justify-between items-start z-10">
                         <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Progresso Meta Mensal</p>
@@ -201,7 +237,6 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
-                    {/* Quick Actions */}
                     <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 sm:gap-4">
                         <QuickAction icon={UserPlus} label="Cliente" color="bg-blue-500" onClick={() => onNavigate('clientes')} />
                         <QuickAction icon={Globe} label="Link" color="bg-purple-500" onClick={() => onNavigate('agenda_online')} />
