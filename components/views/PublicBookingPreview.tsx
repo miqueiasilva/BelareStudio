@@ -4,21 +4,18 @@ import {
     ChevronLeft, Check, Star, Search, Image as ImageIcon, 
     ChevronDown, ChevronUp, Share2, Loader2, MapPin, Phone, 
     User, Mail, ShoppingBag, Clock, Calendar, Scissors, 
-    CheckCircle2, ArrowRight, UserCircle2, X
+    CheckCircle2, ArrowRight, UserCircle2
 } from 'lucide-react';
-import { 
-    format, addDays, isSameDay, startOfDay, addMinutes, 
-    isAfter, isBefore, getDay, parseISO 
-} from 'date-fns';
+import { format, addDays, isSameDay } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
 import ToggleSwitch from '../shared/ToggleSwitch';
-import ClientAppointmentsModal from '../modals/ClientAppointmentsModal';
-import Toast, { ToastType } from '../shared/Toast';
 
+// --- Assets & Fallbacks ---
 const DEFAULT_COVER = "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1350&q=80";
 const DEFAULT_LOGO = "https://ui-avatars.com/api/?name=BelaFlow&background=random";
 
+// --- Sub-componente: Item de Serviço ---
 const ServiceItem = ({ service, isSelected, onToggle }: any) => (
     <div 
         onClick={() => onToggle(service)}
@@ -47,6 +44,7 @@ const ServiceItem = ({ service, isSelected, onToggle }: any) => (
     </div>
 );
 
+// --- Sub-componente: Accordion de Categoria ---
 const AccordionCategory = ({ category, services, selectedIds, onToggleService }: any) => {
     const [isOpen, setIsOpen] = useState(true);
     const selectedCount = services.filter((s: any) => selectedIds.includes(s.id)).length;
@@ -99,40 +97,25 @@ const PublicBookingPreview: React.FC = () => {
     // UI State
     const [selectedServices, setSelectedServices] = useState<any[]>([]);
     const [isBookingOpen, setIsBookingOpen] = useState(false);
-    const [isClientAppsOpen, setIsClientAppsOpen] = useState(false);
-    const [bookingStep, setBookingStep] = useState(1); 
-    const [showSuccess, setShowSuccess] = useState(false);
-    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-
-    // Appointment Choices
-    const [selectedProfessional, setSelectedProfessional] = useState<any>(null);
-    const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
-    const [selectedTime, setSelectedTime] = useState<string | null>(null);
-    const [availableSlots, setAvailableSlots] = useState<string[]>([]);
-    const [isLoadingSlots, setIsLoadingSlots] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-
-    // Client Data
-    const [clientName, setClientName] = useState('');
-    const [clientPhone, setClientPhone] = useState('');
-
-    const weekdayMap: Record<number, string> = {
-        0: 'sunday', 1: 'monday', 2: 'tuesday', 3: 'wednesday', 4: 'thursday', 5: 'friday', 6: 'saturday'
-    };
+    const [bookingStep, setBookingStep] = useState(1); // 1: Profissional, 2: Data/Hora, 3: Identificação
 
     // --- Data Fetching ---
     useEffect(() => {
         const loadPageData = async () => {
             setLoading(true);
             try {
+                // 1. Studio Branding
                 const { data: studioData } = await supabase.from('studio_settings').select('*').maybeSingle();
                 if (studioData) setStudio(studioData);
 
+                // 2. Available Services
                 const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true);
                 if (servicesData) setServices(servicesData);
 
-                const { data: profsData } = await supabase.from('professionals').select('*').eq('active', true).order('order_index');
+                // 3. Professionals
+                const { data: profsData } = await supabase.from('professionals').select('*').eq('active', true);
                 if (profsData) setProfessionals(profsData);
+
             } catch (e) {
                 console.error("Erro ao carregar dados públicos", e);
             } finally {
@@ -141,158 +124,6 @@ const PublicBookingPreview: React.FC = () => {
         };
         loadPageData();
     }, []);
-
-    // --- Slot Generation Logic ---
-    const generateAvailableSlots = async (date: Date, professional: any) => {
-        if (!selectedServices.length) return;
-        setIsLoadingSlots(true);
-        setSelectedTime(null);
-
-        try {
-            const dayKey = weekdayMap[getDay(date)];
-            
-            // Fallback robusto: se não houver configuração, assume 09:00 - 18:00 (exceto Domingo)
-            const fallbackHours = dayKey === 'sunday' 
-                ? { active: false, start: '09:00', end: '18:00' }
-                : { active: true, start: '09:00', end: '18:00' };
-
-            const businessHours = studio?.business_hours?.[dayKey] || fallbackHours;
-
-            if (!businessHours.active) {
-                setAvailableSlots([]);
-                setIsLoadingSlots(false);
-                return;
-            }
-
-            const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
-            
-            // 1. Busca agendamentos do dia para este profissional
-            const { data: busyAppointments } = await supabase
-                .from('appointments')
-                .select('date, duration')
-                .eq('resource_id', professional?.id)
-                .neq('status', 'cancelado')
-                .gte('date', startOfDay(date).toISOString())
-                .lte('date', addDays(startOfDay(date), 1).toISOString());
-
-            const slots: string[] = [];
-            
-            // Extração de horários (garante fallback se vier string vazia)
-            const [startH, startM] = (businessHours.start || '09:00').split(':').map(Number);
-            const [endH, endM] = (businessHours.end || '18:00').split(':').map(Number);
-            
-            let currentPointer = new Date(date);
-            currentPointer.setHours(startH, startM, 0, 0);
-            
-            const endLimit = new Date(date);
-            endLimit.setHours(endH, endM, 0, 0);
-            
-            const now = new Date();
-
-            // Loop de geração de slots
-            while (isBefore(addMinutes(currentPointer, totalDuration), addMinutes(endLimit, 1))) {
-                // Regra 1: Não mostrar horários passados se for hoje
-                if (isSameDay(date, now) && isBefore(currentPointer, now)) {
-                    currentPointer = addMinutes(currentPointer, 15);
-                    continue;
-                }
-
-                // Regra 2: Verificar colisão com agendamentos existentes
-                const hasOverlap = busyAppointments?.some(app => {
-                    const appStart = parseISO(app.date);
-                    const appEnd = addMinutes(appStart, app.duration);
-                    const slotStart = currentPointer;
-                    const slotEnd = addMinutes(currentPointer, totalDuration);
-                    return (slotStart < appEnd) && (slotEnd > appStart);
-                });
-
-                if (!hasOverlap) {
-                    slots.push(format(currentPointer, 'HH:mm'));
-                }
-
-                currentPointer = addMinutes(currentPointer, 15); // Intervalo de 15min para maior oferta de horários
-            }
-
-            setAvailableSlots(slots);
-        } catch (e) {
-            console.error("Erro ao gerar slots", e);
-        } finally {
-            setIsLoadingSlots(false);
-        }
-    };
-
-    useEffect(() => {
-        if (bookingStep === 2 && selectedDate) {
-            generateAvailableSlots(selectedDate, selectedProfessional);
-        }
-    }, [selectedDate, selectedProfessional, bookingStep]);
-
-    // --- Finalize Booking Logic ---
-    const handleFinishBooking = async () => {
-        if (!clientName || !clientPhone || !selectedTime) {
-            setToast({ message: "Por favor, preencha todos os campos.", type: 'error' });
-            return;
-        }
-
-        setIsSubmitting(true);
-        const cleanPhone = clientPhone.replace(/\D/g, '');
-
-        try {
-            // 1. Verificar/Criar Cliente
-            let clientId: number;
-            const { data: existingClient } = await supabase
-                .from('clients')
-                .select('id')
-                .eq('whatsapp', cleanPhone)
-                .maybeSingle();
-
-            if (existingClient) {
-                clientId = existingClient.id;
-            } else {
-                const { data: newClient, error: clientError } = await supabase
-                    .from('clients')
-                    .insert([{ nome: clientName, whatsapp: cleanPhone, consent: true }])
-                    .select('id')
-                    .single();
-                if (clientError) throw clientError;
-                clientId = newClient.id;
-            }
-
-            // 2. Salvar Agendamento
-            const [h, m] = selectedTime.split(':').map(Number);
-            const appStart = new Date(selectedDate);
-            appStart.setHours(h, m, 0, 0);
-            const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
-            const totalPrice = selectedServices.reduce((acc, s) => acc + s.preco, 0);
-
-            const { error: appError } = await supabase
-                .from('appointments')
-                .insert([{
-                    client_id: clientId,
-                    resource_id: selectedProfessional.id,
-                    professional_name: selectedProfessional.name,
-                    client_name: clientName,
-                    client_whatsapp: cleanPhone,
-                    date: appStart.toISOString(),
-                    duration: totalDuration,
-                    value: totalPrice,
-                    service_name: selectedServices.length > 1 ? `${selectedServices[0].name} + ${selectedServices.length - 1}` : selectedServices[0].name,
-                    status: 'agendado',
-                    origem: 'link'
-                }]);
-
-            if (appError) throw appError;
-
-            // 3. Feedback Sucesso
-            setToast({ message: "Agendamento realizado com sucesso!", type: 'success' });
-            setShowSuccess(true);
-        } catch (e: any) {
-            console.error("Erro ao finalizar reserva:", e);
-            setToast({ message: `Erro ao agendar: ${e.message}`, type: 'error' });
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
 
     // --- Logical Grouping ---
     const servicesByCategory = useMemo(() => {
@@ -318,10 +149,6 @@ const PublicBookingPreview: React.FC = () => {
         });
     };
 
-    const nextDays = useMemo(() => {
-        return Array.from({ length: 14 }).map((_, i) => addDays(new Date(), i));
-    }, []);
-
     if (loading) return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
             <Loader2 className="animate-spin text-orange-500 w-10 h-10 mb-4" />
@@ -330,20 +157,17 @@ const PublicBookingPreview: React.FC = () => {
     );
 
     return (
-        <div className="min-h-screen bg-slate-50 font-sans relative pb-40 text-left">
-            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+        <div className="min-h-screen bg-slate-50 font-sans relative pb-40">
             
-            {/* HEADER */}
+            {/* HEADER: BANNER + IDENTITY */}
             <div className="relative h-48 md:h-64 bg-slate-900">
                 <img 
                     src={studio?.cover_image_url || DEFAULT_COVER} 
                     className="w-full h-full object-cover opacity-50"
                     alt="Banner"
                 />
-                <button 
-                    onClick={() => setIsClientAppsOpen(true)}
-                    className="absolute top-6 right-6 p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-xl"
-                >
+                {/* Botão Meus Agendamentos */}
+                <button className="absolute top-6 right-6 p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-xl">
                     <UserCircle2 size={20} />
                     <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Meus Agendamentos</span>
                 </button>
@@ -362,15 +186,20 @@ const PublicBookingPreview: React.FC = () => {
                             <Star size={14} fill="currentColor" /> 5.0
                         </div>
                         <span className="text-slate-200">|</span>
-                        <div className="flex items-center gap-1 text-xs font-medium text-left">
-                            <MapPin size={14} className="text-orange-500 flex-shrink-0" /> 
-                            <span className="truncate max-w-[200px]">{studio?.address || "Endereço não informado"}</span>
+                        <div className="flex items-center gap-1 text-xs font-medium">
+                            <MapPin size={14} className="text-orange-500" /> 
+                            {studio?.address || "Endereço não informado"}
                         </div>
                     </div>
+                    <p className="mt-4 text-sm text-slate-500 leading-relaxed italic">
+                        "{studio?.presentation_text || "Bem-vindo ao nosso espaço de beleza!"}"
+                    </p>
                 </div>
 
+                {/* LISTA DE SERVIÇOS (Accordions) */}
                 <div className="mt-8 space-y-2">
-                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4 ml-2 text-left">Escolha os serviços</h2>
+                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4 ml-2">Escolha os serviços</h2>
+                    
                     {Object.entries(servicesByCategory).map(([cat, items]) => (
                         <AccordionCategory 
                             key={cat}
@@ -383,12 +212,13 @@ const PublicBookingPreview: React.FC = () => {
                 </div>
             </div>
 
-            {selectedServices.length > 0 && !isBookingOpen && !showSuccess && (
+            {/* BARRA FLUTUANTE (Bottom Sheet) */}
+            {selectedServices.length > 0 && (
                 <div className="fixed bottom-0 left-0 right-0 p-6 z-40 bg-gradient-to-t from-white via-white to-white/80 backdrop-blur-md border-t border-slate-100 animate-in slide-in-from-bottom-full duration-500">
                     <div className="max-w-xl mx-auto flex items-center justify-between gap-6">
-                        <div className="flex-1 text-left">
+                        <div className="flex-1">
                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                {selectedServices.length} selecionados
+                                {selectedServices.length} {selectedServices.length === 1 ? 'Serviço selecionado' : 'Serviços selecionados'}
                             </p>
                             <p className="text-xl font-black text-slate-800">Total R$ {totalPrice.toFixed(2)}</p>
                         </div>
@@ -402,8 +232,8 @@ const PublicBookingPreview: React.FC = () => {
                 </div>
             )}
 
-            {/* MODAL DE AGENDAMENTO */}
-            {isBookingOpen && !showSuccess && (
+            {/* MODAL DE AGENDAMENTO (Wizard) */}
+            {isBookingOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
                         <header className="p-6 border-b border-slate-50 flex items-center justify-between">
@@ -413,7 +243,7 @@ const PublicBookingPreview: React.FC = () => {
                                         <ChevronLeft size={20} />
                                     </button>
                                 )}
-                                <div className="text-left">
+                                <div>
                                     <h3 className="font-black text-slate-800">
                                         {bookingStep === 1 && "Escolha o Profissional"}
                                         {bookingStep === 2 && "Data e Horário"}
@@ -422,18 +252,32 @@ const PublicBookingPreview: React.FC = () => {
                                     <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Passo {bookingStep} de 3</p>
                                 </div>
                             </div>
-                            <button onClick={() => setIsBookingOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400"><X size={24}/></button>
+                            <button onClick={() => setIsBookingOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={24}/></button>
                         </header>
 
-                        <main className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-slate-50/30">
+                        <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
                             
+                            {/* STEP 1: PROFISSIONAL */}
                             {bookingStep === 1 && (
                                 <div className="space-y-4">
+                                    <button 
+                                        onClick={() => setBookingStep(2)}
+                                        className="w-full p-5 flex items-center gap-4 border-2 border-slate-100 rounded-3xl hover:border-orange-200 hover:bg-orange-50/30 transition-all text-left group"
+                                    >
+                                        <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-orange-100 group-hover:text-orange-500 transition-colors">
+                                            <Scissors size={24} />
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-slate-800 text-base leading-none">Qualquer Profissional</p>
+                                            <p className="text-xs text-slate-400 mt-1 font-medium">O horário disponível mais próximo.</p>
+                                        </div>
+                                    </button>
+
                                     {professionals.map(p => (
                                         <button 
                                             key={p.id}
-                                            onClick={() => { setSelectedProfessional(p); setBookingStep(2); }}
-                                            className={`w-full p-5 flex items-center gap-4 border-2 rounded-3xl transition-all text-left bg-white ${selectedProfessional?.id === p.id ? 'border-orange-500 bg-orange-50/30' : 'border-slate-100 hover:border-orange-200'}`}
+                                            onClick={() => setBookingStep(2)}
+                                            className="w-full p-5 flex items-center gap-4 border-2 border-slate-100 rounded-3xl hover:border-orange-200 hover:bg-orange-50/30 transition-all text-left"
                                         >
                                             <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-md">
                                                 <img src={p.photo_url || DEFAULT_LOGO} className="w-full h-full object-cover" alt={p.name} />
@@ -447,139 +291,48 @@ const PublicBookingPreview: React.FC = () => {
                                 </div>
                             )}
 
+                            {/* STEP 2: DATA/HORA (Placeholder) */}
                             {bookingStep === 2 && (
-                                <div className="space-y-8">
-                                    {/* Mini Calendário Horizontal */}
-                                    <div className="space-y-4">
-                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1 text-left">Selecione o Dia</h4>
-                                        <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
-                                            {nextDays.map((date) => {
-                                                const isClosed = studio?.business_hours?.[weekdayMap[getDay(date)]]?.active === false;
-                                                const isSelected = isSameDay(date, selectedDate);
-                                                return (
-                                                    <button
-                                                        key={date.toISOString()}
-                                                        disabled={isClosed}
-                                                        onClick={() => setSelectedDate(date)}
-                                                        className={`flex-shrink-0 w-16 h-20 rounded-2xl flex flex-col items-center justify-center transition-all border-2 ${
-                                                            isSelected ? 'bg-orange-500 border-orange-500 text-white shadow-lg shadow-orange-100 scale-105' : 
-                                                            isClosed ? 'bg-slate-100 border-transparent opacity-40 grayscale cursor-not-allowed' : 
-                                                            'bg-white border-slate-100 text-slate-600 hover:border-orange-200'
-                                                        }`}
-                                                    >
-                                                        <span className="text-[10px] font-black uppercase leading-none">{format(date, 'EEE', { locale: pt })}</span>
-                                                        <span className="text-xl font-black mt-1 leading-none">{format(date, 'dd')}</span>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-
-                                    {/* Horários */}
-                                    <div className="space-y-4">
-                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1 text-left">Horários Disponíveis</h4>
-                                        {isLoadingSlots ? (
-                                            <div className="py-10 text-center text-slate-400 flex flex-col items-center">
-                                                <Loader2 className="animate-spin mb-2" />
-                                                <p className="text-xs font-bold">Consultando agenda...</p>
-                                            </div>
-                                        ) : availableSlots.length > 0 ? (
-                                            <div className="grid grid-cols-4 gap-2">
-                                                {availableSlots.map(time => (
-                                                    <button
-                                                        key={time}
-                                                        onClick={() => setSelectedTime(time)}
-                                                        className={`py-3 rounded-xl text-sm font-black border-2 transition-all ${
-                                                            selectedTime === time 
-                                                            ? 'bg-slate-800 border-slate-800 text-white shadow-lg' 
-                                                            : 'bg-white border-slate-100 text-slate-600 hover:border-orange-300'
-                                                        }`}
-                                                    >
-                                                        {time}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="p-8 bg-slate-100/50 rounded-3xl border border-dashed border-slate-200 text-center">
-                                                <Clock className="mx-auto text-slate-300 mb-2" size={32} />
-                                                <p className="text-sm font-bold text-slate-400 leading-tight">
-                                                    {!studio?.business_hours?.[weekdayMap[getDay(selectedDate)]]?.active && studio?.business_hours 
-                                                        ? "O estúdio não abre neste dia." 
-                                                        : "Nenhum horário livre para a duração selecionada neste dia."
-                                                    }
-                                                </p>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {selectedTime && (
-                                        <button 
-                                            onClick={() => setBookingStep(3)}
-                                            className="w-full bg-slate-800 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 animate-in slide-in-from-bottom-2"
-                                        >
-                                            Continuar <ArrowRight size={20} />
-                                        </button>
-                                    )}
+                                <div className="flex flex-col items-center justify-center py-10 text-center text-slate-400">
+                                    <Calendar size={64} className="mb-4 opacity-20" />
+                                    <p className="font-bold">Calendário de disponibilidade</p>
+                                    <p className="text-xs max-w-[200px] mt-2">Escolha um dia e um dos horários livres.</p>
+                                    <button onClick={() => setBookingStep(3)} className="mt-8 bg-slate-800 text-white px-8 py-3 rounded-2xl font-black text-sm">Simular Próximo</button>
                                 </div>
                             )}
 
+                            {/* STEP 3: IDENTIFICAÇÃO */}
                             {bookingStep === 3 && (
                                 <div className="space-y-6">
-                                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4 text-left">
-                                        <div className="flex items-center gap-4 pb-4 border-b border-slate-50">
-                                            <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600">
-                                                <Calendar size={24} />
-                                            </div>
-                                            <div>
-                                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Seu Horário</p>
-                                                <p className="text-base font-black text-slate-800 leading-tight">
-                                                    {format(selectedDate, "dd 'de' MMMM", { locale: pt })} às {selectedTime}
-                                                </p>
-                                            </div>
-                                        </div>
-
+                                    <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                                        <h4 className="text-xs font-black text-slate-400 uppercase mb-4 tracking-widest">Resumo do Pedido</h4>
                                         <div className="space-y-3">
                                             {selectedServices.map(s => (
-                                                <div key={s.id} className="flex justify-between items-center text-sm font-bold text-slate-600">
+                                                <div key={s.id} className="flex justify-between items-center text-sm font-bold text-slate-700">
                                                     <span>{s.name}</span>
                                                     <span>R$ {s.preco.toFixed(2)}</span>
                                                 </div>
                                             ))}
-                                            <div className="pt-3 border-t border-slate-50 flex justify-between items-center">
+                                            <div className="pt-3 border-t border-slate-200 flex justify-between items-center">
                                                 <span className="text-xs font-black uppercase text-slate-400">Total</span>
                                                 <span className="text-xl font-black text-orange-600">R$ {totalPrice.toFixed(2)}</span>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div className="space-y-4 text-left">
+                                    <div className="space-y-4">
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Seu Nome Completo</label>
-                                            <input 
-                                                value={clientName}
-                                                onChange={e => setClientName(e.target.value)}
-                                                className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 font-bold shadow-sm" 
-                                                placeholder="Como devemos te chamar?" 
-                                            />
+                                            <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-orange-100 font-bold" placeholder="Como devemos te chamar?" />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">WhatsApp para Lembrete</label>
-                                            <input 
-                                                type="tel"
-                                                value={clientPhone}
-                                                onChange={e => setClientPhone(e.target.value)}
-                                                className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 font-bold shadow-sm" 
-                                                placeholder="(00) 00000-0000" 
-                                            />
+                                            <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-orange-100 font-bold" placeholder="(00) 00000-0000" />
                                         </div>
                                     </div>
                                     
-                                    <button 
-                                        onClick={handleFinishBooking}
-                                        disabled={isSubmitting || !clientName || !clientPhone}
-                                        className="w-full bg-green-600 hover:bg-green-700 text-white py-5 rounded-3xl font-black shadow-xl shadow-green-100 flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50"
-                                    >
-                                        {isSubmitting ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
+                                    <button className="w-full bg-green-600 hover:bg-green-700 text-white py-5 rounded-[24px] font-black shadow-xl shadow-green-100 flex items-center justify-center gap-3 transition-all active:scale-95">
+                                        <CheckCircle2 size={24} />
                                         Finalizar Agendamento
                                     </button>
                                 </div>
@@ -588,47 +341,14 @@ const PublicBookingPreview: React.FC = () => {
                     </div>
                 </div>
             )}
-
-            {/* TELA DE SUCESSO */}
-            {showSuccess && (
-                <div className="fixed inset-0 z-[60] bg-white flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
-                    <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center text-green-600 mb-8 animate-bounce">
-                        <CheckCircle2 size={48} />
-                    </div>
-                    <h2 className="text-3xl font-black text-slate-800 mb-2">Agendamento Realizado!</h2>
-                    <p className="text-slate-500 max-w-xs mb-10">Tudo certo, {clientName.split(' ')[0]}! Reservamos seu horário para o dia {format(selectedDate, 'dd/MM')} às {selectedTime}.</p>
-                    
-                    <div className="bg-slate-50 w-full max-w-xs rounded-3xl p-6 border border-slate-100 mb-8 text-left">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Resumo da Reserva</p>
-                        <div className="space-y-4">
-                            <div className="flex items-center gap-3">
-                                <Clock size={16} className="text-orange-500" />
-                                <span className="text-sm font-bold text-slate-700">{selectedTime}</span>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <UserCircle2 size={16} className="text-orange-500" />
-                                <span className="text-sm font-bold text-slate-700">{selectedProfessional?.name}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <button 
-                        onClick={() => { setShowSuccess(false); setIsBookingOpen(false); setSelectedServices([]); }}
-                        className="bg-slate-800 text-white px-10 py-4 rounded-2xl font-black shadow-xl hover:bg-slate-900 transition-all active:scale-95"
-                    >
-                        Voltar ao Início
-                    </button>
-                    
-                    <p className="mt-10 text-[10px] font-bold text-slate-300 uppercase tracking-widest">Enviamos um lembrete no seu WhatsApp</p>
-                </div>
-            )}
-
-            {/* MODAL DE CONSULTA DE AGENDAMENTOS */}
-            {isClientAppsOpen && (
-                <ClientAppointmentsModal onClose={() => setIsClientAppsOpen(false)} />
-            )}
         </div>
     );
 };
+
+const X = ({ size }: { size: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+);
 
 export default PublicBookingPreview;
