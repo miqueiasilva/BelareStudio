@@ -14,6 +14,7 @@ import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import ClientAppointmentsModal from '../modals/ClientAppointmentsModal';
+import Toast, { ToastType } from '../shared/Toast';
 
 const DEFAULT_COVER = "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1350&q=80";
 const DEFAULT_LOGO = "https://ui-avatars.com/api/?name=BelaFlow&background=random";
@@ -100,6 +101,8 @@ const PublicBookingPreview: React.FC = () => {
     const [isBookingOpen, setIsBookingOpen] = useState(false);
     const [isClientAppsOpen, setIsClientAppsOpen] = useState(false);
     const [bookingStep, setBookingStep] = useState(1); 
+    const [showSuccess, setShowSuccess] = useState(false);
+    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
     // Appointment Choices
     const [selectedProfessional, setSelectedProfessional] = useState<any>(null);
@@ -107,6 +110,11 @@ const PublicBookingPreview: React.FC = () => {
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
     const [availableSlots, setAvailableSlots] = useState<string[]>([]);
     const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // Client Data
+    const [clientName, setClientName] = useState('');
+    const [clientPhone, setClientPhone] = useState('');
 
     const weekdayMap: Record<number, string> = {
         0: 'sunday', 1: 'monday', 2: 'tuesday', 3: 'wednesday', 4: 'thursday', 5: 'friday', 6: 'saturday'
@@ -151,7 +159,6 @@ const PublicBookingPreview: React.FC = () => {
 
             const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
             
-            // 1. Busca agendamentos do dia para este profissional
             const { data: busyAppointments } = await supabase
                 .from('appointments')
                 .select('date, duration')
@@ -161,27 +168,20 @@ const PublicBookingPreview: React.FC = () => {
                 .lte('date', addDays(startOfDay(date), 1).toISOString());
 
             const slots: string[] = [];
-            
-            // FIX: Replaced date-fns parse with manual hours/minutes extraction to resolve "no exported member 'parse'" error.
             const [startH, startM] = businessHours.start.split(':').map(Number);
             const [endH, endM] = businessHours.end.split(':').map(Number);
             
             let currentPointer = new Date(date);
             currentPointer.setHours(startH, startM, 0, 0);
-            
             const endLimit = new Date(date);
             endLimit.setHours(endH, endM, 0, 0);
-            
             const now = new Date();
 
             while (isBefore(addMinutes(currentPointer, totalDuration), endLimit)) {
-                // Regra 1: Não mostrar horários passados se for hoje
                 if (isSameDay(date, now) && isBefore(currentPointer, now)) {
                     currentPointer = addMinutes(currentPointer, 15);
                     continue;
                 }
-
-                // Regra 2: Verificar colisão com agendamentos existentes
                 const hasOverlap = busyAppointments?.some(app => {
                     const appStart = parseISO(app.date);
                     const appEnd = addMinutes(appStart, app.duration);
@@ -189,14 +189,11 @@ const PublicBookingPreview: React.FC = () => {
                     const slotEnd = addMinutes(currentPointer, totalDuration);
                     return (slotStart < appEnd) && (slotEnd > appStart);
                 });
-
                 if (!hasOverlap) {
                     slots.push(format(currentPointer, 'HH:mm'));
                 }
-
-                currentPointer = addMinutes(currentPointer, 15); // Passo de 15min para maior flexibilidade
+                currentPointer = addMinutes(currentPointer, 15);
             }
-
             setAvailableSlots(slots);
         } catch (e) {
             console.error("Erro ao gerar slots", e);
@@ -210,6 +207,75 @@ const PublicBookingPreview: React.FC = () => {
             generateAvailableSlots(selectedDate, selectedProfessional);
         }
     }, [selectedDate, selectedProfessional, bookingStep]);
+
+    // --- Finalize Booking Logic ---
+    const handleFinishBooking = async () => {
+        if (!clientName || !clientPhone || !selectedTime) {
+            setToast({ message: "Por favor, preencha todos os campos.", type: 'error' });
+            return;
+        }
+
+        setIsSubmitting(true);
+        const cleanPhone = clientPhone.replace(/\D/g, '');
+
+        try {
+            // 1. Verificar/Criar Cliente
+            let clientId: number;
+            const { data: existingClient } = await supabase
+                .from('clients')
+                .select('id')
+                .eq('whatsapp', cleanPhone)
+                .maybeSingle();
+
+            if (existingClient) {
+                clientId = existingClient.id;
+            } else {
+                const { data: newClient, error: clientError } = await supabase
+                    .from('clients')
+                    .insert([{ nome: clientName, whatsapp: cleanPhone, consent: true }])
+                    .select('id')
+                    .single();
+                if (clientError) throw clientError;
+                clientId = newClient.id;
+            }
+
+            // 2. Salvar Agendamento
+            const [h, m] = selectedTime.split(':').map(Number);
+            const appStart = new Date(selectedDate);
+            appStart.setHours(h, m, 0, 0);
+            const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
+            const totalPrice = selectedServices.reduce((acc, s) => acc + s.preco, 0);
+
+            const { error: appError } = await supabase
+                .from('appointments')
+                .insert([{
+                    client_id: clientId,
+                    resource_id: selectedProfessional.id,
+                    professional_name: selectedProfessional.name,
+                    client_name: clientName,
+                    client_whatsapp: cleanPhone,
+                    date: appStart.toISOString(),
+                    duration: totalDuration,
+                    value: totalPrice,
+                    service_name: selectedServices.length > 1 ? `${selectedServices[0].name} + ${selectedServices.length - 1}` : selectedServices[0].name,
+                    status: 'agendado',
+                    origem: 'link'
+                }]);
+
+            if (appError) throw appError;
+
+            // 3. Feedback Sucesso
+            setToast({ message: "Agendamento realizado com sucesso!", type: 'success' });
+            setShowSuccess(true);
+            
+            // Limpar estado para nova reserva se necessário (opcional)
+        } catch (e: any) {
+            console.error("Erro ao finalizar reserva:", e);
+            setToast({ message: `Erro ao agendar: ${e.message}`, type: 'error' });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
     // --- Logical Grouping ---
     const servicesByCategory = useMemo(() => {
@@ -248,6 +314,7 @@ const PublicBookingPreview: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans relative pb-40">
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
             {/* HEADER */}
             <div className="relative h-48 md:h-64 bg-slate-900">
@@ -299,7 +366,7 @@ const PublicBookingPreview: React.FC = () => {
                 </div>
             </div>
 
-            {selectedServices.length > 0 && (
+            {selectedServices.length > 0 && !isBookingOpen && !showSuccess && (
                 <div className="fixed bottom-0 left-0 right-0 p-6 z-40 bg-gradient-to-t from-white via-white to-white/80 backdrop-blur-md border-t border-slate-100 animate-in slide-in-from-bottom-full duration-500">
                     <div className="max-w-xl mx-auto flex items-center justify-between gap-6">
                         <div className="flex-1">
@@ -319,7 +386,7 @@ const PublicBookingPreview: React.FC = () => {
             )}
 
             {/* MODAL DE AGENDAMENTO */}
-            {isBookingOpen && (
+            {isBookingOpen && !showSuccess && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
                         <header className="p-6 border-b border-slate-50 flex items-center justify-between">
@@ -464,16 +531,31 @@ const PublicBookingPreview: React.FC = () => {
                                     <div className="space-y-4">
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Seu Nome Completo</label>
-                                            <input className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 font-bold shadow-sm" placeholder="Como devemos te chamar?" />
+                                            <input 
+                                                value={clientName}
+                                                onChange={e => setClientName(e.target.value)}
+                                                className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 font-bold shadow-sm" 
+                                                placeholder="Como devemos te chamar?" 
+                                            />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">WhatsApp para Lembrete</label>
-                                            <input className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 font-bold shadow-sm" placeholder="(00) 00000-0000" />
+                                            <input 
+                                                type="tel"
+                                                value={clientPhone}
+                                                onChange={e => setClientPhone(e.target.value)}
+                                                className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 font-bold shadow-sm" 
+                                                placeholder="(00) 00000-0000" 
+                                            />
                                         </div>
                                     </div>
                                     
-                                    <button className="w-full bg-green-600 hover:bg-green-700 text-white py-5 rounded-3xl font-black shadow-xl shadow-green-100 flex items-center justify-center gap-3 transition-all active:scale-95">
-                                        <CheckCircle2 size={24} />
+                                    <button 
+                                        onClick={handleFinishBooking}
+                                        disabled={isSubmitting || !clientName || !clientPhone}
+                                        className="w-full bg-green-600 hover:bg-green-700 text-white py-5 rounded-3xl font-black shadow-xl shadow-green-100 flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50"
+                                    >
+                                        {isSubmitting ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
                                         Finalizar Agendamento
                                     </button>
                                 </div>
@@ -483,6 +565,41 @@ const PublicBookingPreview: React.FC = () => {
                 </div>
             )}
 
+            {/* TELA DE SUCESSO */}
+            {showSuccess && (
+                <div className="fixed inset-0 z-[60] bg-white flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
+                    <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center text-green-600 mb-8 animate-bounce">
+                        <CheckCircle2 size={48} />
+                    </div>
+                    <h2 className="text-3xl font-black text-slate-800 mb-2">Agendamento Realizado!</h2>
+                    <p className="text-slate-500 max-w-xs mb-10">Tudo certo, {clientName.split(' ')[0]}! Reservamos seu horário para o dia {format(selectedDate, 'dd/MM')} às {selectedTime}.</p>
+                    
+                    <div className="bg-slate-50 w-full max-w-xs rounded-3xl p-6 border border-slate-100 mb-8">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Resumo da Reserva</p>
+                        <div className="space-y-4 text-left">
+                            <div className="flex items-center gap-3">
+                                <Clock size={16} className="text-orange-500" />
+                                <span className="text-sm font-bold text-slate-700">{selectedTime}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <UserCircle2 size={16} className="text-orange-500" />
+                                <span className="text-sm font-bold text-slate-700">{selectedProfessional.name}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button 
+                        onClick={() => { setShowSuccess(false); setIsBookingOpen(false); setSelectedServices([]); }}
+                        className="bg-slate-800 text-white px-10 py-4 rounded-2xl font-black shadow-xl hover:bg-slate-900 transition-all active:scale-95"
+                    >
+                        Voltar ao Início
+                    </button>
+                    
+                    <p className="mt-10 text-[10px] font-bold text-slate-300 uppercase tracking-widest">Enviamos um lembrete no seu WhatsApp</p>
+                </div>
+            )}
+
+            {/* MODAL DE CONSULTA DE AGENDAMENTOS */}
             {isClientAppsOpen && (
                 <ClientAppointmentsModal onClose={() => setIsClientAppsOpen(false)} />
             )}
