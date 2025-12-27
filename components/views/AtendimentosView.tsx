@@ -118,6 +118,7 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
 
     const refreshCalendar = useCallback(async () => {
         if (!isMounted.current) return;
+        console.log("Refresh disparado - Buscando novos dados no Supabase...");
         setIsLoadingData(true);
         try {
             const { data, error } = await supabase.from('appointments').select('*');
@@ -139,8 +140,9 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                     } as LegacyAppointment & { rawDate: string };
                 });
                 setAppointments(mapped);
+                console.log("Agenda sincronizada com sucesso!");
             }
-        } catch (e: any) { console.error(e); } 
+        } catch (e: any) { console.error("Erro ao sincronizar agenda:", e); } 
         finally { setIsLoadingData(false); }
     }, [resources]);
 
@@ -214,7 +216,7 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                 date: newStart.toISOString() 
             }).eq('id', appointmentId);
             showToast("Agendamento movido!");
-            refreshCalendar();
+            await refreshCalendar();
         } catch (err) { showToast("Erro ao mover", 'error'); }
     };
 
@@ -501,35 +503,37 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                 </div>
             </div>
 
-            {/* MODAL COMPARTILHAR AGENDAMENTO */}
+            {/* MODAL COMPARTILHAR AGENDAMENTO (Refatorado para estilo popup centralizado) */}
             {isShareModalOpen && (
-                <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm transition-all">
-                    <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-                        <header className="p-6 flex justify-between items-center border-b border-slate-50">
-                            <h3 className="text-xl font-black text-slate-800">Compartilhar agenda</h3>
-                            <button onClick={() => setIsShareModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
-                                <X size={24}/>
+                <div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-lg shadow-2xl w-full max-w-md p-6 relative animate-in zoom-in duration-200">
+                        <header className="mb-4">
+                            <h3 className="text-lg font-bold text-slate-800">Compartilhar agenda</h3>
+                            <button 
+                                onClick={() => setIsShareModalOpen(false)} 
+                                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1"
+                            >
+                                <X size={20}/>
                             </button>
                         </header>
-                        <div className="p-8">
-                            <p className="text-slate-500 text-sm mb-6 leading-relaxed font-medium">
+                        <div className="space-y-4">
+                            <p className="text-gray-500 text-sm leading-relaxed">
                                 Compartilhe o link da agenda do seu negócio para seus clientes marcarem horários online de qualquer lugar.
                             </p>
-                            <div className="flex items-center gap-2 p-2 bg-slate-50 border-2 border-slate-100 rounded-2xl mb-4 focus-within:border-orange-200 transition-all">
-                                <div className="p-2.5 text-slate-400"><LinkIcon size={20} /></div>
+                            <div className="flex items-center gap-2">
                                 <input 
                                     readOnly 
                                     value="https://belaflow.app/studio-jacilene-felix" 
-                                    className="flex-1 bg-transparent border-none text-sm font-bold text-slate-700 outline-none select-all" 
+                                    className="flex-1 bg-white border border-gray-300 rounded-md px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-500 select-all font-medium" 
                                 />
                                 <button 
                                     onClick={() => { 
                                         navigator.clipboard.writeText("https://belaflow.app/studio-jacilene-felix"); 
                                         showToast("Link copiado com sucesso!", "success"); 
                                     }}
-                                    className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-xl text-sm font-black flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-orange-100"
+                                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all active:scale-95 shadow-sm"
                                 >
-                                    <Copy size={18}/> Copiar
+                                    <Copy size={16}/> Copiar
                                 </button>
                             </div>
                         </div>
@@ -556,8 +560,18 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                     targetElement={appointmentRefs.current.get(activeAppointmentDetail.id) || null} 
                     onClose={() => setActiveAppointmentDetail(null)} 
                     onEdit={(app) => setModalState({ type: 'appointment', data: app })} 
-                    onDelete={async (id) => { await supabase.from('appointments').delete().eq('id', id); refreshCalendar(); setActiveAppointmentDetail(null); showToast('Agendamento removido!', 'info'); }} 
-                    onUpdateStatus={async (id, status) => { await supabase.from('appointments').update({ status }).eq('id', id); refreshCalendar(); setActiveAppointmentDetail(null); showToast('Status atualizado!', 'success'); }} 
+                    onDelete={async (id) => { 
+                        await supabase.from('appointments').delete().eq('id', id); 
+                        await refreshCalendar(); 
+                        setActiveAppointmentDetail(null); 
+                        showToast('Agendamento removido!', 'info'); 
+                    }} 
+                    onUpdateStatus={async (id, status) => { 
+                        await supabase.from('appointments').update({ status }).eq('id', id); 
+                        await refreshCalendar(); 
+                        setActiveAppointmentDetail(null); 
+                        showToast('Status atualizado!', 'success'); 
+                    }} 
                 />
             )}
 
@@ -568,7 +582,7 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                     onClose={() => setModalState(null)} 
                     onSuccess={async () => {
                         await refreshCalendar();
-                        showToast("Agendamento salvo com sucesso!", "success");
+                        showToast("Agenda atualizada com sucesso!", "success");
                     }} 
                 />
             )}
@@ -580,7 +594,7 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                     onClose={() => setModalState(null)} 
                     onSuccess={async () => {
                         await refreshCalendar();
-                        showToast("Horário bloqueado na agenda!", "info");
+                        showToast("Horário bloqueado!", "info");
                     }} 
                 />
             )}

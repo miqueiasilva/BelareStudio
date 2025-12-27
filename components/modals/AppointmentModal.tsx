@@ -173,9 +173,9 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
         if (result.error) throw result.error;
         
-        // Dispara callback de sucesso ANTES de fechar para que o pai já inicie o fetch
-        if (onSuccess) onSuccess();
+        // ORDEM CORRIGIDA: 1. Fecha o modal primeiro | 2. Dispara o refresh depois
         onClose();
+        if (onSuccess) onSuccess();
         
     } catch (err: any) {
         console.error("Error saving appointment:", err);

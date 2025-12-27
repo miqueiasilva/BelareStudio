@@ -57,9 +57,9 @@ const BlockTimeModal: React.FC<BlockTimeModalProps> = ({ professional, startTime
         const { error } = await supabase.from('appointments').insert([payload]);
         if (error) throw error;
 
-        // Avisa o componente pai sobre o sucesso antes de fechar
-        if (onSuccess) onSuccess();
+        // ORDEM CORRIGIDA: 1. Fecha o modal primeiro | 2. Dispara o refresh depois
         onClose();
+        if (onSuccess) onSuccess();
     } catch (err: any) {
         alert("Erro ao bloquear horário: " + err.message);
     } finally {
