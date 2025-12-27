@@ -24,8 +24,9 @@ const START_HOUR = 8;
 const END_HOUR = 20; 
 const PIXELS_PER_MINUTE = 80 / 60; 
 
-// Estilo de Elevação para Menus (Solução Visual contra Clipping e Contraste)
-const MENU_ELEVATION = "bg-white rounded-xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.3)] border border-slate-200/60 z-[9999] overflow-hidden animate-in fade-in zoom-in-95 duration-150";
+// Estilo Base do Componente "Camaleão" (Popover no Desktop, Gaveta no Mobile)
+const ADAPTIVE_MENU_WRAPPER = "fixed inset-0 z-[100] lg:bg-transparent bg-black/60 backdrop-blur-sm lg:backdrop-blur-none animate-in fade-in duration-200";
+const ADAPTIVE_MENU_CONTENT = "fixed bottom-0 left-0 right-0 w-full bg-white rounded-t-[32px] p-6 shadow-2xl animate-in slide-in-from-bottom duration-300 lg:absolute lg:bottom-auto lg:rounded-xl lg:p-0 lg:shadow-xl lg:border lg:border-slate-200/60 lg:animate-in lg:zoom-in-95 lg:duration-150 overflow-hidden";
 
 const getAppointmentPosition = (isoDateString: string, duration: number) => {
     const timePart = isoDateString.split('T')[1] || "00:00:00";
@@ -34,18 +35,14 @@ const getAppointmentPosition = (isoDateString: string, duration: number) => {
     const startDayMinutes = START_HOUR * 60;
     const top = Math.max(0, (appointmentMinutes - startDayMinutes) * PIXELS_PER_MINUTE);
     const height = duration * PIXELS_PER_MINUTE;
-    return { top: `${top}px`, height: `${height - 1}px` };
+    return { top: `${top}px`, height: `${height} - 1px` };
 };
 
 const getCardStyle = (app: LegacyAppointment, viewMode: ViewMode) => {
     const baseClasses = "absolute left-0 right-0 mx-0.5 md:mx-1 rounded-md md:rounded-lg shadow-sm md:border-l-4 p-1 md:p-2 cursor-grab active:cursor-grabbing z-10 hover:shadow-md transition-all overflow-hidden flex flex-col gap-0.5 select-none border-l-0";
-    
     if (viewMode === 'pagamento') {
-        return app.status === 'concluido' 
-            ? `${baseClasses} bg-emerald-100 md:bg-emerald-50 border-emerald-500 text-emerald-900`
-            : `${baseClasses} bg-rose-100 md:bg-rose-50 border-rose-500 text-rose-900`;
+        return app.status === 'concluido' ? `${baseClasses} bg-emerald-100 border-emerald-500 text-emerald-900` : `${baseClasses} bg-rose-100 border-rose-500 text-rose-900`;
     }
-
     switch (app.status) {
         case 'concluido': return `${baseClasses} bg-slate-200 md:bg-slate-50 border-slate-400 text-slate-500 opacity-60`;
         case 'bloqueado': return `${baseClasses} bg-slate-100 border-slate-300 text-slate-400 opacity-70 border-dashed`;
@@ -63,9 +60,7 @@ const TimelineIndicator = () => {
             const now = new Date();
             const startOfDayMinutes = START_HOUR * 60;
             const nowMinutes = now.getHours() * 60 + now.getMinutes();
-            if (nowMinutes < startOfDayMinutes || nowMinutes > END_HOUR * 60) {
-                setTopPosition(-1); return;
-            }
+            if (nowMinutes < startOfDayMinutes || nowMinutes > END_HOUR * 60) { setTopPosition(-1); return; }
             const top = (nowMinutes - startOfDayMinutes) * PIXELS_PER_MINUTE;
             setTopPosition(top);
         };
@@ -91,7 +86,7 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
     const [resources, setResources] = useState<LegacyProfessional[]>([]);
     const [visibleProfIds, setVisibleProfIds] = useState<number[]>([]);
     const [isLoadingData, setIsLoadingData] = useState(false);
-    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
     
     const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 1024);
     const [isAutoWidth, setIsAutoWidth] = useState(true);
@@ -100,7 +95,6 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
     const [viewMode, setViewMode] = useState<ViewMode>('profissional');
     const [calendarMode, setCalendarMode] = useState<'Dia' | 'Semana' | 'Mês' | 'Lista' | 'Fila de Espera'>('Dia');
     
-    // Menu States (Refatorado para suportar fechamento externo)
     const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
     const [isPeriodMenuOpen, setIsPeriodMenuOpen] = useState(false);
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -116,7 +110,6 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
     const viewMenuTriggerRef = useRef<HTMLButtonElement>(null);
     const periodMenuTriggerRef = useRef<HTMLButtonElement>(null);
-    const notificationsTriggerRef = useRef<HTMLButtonElement>(null);
     
     const isMounted = useRef(true);
 
@@ -131,12 +124,8 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                     const start = parseISO(row.date);
                     const dur = row.duration || 30;
                     return {
-                        id: row.id,
-                        rawDate: row.date,
-                        start,
-                        end: new Date(start.getTime() + dur * 60000),
-                        status: row.status as AppointmentStatus,
-                        notas: row.notes || '',
+                        id: row.id, rawDate: row.date, start, end: new Date(start.getTime() + dur * 60000),
+                        status: row.status as AppointmentStatus, notas: row.notes || '',
                         client: { id: 0, nome: row.client_name || 'Bloqueado', consent: true },
                         professional: resources.find(p => p.id === Number(row.resource_id)) || { id: 0, name: row.professional_name, avatarUrl: '' },
                         service: { id: 0, name: row.service_name, price: Number(row.value), duration: dur, color: '#3b82f6' }
@@ -144,14 +133,12 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                 });
                 setAppointments(mapped);
             }
-        } catch (e: any) { console.error(e); } 
-        finally { setIsLoadingData(false); }
+        } catch (e: any) { console.error(e); } finally { setIsLoadingData(false); }
     }, [resources]);
 
     useEffect(() => {
-        const handleResize = () => setIsMobile(window.innerWidth < 768);
+        const handleResize = () => setIsMobile(window.innerWidth < 1024);
         window.addEventListener('resize', handleResize);
-        
         const fetchResources = async () => {
             const { data } = await supabase.from('professionals').select('*').order('name');
             if (data) {
@@ -161,25 +148,12 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
             }
         };
         fetchResources();
-
-        // Fechamento Universal de Menus ao clicar fora
-        const handleClickOutside = (event: MouseEvent) => {
-            const target = event.target as Node;
-            if (viewMenuTriggerRef.current && !viewMenuTriggerRef.current.contains(target)) setIsViewMenuOpen(false);
-            if (periodMenuTriggerRef.current && !periodMenuTriggerRef.current.contains(target)) setIsPeriodMenuOpen(false);
-            if (notificationsTriggerRef.current && !notificationsTriggerRef.current.contains(target)) setIsNotificationsOpen(false);
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
+        return () => window.removeEventListener('resize', handleResize);
     }, []);
 
     useEffect(() => { if (resources.length > 0) refreshCalendar(); }, [resources, currentDate, refreshCalendar]);
 
     const filteredProfessionals = useMemo(() => resources.filter(p => visibleProfIds.includes(p.id)), [resources, visibleProfIds]);
-    
     const timeSlotsLabels = useMemo(() => {
         const labels = [];
         const slotsCount = ((END_HOUR - START_HOUR) * 60) / timeSlot;
@@ -192,15 +166,14 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
         return labels;
     }, [timeSlot]);
 
-    const dynamicTimeColWidth = isMobile ? '45px' : '60px';
-    const dynamicColWidth = isMobile ? '105px' : (isAutoWidth ? 'minmax(200px, 1fr)' : `${colWidth}px`);
-    const gridTemplateString = `${dynamicTimeColWidth} repeat(${filteredProfessionals.length}, ${dynamicColWidth})`;
+    // Lógica de Estilo das Colunas para Flexbox
+    const timeColClass = "flex-none w-[45px] md:w-[60px]";
+    const profColStyle = isMobile ? { width: '105px', flex: 'none' } : (isAutoWidth ? { flex: '1', minWidth: '200px' } : { width: `${colWidth}px`, flex: 'none' });
 
     const handleGridAction = (e: React.MouseEvent, professional: LegacyProfessional) => {
         const rect = e.currentTarget.getBoundingClientRect();
         const offsetY = e.clientY - rect.top;
-        const minutes = (offsetY / PIXELS_PER_MINUTE);
-        const totalMinutes = (START_HOUR * 60) + minutes;
+        const totalMinutes = (START_HOUR * 60) + (offsetY / PIXELS_PER_MINUTE);
         const rounded = Math.round(totalMinutes / 15) * 15;
         const targetDate = new Date(currentDate);
         targetDate.setHours(Math.floor(rounded / 60), rounded % 60, 0, 0);
@@ -218,10 +191,10 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
     const SidebarContent = () => (
         <div className="flex flex-col h-full bg-white p-6 gap-8 overflow-y-auto border-r border-slate-200">
             <div className="space-y-4">
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><ZoomIn size={14} /> Zoom da Grade</h3>
                 <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><ZoomIn size={14} /> Zoom da Grade</h3>
                     <label className="flex items-center gap-2 cursor-pointer group">
-                        <span className="text-[10px] font-black text-slate-400 group-hover:text-orange-500 uppercase">Auto</span>
+                        <span className="text-[10px] font-black text-slate-400 uppercase">Auto</span>
                         <input type="checkbox" checked={isAutoWidth} onChange={e => setIsAutoWidth(e.target.checked)} className="w-3 h-3 rounded text-orange-500 border-slate-300 focus:ring-orange-500" />
                     </label>
                 </div>
@@ -229,28 +202,13 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                     <input type="range" min="150" max="450" step="10" value={colWidth} onChange={e => setColWidth(Number(e.target.value))} className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-orange-500" />
                 )}
             </div>
-            <div className="space-y-4">
-                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><ClockIcon size={14} /> Intervalo</h3>
-                <div className="grid grid-cols-3 gap-2">
-                    {[15, 30, 60].map(val => (
-                        <button key={val} onClick={() => setTimeSlot(val)} className={`py-2 rounded-xl text-xs font-black transition-all border-2 ${timeSlot === val ? 'bg-orange-50 border-orange-500 text-white shadow-lg shadow-orange-100' : 'bg-white border-slate-100 text-slate-500 hover:border-slate-200'}`}>{val}m</button>
-                    ))}
-                </div>
-            </div>
             <div className="space-y-4 flex-1">
-                <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Users size={14} /> Equipe</h3>
-                    <button onClick={() => setVisibleProfIds(resources.map(r => r.id))} className="text-[10px] font-black text-orange-500 uppercase hover:underline">Todos</button>
-                </div>
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Users size={14} /> Equipe</h3>
                 <div className="space-y-2">
                     {resources.map(prof => (
-                        <button key={prof.id} onClick={() => setVisibleProfIds(prev => prev.includes(prof.id) ? prev.filter(x => x !== prof.id) : [...prev, prof.id])} className={`w-full flex items-center gap-3 p-2 rounded-2xl transition-all border-2 ${visibleProfIds.includes(prof.id) ? 'bg-white border-orange-100 shadow-sm' : 'bg-slate-50 border-transparent opacity-50 grayscale'}`}>
-                            <img src={prof.avatarUrl} className="w-8 h-8 rounded-full border-2 border-white shadow-sm" alt="" />
-                            <div className="text-left overflow-hidden">
-                                <p className="text-xs font-bold text-slate-700 truncate">{prof.name}</p>
-                                <p className="text-[9px] text-slate-400 font-medium truncate uppercase">{prof.role}</p>
-                            </div>
-                            {visibleProfIds.includes(prof.id) && <Check size={14} className="ml-auto text-orange-500" />}
+                        <button key={prof.id} onClick={() => setVisibleProfIds(prev => prev.includes(prof.id) ? prev.filter(x => x !== prof.id) : [...prev, prof.id])} className={`w-full flex items-center gap-3 p-2 rounded-2xl transition-all border-2 ${visibleProfIds.includes(prof.id) ? 'bg-white border-orange-100' : 'bg-slate-50 border-transparent opacity-50 grayscale'}`}>
+                            <img src={prof.avatarUrl} className="w-8 h-8 rounded-full" alt="" />
+                            <div className="text-left overflow-hidden"><p className="text-xs font-bold text-slate-700 truncate">{prof.name}</p></div>
                         </button>
                     ))}
                 </div>
@@ -262,175 +220,151 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
         <div className="flex h-full bg-white font-sans text-left overflow-hidden relative">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
-            {/* Sidebar (Desktop only) */}
             <aside className={`h-full flex-shrink-0 transition-all duration-300 relative hidden lg:block ${isSidebarOpen ? 'w-72' : 'w-0'}`}>
                 {isSidebarOpen && <SidebarContent />}
-                <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="absolute top-1/2 -right-3 -translate-y-1/2 w-6 h-12 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-400 hover:text-orange-500 shadow-sm z-50 transition-all">
+                <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="absolute top-1/2 -right-3 -translate-y-1/2 w-6 h-12 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-400 hover:text-orange-500 shadow-sm z-50">
                     {isSidebarOpen ? <ChevronLeft size={14}/> : <ChevronRight size={14}/>}
                 </button>
             </aside>
 
             <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Header Mobile Compact */}
-                <header className="flex md:hidden h-12 bg-white border-b border-slate-200 items-center justify-between px-2 z-40">
-                    <div className="flex items-center gap-2">
-                        <button className="p-2 text-slate-500"><Menu size={20}/></button>
-                        <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{format(currentDate, "EEE, dd MMM", { locale: pt })}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                        <button onClick={() => setIsShareModalOpen(true)} className="p-2 text-slate-400"><Share2 size={18}/></button>
-                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 text-white text-[10px] font-black uppercase px-2 py-1.5 rounded ml-1">Agendar</button>
-                    </div>
-                </header>
-
-                {/* Header Desktop - SOLUÇÃO FIXED PARA DROPDOWNS */}
-                <header className="hidden md:flex bg-white border-b border-slate-200 px-4 py-3 items-center justify-between z-40 shadow-sm overflow-visible">
-                    <div className="flex items-center gap-2">
-                        <button onClick={() => setCurrentDate(new Date())} className="text-[10px] font-black uppercase px-3 py-2 text-slate-700 hover:bg-slate-100 rounded transition-colors">HOJE</button>
-                        <div className="flex items-center gap-0.5 ml-1">
-                            <button onClick={() => setCurrentDate(prev => addDays(prev, -1))} className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><ChevronLeft size={20} /></button>
-                            <button onClick={() => setCurrentDate(prev => addDays(prev, 1))} className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><ChevronRight size={20} /></button>
+                <header className="flex h-14 md:h-16 bg-white border-b border-slate-200 px-2 md:px-4 items-center justify-between z-40 shadow-sm overflow-visible">
+                    <div className="flex items-center gap-1 md:gap-2">
+                        <button onClick={() => setCurrentDate(new Date())} className="text-[10px] font-black uppercase px-2 py-1.5 md:px-3 md:py-2 text-slate-700 hover:bg-slate-100 rounded">HOJE</button>
+                        <div className="flex items-center">
+                            <button onClick={() => setCurrentDate(prev => addDays(prev, -1))} className="p-1 md:p-1.5 hover:bg-slate-100 rounded text-slate-500"><ChevronLeft size={20} /></button>
+                            <button onClick={() => setCurrentDate(prev => addDays(prev, 1))} className="p-1 md:p-1.5 hover:bg-slate-100 rounded text-slate-500"><ChevronRight size={20} /></button>
                         </div>
-                        <div className="ml-2">
-                            <span className="text-sm font-bold text-orange-500 capitalize">{format(currentDate, "EEE, dd/MMMM/yyyy", { locale: pt })}</span>
-                        </div>
+                        <span className="hidden sm:block text-sm font-bold text-orange-500 capitalize ml-2">{format(currentDate, "EEE, dd/MM", { locale: pt })}</span>
                         
-                        {/* Dropdown "PROFISSIONAL" com Posicionamento Fixed */}
-                        <div className="relative ml-4">
+                        <div className="relative ml-1 md:ml-4">
                             <button 
                                 ref={viewMenuTriggerRef}
-                                onClick={() => setIsViewMenuOpen(!isViewMenuOpen)} 
-                                className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-slate-50 rounded text-xs font-black text-slate-700 transition-all border border-transparent hover:border-slate-100"
+                                onClick={() => setIsViewMenuOpen(true)} 
+                                className="flex items-center gap-1 px-2 py-1.5 hover:bg-slate-50 rounded text-[10px] md:text-xs font-black text-slate-700 uppercase"
                             >
-                                <span className="uppercase tracking-tight">{viewOptions.find(o => o.id === viewMode)?.label.split(' ')[1]}</span>
+                                <span>{viewOptions.find(o => o.id === viewMode)?.label.split(' ')[1]}</span>
                                 <ChevronDown size={14} className="text-slate-400" />
                             </button>
+
                             {isViewMenuOpen && (
-                                <div 
-                                    className={`${MENU_ELEVATION} fixed w-56 mt-2`}
-                                    style={{ 
-                                        top: viewMenuTriggerRef.current ? viewMenuTriggerRef.current.getBoundingClientRect().bottom : 0, 
-                                        left: viewMenuTriggerRef.current ? viewMenuTriggerRef.current.getBoundingClientRect().left : 0 
-                                    }}
-                                >
-                                    <p className="text-[10px] font-bold text-slate-300 uppercase px-4 py-3 tracking-widest bg-slate-50/50 border-b border-slate-100">Visualização</p>
-                                    {viewOptions.map((opt) => (
-                                        <button key={opt.id} onClick={() => { setViewMode(opt.id as ViewMode); setIsViewMenuOpen(false); }} className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-orange-50/50 transition-colors">
-                                            <span>{opt.label}</span>
-                                            {viewMode === opt.id && <Check size={16} className="text-orange-500" />}
-                                        </button>
-                                    ))}
+                                <div className={ADAPTIVE_MENU_WRAPPER} onClick={() => setIsViewMenuOpen(false)}>
+                                    <div 
+                                        className={ADAPTIVE_MENU_CONTENT}
+                                        style={!isMobile && viewMenuTriggerRef.current ? { top: viewMenuTriggerRef.current.getBoundingClientRect().bottom + 8, left: viewMenuTriggerRef.current.getBoundingClientRect().left, width: '224px' } : {}}
+                                        onClick={e => e.stopPropagation()}
+                                    >
+                                        <div className="lg:hidden w-12 h-1 bg-slate-200 rounded-full mx-auto mb-4"></div>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 py-3 lg:bg-slate-50/50 border-b border-slate-100">Visualização</p>
+                                        <div className="flex flex-col lg:py-1">
+                                            {viewOptions.map((opt) => (
+                                                <button 
+                                                    key={opt.id} 
+                                                    onClick={() => { setViewMode(opt.id as ViewMode); setIsViewMenuOpen(false); }} 
+                                                    className="w-full flex items-center justify-between px-6 py-4 lg:px-4 lg:py-3 text-base lg:text-sm font-bold text-slate-700 hover:bg-orange-50 transition-colors"
+                                                >
+                                                    <div className="flex items-center gap-3"><opt.icon size={18} className="text-slate-400" />{opt.label}</div>
+                                                    {viewMode === opt.id && <Check size={18} className="text-orange-500" />}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-1">
-                        <button onClick={() => setIsShareModalOpen(true)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors" title="Compartilhar"><Share2 size={20} /></button>
-                        
-                        {/* Notificações Fixed */}
+                    <div className="flex items-center gap-1 md:gap-2">
+                        <button onClick={() => setIsShareModalOpen(true)} className="p-2 text-slate-400 hover:text-orange-500"><Share2 size={18}/></button>
                         <div className="relative">
                             <button 
-                                ref={notificationsTriggerRef}
-                                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)} 
-                                className="p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors relative"
-                            >
-                                <Bell size={20} /><span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
-                            </button>
-                            {isNotificationsOpen && (
-                                <div 
-                                    className={`${MENU_ELEVATION} fixed w-80 mt-2`}
-                                    style={{ 
-                                        top: notificationsTriggerRef.current ? notificationsTriggerRef.current.getBoundingClientRect().bottom : 0, 
-                                        right: window.innerWidth - (notificationsTriggerRef.current?.getBoundingClientRect().right || 0)
-                                    }}
-                                >
-                                    <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-                                        <span className="font-black text-xs uppercase text-slate-700">Notificações</span>
-                                        <button onClick={() => setIsNotificationsOpen(false)} className="text-slate-400"><X size={16}/></button>
-                                    </div>
-                                    <div className="max-h-96 overflow-y-auto">
-                                        {[1, 2].map(n => (
-                                            <div key={n} className="p-4 border-b hover:bg-slate-50 transition-colors">
-                                                <p className="text-xs font-bold text-slate-800">Novo Agendamento Online</p>
-                                                <p className="text-[10px] text-slate-400 mt-1">Sáb, 27/Dez às 14:00 com Jaciene</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <button className="w-full py-3 text-xs font-black text-orange-500 hover:bg-slate-50 border-t">Ver todas</button>
-                                </div>
-                            )}
-                        </div>
-
-                        <button onClick={refreshCalendar} className={`p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors ${isLoadingData ? 'animate-spin text-orange-500' : ''}`} title="Atualizar"><RefreshCw size={20}/></button>
-                        
-                        {/* Dropdown "Período" com Posicionamento Fixed */}
-                        <div className="relative ml-2">
-                            <button 
                                 ref={periodMenuTriggerRef}
-                                onClick={() => setIsPeriodMenuOpen(!isPeriodMenuOpen)} 
-                                className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all shadow-sm"
+                                onClick={() => setIsPeriodMenuOpen(true)} 
+                                className="flex items-center gap-1 px-3 py-1.5 md:py-2 border border-slate-200 rounded-lg text-[10px] md:text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all shadow-sm"
                             >
                                 <span>{calendarMode}</span><ChevronDown size={14} className="text-slate-400" />
                             </button>
+
                             {isPeriodMenuOpen && (
-                                <div 
-                                    className={`${MENU_ELEVATION} fixed w-48 mt-2`}
-                                    style={{ 
-                                        top: periodMenuTriggerRef.current ? periodMenuTriggerRef.current.getBoundingClientRect().bottom : 0, 
-                                        left: periodMenuTriggerRef.current ? periodMenuTriggerRef.current.getBoundingClientRect().left : 0 
-                                    }}
-                                >
-                                    {periodOptions.map((opt) => (
-                                        <button key={opt} onClick={() => { setCalendarMode(opt as any); setIsPeriodMenuOpen(false); }} className={`w-full flex items-center px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-orange-50/50 ${calendarMode === opt ? 'bg-slate-50 text-orange-600' : ''}`}>{opt}</button>
-                                    ))}
+                                <div className={ADAPTIVE_MENU_WRAPPER} onClick={() => setIsPeriodMenuOpen(false)}>
+                                    <div 
+                                        className={ADAPTIVE_MENU_CONTENT}
+                                        style={!isMobile && periodMenuTriggerRef.current ? { top: periodMenuTriggerRef.current.getBoundingClientRect().bottom + 8, right: window.innerWidth - periodMenuTriggerRef.current.getBoundingClientRect().right, width: '192px' } : {}}
+                                        onClick={e => e.stopPropagation()}
+                                    >
+                                        <div className="lg:hidden w-12 h-1 bg-slate-200 rounded-full mx-auto mb-4"></div>
+                                        <p className="lg:hidden text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 py-3 border-b border-slate-100">Selecionar Período</p>
+                                        <div className="flex flex-col lg:py-1">
+                                            {periodOptions.map((opt) => (
+                                                <button 
+                                                    key={opt} 
+                                                    onClick={() => { setCalendarMode(opt as any); setIsPeriodMenuOpen(false); }} 
+                                                    className={`w-full flex items-center px-6 py-4 lg:px-4 lg:py-3 text-base lg:text-sm font-bold text-slate-700 hover:bg-orange-50 transition-colors ${calendarMode === opt ? 'bg-orange-50/50 text-orange-600' : ''}`}
+                                                >
+                                                    {opt}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                         </div>
-                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-black px-5 py-2 rounded shadow-lg shadow-orange-100 flex items-center gap-2 transition-all active:scale-95 text-xs uppercase ml-2">Agendar</button>
+                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-black px-3 md:px-5 py-2 rounded-lg shadow-lg shadow-orange-100 flex items-center gap-2 transition-all active:scale-95 text-[10px] md:text-xs uppercase">Agendar</button>
                     </div>
                 </header>
 
-                {/* Grade da Agenda */}
                 <div className="flex-1 overflow-x-auto bg-white custom-scrollbar relative overflow-y-auto">
-                    <div className="min-w-fit h-full">
-                        <div className="grid sticky top-0 z-30 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: gridTemplateString }}>
-                            <div className="sticky left-0 z-40 bg-white border-r border-slate-200 h-14 md:h-20 flex items-center justify-center">
+                    <div className="min-w-max h-full flex flex-col">
+                        {/* Headers Colunas - Fixando Layout Horizontal com Flexbox */}
+                        <div className="flex flex-row sticky top-0 z-30 border-b border-slate-200 bg-white">
+                            <div className={`${timeColClass} sticky left-0 z-40 bg-white border-r border-slate-200 h-14 md:h-20 flex items-center justify-center`}>
                                 <Maximize2 size={16} className="text-slate-300" />
                             </div>
                             {filteredProfessionals.map((prof) => (
-                                <div key={prof.id} className="flex items-center gap-2 md:gap-3 px-2 md:px-6 py-2 border-r border-slate-100 h-14 md:h-20 bg-white group hover:bg-slate-50 transition-colors overflow-hidden">
-                                    <img src={prof.avatarUrl} alt="" className="w-8 h-8 md:w-10 md:h-10 rounded-full border border-orange-100 shadow-sm object-cover flex-shrink-0" />
+                                <div key={prof.id} style={profColStyle} className="flex items-center gap-2 px-2 md:px-6 py-2 border-r border-slate-100 h-14 md:h-20 bg-white overflow-hidden">
+                                    <img src={prof.avatarUrl} alt="" className="w-8 h-8 rounded-full border border-orange-100 object-cover" />
                                     <div className="overflow-hidden">
-                                        <p className="text-[10px] md:text-xs font-black text-slate-800 leading-tight truncate">{prof.name}</p>
-                                        <p className="hidden md:block text-[9px] text-slate-400 font-bold uppercase truncate">{prof.role || 'Equipe'}</p>
+                                        <p className="text-[10px] font-black text-slate-800 leading-tight truncate">{prof.name}</p>
+                                        <p className="hidden md:block text-[9px] text-slate-400 font-bold uppercase truncate">{prof.role}</p>
                                     </div>
                                 </div>
                             ))}
                         </div>
 
-                        <div className="grid relative h-full" style={{ gridTemplateColumns: gridTemplateString }}>
-                            <div className="sticky left-0 z-20 bg-white border-r border-slate-200 shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
+                        {/* Grid Body - Fixando Layout Horizontal com Flexbox e divisórias */}
+                        <div className="flex flex-row relative h-full divide-x divide-slate-200">
+                            {/* Coluna Horários */}
+                            <div className={`${timeColClass} sticky left-0 z-20 bg-white border-r border-slate-200 shadow-[4px_0_24px_rgba(0,0,0,0.05)]`}>
                                 {timeSlotsLabels.map(time => (
                                     <div key={time} className="h-20 text-right pr-2 md:pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-100/50 border-dashed bg-white">
                                         <span>{time}</span>
                                     </div>
                                 ))}
                             </div>
+                            
                             {filteredProfessionals.map((prof) => (
-                                <div key={prof.id} className="relative border-r border-slate-200 min-h-[1000px] bg-white cursor-crosshair group/col" onClick={(e) => { if (e.target === e.currentTarget) handleGridAction(e, prof); }}>
+                                <div 
+                                    key={prof.id} 
+                                    style={profColStyle}
+                                    className="relative min-h-[1000px] h-full bg-white cursor-crosshair group/col" 
+                                    onClick={(e) => { if (e.target === e.currentTarget) handleGridAction(e, prof); }}
+                                >
                                     <div className="absolute inset-0 opacity-0 group-hover/col:opacity-100 bg-orange-50/5 pointer-events-none transition-opacity"></div>
                                     {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
+                                    
                                     {appointments.filter(app => Number(app.professional.id) === prof.id && isSameDay(app.start, currentDate)).map(app => {
                                         const pos = getAppointmentPosition(app.rawDate, app.service.duration);
                                         return (
-                                            <div key={app.id} ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }} onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }} className={getCardStyle(app, viewMode)} style={{ ...pos }}>
+                                            <div 
+                                                key={app.id} 
+                                                ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }} 
+                                                onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }} 
+                                                className={getCardStyle(app, viewMode)} 
+                                                style={pos}
+                                            >
                                                 <div className="flex flex-col h-full w-full overflow-hidden">
-                                                    <div className="flex justify-between items-start">
-                                                        <span className="text-[8px] md:text-[10px] font-black opacity-60 leading-none">{format(app.start, 'HH:mm')}</span>
-                                                    </div>
-                                                    <span className="text-[10px] md:text-xs font-black text-slate-900 leading-tight truncate mt-0.5">{app.client?.nome || 'Bloqueado'}</span>
-                                                    <span className="hidden md:block text-[10px] text-slate-500 font-medium truncate leading-none mt-1">{app.service.name}</span>
+                                                    <span className="text-[8px] font-black opacity-60 leading-none">{format(app.start, 'HH:mm')}</span>
+                                                    <span className="text-[10px] font-black text-slate-900 leading-tight truncate mt-0.5">{app.client?.nome || 'Bloqueado'}</span>
                                                 </div>
                                             </div>
                                         );
@@ -443,35 +377,13 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                 </div>
             </div>
 
-            {/* MODAL COMPARTILHAR - Refinado com Overlay mais profundo */}
-            {isShareModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 relative animate-in zoom-in-95 duration-200">
-                        <header className="mb-4">
-                            <h3 className="text-xl font-bold text-slate-800">Compartilhar agenda</h3>
-                            <button onClick={() => setIsShareModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1"><X size={24}/></button>
-                        </header>
-                        <div className="space-y-5">
-                            <p className="text-slate-500 text-sm leading-relaxed">Compartilhe o link da agenda do seu negócio para seus clientes marcarem horários online.</p>
-                            <div className="flex items-center gap-2">
-                                <input readOnly value="https://belaflow.app/studio-jacilene-felix" className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm text-slate-700 outline-none select-all font-bold" />
-                                <button onClick={() => { navigator.clipboard.writeText("https://belaflow.app/studio-jacilene-felix"); showToast("Link copiado!", "success"); }} className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded-lg text-sm font-black flex items-center gap-2 transition-all active:scale-95 shadow-sm">
-                                    <Copy size={18}/> Copiar
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Detail Popover e Modals */}
             {activeAppointmentDetail && (
                 <AppointmentDetailPopover 
                     appointment={activeAppointmentDetail} 
                     targetElement={appointmentRefs.current.get(activeAppointmentDetail.id) || null} 
                     onClose={() => setActiveAppointmentDetail(null)} 
                     onEdit={(app) => setModalState({ type: 'appointment', data: app })} 
-                    onDelete={async (id) => { await supabase.from('appointments').delete().eq('id', id); await refreshCalendar(); setActiveAppointmentDetail(null); showToast('Agendamento removido!', 'info'); }} 
+                    onDelete={async (id) => { await supabase.from('appointments').delete().eq('id', id); await refreshCalendar(); setActiveAppointmentDetail(null); showToast('Removido!', 'info'); }} 
                     onUpdateStatus={async (id, status) => { await supabase.from('appointments').update({ status }).eq('id', id); await refreshCalendar(); setActiveAppointmentDetail(null); showToast('Status atualizado!', 'success'); }} 
                 />
             )}
@@ -479,7 +391,7 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                 <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSuccess={async () => { await refreshCalendar(); showToast("Agenda atualizada!", "success"); }} />
             )}
             {modalState?.type === 'block' && (
-                <BlockTimeModal professional={modalState.data.professional} startTime={modalState.data.start} onClose={() => setModalState(null)} onSuccess={async () => { await refreshCalendar(); showToast("Horário bloqueado!", "info"); }} />
+                <BlockTimeModal professional={modalState.data.professional} startTime={modalState.data.start} onClose={() => setModalState(null)} onSuccess={async () => { await refreshCalendar(); showToast("Bloqueado!", "info"); }} />
             )}
         </div>
     );
