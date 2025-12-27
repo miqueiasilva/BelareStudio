@@ -35,11 +35,11 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
 
         setLoading(true);
         try {
-            // Busca agendamentos vinculados ao whatsapp
+            // Busca agendamentos vinculados ao whatsapp (ajustado para a estrutura do seu banco)
             const { data, error } = await supabase
                 .from('appointments')
                 .select('*')
-                .eq('client_whatsapp', phone.replace(/\D/g, ''))
+                .eq('client_whatsapp', phone.replace(/\D/g, '')) // Limpa máscara se houver
                 .order('date', { ascending: true });
 
             if (error) throw error;
@@ -52,10 +52,6 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
         }
     };
 
-    /**
-     * FUNÇÃO ATUALIZADA: handleCancelAppointment
-     * Agora utiliza RPC para processar o cancelamento de forma segura (ignora bloqueios de RLS no update direto)
-     */
     const handleCancelAppointment = async (app: any) => {
         const now = new Date();
         const appDate = parseISO(app.date);
@@ -67,25 +63,26 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
         }
 
         const reason = prompt("Por favor, informe o motivo do cancelamento:");
-        if (reason === null) return; 
+        if (reason === null) return; // Usuário cancelou o prompt
 
         setLoading(true);
         try {
-            // Utilizando a função RPC cancel_appointment definida no banco de dados
-            const { error } = await supabase.rpc('cancel_appointment', {
-                p_appointment_id: app.id,
-                p_reason: reason || 'Cancelado pelo cliente via link'
-            });
+            const { error } = await supabase
+                .from('appointments')
+                .update({ 
+                    status: 'cancelado',
+                    cancellation_reason: reason,
+                    cancelled_at: new Date().toISOString()
+                })
+                .eq('id', app.id);
 
             if (error) throw error;
 
-            // Atualiza a lista local imediatamente para refletir a mudança
+            // Atualiza lista local
             setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'cancelado' } : a));
-            alert("Agendamento cancelado com sucesso!");
-            
-        } catch (e: any) {
-            console.error("Erro ao cancelar:", e);
-            alert(`Erro ao processar cancelamento: ${e.message || 'Erro desconhecido'}`);
+            alert("Agendamento cancelado com sucesso.");
+        } catch (e) {
+            alert("Erro ao processar cancelamento.");
         } finally {
             setLoading(false);
         }

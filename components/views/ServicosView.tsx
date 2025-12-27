@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
     Plus, Scissors, Clock, DollarSign, Edit2, Trash2, 
@@ -35,25 +34,14 @@ const ServicosView: React.FC = () => {
     const addMenuRef = useRef<HTMLDivElement>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
 
-    // --- Data Fetching Resiliente ---
+    // --- Data Fetching ---
     const fetchServices = async () => {
         if (!isMounted.current) return;
-        
-        // Cancela requisição anterior se houver
         if (abortControllerRef.current) abortControllerRef.current.abort();
         abortControllerRef.current = new AbortController();
 
         setLoading(true);
         setError(null);
-
-        // Protocolo de Segurança: Watchdog de 8 segundos
-        const watchdog = setTimeout(() => {
-            if (isMounted.current && loading) {
-                setLoading(false);
-                setError("A conexão com o servidor está lenta. Tente atualizar a página.");
-                setToast({ message: "Timeout: Verifique sua internet.", type: 'error' });
-            }
-        }, 8000);
 
         try {
             const { data, error: sbError } = await supabase
@@ -63,21 +51,13 @@ const ServicosView: React.FC = () => {
                 .abortSignal(abortControllerRef.current.signal);
 
             if (sbError) throw sbError;
-            
-            if (isMounted.current) {
-                setServices(data || []);
-            }
-        } catch (err: any) {
-            if (isMounted.current && err.name !== 'AbortError') {
-                console.error("Erro no fetchServices:", err);
-                setError(err.message || "Erro ao carregar catálogo de serviços.");
-                setToast({ message: "Falha na sincronização.", type: 'error' });
+            if (isMounted.current) setServices(data || []);
+        } catch (error: any) {
+            if (isMounted.current && error.name !== 'AbortError') {
+                setError(error.message || "Erro inesperado ao carregar catálogo.");
             }
         } finally {
-            clearTimeout(watchdog);
-            if (isMounted.current) {
-                setLoading(false);
-            }
+            if (isMounted.current) setLoading(false);
         }
     };
 
@@ -143,7 +123,12 @@ const ServicosView: React.FC = () => {
     };
 
     const handleSaveCategory = async (category: { name: string; color: string }) => {
-        setToast({ message: `Categoria "${category.name}" disponível!`, type: 'success' });
+        // Para o MVP, as categorias são extraídas dos serviços. 
+        // No futuro, se houver tabela própria, inserimos aqui.
+        // Simulamos a criação apenas exibindo um sucesso e permitindo que o usuário use no ServiceModal.
+        setToast({ message: `Categoria "${category.name}" disponível para uso!`, type: 'success' });
+        // Se houver uma tabela de categorias, descomente abaixo:
+        // await supabase.from('categories').insert([category]);
         await fetchServices(); 
     };
 
@@ -179,6 +164,7 @@ const ServicosView: React.FC = () => {
         <div className="h-full flex flex-col bg-slate-50 relative font-sans overflow-hidden">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
+            {/* TOOLBAR HEADER */}
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 z-20">
                 <div className="flex items-center gap-4">
                     <div>
@@ -190,11 +176,22 @@ const ServicosView: React.FC = () => {
                     </div>
 
                     <div className="hidden lg:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 ml-4">
-                        <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`}><List size={18} /></button>
-                        <button onClick={() => setViewMode('kanban')} className={`p-2 rounded-lg transition-all ${viewMode === 'kanban' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`}><LayoutGrid size={18} /></button>
+                        <button 
+                            onClick={() => setViewMode('list')}
+                            className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <List size={18} />
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('kanban')}
+                            className={`p-2 rounded-lg transition-all ${viewMode === 'kanban' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <LayoutGrid size={18} />
+                        </button>
                     </div>
                 </div>
 
+                {/* FILTROS CENTRAIS */}
                 <div className="flex-1 max-w-2xl flex items-center gap-2">
                     <div className="relative flex-1 group">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-orange-500 transition-colors" size={18} />
@@ -203,9 +200,10 @@ const ServicosView: React.FC = () => {
                             placeholder="Buscar serviço..." 
                             value={searchTerm} 
                             onChange={(e) => setSearchTerm(e.target.value)} 
-                            className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-orange-100 outline-none transition-all text-sm font-medium" 
+                            className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-orange-100 focus:border-orange-400 outline-none transition-all text-sm font-medium" 
                         />
                     </div>
+                    
                     <div className="relative">
                         <select 
                             value={filterCategory}
@@ -217,21 +215,52 @@ const ServicosView: React.FC = () => {
                         </select>
                         <Filter size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     </div>
+                    
+                    <button className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-slate-400 hover:text-orange-500 hover:border-orange-200 transition-all shadow-sm">
+                        <SlidersHorizontal size={18} />
+                    </button>
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all"><Download size={16} /> Exportar</button>
+                    <div className="relative group">
+                        <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all">
+                            <Download size={16} /> Exportar
+                        </button>
+                    </div>
+
                     <div className="relative" ref={addMenuRef}>
-                        <button onClick={() => setShowAddMenu(!showAddMenu)} className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-2xl font-black text-sm flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95"><Plus size={20} /> <span className="hidden sm:inline">Novo</span></button>
+                        <button 
+                            onClick={() => setShowAddMenu(!showAddMenu)} 
+                            className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-2xl font-black text-sm flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95"
+                        >
+                            <Plus size={20} /> <span className="hidden sm:inline">Novo</span>
+                        </button>
+
                         {showAddMenu && (
                             <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                                <button onClick={() => { setEditingService(null); setIsModalOpen(true); setShowAddMenu(false); }} className="w-full flex items-center gap-3 px-4 py-4 text-left hover:bg-orange-50 transition-colors group">
-                                    <div className="p-2 bg-orange-100 rounded-xl text-orange-600 group-hover:bg-orange-500 group-hover:text-white transition-all"><Scissors size={18} /></div>
-                                    <div><p className="text-sm font-black text-slate-700 leading-none">Novo Serviço</p><p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">Corte, Cílios, etc</p></div>
+                                <button 
+                                    onClick={() => { setEditingService(null); setIsModalOpen(true); setShowAddMenu(false); }}
+                                    className="w-full flex items-center gap-3 px-4 py-4 text-left hover:bg-orange-50 transition-colors group"
+                                >
+                                    <div className="p-2 bg-orange-100 rounded-xl text-orange-600 group-hover:bg-orange-500 group-hover:text-white transition-all">
+                                        <Scissors size={18} />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-black text-slate-700 leading-none">Novo Serviço</p>
+                                        <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">Corte, Cílios, etc</p>
+                                    </div>
                                 </button>
-                                <button onClick={() => { setIsCategoryModalOpen(true); setShowAddMenu(false); }} className="w-full flex items-center gap-3 px-4 py-4 text-left hover:bg-blue-50 transition-colors group border-t border-slate-50">
-                                    <div className="p-2 bg-blue-100 rounded-xl text-blue-600 group-hover:bg-blue-500 group-hover:text-white transition-all"><Tag size={18} /></div>
-                                    <div><p className="text-sm font-black text-slate-700 leading-none">Nova Categoria</p><p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">Organizar grupo</p></div>
+                                <button 
+                                    onClick={() => { setIsCategoryModalOpen(true); setShowAddMenu(false); }}
+                                    className="w-full flex items-center gap-3 px-4 py-4 text-left hover:bg-blue-50 transition-colors group border-t border-slate-50"
+                                >
+                                    <div className="p-2 bg-blue-100 rounded-xl text-blue-600 group-hover:bg-blue-500 group-hover:text-white transition-all">
+                                        <Tag size={18} />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-black text-slate-700 leading-none">Nova Categoria</p>
+                                        <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">Organizar grupo</p>
+                                    </div>
                                 </button>
                             </div>
                         )}
@@ -239,7 +268,10 @@ const ServicosView: React.FC = () => {
                 </div>
             </header>
 
+            {/* MAIN CONTENT AREA */}
             <main className="flex-1 overflow-hidden relative flex flex-col">
+                
+                {/* AÇÕES EM MASSA (BARRA FLUTUANTE) */}
                 {selectedIds.length > 0 && (
                     <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-6 animate-in slide-in-from-top-4 duration-300">
                         <span className="text-xs font-black uppercase tracking-widest">{selectedIds.length} selecionados</span>
@@ -253,17 +285,11 @@ const ServicosView: React.FC = () => {
                 )}
 
                 <div className="flex-1 overflow-auto p-6 scrollbar-hide">
+                    
                     {loading ? (
                         <div className="flex flex-col items-center justify-center h-full text-slate-400">
                             <Loader2 className="animate-spin mb-4 text-orange-500" size={48} />
-                            <p className="font-bold uppercase tracking-widest text-xs">Sincronizando serviços...</p>
-                        </div>
-                    ) : error ? (
-                        <div className="bg-white rounded-[40px] p-20 text-center border-2 border-rose-100 max-w-2xl mx-auto my-12">
-                           <AlertTriangle size={64} className="mx-auto text-rose-500 mb-6" />
-                           <h3 className="text-xl font-black text-slate-800 mb-2">Ops! Tivemos um problema</h3>
-                           <p className="text-slate-400 text-sm mb-8">{error}</p>
-                           <button onClick={fetchServices} className="bg-orange-500 text-white px-8 py-3 rounded-2xl font-black shadow-lg flex items-center gap-2 mx-auto hover:bg-orange-600 transition-all"><RefreshCw size={20}/> Tentar Novamente</button>
+                            <p className="font-bold uppercase tracking-widest text-xs">Acessando catálogo...</p>
                         </div>
                     ) : filteredServices.length === 0 ? (
                         <div className="bg-white rounded-[40px] p-20 text-center border-2 border-slate-100 border-dashed max-w-2xl mx-auto my-12">
@@ -273,12 +299,18 @@ const ServicosView: React.FC = () => {
                             <button onClick={() => setIsModalOpen(true)} className="bg-orange-500 text-white px-8 py-3 rounded-2xl font-black shadow-lg shadow-orange-100">Começar Agora</button>
                         </div>
                     ) : viewMode === 'list' ? (
+                        /* VIEW: LISTA (TABELA PROFISSIONAL) */
                         <div className="bg-white rounded-[32px] border border-slate-200 overflow-hidden shadow-sm">
                             <table className="w-full text-left text-sm border-collapse">
                                 <thead>
                                     <tr className="bg-slate-50/50 border-b border-slate-100">
                                         <th className="px-6 py-5 w-12">
-                                            <input type="checkbox" checked={selectedIds.length === filteredServices.length && filteredServices.length > 0} onChange={toggleSelectAll} className="w-4 h-4 rounded text-orange-500 border-slate-300 focus:ring-orange-500" />
+                                            <input 
+                                                type="checkbox" 
+                                                checked={selectedIds.length === filteredServices.length && filteredServices.length > 0} 
+                                                onChange={toggleSelectAll}
+                                                className="w-4 h-4 rounded text-orange-500 border-slate-300 focus:ring-orange-500" 
+                                            />
                                         </th>
                                         <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Categoria</th>
                                         <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Procedimento</th>
@@ -292,11 +324,35 @@ const ServicosView: React.FC = () => {
                                         const isSelected = selectedIds.includes(s.id);
                                         return (
                                             <tr key={s.id} className={`group hover:bg-orange-50/30 transition-all ${isSelected ? 'bg-orange-50/50' : ''}`}>
-                                                <td className="px-6 py-4"><input type="checkbox" checked={isSelected} onChange={() => toggleSelect(s.id)} className="w-4 h-4 rounded text-orange-500 border-slate-300 focus:ring-orange-500" /></td>
-                                                <td className="px-6 py-4"><span className="inline-flex items-center gap-2 px-2 py-1 bg-slate-100 rounded-lg text-[10px] font-black text-slate-500 uppercase tracking-wider border border-slate-200"><div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.cor_hex || '#f97316' }}></div>{(s as any).categoria || 'Geral'}</span></td>
-                                                <td className="px-6 py-4"><div className="flex flex-col"><span className="font-bold text-slate-800 leading-tight group-hover:text-orange-600 transition-colors">{s.nome}</span><span className="text-[10px] text-slate-400 font-medium line-clamp-1">{(s as any).descricao || 'Sem descrição'}</span></div></td>
-                                                <td className="px-6 py-4 font-mono font-bold text-slate-500 text-xs"><div className="flex items-center gap-1.5"><Clock size={12} className="text-slate-300" />{formatDuration(s.duracao_min)}</div></td>
-                                                <td className="px-6 py-4"><span className="font-black text-slate-800 tracking-tight">R$ {s.preco.toFixed(2)}</span></td>
+                                                <td className="px-6 py-4">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={isSelected}
+                                                        onChange={() => toggleSelect(s.id)}
+                                                        className="w-4 h-4 rounded text-orange-500 border-slate-300 focus:ring-orange-500" 
+                                                    />
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className="inline-flex items-center gap-2 px-2 py-1 bg-slate-100 rounded-lg text-[10px] font-black text-slate-500 uppercase tracking-wider border border-slate-200">
+                                                        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.cor_hex || '#f97316' }}></div>
+                                                        {(s as any).categoria || 'Geral'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-800 leading-tight group-hover:text-orange-600 transition-colors">{s.nome}</span>
+                                                        <span className="text-[10px] text-slate-400 font-medium line-clamp-1">{(s as any).descricao || 'Sem descrição cadastrada'}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 font-mono font-bold text-slate-500 text-xs">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Clock size={12} className="text-slate-300" />
+                                                        {formatDuration(s.duracao_min)}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className="font-black text-slate-800 tracking-tight">R$ {s.preco.toFixed(2)}</span>
+                                                </td>
                                                 <td className="px-6 py-4 text-right">
                                                     <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                         <button onClick={() => { setEditingService(s); setIsModalOpen(true); }} className="p-2 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all" title="Editar"><Edit2 size={16}/></button>
@@ -311,20 +367,40 @@ const ServicosView: React.FC = () => {
                             </table>
                         </div>
                     ) : (
+                        /* VIEW: KANBAN (AGRUPADO POR CATEGORIA) */
                         <div className="flex gap-6 min-h-full items-start overflow-x-auto pb-8 scrollbar-hide">
                             {Object.entries(groupedServices).map(([cat, items]) => (
                                 <div key={cat} className="flex-shrink-0 w-80 flex flex-col max-h-full">
                                     <div className="flex items-center justify-between mb-4 px-2">
-                                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">{cat}<span className="bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full text-[9px] font-black">{(items as Service[]).length}</span></h3>
+                                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                            {cat}
+                                            <span className="bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full text-[9px] font-black">{(items as Service[]).length}</span>
+                                        </h3>
                                         <button onClick={() => { setEditingService({ categoria: cat } as any); setIsModalOpen(true); }} className="text-slate-300 hover:text-orange-500"><Plus size={16}/></button>
                                     </div>
                                     <div className="space-y-3 overflow-y-auto pr-1">
                                         {(items as Service[]).map(s => (
-                                            <div key={s.id} onClick={() => { setEditingService(s); setIsModalOpen(true); }} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-orange-200 transition-all cursor-pointer group relative overflow-hidden">
+                                            <div 
+                                                key={s.id} 
+                                                onClick={() => { setEditingService(s); setIsModalOpen(true); }}
+                                                className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-orange-200 transition-all cursor-pointer group relative overflow-hidden"
+                                            >
                                                 <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: s.cor_hex || '#f97316' }}></div>
-                                                <div className="flex justify-between items-start mb-2"><h4 className="font-bold text-slate-800 text-sm leading-tight pr-4 group-hover:text-orange-600 transition-colors">{s.nome}</h4><button className="text-slate-300 hover:text-slate-600"><MoreVertical size={14}/></button></div>
-                                                <div className="flex items-center justify-between mt-4"><div className="flex items-center gap-3"><div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 uppercase"><Clock size={10} /> {formatDuration(s.duracao_min)}</div></div><span className="font-black text-slate-700 text-sm">R$ {s.preco.toFixed(2)}</span></div>
-                                                <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"><ArrowUpRight size={14} className="text-orange-400" /></div>
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <h4 className="font-bold text-slate-800 text-sm leading-tight pr-4 group-hover:text-orange-600 transition-colors">{s.nome}</h4>
+                                                    <button className="text-slate-300 hover:text-slate-600"><MoreVertical size={14}/></button>
+                                                </div>
+                                                <div className="flex items-center justify-between mt-4">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 uppercase">
+                                                            <Clock size={10} /> {formatDuration(s.duracao_min)}
+                                                        </div>
+                                                    </div>
+                                                    <span className="font-black text-slate-700 text-sm">R$ {s.preco.toFixed(2)}</span>
+                                                </div>
+                                                <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <ArrowUpRight size={14} className="text-orange-400" />
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -335,8 +411,22 @@ const ServicosView: React.FC = () => {
                 </div>
             </main>
 
-            {isModalOpen && <ServiceModal service={editingService} availableCategories={categories} onClose={() => { setIsModalOpen(false); setEditingService(null); }} onSave={handleSave} />}
-            {isCategoryModalOpen && <CategoryModal onClose={() => setIsCategoryModalOpen(false)} onSave={handleSaveCategory} />}
+            {/* MODAIS DE CADASTRO/EDIÇÃO */}
+            {isModalOpen && (
+                <ServiceModal 
+                    service={editingService}
+                    availableCategories={categories}
+                    onClose={() => { setIsModalOpen(false); setEditingService(null); }}
+                    onSave={handleSave}
+                />
+            )}
+
+            {isCategoryModalOpen && (
+                <CategoryModal 
+                    onClose={() => setIsCategoryModalOpen(false)}
+                    onSave={handleSaveCategory}
+                />
+            )}
         </div>
     );
 };
