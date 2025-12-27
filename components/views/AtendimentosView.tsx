@@ -5,7 +5,7 @@ import {
     ChevronDown, RefreshCw, Calendar as CalendarIcon,
     Maximize2, LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, AlertTriangle,
     Ban, ShoppingBag, Plus, Filter, Users, User as UserIcon, ZoomIn, Clock as ClockIcon,
-    ChevronFirst, ChevronLast, GripVertical, DollarSign
+    ChevronFirst, ChevronLast, GripVertical, DollarSign, Share2, Bell, Copy, CheckCircle2
 } from 'lucide-react';
 import { format, addDays, addMinutes, startOfWeek, endOfWeek, parseISO, isSameDay } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -94,17 +94,30 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
     const [colWidth, setColWidth] = useState(240);
     const [timeSlot, setTimeSlot] = useState(30);
     const [viewMode, setViewMode] = useState<ViewMode>('profissional');
-    const [calendarMode, setCalendarMode] = useState<'Dia' | 'Semana'>('Dia');
+    const [calendarMode, setCalendarMode] = useState<'Dia' | 'Semana' | 'Mês' | 'Lista' | 'Fila de Espera'>('Dia');
+    
+    // Menu States
     const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
+    const [isPeriodMenuOpen, setIsPeriodMenuOpen] = useState(false);
+    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+    const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
     // Modals & Popovers
     const [modalState, setModalState] = useState<{ type: 'appointment' | 'block' | 'sale'; data: any } | null>(null);
     const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+    
+    /**
+     * Fix for "Cannot find name 'showToast'" error. 
+     * Added showToast helper for consistency and ease of use.
+     */
+    const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
+    
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
 
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
     const viewMenuRef = useRef<HTMLDivElement>(null);
+    const periodMenuRef = useRef<HTMLDivElement>(null);
     const isMounted = useRef(true);
 
     const refreshCalendar = useCallback(async () => {
@@ -149,6 +162,9 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
         const handleClickOutside = (event: MouseEvent) => {
             if (viewMenuRef.current && !viewMenuRef.current.contains(event.target as Node)) {
                 setIsViewMenuOpen(false);
+            }
+            if (periodMenuRef.current && !periodMenuRef.current.contains(event.target as Node)) {
+                setIsPeriodMenuOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -219,9 +235,9 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                 professional_name: professional.name, 
                 date: newStart.toISOString() 
             }).eq('id', appointmentId);
-            setToast({ message: "Agendamento movido!", type: 'success' });
+            showToast("Agendamento movido!");
             refreshCalendar();
-        } catch (err) { setToast({ message: "Erro ao mover", type: 'error' }); }
+        } catch (err) { showToast("Erro ao mover", 'error'); }
     };
 
     const SidebarContent = () => (
@@ -279,6 +295,8 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
         { id: 'pagamento', label: 'Por Pagamento', icon: DollarSign }
     ];
 
+    const periodOptions = ['Dia', 'Semana', 'Mês', 'Lista', 'Fila de Espera'];
+
     return (
         <div className="flex h-full bg-white font-sans text-left overflow-hidden relative">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -296,82 +314,148 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
 
             {/* Main Area */}
             <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Restoration of Header BelaFlow Style */}
-                <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between z-40 shadow-sm">
-                    {/* Left: Navigation & View Dropdown */}
-                    <div className="flex items-center gap-4">
-                        <button onClick={() => setCurrentDate(new Date())} className="text-[10px] font-black uppercase tracking-widest px-3 py-2 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-colors">Hoje</button>
-                        <div className="flex items-center bg-slate-50 rounded-xl border border-slate-100 p-0.5">
-                            <button onClick={() => setCurrentDate(prev => addDays(prev, -1))} className="p-1.5 hover:bg-white hover:text-orange-500 rounded-lg text-slate-400"><ChevronLeft size={18} /></button>
-                            <div className="flex items-center gap-2 px-3">
-                                <span className="text-sm font-black text-slate-800 capitalize min-w-[120px] text-center">
-                                    {format(currentDate, "EEE, dd 'de' MMM", { locale: pt }).replace('.', '')}
-                                </span>
-                                <div className="relative">
-                                    <button onClick={() => setCalendarMode(calendarMode === 'Dia' ? 'Semana' : 'Dia')} className="flex items-center gap-1 text-[10px] font-black text-orange-500 uppercase tracking-tighter hover:bg-orange-50 px-2 py-1 rounded-lg">
-                                        {calendarMode} <ChevronDown size={10}/>
-                                    </button>
-                                </div>
-                            </div>
-                            <button onClick={() => setCurrentDate(prev => addDays(prev, 1))} className="p-1.5 hover:bg-white hover:text-orange-500 rounded-lg text-slate-400"><ChevronRight size={18} /></button>
+                {/* Header Estilo Salão99 */}
+                <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between z-40 shadow-sm">
+                    {/* Left: Navigation & View Mode */}
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={() => setCurrentDate(new Date())} 
+                            className="text-[10px] font-black uppercase tracking-wider px-3 py-2 text-slate-700 hover:bg-slate-100 rounded transition-colors"
+                        >
+                            HOJE
+                        </button>
+                        
+                        <div className="flex items-center gap-0.5 ml-1">
+                            <button onClick={() => setCurrentDate(prev => addDays(prev, -1))} className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><ChevronLeft size={20} /></button>
+                            <button onClick={() => setCurrentDate(prev => addDays(prev, 1))} className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><ChevronRight size={20} /></button>
                         </div>
 
-                        {/* NEW: View Mode Dropdown */}
-                        <div className="relative" ref={viewMenuRef}>
+                        <div className="ml-2">
+                            <span className="text-sm font-bold text-orange-500 capitalize">
+                                {format(currentDate, "EEE, dd/MMMM/yyyy", { locale: pt })}
+                            </span>
+                        </div>
+
+                        {/* Dropdown "PROFISSIONAL" */}
+                        <div className="relative ml-4" ref={viewMenuRef}>
                             <button 
                                 onClick={() => setIsViewMenuOpen(!isViewMenuOpen)}
-                                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-sm transition-all"
+                                className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-slate-50 rounded text-xs font-black text-slate-700 transition-all"
                             >
-                                <span>Visualizar: <span className="text-orange-500">{viewOptions.find(o => o.id === viewMode)?.label.split(' ')[1]}</span></span>
-                                <ChevronDown size={14} className={`text-slate-400 transition-transform ${isViewMenuOpen ? 'rotate-180' : ''}`} />
+                                <span className="uppercase tracking-tight">{viewOptions.find(o => o.id === viewMode)?.label.split(' ')[1]}</span>
+                                <ChevronDown size={14} className="text-slate-400" />
                             </button>
 
                             {isViewMenuOpen && (
-                                <div className="absolute left-0 mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                                    <div className="px-4 py-3 bg-slate-50 border-b">
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Modo de Visualização</p>
-                                    </div>
-                                    <div className="p-1">
-                                        {viewOptions.map((opt) => (
-                                            <button
-                                                key={opt.id}
-                                                onClick={() => { setViewMode(opt.id as ViewMode); setIsViewMenuOpen(false); }}
-                                                className={`w-full flex items-center justify-between px-3 py-2.5 text-sm font-bold rounded-xl transition-all ${
-                                                    viewMode === opt.id 
-                                                    ? 'bg-orange-50 text-orange-600' 
-                                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                                                }`}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <opt.icon size={16} className={viewMode === opt.id ? 'text-orange-500' : 'text-slate-400'} />
-                                                    {opt.label}
-                                                </div>
-                                                {viewMode === opt.id && <Check size={16} />}
-                                            </button>
-                                        ))}
-                                    </div>
+                                <div className="absolute left-0 mt-2 w-56 bg-white rounded shadow-2xl border border-slate-100 z-50 py-2 animate-in fade-in zoom-in-95 duration-150">
+                                    <p className="text-[10px] font-bold text-slate-300 uppercase px-4 py-2 tracking-widest">Visualização da agenda</p>
+                                    {viewOptions.map((opt) => (
+                                        <button
+                                            key={opt.id}
+                                            onClick={() => { setViewMode(opt.id as ViewMode); setIsViewMenuOpen(false); }}
+                                            className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <span>{opt.label}</span>
+                                            </div>
+                                            {viewMode === opt.id && <Check size={16} className="text-slate-800" />}
+                                        </button>
+                                    ))}
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* Right: Actions */}
-                    <div className="flex items-center gap-3">
-                        <button onClick={refreshCalendar} className={`p-2.5 rounded-xl border border-slate-200 text-slate-400 hover:text-orange-500 hover:bg-orange-50 transition-all ${isLoadingData ? 'animate-spin text-orange-500 border-orange-200' : ''}`}><RefreshCw size={18}/></button>
+                    {/* Right: Tools & Actions */}
+                    <div className="flex items-center gap-1">
+                        <button 
+                            onClick={() => setIsShareModalOpen(true)}
+                            className="p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors" 
+                            title="Compartilhar"
+                        >
+                            <Share2 size={20} />
+                        </button>
+
+                        <div className="relative">
+                            <button 
+                                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                                className="p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors relative" 
+                                title="Notificações"
+                            >
+                                <Bell size={20} />
+                                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+                            </button>
+                            
+                            {isNotificationsOpen && (
+                                <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 overflow-hidden animate-in slide-in-from-top-2 duration-200">
+                                    <div className="p-4 border-b flex justify-between items-center bg-slate-50">
+                                        <span className="font-black text-xs uppercase text-slate-700">Notificações</span>
+                                        <button onClick={() => setIsNotificationsOpen(false)} className="text-slate-400"><X size={16}/></button>
+                                    </div>
+                                    <div className="max-h-96 overflow-y-auto">
+                                        {[1, 2, 3].map(n => (
+                                            <div key={n} className="p-4 border-b hover:bg-slate-50 cursor-pointer transition-colors">
+                                                <div className="flex justify-between items-start mb-1">
+                                                    <span className="text-[10px] font-black text-rose-500 uppercase">Cancelamento</span>
+                                                    <span className="text-[10px] text-slate-400">Há 5min</span>
+                                                </div>
+                                                <p className="text-xs font-bold text-slate-800">Geise Cristina cancelou Buço</p>
+                                                <p className="text-[10px] text-slate-400 mt-1">Sáb, 27/Dez às 10:05 com Graziela</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button className="w-full py-3 text-xs font-black text-orange-500 hover:bg-slate-50 border-t">Ver todas as notificações</button>
+                                </div>
+                            )}
+                        </div>
+
+                        <button 
+                            onClick={refreshCalendar} 
+                            className={`p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors ${isLoadingData ? 'animate-spin text-orange-500' : ''}`}
+                            title="Atualizar"
+                        >
+                            <RefreshCw size={20}/>
+                        </button>
+
+                        {/* Period Dropdown */}
+                        <div className="relative ml-2" ref={periodMenuRef}>
+                            <button 
+                                onClick={() => setIsPeriodMenuOpen(!isPeriodMenuOpen)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all"
+                            >
+                                <span>{calendarMode}</span>
+                                <ChevronDown size={14} className="text-slate-400" />
+                            </button>
+
+                            {isPeriodMenuOpen && (
+                                <div className="absolute right-0 mt-2 w-48 bg-white rounded shadow-2xl border border-slate-100 z-50 py-1 animate-in fade-in zoom-in-95 duration-150">
+                                    {periodOptions.map((opt) => (
+                                        <button
+                                            key={opt}
+                                            onClick={() => { setCalendarMode(opt as any); setIsPeriodMenuOpen(false); }}
+                                            className={`w-full flex items-center px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 ${calendarMode === opt ? 'bg-slate-50' : ''}`}
+                                        >
+                                            {opt}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
                         <button 
                             onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })}
-                            className="bg-orange-500 hover:bg-orange-600 text-white font-black px-6 py-2.5 rounded-xl shadow-lg shadow-orange-100 flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-widest"
+                            className="bg-orange-500 hover:bg-orange-600 text-white font-black px-5 py-2 rounded shadow-sm flex items-center gap-2 transition-all active:scale-95 text-xs uppercase ml-2"
                         >
-                            <Plus size={18} /> Novo Agendamento
+                            Agendar
                         </button>
                     </div>
                 </header>
 
                 <div className="flex-1 overflow-auto bg-white custom-scrollbar relative">
                     <div className="min-w-fit">
-                        {/* Column Header with Professional Reordering */}
+                        {/* Cabeçalho da Coluna */}
                         <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${filteredProfessionals.length}, ${isAutoWidth ? `minmax(200px, 1fr)` : `${colWidth}px`})` }}>
-                            <div className="sticky left-0 z-50 bg-white border-r border-slate-200 h-20 min-w-[60px] flex items-center justify-center shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
+                            <div className="sticky left-0 z-50 bg-white border-r border-slate-200 h-20 min-w-[60px] flex items-center justify-center">
                                 <Maximize2 size={16} className="text-slate-300" />
                             </div>
                             {filteredProfessionals.map((prof) => (
@@ -447,6 +531,35 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                 </div>
             </div>
 
+            {/* MODAL COMPARTILHAR AGENDAMENTO */}
+            {isShareModalOpen && (
+                <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+                        <header className="p-6 flex justify-between items-center border-b">
+                            <h3 className="text-xl font-black text-slate-800">Compartilhar agenda</h3>
+                            <button onClick={() => setIsShareModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600"><X size={24}/></button>
+                        </header>
+                        <div className="p-8">
+                            <p className="text-slate-500 text-sm mb-6 leading-relaxed font-medium">Compartilhe o link da agenda do seu negócio para seus clientes marcarem horários online.</p>
+                            <div className="flex items-center gap-2 p-1.5 bg-slate-50 border rounded-xl mb-4 group-focus-within:border-orange-500 transition-colors">
+                                <div className="p-2.5 text-slate-400"><LinkIcon size={20} /></div>
+                                <input readOnly value="https://belaflow.app/studio-jacilene-felix" className="flex-1 bg-transparent border-none text-sm font-bold text-slate-700 outline-none" />
+                                <button 
+                                    /**
+                                     * Fix for "Cannot find name 'showToast'".
+                                     * Using showToast helper function defined above.
+                                     */
+                                    onClick={() => { navigator.clipboard.writeText("https://belaflow.app/studio-jacilene-felix"); showToast("Link copiado!", "success"); }}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-black flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-100"
+                                >
+                                    <Copy size={16}/> Copiar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Selection Menu */}
             {selectionMenu && (
                 <>
@@ -466,8 +579,8 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                     targetElement={appointmentRefs.current.get(activeAppointmentDetail.id) || null} 
                     onClose={() => setActiveAppointmentDetail(null)} 
                     onEdit={(app) => setModalState({ type: 'appointment', data: app })} 
-                    onDelete={async (id) => { await supabase.from('appointments').delete().eq('id', id); refreshCalendar(); setActiveAppointmentDetail(null); setToast({ message: 'Agendamento removido!', type: 'info' }); }} 
-                    onUpdateStatus={async (id, status) => { await supabase.from('appointments').update({ status }).eq('id', id); refreshCalendar(); setActiveAppointmentDetail(null); setToast({ message: 'Status atualizado!', type: 'success' }); }} 
+                    onDelete={async (id) => { await supabase.from('appointments').delete().eq('id', id); refreshCalendar(); setActiveAppointmentDetail(null); showToast('Agendamento removido!', 'info'); }} 
+                    onUpdateStatus={async (id, status) => { await supabase.from('appointments').update({ status }).eq('id', id); refreshCalendar(); setActiveAppointmentDetail(null); showToast('Status atualizado!', 'success'); }} 
                 />
             )}
 
@@ -475,17 +588,22 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
             {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={async (app) => {
                 const payload = { client_name: app.client?.nome, resource_id: app.professional.id, professional_name: app.professional.name, service_name: app.service.name, value: app.service.price, duration: app.service.duration, date: app.start.toISOString(), status: app.status, notes: app.notas, origem: 'interno' };
                 if (app.id) await supabase.from('appointments').update(payload).eq('id', app.id); else await supabase.from('appointments').insert([payload]);
-                setToast({ message: "Agenda atualizada com sucesso!", type: 'success' }); 
+                showToast("Agenda atualizada com sucesso!", "success"); 
                 setModalState(null); 
                 refreshCalendar();
             }} />}
 
             {modalState?.type === 'block' && <BlockTimeModal professional={modalState.data.professional} startTime={modalState.data.start} onClose={() => setModalState(null)} onSave={async (block) => {
                 await supabase.from('appointments').insert([{ resource_id: block.professional.id, professional_name: block.professional.name, service_name: 'Bloqueio', value: 0, duration: block.service.duration, date: block.start.toISOString(), status: 'bloqueado', notes: block.notas }]);
-                setToast({ message: "Horário bloqueado!", type: 'info' }); setModalState(null); refreshCalendar();
+                showToast("Horário bloqueado!", "info"); setModalState(null); refreshCalendar();
             }} />}
         </div>
     );
 };
+
+// Ícone de Link para o modal
+const LinkIcon = ({ size }: { size: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+);
 
 export default AtendimentosView;
