@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { LegacyAppointment, Client, LegacyProfessional, LegacyService } from '../../types';
 import { clients as initialClients, services as serviceMap, professionals } from '../../data/mockData';
@@ -230,7 +231,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
       }, 0);
   };
 
-  const handleSaveNewClient = (newClient: Client) => {
+  // FIX: Changed to async function to satisfy (client: Client) => Promise<void> type requirement.
+  const handleSaveNewClient = async (newClient: Client) => {
       setLocalClients(prev => [...prev, newClient]);
       setFormData(prev => ({ ...prev, client: newClient }));
       setClientEmail(newClient.email || '');
@@ -400,7 +402,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           {/* Stats: Price and Duration (Editable) */}
           <div className="flex items-center gap-4">
               <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 focus-within:border-orange-300 focus-within:ring-2 focus-within:ring-orange-100 transition-all shadow-sm">
-                  {/* FIX: Removed misplaced Send button icon that was causing a "Cannot find name 'Send'" error and was UI-incorrect in the modal form. */}
                   <div className="p-1.5 bg-green-50 rounded text-green-600">
                     <DollarSign className="w-4 h-4" />
                   </div>

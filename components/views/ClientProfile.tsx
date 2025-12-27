@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef } from 'react';
 import { 
     X, User, Phone, Mail, Calendar, Edit2, Save, 
@@ -8,7 +9,8 @@ import {
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import { Client } from '../../types';
-import { differenceInYears, parseISO, isValid } from 'date-fns';
+// FIX: Removed parseISO from imports as it was reported as missing from date-fns module.
+import { differenceInYears, isValid } from 'date-fns';
 import { supabase } from '../../services/supabaseClient';
 
 interface ClientProfileProps {
@@ -125,7 +127,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const clientAge = useMemo(() => {
         if (!formData.nascimento) return null;
         try {
-            const date = parseISO(formData.nascimento);
+            // FIX: Replaced parseISO with native Date constructor to handle date parsing.
+            const date = new Date(formData.nascimento);
             if (!isValid(date)) return null;
             return differenceInYears(new Date(), date);
         } catch { return null; }

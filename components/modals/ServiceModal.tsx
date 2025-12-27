@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { X, Save, Scissors, DollarSign, Clock, Tag, AlignLeft, Info, Loader2 } from 'lucide-react';
 import { Service } from '../../types';
@@ -181,7 +182,7 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCategorie
                         {/* Comissão */}
                         <div className="space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-1">
-                                Comissão do Profissional (%) <Info size={10} className="text-slate-300" title="Percentual que o profissional recebe por este serviço" />
+                                Comissão do Profissional (%) <span title="Percentual que o profissional recebe por este serviço"><Info size={10} className="text-slate-300" /></span>
                             </label>
                             <div className="relative">
                                 <input 
