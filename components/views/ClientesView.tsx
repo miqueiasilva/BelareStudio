@@ -15,76 +15,87 @@ const ClientesView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const isMounted = useRef(true);
 
   const fetchClients = async () => {
+    if (!isMounted.current) return;
     setLoading(true);
+    setError(null);
+
+    // Watchdog de 8 segundos
+    const watchdog = setTimeout(() => {
+        if (loading && isMounted.current) {
+            setLoading(false);
+            setError("O banco de dados não respondeu a tempo.");
+        }
+    }, 8000);
+
     try {
-        // Busca explícita incluindo photo_url para garantir a exibição do avatar
-        const { data, error } = await supabase
+        const { data, error: sbError } = await supabase
             .from('clients')
             .select('*')
             .order('nome', { ascending: true });
         
-        if (error) throw error;
-        setClients(data || []);
+        if (sbError) throw new Error(sbError.message || "Erro ao consultar base de dados.");
+        
+        if (isMounted.current) {
+            setClients(data || []);
+        }
     } catch (e: any) {
-        console.error("Erro ao carregar clientes:", e);
+        console.error("Erro detalhado ao carregar clientes:", e);
+        if (isMounted.current) {
+            setError(e.message || "Não foi possível carregar a lista de clientes.");
+        }
     } finally {
-        setLoading(false);
+        clearTimeout(watchdog);
+        if (isMounted.current) setLoading(false);
     }
   };
 
-  useEffect(() => { fetchClients(); }, []);
+  useEffect(() => { 
+    isMounted.current = true;
+    fetchClients(); 
+    return () => { isMounted.current = false; };
+  }, []);
 
   const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
   const handleSaveClient = async (clientData: Client) => {
-    console.log("Iniciando persistência de cliente. Dados recebidos:", clientData);
-    
-    // Payload limpo para evitar erros de tipos no Postgres
     const payload = { ...clientData };
     const isEditing = !!payload.id;
 
     try {
         if (isEditing) {
-            // OPERAÇÃO: EDITAR
-            console.log("Modo: EDIÇÃO. ID:", payload.id);
-            const { data, error } = await supabase
+            const { data, error: upError } = await supabase
                 .from('clients')
                 .update(payload)
                 .eq('id', payload.id)
                 .select()
                 .single();
 
-            if (error) throw error;
+            if (upError) throw new Error(upError.message);
             
             setClients(prev => prev.map(c => c.id === data.id ? data : c));
             showToast('Perfil atualizado com sucesso!');
         } else {
-            // OPERAÇÃO: NOVO
-            console.log("Modo: CRIAÇÃO (Novo Registro)");
-            // Remove o ID para o banco gerar automaticamente
             delete (payload as any).id;
-            
-            const { data, error } = await supabase
+            const { data, error: inError } = await supabase
                 .from('clients')
                 .insert([payload])
                 .select()
                 .single();
 
-            if (error) throw error;
+            if (inError) throw new Error(inError.message);
 
             setClients(prev => [data, ...prev]);
             showToast('Novo cliente cadastrado com sucesso!');
         }
-        
-        // Fecha o modal após sucesso
         setSelectedClient(null);
-
     } catch (e: any) {
         console.error("ERRO CRÍTICO NA PERSISTÊNCIA:", e);
-        // Alert exibe o erro real vindo do Supabase (ex: RLS, Constraint, Type error)
-        alert(`Erro ao salvar no banco: ${e.message || 'Erro desconhecido'}`);
+        const msg = e.message || "Falha técnica desconhecida.";
+        alert(`Erro ao salvar no banco: ${msg}`);
         showToast("Falha ao salvar dados.", 'error');
     }
   };
@@ -95,7 +106,7 @@ const ClientesView: React.FC = () => {
   );
 
   return (
-    <div className="h-full flex flex-col bg-slate-50 font-sans">
+    <div className="h-full flex flex-col bg-slate-50 font-sans text-left">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
       <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center flex-shrink-0">
@@ -128,6 +139,19 @@ const ClientesView: React.FC = () => {
             <div className="flex flex-col items-center justify-center h-64 text-slate-400">
                 <Loader2 className="animate-spin mb-2" />
                 <p className="text-[10px] font-black uppercase tracking-widest">Sincronizando base...</p>
+            </div>
+        ) : error ? (
+            <div className="p-12 text-center max-w-md mx-auto">
+                <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
+                <p className="text-slate-800 font-bold mb-2">Ops! Falha ao carregar clientes</p>
+                <p className="text-slate-500 text-sm mb-8">{error}</p>
+                <button onClick={fetchClients} className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-black shadow-lg flex items-center gap-2 mx-auto hover:bg-black transition-all active:scale-95"><RefreshCw size={16}/> Tentar Novamente</button>
+            </div>
+        ) : filteredClients.length === 0 ? (
+            <div className="p-20 text-center text-slate-400 flex flex-col items-center">
+                <Users size={48} className="opacity-20 mb-4" />
+                <p className="font-bold uppercase tracking-widest text-xs">Nenhum cliente encontrado</p>
+                <button onClick={() => setSelectedClient({ nome: '', consent: true } as any)} className="mt-4 text-orange-500 font-black text-sm hover:underline">Cadastrar o primeiro agora</button>
             </div>
         ) : (
             <div className="divide-y divide-slate-100">
