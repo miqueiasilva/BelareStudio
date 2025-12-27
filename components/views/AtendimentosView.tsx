@@ -35,7 +35,6 @@ const getAppointmentPosition = (isoDateString: string, duration: number) => {
 };
 
 const getCardStyle = (app: LegacyAppointment, viewMode: ViewMode) => {
-    // Mobile: Sem borda lateral, padding mínimo, fundo total
     const baseClasses = "absolute left-0 right-0 mx-0.5 md:mx-1 rounded-md md:rounded-lg shadow-sm md:border-l-4 p-1 md:p-2 cursor-grab active:cursor-grabbing z-10 hover:shadow-md transition-all overflow-hidden flex flex-col gap-0.5 select-none border-l-0";
     
     if (viewMode === 'pagamento') {
@@ -192,8 +191,10 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
         return labels;
     }, [timeSlot]);
 
-    // Grid Column Width Logic
-    const dynamicColWidth = isMobile ? '105px' : (isAutoWidth ? `minmax(200px, 1fr)` : `${colWidth}px`);
+    // Grid Columns Calculation Fix
+    const dynamicTimeColWidth = isMobile ? '45px' : '60px';
+    const dynamicColWidth = isMobile ? '105px' : (isAutoWidth ? 'minmax(200px, 1fr)' : `${colWidth}px`);
+    const gridTemplateString = `${dynamicTimeColWidth} repeat(${filteredProfessionals.length}, ${dynamicColWidth})`;
 
     // Handlers
     const handleGridAction = (e: React.MouseEvent, professional: LegacyProfessional) => {
@@ -382,10 +383,10 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                 </header>
 
                 <div className="flex-1 overflow-x-auto bg-white custom-scrollbar relative overflow-y-auto">
-                    <div className="min-w-fit">
-                        {/* Headers Colunas (Sticky Top) */}
-                        <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `45px md:60px repeat(${filteredProfessionals.length}, ${dynamicColWidth})` }}>
-                            <div className="sticky left-0 z-50 bg-white border-r border-slate-200 h-14 md:h-20 min-w-[45px] md:min-w-[60px] flex items-center justify-center">
+                    <div className="min-w-fit h-full">
+                        {/* Headers Colunas (Sticky Top) - Fixando Layout Horizontal */}
+                        <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: gridTemplateString }}>
+                            <div className="sticky left-0 z-50 bg-white border-r border-slate-200 h-14 md:h-20 flex items-center justify-center">
                                 <Maximize2 size={16} className="text-slate-300" />
                             </div>
                             {filteredProfessionals.map((prof) => (
@@ -399,10 +400,10 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                             ))}
                         </div>
 
-                        {/* Grid Body */}
-                        <div className="grid relative" style={{ gridTemplateColumns: `45px md:60px repeat(${filteredProfessionals.length}, ${dynamicColWidth})` }}>
+                        {/* Grid Body - Fixando Layout Horizontal com divide-x para Desktop */}
+                        <div className="grid relative h-full" style={{ gridTemplateColumns: gridTemplateString }}>
                             {/* Coluna Horários (Sticky Left) */}
-                            <div className="sticky left-0 z-20 bg-white border-r border-slate-200 min-w-[45px] md:min-w-[60px] shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
+                            <div className="sticky left-0 z-20 bg-white border-r border-slate-200 shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
                                 {timeSlotsLabels.map(time => (
                                     <div key={time} className="h-20 text-right pr-2 md:pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-100/50 border-dashed bg-white">
                                         <span>{time}</span>
@@ -435,7 +436,6 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                                                         {app.status === 'confirmado_whatsapp' && <MessageSquare size={8} className="text-emerald-600 md:w-2.5 md:h-2.5" />}
                                                     </div>
                                                     <span className="text-[10px] md:text-xs font-black text-slate-900 leading-tight truncate mt-0.5">{app.client?.nome || 'Bloqueado'}</span>
-                                                    {/* Esconde o serviço em blocos muito pequenos no mobile para priorizar o nome */}
                                                     <span className="hidden md:block text-[10px] text-slate-500 font-medium truncate leading-none mt-1">{app.service.name}</span>
                                                 </div>
                                             </div>
@@ -449,7 +449,7 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                 </div>
             </div>
 
-            {/* MODAL COMPARTILHAR (Refinado: Overlay mais escuro e botão Copy Azul Royal) */}
+            {/* MODAL COMPARTILHAR */}
             {isShareModalOpen && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 relative animate-in zoom-in-95 duration-200">
@@ -457,7 +457,7 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                             <h3 className="text-xl font-bold text-slate-800">Compartilhar agenda</h3>
                             <button 
                                 onClick={() => setIsShareModalOpen(false)} 
-                                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors p-1"
+                                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1"
                             >
                                 <X size={24}/>
                             </button>
@@ -485,11 +485,6 @@ const AtendimentosView: React.FC<{ onAddTransaction: (t: FinancialTransaction) =
                         </div>
                     </div>
                 </div>
-            )}
-
-            {/* Notification Drawer (Simulado) */}
-            {isNotificationsOpen && (
-                <div className="fixed inset-0 z-[100] bg-black/40 lg:hidden" onClick={() => setIsNotificationsOpen(false)} />
             )}
 
             {/* Selection Menu */}
