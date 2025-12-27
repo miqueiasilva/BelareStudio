@@ -24,19 +24,22 @@ const ServiceItem = ({ service, isSelected, onToggle }: any) => (
         onClick={() => onToggle(service)}
         className={`p-4 flex justify-between items-center border-b border-slate-50 last:border-0 cursor-pointer transition-all active:scale-[0.98] ${isSelected ? 'bg-orange-50/50' : 'hover:bg-slate-50'}`}
     >
-        <div className="flex-1 pr-4">
-            <h4 className="font-bold text-slate-800 text-sm">{service.name}</h4>
-            <div className="flex items-center gap-3 mt-1">
+        <div className="flex-1 pr-4 text-left">
+            {/* CORREÇÃO: Propriedade service.nome (vinda do DB) e cor text-slate-900 para visibilidade */}
+            <h4 className="font-extrabold text-slate-900 text-sm leading-tight">
+                {service.nome || "Serviço sem nome"}
+            </h4>
+            <div className="flex items-center gap-3 mt-1.5">
                 <span className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1">
                     <Clock size={10} /> {service.duracao_min} min
                 </span>
                 <span className="text-orange-600 font-black text-sm">
-                    R$ {service.preco.toFixed(2)}
+                    R$ {Number(service.preco).toFixed(2)}
                 </span>
             </div>
         </div>
         <button 
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
                 isSelected 
                 ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' 
                 : 'border-2 border-slate-100 text-slate-300'
@@ -151,7 +154,7 @@ const PublicBookingPreview: React.FC = () => {
         try {
             const dayKey = weekdayMap[getDay(date)];
             
-            // Fallback robusto: se não houver configuração, assume 09:00 - 18:00 (exceto Domingo)
+            // Fallback robusto
             const fallbackHours = dayKey === 'sunday' 
                 ? { active: false, start: '09:00', end: '18:00' }
                 : { active: true, start: '09:00', end: '18:00' };
@@ -166,7 +169,6 @@ const PublicBookingPreview: React.FC = () => {
 
             const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
             
-            // 1. Busca agendamentos do dia para este profissional
             const { data: busyAppointments } = await supabase
                 .from('appointments')
                 .select('date, duration')
@@ -177,7 +179,6 @@ const PublicBookingPreview: React.FC = () => {
 
             const slots: string[] = [];
             
-            // Extração de horários (garante fallback se vier string vazia)
             const [startH, startM] = (businessHours.start || '09:00').split(':').map(Number);
             const [endH, endM] = (businessHours.end || '18:00').split(':').map(Number);
             
@@ -191,13 +192,12 @@ const PublicBookingPreview: React.FC = () => {
 
             // Loop de geração de slots
             while (isBefore(addMinutes(currentPointer, totalDuration), addMinutes(endLimit, 1))) {
-                // Regra 1: Não mostrar horários passados se for hoje
                 if (isSameDay(date, now) && isBefore(currentPointer, now)) {
-                    currentPointer = addMinutes(currentPointer, 15);
+                    // AJUSTE: Incremento de 30 minutos em vez de 15 para melhor visualização
+                    currentPointer = addMinutes(currentPointer, 30);
                     continue;
                 }
 
-                // Regra 2: Verificar colisão com agendamentos existentes
                 const hasOverlap = busyAppointments?.some(app => {
                     const appStart = parseISO(app.date);
                     const appEnd = addMinutes(appStart, app.duration);
@@ -210,7 +210,8 @@ const PublicBookingPreview: React.FC = () => {
                     slots.push(format(currentPointer, 'HH:mm'));
                 }
 
-                currentPointer = addMinutes(currentPointer, 15); // Intervalo de 15min para maior oferta de horários
+                // AJUSTE: Incremento de 30 minutos
+                currentPointer = addMinutes(currentPointer, 30);
             }
 
             setAvailableSlots(slots);
@@ -238,7 +239,6 @@ const PublicBookingPreview: React.FC = () => {
         const cleanPhone = clientPhone.replace(/\D/g, '');
 
         try {
-            // 1. Verificar/Criar Cliente
             let clientId: number;
             const { data: existingClient } = await supabase
                 .from('clients')
@@ -258,15 +258,14 @@ const PublicBookingPreview: React.FC = () => {
                 clientId = newClient.id;
             }
 
-            // 2. Salvar Agendamento
             const [h, m] = selectedTime.split(':').map(Number);
             const appStart = new Date(selectedDate);
             appStart.setHours(h, m, 0, 0);
             const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
             const totalPrice = selectedServices.reduce((acc, s) => acc + s.preco, 0);
             
-            // Gerar resumo textual dos serviços
-            const serviceSummary = selectedServices.map(s => s.name).join(', ');
+            // CORREÇÃO: Usando service.nome no resumo
+            const serviceSummary = selectedServices.map(s => s.nome).join(', ');
 
             const { error: appError } = await supabase
                 .from('appointments')
@@ -279,15 +278,14 @@ const PublicBookingPreview: React.FC = () => {
                     date: appStart.toISOString(),
                     duration: totalDuration,
                     value: totalPrice,
-                    services: selectedServices, // Array JSON completo
-                    service_name: serviceSummary, // Resumo textual legível
+                    services: selectedServices, 
+                    service_name: serviceSummary, 
                     status: 'agendado',
                     origem: 'link'
                 }]);
 
             if (appError) throw appError;
 
-            // 3. Feedback Sucesso
             setToast({ message: "Agendamento realizado com sucesso!", type: 'success' });
             setShowSuccess(true);
         } catch (e: any) {
@@ -344,12 +342,13 @@ const PublicBookingPreview: React.FC = () => {
                     className="w-full h-full object-cover opacity-50"
                     alt="Banner"
                 />
+                {/* AJUSTE: Botão Meus Agendamentos com melhor espaçamento e visibilidade no mobile */}
                 <button 
                     onClick={() => setIsClientAppsOpen(true)}
-                    className="absolute top-6 right-6 p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-xl"
+                    className="absolute top-4 right-4 sm:top-6 sm:right-6 p-2.5 sm:p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-xl z-20"
                 >
-                    <UserCircle2 size={20} />
-                    <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Meus Agendamentos</span>
+                    <UserCircle2 size={20} className="flex-shrink-0" />
+                    <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest leading-none">Meus Agendamentos</span>
                 </button>
             </div>
 
@@ -545,8 +544,8 @@ const PublicBookingPreview: React.FC = () => {
                                         <div className="space-y-3">
                                             {selectedServices.map(s => (
                                                 <div key={s.id} className="flex justify-between items-center text-sm font-bold text-slate-600">
-                                                    <span>{s.name}</span>
-                                                    <span>R$ {s.preco.toFixed(2)}</span>
+                                                    <span>{s.nome}</span>
+                                                    <span>R$ {Number(s.preco).toFixed(2)}</span>
                                                 </div>
                                             ))}
                                             <div className="pt-3 border-t border-slate-50 flex justify-between items-center">
