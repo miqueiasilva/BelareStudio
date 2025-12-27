@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
     ChevronLeft, User, Save, Trash2, Camera, Scissors, 
-    Loader2, Shield, Clock, DollarSign, CheckCircle, AlertCircle, Mail, Key
+    Loader2, Shield, Clock, DollarSign, CheckCircle, AlertCircle
 } from 'lucide-react';
 import { LegacyProfessional, LegacyService } from '../../types';
 import Card from '../shared/Card';
@@ -26,6 +26,7 @@ const DAYS_OF_WEEK = [
 ];
 
 const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: initialProf, onBack, onSave }) => {
+    // --- State ---
     const [prof, setProf] = useState<any>(null);
     const [allServices, setAllServices] = useState<LegacyService[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -34,11 +35,14 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
     
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // --- Initialization ---
     useEffect(() => {
         const init = async () => {
+            // Fetch all available services for the selection tab
             const { data: svcs } = await supabase.from('services').select('*').order('nome');
             if (svcs) setAllServices(svcs as any);
 
+            // Normalize professional data (handle missing fields and JSON structures)
             const normalized = {
                 ...initialProf,
                 cpf: (initialProf as any).cpf || '',
@@ -47,10 +51,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 phone: (initialProf as any).phone || '',
                 birth_date: (initialProf as any).birth_date || '',
                 commission_rate: (initialProf as any).commission_rate ?? 0,
-                // Garantir que a Role seja válida
-                role: (initialProf as any).role === 'admin' || (initialProf as any).role === 'collaborator' 
-                    ? (initialProf as any).role 
-                    : 'collaborator',
                 permissions: (initialProf as any).permissions || { view_calendar: true, edit_calendar: true },
                 services_enabled: (initialProf as any).services_enabled || [],
                 work_schedule: (initialProf as any).work_schedule || {},
@@ -61,6 +61,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         init();
     }, [initialProf]);
 
+    // --- Upload Logic ---
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !prof) return;
@@ -68,24 +69,32 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         setIsUploading(true);
         try {
             const fileExt = file.name.split('.').pop();
-            const fileName = `avatar_${Date.now()}_${prof.id}.${fileExt}`;
+            const fileName = `${Date.now()}_${prof.id}.${fileExt}`;
             const filePath = `public/${fileName}`;
 
+            // 1. Upload to Supabase Storage
             const { error: uploadError } = await supabase.storage
                 .from('avatars')
                 .upload(filePath, file, { upsert: true });
 
             if (uploadError) throw uploadError;
 
+            // 2. Get Public URL
             const { data: { publicUrl } } = supabase.storage
                 .from('avatars')
                 .getPublicUrl(filePath);
 
+            // 3. Update local state and DB immediately for photo
             setProf({ ...prof, photo_url: publicUrl });
             
-            if (prof.id) {
-                await supabase.from('professionals').update({ photo_url: publicUrl }).eq('id', prof.id);
-            }
+            const { error: updateError } = await supabase
+                .from('professionals')
+                .update({ photo_url: publicUrl })
+                .eq('id', prof.id);
+
+            if (updateError) throw updateError;
+
+            alert("Foto atualizada com sucesso!");
         } catch (error: any) {
             console.error("Upload error:", error);
             alert(`Erro no upload: ${error.message}`);
@@ -95,27 +104,26 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         }
     };
 
+    // --- Save Logic (Anti-Crash) ---
     const handleSave = async () => {
         if (!prof) return;
-        
-        // Validação de Email obrigatório para controle de acesso
-        if (!prof.email || !prof.email.includes('@')) {
-            alert("Por favor, informe um email de login válido.");
-            return;
-        }
-
         setIsLoading(true);
+        
         try {
+            // Prepare Payload: Clean data to avoid Postgres constraints errors
             const payload = {
                 name: prof.name || 'Sem nome',
-                role: prof.role || 'collaborator', // Garantindo o nível de acesso
+                role: prof.role || 'Profissional',
                 phone: prof.phone || null,
-                email: prof.email, // Obrigatório
+                email: prof.email || null,
                 cpf: prof.cpf || null,
                 bio: prof.bio || null,
                 active: !!prof.active,
+                // Critical: Convert empty date strings to NULL
                 birth_date: prof.birth_date === "" ? null : prof.birth_date,
+                // Critical: Ensure numbers are not NaN
                 commission_rate: isNaN(parseFloat(prof.commission_rate)) ? 0 : parseFloat(prof.commission_rate),
+                // JSON Fields
                 permissions: prof.permissions,
                 services_enabled: prof.services_enabled,
                 work_schedule: prof.work_schedule,
@@ -129,7 +137,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
 
             if (error) throw error;
 
-            alert("Perfil e Permissões atualizados! ✅");
+            alert("Perfil salvo com sucesso! ✅");
             onSave();
         } catch (error: any) {
             console.error("Save error:", error);
@@ -139,6 +147,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         }
     };
 
+    // --- Delete Logic ---
     const handleDelete = async () => {
         if (!prof) return;
         if (!window.confirm("Tem certeza que deseja excluir este colaborador permanentemente?")) return;
@@ -155,6 +164,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         }
     };
 
+    // --- Helper Setters ---
     const toggleService = (id: number) => {
         const current = prof.services_enabled || [];
         const next = current.includes(id) ? current.filter((sId: number) => sId !== id) : [...current, id];
@@ -179,20 +189,25 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         });
     };
 
-    if (!prof) return <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-orange-500 w-10 h-10" /></div>;
+    if (!prof) {
+        return (
+            <div className="h-full flex items-center justify-center">
+                <Loader2 className="animate-spin text-orange-500 w-10 h-10" />
+            </div>
+        );
+    }
 
     return (
         <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans">
+            {/* Header */}
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between z-20 shadow-sm">
                 <div className="flex items-center gap-4">
-                    <button onClick={onBack} className="p-2 -ml-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors">
+                    <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors">
                         <ChevronLeft size={24} />
                     </button>
                     <div>
                         <h2 className="text-xl font-bold text-slate-800">{prof.name}</h2>
-                        <p className="text-xs text-slate-500 font-black uppercase tracking-widest">
-                            Controle de Acesso: {prof.role === 'admin' ? 'Total' : 'Restrito'}
-                        </p>
+                        <p className="text-xs text-slate-500 font-medium uppercase tracking-widest">{prof.role}</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -205,15 +220,16 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-orange-100 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
                     >
                         {isLoading ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                        {prof.id ? 'Salvar Dados' : 'Criar Colaborador'}
+                        {isLoading ? 'Salvando...' : 'Salvar Dados'}
                     </button>
                 </div>
             </header>
 
+            {/* Navigation Tabs */}
             <div className="bg-white border-b border-slate-200 px-6 overflow-x-auto scrollbar-hide">
                 <div className="flex gap-8 max-w-5xl mx-auto">
                     {[
-                        { id: 'perfil', label: 'Acesso e Perfil', icon: User },
+                        { id: 'perfil', label: 'Perfil', icon: User },
                         { id: 'servicos', label: 'Serviços', icon: Scissors },
                         { id: 'horarios', label: 'Horários', icon: Clock },
                         { id: 'comissoes', label: 'Ganhos', icon: DollarSign },
@@ -234,11 +250,16 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
 
             <main className="flex-1 overflow-y-auto p-6">
                 <div className="max-w-5xl mx-auto">
+                    
+                    {/* TAB: PERFIL */}
                     {activeTab === 'perfil' && (
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-300">
                             <Card className="lg:col-span-1 h-fit">
                                 <div className="flex flex-col items-center py-6">
-                                    <div className="relative group cursor-pointer w-36 h-36 rounded-full border-4 border-white shadow-xl overflow-hidden bg-slate-100 mb-6" onClick={() => fileInputRef.current?.click()}>
+                                    <div 
+                                        className="w-36 h-36 rounded-full border-4 border-white shadow-xl overflow-hidden bg-slate-100 mb-6 relative group cursor-pointer"
+                                        onClick={() => fileInputRef.current?.click()}
+                                    >
                                         {prof.photo_url ? (
                                             <img src={prof.photo_url} className="w-full h-full object-cover" alt="Avatar" />
                                         ) : (
@@ -249,53 +270,20 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                         </div>
                                     </div>
                                     <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*" />
-                                    <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${prof.role === 'admin' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>
-                                        <Shield size={12} /> {prof.role === 'admin' ? 'Administrador' : 'Colaborador'}
-                                    </div>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Clique para trocar a foto</p>
                                 </div>
                             </Card>
                             
                             <div className="lg:col-span-2 space-y-6">
-                                <Card title="Controle de Acesso ao Sistema" icon={<Key size={18} className="text-orange-500" />}>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                                                <Mail size={12} /> Email de Login <span className="text-rose-500">*</span>
-                                            </label>
-                                            <input 
-                                                required
-                                                type="email"
-                                                value={prof.email} 
-                                                onChange={e => setProf({...prof, email: e.target.value})} 
-                                                className="w-full border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-500 outline-none font-bold text-slate-700 shadow-sm" 
-                                                placeholder="mesmo email usado para entrar no app" 
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                                                <Shield size={12} /> Nível de Acesso <span className="text-rose-500">*</span>
-                                            </label>
-                                            <select 
-                                                value={prof.role} 
-                                                onChange={e => setProf({...prof, role: e.target.value})} 
-                                                className="w-full border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-500 outline-none font-bold text-slate-700 bg-white shadow-sm"
-                                            >
-                                                <option value="collaborator">Colaborador (Vê apenas sua agenda)</option>
-                                                <option value="admin">Administrador (Acesso Total)</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </Card>
-
-                                <Card title="Dados Pessoais" icon={<User size={18} className="text-orange-500" />}>
+                                <Card title="Informações Pessoais">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="space-y-1">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nome de Exibição</label>
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nome Completo</label>
                                             <input value={prof.name} onChange={e => setProf({...prof, name: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none" />
                                         </div>
                                         <div className="space-y-1">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">WhatsApp</label>
-                                            <input value={prof.phone} onChange={e => setProf({...prof, phone: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none" placeholder="(00) 00000-0000" />
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cargo / Especialidade</label>
+                                            <input value={prof.role} onChange={e => setProf({...prof, role: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none" />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">CPF</label>
@@ -305,12 +293,25 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data de Nascimento</label>
                                             <input type="date" value={prof.birth_date} onChange={e => setProf({...prof, birth_date: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none" />
                                         </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">WhatsApp</label>
+                                            <input value={prof.phone} onChange={e => setProf({...prof, phone: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none" placeholder="(00) 00000-0000" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">E-mail</label>
+                                            <input type="email" value={prof.email} onChange={e => setProf({...prof, email: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none" placeholder="email@exemplo.com" />
+                                        </div>
+                                    </div>
+                                    <div className="mt-4 space-y-1">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Biografia / Notas</label>
+                                        <textarea value={prof.bio} onChange={e => setProf({...prof, bio: e.target.value})} className="w-full h-24 border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none resize-none" placeholder="Experiência profissional..." />
                                     </div>
                                 </Card>
                             </div>
                         </div>
                     )}
 
+                    {/* TAB: SERVICOS */}
                     {activeTab === 'servicos' && (
                         <Card title="Serviços Habilitados" className="animate-in fade-in duration-300">
                             <p className="text-sm text-slate-500 mb-6">Este profissional aparecerá na agenda apenas para os serviços marcados abaixo.</p>
@@ -318,7 +319,13 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                 {allServices.map(service => {
                                     const isEnabled = prof.services_enabled?.includes(service.id);
                                     return (
-                                        <button key={service.id} onClick={() => toggleService(service.id)} className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all text-left ${isEnabled ? 'border-orange-500 bg-orange-50' : 'border-slate-100 hover:border-slate-200 bg-white'}`}>
+                                        <button
+                                            key={service.id}
+                                            onClick={() => toggleService(service.id)}
+                                            className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all text-left ${
+                                                isEnabled ? 'border-orange-500 bg-orange-50' : 'border-slate-100 hover:border-slate-200 bg-white'
+                                            }`}
+                                        >
                                             <div className="flex items-center gap-3 overflow-hidden">
                                                 <div className="w-2 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: service.color }}></div>
                                                 <div className="overflow-hidden">
@@ -334,6 +341,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </Card>
                     )}
 
+                    {/* TAB: HORARIOS */}
                     {activeTab === 'horarios' && (
                         <Card title="Grade Semanal de Horários" className="animate-in fade-in duration-300">
                             <div className="space-y-3">
@@ -359,13 +367,19 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </Card>
                     )}
 
+                    {/* TAB: COMISSOES */}
                     {activeTab === 'comissoes' && (
                         <Card title="Repasse e Produtividade" className="animate-in fade-in duration-300 max-w-2xl mx-auto">
                             <div className="p-8 bg-gradient-to-br from-orange-50 to-orange-100 rounded-3xl border border-orange-200 mb-6">
                                 <label className="block text-xs font-black text-orange-800 uppercase mb-4 tracking-widest">Comissão Padrão (%)</label>
                                 <div className="flex items-center gap-8">
                                     <div className="relative">
-                                        <input type="number" value={prof.commission_rate} onChange={e => setProf({...prof, commission_rate: e.target.value})} className="w-40 border-2 border-orange-300 rounded-3xl px-6 py-5 text-5xl font-black text-orange-600 outline-none focus:border-orange-500 bg-white shadow-inner" />
+                                        <input 
+                                            type="number" 
+                                            value={prof.commission_rate}
+                                            onChange={e => setProf({...prof, commission_rate: e.target.value})}
+                                            className="w-40 border-2 border-orange-300 rounded-3xl px-6 py-5 text-5xl font-black text-orange-600 outline-none focus:border-orange-500 bg-white shadow-inner"
+                                        />
                                         <span className="absolute right-4 top-1/2 -translate-y-1/2 text-2xl font-black text-orange-300">%</span>
                                     </div>
                                     <div className="space-y-1 flex-1">
@@ -374,19 +388,24 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                     </div>
                                 </div>
                             </div>
+                            
                             <div className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-3xl shadow-sm">
-                                <div><p className="font-bold text-slate-800">Liberar Agenda Online?</p><p className="text-xs text-slate-500">Permite que clientes agendem com este profissional pelo link público.</p></div>
+                                <div>
+                                    <p className="font-bold text-slate-800">Liberar Agenda Online?</p>
+                                    <p className="text-xs text-slate-500">Permite que clientes agendem com este profissional pelo link público.</p>
+                                </div>
                                 <ToggleSwitch on={!!prof.online_booking} onClick={() => setProf({...prof, online_booking: !prof.online_booking})} />
                             </div>
                         </Card>
                     )}
 
+                    {/* TAB: PERMISSOES */}
                     {activeTab === 'permissoes' && (
-                        <Card title="Permissões Manuais de Acesso" className="animate-in fade-in duration-300 max-w-2xl mx-auto">
+                        <Card title="Permissões de Acesso ao Sistema" className="animate-in fade-in duration-300 max-w-2xl mx-auto">
                             <div className="space-y-4">
                                 <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 flex gap-3 mb-4">
                                     <Shield size={20} className="text-indigo-600 flex-shrink-0" />
-                                    <p className="text-xs text-indigo-700 leading-relaxed">Nota: Se o nível for <b>Administrador</b>, estas permissões individuais são ignoradas e o acesso é total.</p>
+                                    <p className="text-xs text-indigo-700 leading-relaxed">As permissões abaixo definem o nível de acesso do colaborador. Administradores têm acesso total por padrão.</p>
                                 </div>
                                 {[
                                     { key: 'view_calendar', label: 'Ver agenda de terceiros', sub: 'Pode visualizar horários de outros profissionais.' },
@@ -395,13 +414,20 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                     { key: 'edit_stock', label: 'Controle de Estoque', sub: 'Pode lançar entradas e saídas de produtos.' }
                                 ].map(item => (
                                     <div key={item.key} className="flex items-center justify-between p-5 hover:bg-slate-50 rounded-3xl transition-colors border border-transparent hover:border-slate-100">
-                                        <div><p className="font-bold text-slate-800 text-sm">{item.label}</p><p className="text-xs text-slate-400 font-medium">{item.sub}</p></div>
-                                        <ToggleSwitch on={!!prof.permissions?.[item.key]} onClick={() => updatePermission(item.key, !prof.permissions?.[item.key])} />
+                                        <div>
+                                            <p className="font-bold text-slate-800 text-sm">{item.label}</p>
+                                            <p className="text-xs text-slate-400 font-medium">{item.sub}</p>
+                                        </div>
+                                        <ToggleSwitch 
+                                            on={!!prof.permissions?.[item.key]} 
+                                            onClick={() => updatePermission(item.key, !prof.permissions?.[item.key])} 
+                                        />
                                     </div>
                                 ))}
                             </div>
                         </Card>
                     )}
+
                 </div>
             </main>
         </div>

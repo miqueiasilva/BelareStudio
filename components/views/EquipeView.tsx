@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
     Plus, Users, Loader2, Search, ArrowRight, User as UserIcon, 
     Briefcase, ShieldCheck, ShieldAlert, RefreshCw, AlertTriangle,
-    LayoutGrid, List, Phone, Mail, Edit2, Trash2, MoreVertical, Shield
+    LayoutGrid, List, Phone, Mail, Edit2, Trash2, MoreVertical
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { LegacyProfessional } from '../../types';
@@ -71,6 +71,10 @@ const EquipeView: React.FC = () => {
         };
     }, []);
 
+    /**
+     * FUNÇÃO CORRIGIDA: handleSave
+     * Garante que o ID não seja enviado em novos registros para que o banco gere automaticamente.
+     */
     const handleSave = async (profData: any) => {
         if (!profData.name || profData.name.trim() === "") {
             setToast({ message: 'O nome do profissional é obrigatório.', type: 'error' });
@@ -82,6 +86,7 @@ const EquipeView: React.FC = () => {
             const isEditing = !!payload.id;
 
             if (isEditing) {
+                // UPDATE
                 const { error } = await supabase
                     .from('professionals')
                     .update(payload)
@@ -90,7 +95,9 @@ const EquipeView: React.FC = () => {
                 if (error) throw error;
                 setToast({ message: 'Profissional atualizado com sucesso!', type: 'success' });
             } else {
+                // INSERT - REMOÇÃO EXPLÍCITA DO ID PARA AUTO-GERAÇÃO NO BANCO
                 delete payload.id; 
+                
                 const { data, error } = await supabase
                     .from('professionals')
                     .insert([payload])
@@ -99,6 +106,8 @@ const EquipeView: React.FC = () => {
                 
                 if (error) throw error;
                 setToast({ message: 'Novo colaborador cadastrado!', type: 'success' });
+                
+                // Se o componente de detalhe estiver aberto e for uma criação, sincroniza o ID
                 if (data) setSelectedProf(data as any);
             }
             fetchProfessionals();
@@ -108,17 +117,21 @@ const EquipeView: React.FC = () => {
         }
     };
 
+    /**
+     * FUNÇÃO CORRIGIDA: safeCreateNew
+     * Inserção imediata de placeholder sem enviar ID.
+     */
     const safeCreateNew = async () => {
         try {
             const { data, error } = await supabase
                 .from('professionals')
                 .insert([{ 
                     name: 'Novo Profissional', 
-                    role: 'collaborator', // Default role
+                    role: 'Colaborador', 
                     active: true, 
                     online_booking: true, 
                     commission_rate: 30 
-                }])
+                }]) // Note: id omitido propositalmente
                 .select()
                 .single();
 
@@ -182,6 +195,7 @@ const EquipeView: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-4">
+                    {/* Toggle de Visualização */}
                     <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
                         <button 
                             onClick={() => setViewMode('grid')}
@@ -249,6 +263,7 @@ const EquipeView: React.FC = () => {
                             </div>
                         )
                     ) : viewMode === 'grid' ? (
+                        /* VIEW: GRID (CARDS) */
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
                             {filteredProfessionals.map(prof => (
                                 <div key={prof.id} className="bg-white rounded-[32px] border border-slate-200 p-8 shadow-sm hover:shadow-xl transition-all group relative overflow-hidden flex flex-col items-center text-center">
@@ -263,14 +278,9 @@ const EquipeView: React.FC = () => {
                                                 <UserIcon size={40} className="text-slate-300" />
                                             )}
                                         </div>
-                                        <div className={`absolute -bottom-1 -right-1 p-1.5 rounded-full border-2 border-white shadow-sm ${prof.role === 'admin' ? 'bg-orange-500 text-white' : 'bg-blue-500 text-white'}`} title={prof.role === 'admin' ? 'Administrador' : 'Colaborador'}>
-                                            <Shield size={12} />
-                                        </div>
                                     </div>
                                     <h3 className="text-xl font-black text-slate-800 mb-1 leading-tight">{prof.name}</h3>
-                                    <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-lg mb-6 ${prof.role === 'admin' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                                        {prof.role === 'admin' ? 'Administrador' : 'Colaborador'}
-                                    </span>
+                                    <p className="text-slate-400 font-bold mb-6 uppercase tracking-widest text-[9px]">{prof.role || 'Colaborador'}</p>
                                     
                                     <div className="mt-auto w-full pt-4 border-t border-slate-50 flex items-center justify-center gap-6">
                                         <div className="text-center">
@@ -289,12 +299,12 @@ const EquipeView: React.FC = () => {
                             ))}
                         </div>
                     ) : (
+                        /* VIEW: LISTA (TABELA) */
                         <div className="bg-white rounded-[32px] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in duration-300">
                             <table className="w-full text-left text-sm border-collapse">
                                 <thead>
                                     <tr className="bg-slate-50/50 border-b border-slate-100">
                                         <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Profissional</th>
-                                        <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Acesso</th>
                                         <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Status</th>
                                         <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Contato</th>
                                         <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Ações</th>
@@ -314,14 +324,9 @@ const EquipeView: React.FC = () => {
                                                     </div>
                                                     <div>
                                                         <p className="font-bold text-slate-800 leading-none mb-1 group-hover:text-orange-600 transition-colors">{prof.name}</p>
-                                                        <p className="text-[10px] text-slate-400 font-medium truncate max-w-[150px]">{(prof as any).email || 'Sem email'}</p>
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{prof.role || 'Colaborador'}</p>
                                                     </div>
                                                 </div>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg ${prof.role === 'admin' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-blue-50 text-blue-600 border border-blue-100'}`}>
-                                                    {prof.role === 'admin' ? 'Admin' : 'Colab'}
-                                                </span>
                                             </td>
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
@@ -336,6 +341,10 @@ const EquipeView: React.FC = () => {
                                                     <div className="flex items-center gap-2 text-slate-500">
                                                         <Phone size={12} className="text-slate-300" />
                                                         <span className="text-xs font-medium">{(prof as any).phone || '---'}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 text-slate-500">
+                                                        <Mail size={12} className="text-slate-300" />
+                                                        <span className="text-xs font-medium">{(prof as any).email || '---'}</span>
                                                     </div>
                                                 </div>
                                             </td>
