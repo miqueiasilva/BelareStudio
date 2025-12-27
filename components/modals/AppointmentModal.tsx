@@ -1,43 +1,52 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { LegacyAppointment, Client, LegacyProfessional, LegacyService } from '../../types';
 import { clients as initialClients, services as serviceMap, professionals } from '../../data/mockData';
-import { ChevronLeft, User, Calendar, Tag, Clock, DollarSign, Info, PlusCircle, Repeat, X, Loader2, AlertCircle, Briefcase, CheckSquare, Mail, Trash2, Edit2, Save as SaveIcon } from 'lucide-react';
+import { ChevronLeft, User, Calendar, Tag, Clock, DollarSign, Info, PlusCircle, Repeat, X, Loader2, AlertCircle, Briefcase, CheckSquare, Mail, Trash2, Edit2 } from 'lucide-react';
 import { format, addMinutes } from 'date-fns';
 import SelectionModal from './SelectionModal';
 import ClientModal from './ClientModal';
-import { supabase } from '../../services/supabaseClient';
 
 const services = Object.values(serviceMap);
 
 interface AppointmentModalProps {
   appointment: LegacyAppointment | Partial<LegacyAppointment> | null;
   onClose: () => void;
-  onSave?: (appointment: LegacyAppointment) => void;
-  onSuccess?: () => void;
+  onSave: (appointment: LegacyAppointment) => void;
 }
 
-const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClose, onSave, onSuccess }) => {
+const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClose, onSave }) => {
+  // Initialize state with appointment data or defaults
   const [formData, setFormData] = useState<Partial<LegacyAppointment>>({
     status: 'agendado',
     ...appointment,
     start: appointment?.start || new Date(),
   });
   
+  // Local Clients State to support adding new ones on the fly
   const [localClients, setLocalClients] = useState<Client[]>(initialClients);
+
+  // State for multiple services
   const [selectedServices, setSelectedServices] = useState<LegacyService[]>(
     appointment?.service ? [appointment.service] : []
   );
 
+  // Editable Totals
   const [manualPrice, setManualPrice] = useState<number>(0);
   const [manualDuration, setManualDuration] = useState<number>(0);
+
   const [selectionModal, setSelectionModal] = useState<'client' | 'service' | 'professional' | null>(null);
+  
+  // New State for Client Creation Flow
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
+
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // New state for email validation
   const [clientEmail, setClientEmail] = useState('');
   const [emailError, setEmailError] = useState('');
 
+  // Reset form data when appointment prop changes
   useEffect(() => {
       setFormData({
           status: 'agendado',
@@ -48,6 +57,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
       const initialServices = appointment?.service ? [appointment.service] : [];
       setSelectedServices(initialServices);
       
+      // Initialize manual values from the appointment if editing, or 0 if new
       if (appointment?.service) {
           setManualPrice(appointment.service.price);
           setManualDuration(appointment.service.duration);
@@ -61,12 +71,15 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
       setEmailError('');
   }, [appointment]);
 
+  // Update formData whenever selectedServices changes
   useEffect(() => {
     if (selectedServices.length > 0) {
+        // We use the first service as the "primary" one for type compatibility
         setFormData(prev => ({ ...prev, service: selectedServices[0] }));
     }
   }, [selectedServices]);
 
+  // Sync manual totals with selected services ONLY when services change
   useEffect(() => {
       if (selectedServices.length > 0) {
           const price = selectedServices.reduce((acc, s) => acc + s.price, 0);
@@ -76,6 +89,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
       }
   }, [selectedServices]);
 
+  // Update End Time based on Manual Duration
   useEffect(() => {
     if (formData.start && (manualDuration > 0 || manualDuration === 0)) {
         const end = addMinutes(new Date(formData.start), manualDuration);
@@ -85,6 +99,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     }
   }, [formData.start, manualDuration]);
 
+  // Use localClients for selection list so newly created clients appear
   const clientItemsForSelection = useMemo(() => localClients.map(c => ({ ...c, name: c.nome })), [localClients]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -116,25 +131,26 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
 
   const validateEmail = (email: string) => {
-    if (!email) return true;
+    if (!email) return true; // Optional if not strict
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return re.test(email);
   };
 
-  // --- FUNÇÃO handleSave REFORMULADA (BUG FIX: Infinite Loading) ---
   const handleSave = async () => {
     setError(null);
     setEmailError('');
     
-    // 1. Validação Básica
+    // Validation
     if (!formData.client) {
       setError('Por favor, selecione um cliente.');
       return;
     }
+
     if (clientEmail && !validateEmail(clientEmail)) {
         setEmailError('Formato de e-mail inválido.');
         return;
     }
+
     if (selectedServices.length === 0) {
       setError('Por favor, selecione pelo menos um serviço.');
       return;
@@ -147,48 +163,57 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
       setError('Horário inválido.');
       return;
     }
+    
+    if (formData.end && formData.start && formData.end < formData.start) {
+        setError('O horário de término não pode ser anterior ao início.');
+        return;
+    }
 
-    setIsSaving(true); // Trava o botão (Mostra Spinner)
+    if (formData.status === 'concluido' && formData.start > new Date()) {
+        if (!window.confirm("Você está marcando um agendamento futuro como 'Concluído'. Deseja continuar?")) {
+            return;
+        }
+    }
+
+    setIsSaving(true);
     
     try {
-        const payload = {
-            client_name: formData.client?.nome,
-            resource_id: formData.professional.id,
-            professional_name: formData.professional.name,
-            service_name: selectedServices.map(s => s.name).join(', '),
-            value: manualPrice,
-            duration: manualDuration,
-            date: formData.start.toISOString(),
-            status: formData.status,
-            notes: formData.notas,
-            origem: 'interno'
+        // Simulate network delay
+        await new Promise(resolve => setTimeout(resolve, 600));
+        
+        // Construct final object
+        const compositeService: LegacyService = {
+            ...selectedServices[0],
+            name: selectedServices.length > 1 
+                ? `${selectedServices[0].name} + ${selectedServices.length - 1}` 
+                : selectedServices[0].name,
+            price: manualPrice,
+            duration: manualDuration
         };
 
-        let result;
-        if (formData.id) {
-            result = await supabase.from('appointments').update(payload).eq('id', formData.id);
-        } else {
-            result = await supabase.from('appointments').insert([payload]);
-        }
+        const finalClient = { ...formData.client, email: clientEmail };
 
-        if (result.error) throw result.error;
+        const finalAppointment = {
+            ...formData,
+            client: finalClient,
+            service: compositeService,
+            notas: selectedServices.length > 1 
+                ? `${formData.notas || ''} \n[Serviços: ${selectedServices.map(s => s.name).join(', ')}]`
+                : formData.notas
+        } as LegacyAppointment;
+
+        onSave(finalAppointment);
         
-        // 2. SUCESSO: Primeiro atualiza a tela pai, depois fecha o modal
-        if (onSuccess) {
-            await onSuccess();
-        }
-        
-        onClose();
-        
-    } catch (err: any) {
-        console.error("ERRO CRÍTICO AO SALVAR AGENDAMENTO:", err);
-        setError(err.message || "Ocorreu um erro inesperado ao salvar no banco.");
-    } finally {
-        // SEGURANÇA: Sempre destrava o botão, independente de sucesso ou erro
-        setIsSaving(false); 
+    } catch (err) {
+        console.error("Error saving appointment:", err);
+        setError("Ocorreu um erro ao salvar o agendamento.");
+        setIsSaving(false);
     }
   };
   
+  // FIX: Use setTimeout(0) instead of requestAnimationFrame.
+  // This pushes the state update (and component unmount) to the end of the event loop,
+  // ensuring the click event bubble phase is completely finished.
   const handleSelectClient = (client: Client) => {
     setTimeout(() => {
         setFormData(prev => ({ ...prev, client }));
@@ -253,6 +278,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             </div>
           )}
 
+          {/* Client Selection */}
           <div className="space-y-1">
             <label className="text-xs font-bold text-slate-500 uppercase">Cliente <span className="text-red-500">*</span></label>
             <div className="flex items-center gap-3 group cursor-pointer" onClick={() => setSelectionModal('client')}>
@@ -265,6 +291,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             </div>
           </div>
 
+          {/* Email Field (New) */}
           {formData.client && (
             <div className="space-y-1 animate-in slide-in-from-top-2">
                 <label className="text-xs font-bold text-slate-500 uppercase">E-mail de Contato</label>
@@ -285,6 +312,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             </div>
           )}
           
+          {/* Date and Time */}
           <div className="grid grid-cols-2 gap-4">
              <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-500 uppercase">Data</label>
@@ -302,6 +330,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
              </div>
           </div>
 
+          {/* Professional Selection */}
           <div className="space-y-1">
             <label className="text-xs font-bold text-slate-500 uppercase">Profissional <span className="text-red-500">*</span></label>
             <div className="flex items-center gap-3 group cursor-pointer" onClick={() => setSelectionModal('professional')}>
@@ -333,10 +362,14 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
                     )}
                 </div>
             </div>
+            <button className="text-orange-600 text-xs font-semibold flex items-center gap-1 mt-1 hover:underline"><PlusCircle size={14} /> Adicionar Assistente</button>
           </div>
 
+          {/* Service Selection (Multiple) */}
           <div className="space-y-2">
              <label className="text-xs font-bold text-slate-500 uppercase">Serviços <span className="text-red-500">*</span></label>
+             
+             {/* List Selected Services */}
              {selectedServices.map((service, index) => (
                 <div key={index} className="flex items-center justify-between bg-slate-50 p-3 rounded-lg border border-slate-200 group">
                     <div className="flex items-center gap-3">
@@ -353,6 +386,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
                     </button>
                 </div>
              ))}
+
+             {/* Add Button */}
              <button 
                 onClick={() => setSelectionModal('service')}
                 className="w-full py-2 border border-dashed border-blue-300 rounded-lg text-blue-600 text-sm font-semibold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"
@@ -362,8 +397,10 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
              </button>
           </div>
 
+          {/* Stats: Price and Duration (Editable) */}
           <div className="flex items-center gap-4">
               <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 focus-within:border-orange-300 focus-within:ring-2 focus-within:ring-orange-100 transition-all shadow-sm">
+                  {/* FIX: Removed misplaced Send button icon that was causing a "Cannot find name 'Send'" error and was UI-incorrect in the modal form. */}
                   <div className="p-1.5 bg-green-50 rounded text-green-600">
                     <DollarSign className="w-4 h-4" />
                   </div>
@@ -395,6 +432,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
               </div>
           </div>
           
+          {/* Status Selector */}
           <div className="space-y-1">
              <label className="text-xs font-bold text-slate-500 uppercase">Status</label>
              <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-200">
@@ -418,6 +456,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
              </div>
           </div>
 
+          {/* Notes with Character Limit */}
           <div className="space-y-1">
               <div className="flex justify-between items-center">
                   <label className="text-xs font-bold text-slate-500 uppercase">Observações</label>
@@ -438,9 +477,20 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
                   />
               </div>
           </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              <div className="flex items-center gap-2 text-orange-600 font-semibold cursor-pointer hover:opacity-80">
+                <Repeat size={16}/>
+                <span className="text-sm">Repetir agendamento</span>
+              </div>
+          </div>
         </main>
         
         <footer className="p-4 bg-white border-t space-y-3 flex-shrink-0">
+            <p className="text-[10px] text-slate-400 text-center leading-tight">
+                Ao salvar, você confirma que os dados estão corretos. <br/>
+                <a href="#" className="text-orange-600 hover:underline">Ver histórico do cliente</a>
+            </p>
             <div className="flex justify-end items-center gap-3">
                 <button onClick={onClose} className="px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors" disabled={isSaving}>
                     Cancelar
@@ -448,10 +498,9 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
                 <button 
                     onClick={handleSave} 
                     disabled={isSaving}
-                    className="px-6 py-2.5 text-sm font-semibold bg-orange-500 text-white rounded-lg hover:bg-orange-600 shadow-lg shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    className="px-6 py-2.5 text-sm font-semibold bg-orange-500 text-white rounded-lg hover:bg-orange-600 shadow-lg shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <SaveIcon size={20} />}
-                    Salvar Agendamento
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar Agendamento'}
                 </button>
             </div>
         </footer>
@@ -466,7 +515,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             items={
                 selectionModal === 'client' ? clientItemsForSelection :
                 selectionModal === 'service' ? services :
-                professionals
+                professionals // From mockData
             }
             onClose={() => setSelectionModal(null)}
             onSelect={
@@ -474,6 +523,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
                 selectionModal === 'service' ? (item) => handleAddService(services.find(s=>s.id === item.id)!) :
                 (item) => handleSelectProfessional(professionals.find(p => p.id === item.id)!)
             }
+            // Pass the onNew handler only for Clients
             onNew={selectionModal === 'client' ? handleOpenNewClientModal : undefined}
             searchPlaceholder={
                 selectionModal === 'client' ? 'Buscar Cliente...' :
