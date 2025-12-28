@@ -2,24 +2,25 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   UserPlus, Search, Phone, Edit, 
-  Trash2, FileUp, MoreVertical, Cake, Users, History, Loader2, RefreshCw, AlertCircle, ChevronRight
+  Trash2, FileUp, MoreVertical, Cake, Users, History, Loader2, RefreshCw, AlertCircle, ChevronRight, FileSpreadsheet
 } from 'lucide-react';
 import { Client } from '../../types';
 import ClientProfile from './ClientProfile'; 
 import Toast, { ToastType } from '../shared/Toast';
 import { supabase } from '../../services/supabaseClient';
+import ImportClientsModal from '../modals/ImportClientsModal';
 
 const ClientesView: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
   const fetchClients = async () => {
     setLoading(true);
     try {
-        // Busca explícita incluindo photo_url para garantir a exibição do avatar
         const { data, error } = await supabase
             .from('clients')
             .select('*')
@@ -39,16 +40,11 @@ const ClientesView: React.FC = () => {
   const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
   const handleSaveClient = async (clientData: Client) => {
-    console.log("Iniciando persistência de cliente. Dados recebidos:", clientData);
-    
-    // Payload limpo para evitar erros de tipos no Postgres
     const payload = { ...clientData };
     const isEditing = !!payload.id;
 
     try {
         if (isEditing) {
-            // OPERAÇÃO: EDITAR
-            console.log("Modo: EDIÇÃO. ID:", payload.id);
             const { data, error } = await supabase
                 .from('clients')
                 .update(payload)
@@ -57,15 +53,10 @@ const ClientesView: React.FC = () => {
                 .single();
 
             if (error) throw error;
-            
             setClients(prev => prev.map(c => c.id === data.id ? data : c));
             showToast('Perfil atualizado com sucesso!');
         } else {
-            // OPERAÇÃO: NOVO
-            console.log("Modo: CRIAÇÃO (Novo Registro)");
-            // Remove o ID para o banco gerar automaticamente
             delete (payload as any).id;
-            
             const { data, error } = await supabase
                 .from('clients')
                 .insert([payload])
@@ -73,25 +64,18 @@ const ClientesView: React.FC = () => {
                 .single();
 
             if (error) throw error;
-
             setClients(prev => [data, ...prev]);
             showToast('Novo cliente cadastrado com sucesso!');
         }
-        
-        // Fecha o modal após sucesso
         setSelectedClient(null);
-
     } catch (e: any) {
-        console.error("ERRO CRÍTICO NA PERSISTÊNCIA:", e);
-        // Alert exibe o erro real vindo do Supabase (ex: RLS, Constraint, Type error)
-        alert(`Erro ao salvar no banco: ${e.message || 'Erro desconhecido'}`);
+        console.error("ERRO CRÍTICO:", e);
         showToast("Falha ao salvar dados.", 'error');
     }
   };
 
   const filteredClients = useMemo(() => {
     return clients.filter(c => {
-      // FIX: Proteção contra null na busca de clientes
       const name = (c.nome || '').toLowerCase();
       const term = (searchTerm || '').toLowerCase();
       const whatsapp = c.whatsapp || '';
@@ -107,12 +91,20 @@ const ClientesView: React.FC = () => {
         <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
             <Users className="text-orange-500" /> Clientes
         </h1>
-        <button 
-          onClick={() => setSelectedClient({ nome: '', consent: true } as any)}
-          className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-orange-100"
-        >
-          <UserPlus size={18} /> Novo
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setIsImportModalOpen(true)}
+            className="hidden sm:flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition-all shadow-sm"
+          >
+            <FileSpreadsheet size={18} /> Importar
+          </button>
+          <button 
+            onClick={() => setSelectedClient({ nome: '', consent: true } as any)}
+            className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-orange-100"
+          >
+            <UserPlus size={18} /> Novo
+          </button>
+        </div>
       </header>
 
       <div className="p-4 border-b bg-white">
@@ -167,6 +159,12 @@ const ClientesView: React.FC = () => {
                         <ChevronRight className="text-slate-300" size={20} />
                     </div>
                 ))}
+                {filteredClients.length === 0 && (
+                   <div className="p-20 text-center text-slate-400">
+                      <Users size={48} className="mx-auto mb-4 opacity-10" />
+                      <p className="font-bold uppercase tracking-widest text-[10px]">Nenhum cliente encontrado</p>
+                   </div>
+                )}
             </div>
         )}
       </div>
@@ -176,6 +174,13 @@ const ClientesView: React.FC = () => {
           client={selectedClient} 
           onClose={() => setSelectedClient(null)} 
           onSave={handleSaveClient} 
+        />
+      )}
+
+      {isImportModalOpen && (
+        <ImportClientsModal 
+          onClose={() => setIsImportModalOpen(false)} 
+          onSuccess={fetchClients} 
         />
       )}
     </div>
