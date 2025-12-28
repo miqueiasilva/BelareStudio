@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { X, Save, Scissors, DollarSign, Clock, Tag, AlignLeft, Info, Loader2 } from 'lucide-react';
 import { Service } from '../../types';
@@ -13,7 +14,6 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCategorie
     const [formData, setFormData] = useState<any>({
         nome: '',
         preco: 0,
-        comissao_percentual: 50,
         categoria: '',
         descricao: '',
         cor_hex: '#f97316',
@@ -178,22 +178,6 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCategorie
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
-                        {/* Comissão */}
-                        <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-1">
-                                Comissão do Profissional (%) <Info size={10} className="text-slate-300" title="Percentual que o profissional recebe por este serviço" />
-                            </label>
-                            <div className="relative">
-                                <input 
-                                    type="number" 
-                                    value={formData.comissao_percentual} 
-                                    onChange={e => setFormData({...formData, comissao_percentual: parseFloat(e.target.value)})} 
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-bold text-slate-600" 
-                                />
-                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
-                            </div>
-                        </div>
-                        
                         {/* Ativo/Inativo */}
                         <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-4 h-[54px]">
                             <input 

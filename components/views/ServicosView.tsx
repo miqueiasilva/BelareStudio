@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
     Plus, Scissors, Clock, DollarSign, Edit2, Trash2, 
@@ -44,9 +45,10 @@ const ServicosView: React.FC = () => {
         setError(null);
 
         try {
+            // FIX: Seleção explícita de colunas para evitar crash por colunas inexistentes (como comissao_percentual)
             const { data, error: sbError } = await supabase
                 .from('services')
-                .select('*')
+                .select('id, nome, duracao_min, preco, cor_hex, ativo, categoria, descricao')
                 .order('nome')
                 .abortSignal(abortControllerRef.current.signal);
 
@@ -123,12 +125,7 @@ const ServicosView: React.FC = () => {
     };
 
     const handleSaveCategory = async (category: { name: string; color: string }) => {
-        // Para o MVP, as categorias são extraídas dos serviços. 
-        // No futuro, se houver tabela própria, inserimos aqui.
-        // Simulamos a criação apenas exibindo um sucesso e permitindo que o usuário use no ServiceModal.
         setToast({ message: `Categoria "${category.name}" disponível para uso!`, type: 'success' });
-        // Se houver uma tabela de categorias, descomente abaixo:
-        // await supabase.from('categories').insert([category]);
         await fetchServices(); 
     };
 
@@ -164,7 +161,6 @@ const ServicosView: React.FC = () => {
         <div className="h-full flex flex-col bg-slate-50 relative font-sans overflow-hidden">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
-            {/* TOOLBAR HEADER */}
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 z-20">
                 <div className="flex items-center gap-4">
                     <div>
@@ -191,7 +187,6 @@ const ServicosView: React.FC = () => {
                     </div>
                 </div>
 
-                {/* FILTROS CENTRAIS */}
                 <div className="flex-1 max-w-2xl flex items-center gap-2">
                     <div className="relative flex-1 group">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-orange-500 transition-colors" size={18} />
@@ -268,10 +263,7 @@ const ServicosView: React.FC = () => {
                 </div>
             </header>
 
-            {/* MAIN CONTENT AREA */}
             <main className="flex-1 overflow-hidden relative flex flex-col">
-                
-                {/* AÇÕES EM MASSA (BARRA FLUTUANTE) */}
                 {selectedIds.length > 0 && (
                     <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-6 animate-in slide-in-from-top-4 duration-300">
                         <span className="text-xs font-black uppercase tracking-widest">{selectedIds.length} selecionados</span>
@@ -285,7 +277,6 @@ const ServicosView: React.FC = () => {
                 )}
 
                 <div className="flex-1 overflow-auto p-6 scrollbar-hide">
-                    
                     {loading ? (
                         <div className="flex flex-col items-center justify-center h-full text-slate-400">
                             <Loader2 className="animate-spin mb-4 text-orange-500" size={48} />
@@ -299,7 +290,6 @@ const ServicosView: React.FC = () => {
                             <button onClick={() => setIsModalOpen(true)} className="bg-orange-500 text-white px-8 py-3 rounded-2xl font-black shadow-lg shadow-orange-100">Começar Agora</button>
                         </div>
                     ) : viewMode === 'list' ? (
-                        /* VIEW: LISTA (TABELA PROFISSIONAL) */
                         <div className="bg-white rounded-[32px] border border-slate-200 overflow-hidden shadow-sm">
                             <table className="w-full text-left text-sm border-collapse">
                                 <thead>
@@ -367,7 +357,6 @@ const ServicosView: React.FC = () => {
                             </table>
                         </div>
                     ) : (
-                        /* VIEW: KANBAN (AGRUPADO POR CATEGORIA) */
                         <div className="flex gap-6 min-h-full items-start overflow-x-auto pb-8 scrollbar-hide">
                             {Object.entries(groupedServices).map(([cat, items]) => (
                                 <div key={cat} className="flex-shrink-0 w-80 flex flex-col max-h-full">
@@ -411,7 +400,6 @@ const ServicosView: React.FC = () => {
                 </div>
             </main>
 
-            {/* MODAIS DE CADASTRO/EDIÇÃO */}
             {isModalOpen && (
                 <ServiceModal 
                     service={editingService}
