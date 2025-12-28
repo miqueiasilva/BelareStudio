@@ -1,13 +1,13 @@
-
 import { supabase } from './services/supabaseClient';
 
 /**
- * Script de população do catálogo de serviços do BelaFlow.
- * Mapeia os campos do JSON para as colunas reais do banco de dados (Postgres).
- * Utiliza batch upsert para performance e prevenção de duplicidade baseada no nome.
+ * Script de População (Seed) do Catálogo de Serviços - BelaFlow
+ * 
+ * Este script realiza um 'upsert' em lote para inserir novos serviços
+ * ou atualizar preços/durações de serviços já existentes (baseado no nome).
  */
 
-const servicesRawData = [
+const servicesData = [
   // --- CATEGORIA: CÍLIOS & OLHAR ---
   { category: "Cílios & Olhar", name: "Extensão de Cílios Fio A Fio", duration: 150, price: 130.00 },
   { category: "Cílios & Olhar", name: "Fox Eyes", duration: 150, price: 140.00 },
@@ -131,45 +131,50 @@ const servicesRawData = [
   { category: "Cursos", name: "Especialização em Design", duration: 540, price: 597.00 }
 ];
 
+/**
+ * Mapeamento de cores para categorias para manter a UI consistente
+ */
+const categoryColors: Record<string, string> = {
+  "Cílios & Olhar": "#3b82f6", // Blue
+  "Sobrancelhas": "#8b5cf6",   // Purple
+  "Epilação Facial": "#ec4899", // Pink
+  "Depilação Feminina": "#f43f5e", // Rose
+  "Depilação Masculina": "#6366f1", // Indigo
+  "Massagem & Bem-Estar": "#10b981", // Emerald
+  "Estética Facial & Corporal": "#06b6d4", // Cyan
+  "Lábios": "#f97316", // Orange
+  "Cursos": "#0f172a" // Slate
+};
+
+/**
+ * Função principal de Seed
+ */
 export async function seedCatalog() {
-  console.log("🚀 Iniciando seed do catálogo de serviços...");
+    console.log("🚀 Iniciando seed do catálogo de serviços...");
+    
+    // Mapeia o JSON para os nomes de colunas reais do banco (Postgres)
+    const mappedData = servicesData.map(s => ({
+        nome: s.name,
+        categoria: s.category,
+        duracao_min: s.duration,
+        preco: s.price,
+        ativo: true,
+        cor_hex: categoryColors[s.category] || "#f97316",
+        descricao: `Serviço profissional de ${s.name} na categoria ${s.category}.`
+    }));
 
-  // Cores sugeridas por categoria para melhorar a UI
-  const categoryColors: Record<string, string> = {
-    "Cílios & Olhar": "#3b82f6", // Blue
-    "Sobrancelhas": "#8b5cf6",   // Purple
-    "Epilação Facial": "#ec4899", // Pink
-    "Depilação Feminina": "#f43f5e", // Rose
-    "Depilação Masculina": "#6366f1", // Indigo
-    "Massagem & Bem-Estar": "#10b981", // Emerald
-    "Estética Facial & Corporal": "#06b6d4", // Cyan
-    "Lábios": "#f97316", // Orange
-    "Cursos": "#1e293b" // Slate
-  };
+    try {
+        // Upsert performático em lote ignorando/atualizando conflitos de nome
+        const { data, error } = await supabase
+            .from('services')
+            .upsert(mappedData, { onConflict: 'nome' });
 
-  const mappedData = servicesRawData.map(s => ({
-    nome: s.name,
-    categoria: s.category,
-    duracao_min: s.duration,
-    preco: s.price,
-    ativo: true,
-    cor_hex: categoryColors[s.category] || "#64748b",
-    descricao: `Procedimento de ${s.name} na categoria ${s.category}.`
-  }));
+        if (error) throw error;
 
-  try {
-    // Upsert baseado no 'nome' (supondo que o nome seja único no catálogo)
-    // Se houver conflito de nome, ele atualizará os dados (preço, duração, etc).
-    const { data, error } = await supabase
-      .from('services')
-      .upsert(mappedData, { onConflict: 'nome' });
-
-    if (error) throw error;
-
-    console.log(`✅ Sucesso! ${mappedData.length} serviços inseridos/atualizados.`);
-    return { success: true, count: mappedData.length };
-  } catch (err: any) {
-    console.error("❌ Erro no Seed:", err.message);
-    return { success: false, error: err.message };
-  }
+        console.log(`✅ Sucesso! ${mappedData.length} serviços processados.`);
+        return { success: true, count: mappedData.length };
+    } catch (err: any) {
+        console.error("❌ Falha no Seed:", err.message);
+        return { success: false, error: err.message };
+    }
 }
