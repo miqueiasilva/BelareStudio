@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { 
     Plus, Users, Loader2, Search, ArrowRight, User as UserIcon, 
@@ -106,10 +107,13 @@ const EquipeView: React.FC = () => {
         );
     }
 
-    const filteredProfessionals = professionals.filter(p => 
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.role && p.role.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+    const filteredProfessionals = professionals.filter(p => {
+        // FIX: Proteção contra null na busca de profissionais
+        const name = (p.name || '').toLowerCase();
+        const role = (p.role || '').toLowerCase();
+        const term = (searchTerm || '').toLowerCase();
+        return name.includes(term) || role.includes(term);
+    });
 
     return (
         <div className="h-full flex flex-col bg-slate-50 relative font-sans">

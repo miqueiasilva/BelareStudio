@@ -89,10 +89,15 @@ const ClientesView: React.FC = () => {
     }
   };
 
-  const filteredClients = clients.filter(c => 
-    c.nome.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    c.whatsapp?.includes(searchTerm)
-  );
+  const filteredClients = useMemo(() => {
+    return clients.filter(c => {
+      // FIX: Proteção contra null na busca de clientes
+      const name = (c.nome || '').toLowerCase();
+      const term = (searchTerm || '').toLowerCase();
+      const whatsapp = c.whatsapp || '';
+      return name.includes(term) || whatsapp.includes(searchTerm);
+    });
+  }, [clients, searchTerm]);
 
   return (
     <div className="h-full flex flex-col bg-slate-50 font-sans">
@@ -146,7 +151,7 @@ const ClientesView: React.FC = () => {
                                         alt={client.nome} 
                                     />
                                 ) : (
-                                    client.nome.charAt(0)
+                                    client.nome?.charAt(0) || '?'
                                 )}
                             </div>
                             <div>

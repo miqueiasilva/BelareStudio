@@ -83,14 +83,21 @@ const ServicosView: React.FC = () => {
 
     // --- Derived Data ---
     const categories = useMemo(() => {
+        // Proteção contra nulos na categoria
         const cats = services.map(s => (s as any).categoria || 'Geral');
-        return Array.from(new Set(cats)).sort();
+        // FIX: Explicitly cast Array.from result to string[] to resolve the "Property 'localeCompare' does not exist on type 'unknown'" error.
+        return (Array.from(new Set(cats)) as string[]).sort((a, b) => a.localeCompare(b));
     }, [services]);
 
     const filteredServices = useMemo(() => {
         return services.filter(s => {
-            const matchesSearch = s.nome.toLowerCase().includes(searchTerm.toLowerCase());
-            const matchesCat = filterCategory === 'all' || (s as any).categoria === filterCategory;
+            // FIX: Proteção contra null/undefined usando fallback de string vazia antes do toLowerCase()
+            const name = (s.nome || '').toLowerCase();
+            const term = (searchTerm || '').toLowerCase();
+            const matchesSearch = name.includes(term);
+            
+            const category = (s as any).categoria || 'Geral';
+            const matchesCat = filterCategory === 'all' || category === filterCategory;
             return matchesSearch && matchesCat;
         });
     }, [services, searchTerm, filterCategory]);
