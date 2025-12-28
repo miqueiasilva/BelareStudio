@@ -131,10 +131,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const isMounted = useRef(true);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
     const abortControllerRef = useRef<AbortController | null>(null);
+    // Controla o ID da última requisição disparada para evitar race condition no finally
+    const lastRequestId = useRef(0);
 
     useEffect(() => {
         isMounted.current = true;
         fetchResources();
+        
         const channel = supabase.channel('agenda-live')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
                 if (isMounted.current) fetchAppointments();
@@ -143,10 +146,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 if (isMounted.current) fetchResources();
             })
             .subscribe();
+
         return () => {
             isMounted.current = false;
+            // Limpa o abort controller se houver
             if (abortControllerRef.current) abortControllerRef.current.abort();
-            supabase.removeChannel(channel);
+            // Desinscreve e remove o canal de forma limpa
+            supabase.removeChannel(channel).catch(console.error);
         };
     }, []);
 
@@ -158,7 +164,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     const fetchResources = async () => {
         try {
-            // Seleciona incluindo order_index e ordena por ele
             const { data, error } = await supabase
                 .from('professionals')
                 .select('id, name, photo_url, role, order_index')
@@ -171,7 +176,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     name: p.name,
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
                     role: p.role,
-                    order_index: p.order_index // Mantemos no objeto para facilitar a troca
+                    order_index: p.order_index
                 }));
                 setResources(mapped);
             }
@@ -180,13 +185,26 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     const fetchAppointments = async () => {
         if (!isMounted.current) return;
+        
+        // Atribui um ID único para esta tentativa de fetch
+        const requestId = ++lastRequestId.current;
+
+        // Aborta requisição anterior pendente
         if (abortControllerRef.current) abortControllerRef.current.abort();
         abortControllerRef.current = new AbortController();
-        setIsLoadingData(true);
+
+        setIsLoadingData(requestId === lastRequestId.current);
+
         try {
-            const { data, error } = await supabase.from('appointments').select('*').abortSignal(abortControllerRef.current.signal);
+            const { data, error } = await supabase
+                .from('appointments')
+                .select('*')
+                .abortSignal(abortControllerRef.current.signal);
+
             if (error) throw error;
-            if (data && isMounted.current) {
+            
+            // Só atualiza o estado se esta ainda for a requisição mais recente e o componente estiver montado
+            if (data && isMounted.current && requestId === lastRequestId.current) {
                 const mapped = data.map(row => {
                     const start = new Date(row.date);
                     const dur = row.duration || 30;
@@ -204,13 +222,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 setAppointments(mapped);
             }
         } catch (e: any) {
-            if (e.name !== 'AbortError') console.error("Fetch error:", e);
-        } finally { if (isMounted.current) setIsLoadingData(false); }
+            if (e.name !== 'AbortError' && isMounted.current) {
+                console.error("Fetch error:", e);
+                setToast({ message: 'Erro ao sincronizar agenda.', type: 'error' });
+            }
+        } finally { 
+            // Só remove o loading se esta for a requisição atual
+            if (isMounted.current && requestId === lastRequestId.current) {
+                setIsLoadingData(false); 
+            }
+        }
     };
 
     const persistProfessionalOrder = async (pA: any, pB: any) => {
         try {
-            // Upsert dos dois registros com os índices trocados
             const { error } = await supabase
                 .from('professionals')
                 .upsert([
@@ -227,44 +252,28 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const moverEsq = (index: number) => {
         if (index === 0) return;
         const newOrder = [...orderedProfessionals] as any[];
-        
-        // Elementos envolvidos
         const currentProf = { ...newOrder[index] };
         const neighborProf = { ...newOrder[index - 1] };
-
-        // Troca os índices de ordenação
         const tempIndex = currentProf.order_index;
         currentProf.order_index = neighborProf.order_index;
         neighborProf.order_index = tempIndex;
-
-        // Atualiza UI instantaneamente
         newOrder[index] = neighborProf;
         newOrder[index - 1] = currentProf;
         setOrderedProfessionals(newOrder);
-
-        // Persiste no Banco
         persistProfessionalOrder(currentProf, neighborProf);
     };
 
     const moverDir = (index: number) => {
         if (index === orderedProfessionals.length - 1) return;
         const newOrder = [...orderedProfessionals] as any[];
-        
-        // Elementos envolvidos
         const currentProf = { ...newOrder[index] };
         const neighborProf = { ...newOrder[index + 1] };
-
-        // Troca os índices de ordenação
         const tempIndex = currentProf.order_index;
         currentProf.order_index = neighborProf.order_index;
         neighborProf.order_index = tempIndex;
-
-        // Atualiza UI instantaneamente
         newOrder[index] = neighborProf;
         newOrder[index + 1] = currentProf;
         setOrderedProfessionals(newOrder);
-
-        // Persiste no Banco
         persistProfessionalOrder(currentProf, neighborProf);
     };
 
@@ -286,7 +295,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             setToast({ message: 'Agendamento salvo!', type: 'success' });
             setModalState(null);
             fetchAppointments();
-        } catch (e: any) { setToast({ message: 'Erro ao salvar.', type: 'error' }); } finally { setIsLoadingData(false); }
+        } catch (e: any) { setToast({ message: 'Erro ao salvar.', type: 'error' }); } finally { if(isMounted.current) setIsLoadingData(false); }
     };
 
     const handleSaveBlock = async (block: LegacyAppointment) => {
@@ -301,7 +310,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             setToast({ message: 'Horário bloqueado!', type: 'info' });
             setModalState(null);
             fetchAppointments();
-        } catch (e: any) { setToast({ message: 'Erro ao bloquear.', type: 'error' }); } finally { setIsLoadingData(false); }
+        } catch (e: any) { setToast({ message: 'Erro ao bloquear.', type: 'error' }); } finally { if(isMounted.current) setIsLoadingData(false); }
     };
 
     useEffect(() => { if (resources.length > 0) fetchAppointments(); }, [resources, currentDate]);
@@ -420,7 +429,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
             <div className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar">
                 <div className="min-w-fit">
-                    {/* Header Grid */}
                     <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         <div className="sticky left-0 z-50 bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
                             <Maximize2 size={16} className="text-slate-300" />
@@ -435,7 +443,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                     </div>
                                 </div>
                                 
-                                {/* REORDER CONTROLS */}
                                 {periodType === 'Dia' && col.type === 'professional' && (
                                     <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button 
@@ -458,9 +465,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         ))}
                     </div>
 
-                    {/* Main Grid Body */}
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
-                        {/* Time Column Sticky */}
                         <div className="sticky left-0 z-20 bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
                             {timeSlotsLabels.map(time => (
                                 <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black pt-2 border-b border-slate-100/50 border-dashed bg-white">
@@ -515,7 +520,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 </div>
             </div>
 
-            {/* Modals e Popovers... */}
             {isConfigModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsConfigModalOpen(false)}></div>
