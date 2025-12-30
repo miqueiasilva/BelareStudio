@@ -338,18 +338,52 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           </div>
 
           <div className="flex items-center gap-4">
-              <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+              {/* Preço Manual */}
+              <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 shadow-sm h-[64px]">
                   <div className="p-1.5 bg-green-50 rounded text-green-600"><DollarSign className="w-4 h-4" /></div>
                   <div className="flex flex-col w-full">
                       <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wide">Valor Total</span>
                       <input type="number" value={manualPrice} onChange={(e) => setManualPrice(Number(e.target.value))} className="font-bold text-slate-800 bg-transparent outline-none w-full p-0 border-none focus:ring-0 text-sm" />
                   </div>
               </div>
-               <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+
+              {/* Duração Composta (H:M) - Padronizado com ServicosView */}
+              <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 shadow-sm h-[64px]">
                   <div className="p-1.5 bg-blue-50 rounded text-blue-600"><Clock className="w-4 h-4" /></div>
                   <div className="flex flex-col w-full">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wide">Duração (min)</span>
-                      <input type="number" value={manualDuration} onChange={(e) => setManualDuration(Number(e.target.value))} className="font-bold text-slate-800 bg-transparent outline-none w-full p-0 border-none focus:ring-0 text-sm" />
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wide">Duração</span>
+                      <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-0.5">
+                              <input 
+                                  type="number" 
+                                  min="0"
+                                  value={Math.floor(manualDuration / 60)} 
+                                  onChange={(e) => {
+                                      const h = Math.max(0, parseInt(e.target.value) || 0);
+                                      const m = manualDuration % 60;
+                                      setManualDuration(h * 60 + m);
+                                  }}
+                                  className="w-7 font-black text-slate-800 bg-transparent outline-none p-0 border-none focus:ring-0 text-sm text-center font-mono" 
+                              />
+                              <span className="text-[9px] font-black text-slate-300 uppercase">h</span>
+                          </div>
+                          <span className="font-bold text-slate-200 mx-0.5">:</span>
+                          <div className="flex items-center gap-0.5">
+                              <input 
+                                  type="number" 
+                                  min="0"
+                                  max="59"
+                                  value={manualDuration % 60} 
+                                  onChange={(e) => {
+                                      const h = Math.floor(manualDuration / 60);
+                                      const m = Math.max(0, Math.min(59, parseInt(e.target.value) || 0));
+                                      setManualDuration(h * 60 + m);
+                                  }}
+                                  className="w-7 font-black text-slate-800 bg-transparent outline-none p-0 border-none focus:ring-0 text-sm text-center font-mono" 
+                              />
+                              <span className="text-[9px] font-black text-slate-300 uppercase">m</span>
+                          </div>
+                      </div>
                   </div>
               </div>
           </div>
