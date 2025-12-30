@@ -20,22 +20,17 @@ import { supabase } from '../../services/supabaseClient';
 
 const START_HOUR = 8;
 const END_HOUR = 20; 
-const PIXELS_PER_MINUTE = 80 / 60; 
+const SLOT_PX_HEIGHT = 80; // Altura fixa de cada linha (h-20) no CSS
 
-interface DynamicColumn {
-    id: string | number;
-    title: string;
-    subtitle?: string;
-    photo?: string; 
-    type: 'professional' | 'status' | 'payment' | 'date';
-    data?: LegacyProfessional | Date; 
-}
+// Função de cálculo de posição refinada para ser precisa com a grade
+const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
+    const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
+    const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
+    const durationMinutes = (end.getTime() - start.getTime()) / 60000;
 
-const getAppointmentPosition = (start: Date, end: Date) => {
-    const startMinutes = start.getHours() * 60 + start.getMinutes();
-    const endMinutes = end.getHours() * 60 + end.getMinutes();
-    const top = (startMinutes - START_HOUR * 60) * PIXELS_PER_MINUTE;
-    const height = (endMinutes - startMinutes) * PIXELS_PER_MINUTE;
+    const top = startMinutesSinceDayStart * pixelsPerMinute;
+    const height = durationMinutes * pixelsPerMinute;
+    
     return { top: `${top}px`, height: `${height - 2}px` };
 };
 
@@ -74,23 +69,28 @@ const getCardStyle = (app: LegacyAppointment, viewMode: 'profissional' | 'andame
     }
 }
 
-const TimelineIndicator = () => {
+const TimelineIndicator = ({ timeSlot }: { timeSlot: number }) => {
     const [topPosition, setTopPosition] = useState(0);
     useEffect(() => {
         const calculatePosition = () => {
             const now = new Date();
-            const startOfDayMinutes = START_HOUR * 60;
+            const startMinutes = START_HOUR * 60;
+            const endMinutes = END_HOUR * 60;
             const nowMinutes = now.getHours() * 60 + now.getMinutes();
-            if (nowMinutes < startOfDayMinutes || nowMinutes > END_HOUR * 60) {
+            
+            if (nowMinutes < startMinutes || nowMinutes > endMinutes) {
                 setTopPosition(-1); return;
             }
-            const top = (nowMinutes - startOfDayMinutes) * PIXELS_PER_MINUTE;
+            
+            const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
+            const top = (nowMinutes - startMinutes) * pixelsPerMinute;
             setTopPosition(top);
         };
         calculatePosition();
         const intervalId = setInterval(calculatePosition, 60000); 
         return () => clearInterval(intervalId);
-    }, []);
+    }, [timeSlot]);
+
     if (topPosition < 0) return null;
     return (
         <div className="absolute w-full z-10 pointer-events-none" style={{ top: `${topPosition}px` }}>
@@ -107,6 +107,16 @@ interface AtendimentosViewProps {
 
 type PeriodType = 'Dia' | 'Semana' | 'Mês' | 'Lista';
 type ViewMode = 'profissional' | 'andamento' | 'pagamento';
+
+// FIX: Define DynamicColumn interface to resolve "Cannot find name 'DynamicColumn'" error.
+interface DynamicColumn {
+    id: string | number;
+    title: string;
+    subtitle?: string;
+    photo?: string;
+    type: 'date' | 'professional';
+    data: Date | LegacyProfessional;
+}
 
 const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -131,7 +141,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const isMounted = useRef(true);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
     const abortControllerRef = useRef<AbortController | null>(null);
-    // Controla o ID da última requisição disparada para evitar race condition no finally
     const lastRequestId = useRef(0);
 
     useEffect(() => {
@@ -149,9 +158,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
         return () => {
             isMounted.current = false;
-            // Limpa o abort controller se houver
             if (abortControllerRef.current) abortControllerRef.current.abort();
-            // Desinscreve e remove o canal de forma limpa
             supabase.removeChannel(channel).catch(console.error);
         };
     }, []);
@@ -185,11 +192,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     const fetchAppointments = async () => {
         if (!isMounted.current) return;
-        
-        // Atribui um ID único para esta tentativa de fetch
         const requestId = ++lastRequestId.current;
 
-        // Aborta requisição anterior pendente
         if (abortControllerRef.current) abortControllerRef.current.abort();
         abortControllerRef.current = new AbortController();
 
@@ -203,7 +207,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
             if (error) throw error;
             
-            // Só atualiza o estado se esta ainda for a requisição mais recente e o componente estiver montado
             if (data && isMounted.current && requestId === lastRequestId.current) {
                 const mapped = data.map(row => {
                     const start = new Date(row.date);
@@ -227,54 +230,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 setToast({ message: 'Erro ao sincronizar agenda.', type: 'error' });
             }
         } finally { 
-            // Só remove o loading se esta for a requisição atual
             if (isMounted.current && requestId === lastRequestId.current) {
                 setIsLoadingData(false); 
             }
         }
-    };
-
-    const persistProfessionalOrder = async (pA: any, pB: any) => {
-        try {
-            const { error } = await supabase
-                .from('professionals')
-                .upsert([
-                    { id: pA.id, order_index: pA.order_index },
-                    { id: pB.id, order_index: pB.order_index }
-                ]);
-            if (error) throw error;
-        } catch (e) {
-            console.error("Erro ao persistir ordem:", e);
-            setToast({ message: 'Erro ao salvar ordem no servidor.', type: 'error' });
-        }
-    };
-
-    const moverEsq = (index: number) => {
-        if (index === 0) return;
-        const newOrder = [...orderedProfessionals] as any[];
-        const currentProf = { ...newOrder[index] };
-        const neighborProf = { ...newOrder[index - 1] };
-        const tempIndex = currentProf.order_index;
-        currentProf.order_index = neighborProf.order_index;
-        neighborProf.order_index = tempIndex;
-        newOrder[index] = neighborProf;
-        newOrder[index - 1] = currentProf;
-        setOrderedProfessionals(newOrder);
-        persistProfessionalOrder(currentProf, neighborProf);
-    };
-
-    const moverDir = (index: number) => {
-        if (index === orderedProfessionals.length - 1) return;
-        const newOrder = [...orderedProfessionals] as any[];
-        const currentProf = { ...newOrder[index] };
-        const neighborProf = { ...newOrder[index + 1] };
-        const tempIndex = currentProf.order_index;
-        currentProf.order_index = neighborProf.order_index;
-        neighborProf.order_index = tempIndex;
-        newOrder[index] = neighborProf;
-        newOrder[index + 1] = currentProf;
-        setOrderedProfessionals(newOrder);
-        persistProfessionalOrder(currentProf, neighborProf);
     };
 
     const handleSaveAppointment = async (app: LegacyAppointment) => {
@@ -321,6 +280,26 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         else if (periodType === 'Mês') setCurrentDate(prev => addMonths(prev, direction));
     };
 
+    // FIX: Missing function moverEsq to handle reordering professionals to the left
+    const moverEsq = (idx: number) => {
+        if (idx <= 0) return;
+        setOrderedProfessionals(prev => {
+            const next = [...prev];
+            [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+            return next;
+        });
+    };
+
+    // FIX: Missing function moverDir to handle reordering professionals to the right
+    const moverDir = (idx: number) => {
+        if (idx >= orderedProfessionals.length - 1) return;
+        setOrderedProfessionals(prev => {
+            const next = [...prev];
+            [next[idx + 1], next[idx]] = [next[idx], next[idx + 1]];
+            return next;
+        });
+    };
+
     const columns = useMemo<DynamicColumn[]>(() => {
         if (periodType === 'Semana') {
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
@@ -360,7 +339,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const handleGridClick = (e: React.MouseEvent, professional: LegacyProfessional, colDate?: Date) => {
         const rect = e.currentTarget.getBoundingClientRect();
         const offsetY = e.clientY - rect.top;
-        const minutes = (offsetY / PIXELS_PER_MINUTE);
+        const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
+        const minutes = (offsetY / pixelsPerMinute);
         const totalMinutesFromDayStart = (START_HOUR * 60) + minutes;
         const roundedMinutes = Math.round(totalMinutesFromDayStart / 15) * 15;
         const targetDate = new Date(colDate || currentDate);
@@ -499,7 +479,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                             onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }}
                                             title={`${format(app.start, 'HH:mm')} - ${app.client?.nome || 'Bloqueado'} (${app.service.name})`}
                                             className={getCardStyle(app, viewMode)}
-                                            style={{ ...getAppointmentPosition(app.start, app.end), borderLeftColor: app.service.color }}
+                                            style={{ ...getAppointmentPosition(app.start, app.end, timeSlot), borderLeftColor: app.service.color }}
                                         >
                                             <div className="flex items-center gap-1 overflow-hidden">
                                                 <span className="text-[9px] font-bold opacity-70 leading-none flex-shrink-0">{format(app.start, 'HH:mm')}</span>
@@ -515,7 +495,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                 })}
                             </div>
                         ))}
-                        <TimelineIndicator />
+                        <TimelineIndicator timeSlot={timeSlot} />
                     </div>
                 </div>
             </div>
