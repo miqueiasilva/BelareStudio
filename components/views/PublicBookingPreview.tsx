@@ -20,7 +20,7 @@ const DEFAULT_LOGO = "https://ui-avatars.com/api/?name=BelaFlow&background=rando
 
 const ServiceItem = ({ service, isSelected, onToggle }: any) => (
     <div 
-        onClick={() => onToggle(service)}
+        onClick={(e) => { e.stopPropagation(); onToggle(service); }}
         className={`p-4 flex justify-between items-center border-b border-slate-50 last:border-0 cursor-pointer transition-all active:scale-[0.98] ${isSelected ? 'bg-orange-50/50' : 'hover:bg-slate-50'}`}
     >
         <div className="flex-1 pr-4">
@@ -47,24 +47,29 @@ const ServiceItem = ({ service, isSelected, onToggle }: any) => (
 );
 
 const AccordionCategory = ({ category, services, selectedIds, onToggleService }: any) => {
-    const [isOpen, setIsOpen] = useState(true);
+    // DECISÃO UX: Inicia fechado para evitar poluição visual e excesso de rolagem
+    const [isOpen, setIsOpen] = useState(false);
     const selectedCount = services.filter((s: any) => selectedIds.includes(s.id)).length;
 
     return (
-        <div className="mb-4 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="mb-4 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden transition-all duration-200">
             <button 
                 onClick={() => setIsOpen(!isOpen)}
-                className="w-full p-5 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors"
+                className={`w-full p-5 flex items-center justify-between transition-colors ${isOpen ? 'bg-slate-50/50 border-b border-slate-50' : 'bg-white hover:bg-slate-50'}`}
             >
                 <div className="flex items-center gap-3">
-                    <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">{category}</h3>
+                    <h3 className={`font-black text-sm uppercase tracking-widest transition-colors ${isOpen ? 'text-orange-600' : 'text-slate-800'}`}>
+                        {category}
+                    </h3>
                     {selectedCount > 0 && (
-                        <span className="bg-orange-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
+                        <span className="bg-orange-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-in zoom-in">
                             {selectedCount}
                         </span>
                     )}
                 </div>
-                {isOpen ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
+                <div className={`p-1.5 rounded-lg transition-all duration-300 ${isOpen ? 'bg-orange-100 text-orange-600 rotate-180' : 'bg-slate-100 text-slate-400'}`}>
+                    <ChevronDown size={18} />
+                </div>
             </button>
             
             {isOpen && (
@@ -162,7 +167,7 @@ const PublicBookingPreview: React.FC = () => {
 
             const slots: string[] = [];
             
-            // FIX: Replaced date-fns parse with manual hours/minutes extraction to resolve "no exported member 'parse'" error.
+            // Replaced date-fns parse with manual extraction
             const [startH, startM] = businessHours.start.split(':').map(Number);
             const [endH, endM] = businessHours.end.split(':').map(Number);
             
@@ -194,7 +199,7 @@ const PublicBookingPreview: React.FC = () => {
                     slots.push(format(currentPointer, 'HH:mm'));
                 }
 
-                currentPointer = addMinutes(currentPointer, 15); // Passo de 15min para maior flexibilidade
+                currentPointer = addMinutes(currentPointer, 15); 
             }
 
             setAvailableSlots(slots);
@@ -365,7 +370,6 @@ const PublicBookingPreview: React.FC = () => {
 
                             {bookingStep === 2 && (
                                 <div className="space-y-8">
-                                    {/* Mini Calendário Horizontal */}
                                     <div className="space-y-4">
                                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Selecione o Dia</h4>
                                         <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
@@ -391,7 +395,6 @@ const PublicBookingPreview: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    {/* Horários */}
                                     <div className="space-y-4">
                                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Horários Disponíveis</h4>
                                         {isLoadingSlots ? (
