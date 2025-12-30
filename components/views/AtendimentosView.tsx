@@ -21,6 +21,7 @@ import { supabase } from '../../services/supabaseClient';
 const START_HOUR = 8;
 const END_HOUR = 20; 
 const SLOT_PX_HEIGHT = 80; // Altura fixa de cada linha (h-20) no CSS
+const CARD_TOP_OFFSET = 10; // Deslocamento visual para não colar na linha superior
 
 // Função de cálculo de posição refinada para ser precisa com a grade
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
@@ -28,10 +29,10 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
 
-    const top = startMinutesSinceDayStart * pixelsPerMinute;
-    const height = durationMinutes * pixelsPerMinute;
+    const top = (startMinutesSinceDayStart * pixelsPerMinute) + CARD_TOP_OFFSET;
+    const height = (durationMinutes * pixelsPerMinute) - 4; // Ajuste leve na altura para compensar o offset
     
-    return { top: `${top}px`, height: `${height - 2}px` };
+    return { top: `${top}px`, height: `${height}px` };
 };
 
 const getCardStyle = (app: LegacyAppointment, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
