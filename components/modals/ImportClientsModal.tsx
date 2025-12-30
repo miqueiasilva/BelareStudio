@@ -49,16 +49,33 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
           return;
         }
         
-        // Higienização inicial leve
-        const validRows = results.data.filter((row: any) => {
+        // MAPEAMENTO CORRIGIDO (DE-PARA)
+        const validRows = results.data.map((row: any) => {
+           // Mapeia os campos exatos do seu CSV para os nomes do banco de dados
            const nome = row['Nome'] || row['nome'];
-           const tel = row['Telefone 1'] || row['telefone 1'] || row['Telefone'] || row['whatsapp'];
-           return !!(nome && tel);
-        });
+           const apelido = row['Apelido'] || row['apelido'];
+           const rawTel = row['Telefone 1'] || row['telefone 1'] || row['Telefone'] || row['whatsapp'];
+           const sexo = row['Sexo'] || row['sexo'];
+           
+           // Limpa o telefone para conter apenas números
+           const cleanedTel = rawTel ? rawTel.toString().replace(/\D/g, '') : '';
+
+           return {
+             nome: nome?.toString().trim(),
+             apelido: apelido?.toString().trim(),
+             whatsapp: cleanedTel,
+             sexo: sexo?.toString().trim(),
+             user_id: user?.id,
+             consent: true,
+             origem: 'Importação'
+           };
+        }).filter(item => item.nome && item.whatsapp.length >= 8); // Filtra apenas registros válidos
+
+        console.log(`Debug Importação: Foram identificados ${validRows.length} contatos válidos no arquivo.`);
 
         if (validRows.length === 0) {
           setStatus('error');
-          setErrorMsg("Nenhum dado encontrado com os cabeçalhos esperados (Nome, Telefone 1).");
+          setErrorMsg("Nenhum dado encontrado. Certifique-se que as colunas se chamam: Nome, Apelido, Telefone 1, Sexo");
           return;
         }
 
@@ -83,47 +100,20 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
     let processed = 0;
 
     for (let i = 0; i < total; i += BATCH_SIZE) {
-      const chunk = parsedData.slice(i, i + BATCH_SIZE);
-      const batchToInsert: any[] = [];
+      const batchToInsert = parsedData.slice(i, i + BATCH_SIZE);
 
-      // 3. TRATAMENTO DE ERROS POR LINHA
-      chunk.forEach((row) => {
-        try {
-          const nome = (row['Nome'] || row['nome'] || '').toString().trim();
-          const apelido = (row['Apelido'] || row['apelido'] || '').toString().trim();
-          const rawTel = (row['Telefone 1'] || row['telefone 1'] || row['Telefone'] || '').toString();
-          
-          const cleanedTel = rawTel.replace(/\D/g, ''); // Apenas números
+      try {
+        const { error } = await supabase
+          .from('clients')
+          .upsert(batchToInsert, { onConflict: 'whatsapp' });
 
-          if (nome && cleanedTel.length >= 8) {
-            batchToInsert.push({
-              nome,
-              apelido,
-              whatsapp: cleanedTel,
-              user_id: user.id,
-              consent: true,
-              origem: 'Importação'
-            });
-          }
-        } catch (lineError) {
-          console.warn("Linha ignorada devido a erro de formatação:", row);
-        }
-      });
-
-      if (batchToInsert.length > 0) {
-        try {
-          const { error } = await supabase
-            .from('clients')
-            .upsert(batchToInsert, { onConflict: 'whatsapp' });
-
-          if (error) throw error;
-        } catch (dbError: any) {
-          console.error("Erro ao salvar lote:", dbError);
-          // Se o lote falhar, tentamos continuar para o próximo em vez de travar tudo
-        }
+        if (error) throw error;
+      } catch (dbError: any) {
+        console.error("Erro ao salvar lote no Supabase:", dbError);
+        // Continua para o próximo lote para não travar a importação total
       }
 
-      processed += chunk.length;
+      processed += batchToInsert.length;
       const percentage = Math.round((processed / total) * 100);
       
       setProgress({ current: Math.min(processed, total), total, percentage });
@@ -133,8 +123,11 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
     }
 
     setStatus('done');
+    console.log(`Importação Concluída: ${total} contatos processados.`);
+    
+    // ATUALIZA A LISTA IMEDIATAMENTE
     setTimeout(() => {
-      onSuccess();
+      onSuccess(); // Esta função chama o fetchClients() na tela de origem
       onClose();
     }, 1500);
   };
@@ -148,7 +141,7 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
               <Database className="text-orange-500" size={24} />
               Importação Segura
             </h2>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Lotes de {progress.total > 1000 ? 'Alto Desempenho' : '50 registros'}</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Colunas: Nome, Apelido, Telefone 1, Sexo</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
             <X size={24} />
@@ -166,7 +159,7 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
               </div>
               <h3 className="text-lg font-black text-slate-700">Selecionar arquivo</h3>
               <p className="text-xs text-slate-400 mt-2 font-bold uppercase tracking-tighter text-center leading-relaxed">
-                Suporta .CSV ou .TXT<br/>Cabeçalhos: Nome, Apelido, Telefone 1
+                Suporta .CSV ou .TXT<br/>Cabeçalhos esperados: Nome, Telefone 1...
               </p>
               <input type="file" ref={fileInputRef} className="hidden" accept=".csv,.txt" onChange={handleFileSelection} />
             </div>
@@ -180,7 +173,7 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
               </div>
               <div className="text-center w-full max-w-xs">
                 <h3 className="text-lg font-black text-slate-800">
-                  {status === 'parsing' ? 'Lendo arquivo...' : 'Processando em lotes...'}
+                  {status === 'parsing' ? 'Lendo e Mapeando...' : 'Enviando para o Banco...'}
                 </h3>
                 <div className="mt-4 w-full h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
                     <div 
@@ -202,8 +195,8 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
                   <Table size={24} />
                 </div>
                 <div>
-                  <p className="text-lg font-black text-emerald-900 leading-none">{progress.total} registros prontos</p>
-                  <p className="text-xs text-emerald-700 font-bold uppercase tracking-wider mt-1">Validação de estrutura concluída.</p>
+                  <p className="text-lg font-black text-emerald-900 leading-none">{progress.total} contatos lidos</p>
+                  <p className="text-xs text-emerald-700 font-bold uppercase tracking-wider mt-1">Pronto para processar.</p>
                 </div>
               </div>
 
