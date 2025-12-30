@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { 
     format, addDays, isSameDay, startOfDay, addMinutes, 
-    isAfter, isBefore, getDay, parseISO 
+    isAfter, isBefore, getDay, parseISO, subDays 
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
@@ -46,9 +46,9 @@ const ServiceItem = ({ service, isSelected, onToggle }: any) => (
     </div>
 );
 
-const AccordionCategory = ({ category, services, selectedIds, onToggleService }: any) => {
-    // DECISÃO UX: Inicia fechado para evitar poluição visual e excesso de rolagem
-    const [isOpen, setIsOpen] = useState(false);
+const AccordionCategory = ({ category, services, selectedIds, onToggleService, defaultOpen = false }: any) => {
+    // DECISÃO UX: Suporta estado inicial aberto para categorias de destaque
+    const [isOpen, setIsOpen] = useState(defaultOpen);
     const selectedCount = services.filter((s: any) => selectedIds.includes(s.id)).length;
 
     return (
@@ -98,6 +98,7 @@ const PublicBookingPreview: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [studio, setStudio] = useState<any>(null);
     const [services, setServices] = useState<any[]>([]);
+    const [popularServiceIds, setPopularServiceIds] = useState<number[]>([]);
     const [professionals, setProfessionals] = useState<any[]>([]);
     
     // UI State
@@ -130,6 +131,34 @@ const PublicBookingPreview: React.FC = () => {
 
                 const { data: profsData } = await supabase.from('professionals').select('*').eq('active', true).order('order_index');
                 if (profsData) setProfessionals(profsData);
+
+                // --- Lógica Smart Ranking: Buscar Mais Vendidos ---
+                const sixtyDaysAgo = subDays(new Date(), 60).toISOString();
+                const { data: recentApps } = await supabase
+                    .from('appointments')
+                    .select('service_name') // Usando nome para simplicidade de mapeamento
+                    .gte('date', sixtyDaysAgo)
+                    .in('status', ['concluido', 'agendado', 'confirmado', 'confirmado_whatsapp']);
+
+                if (recentApps && recentApps.length > 5) {
+                    const counts: Record<string, number> = {};
+                    recentApps.forEach(app => {
+                        counts[app.service_name] = (counts[app.service_name] || 0) + 1;
+                    });
+
+                    // Ordena por frequência e pega os Top IDs
+                    const sortedNames = Object.entries(counts)
+                        .sort(([, a], [, b]) => b - a)
+                        .slice(0, 5)
+                        .map(([name]) => name);
+
+                    const topIds = servicesData
+                        ?.filter(s => sortedNames.includes(s.nome))
+                        .map(s => s.id) || [];
+                    
+                    setPopularServiceIds(topIds);
+                }
+
             } catch (e) {
                 console.error("Erro ao carregar dados públicos", e);
             } finally {
@@ -156,7 +185,6 @@ const PublicBookingPreview: React.FC = () => {
 
             const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
             
-            // 1. Busca agendamentos do dia para este profissional
             const { data: busyAppointments } = await supabase
                 .from('appointments')
                 .select('date, duration')
@@ -167,7 +195,6 @@ const PublicBookingPreview: React.FC = () => {
 
             const slots: string[] = [];
             
-            // Replaced date-fns parse with manual extraction
             const [startH, startM] = businessHours.start.split(':').map(Number);
             const [endH, endM] = businessHours.end.split(':').map(Number);
             
@@ -180,13 +207,11 @@ const PublicBookingPreview: React.FC = () => {
             const now = new Date();
 
             while (isBefore(addMinutes(currentPointer, totalDuration), endLimit)) {
-                // Regra 1: Não mostrar horários passados se for hoje
                 if (isSameDay(date, now) && isBefore(currentPointer, now)) {
                     currentPointer = addMinutes(currentPointer, 15);
                     continue;
                 }
 
-                // Regra 2: Verificar colisão com agendamentos existentes
                 const hasOverlap = busyAppointments?.some(app => {
                     const appStart = parseISO(app.date);
                     const appEnd = addMinutes(appStart, app.duration);
@@ -219,13 +244,21 @@ const PublicBookingPreview: React.FC = () => {
     // --- Logical Grouping ---
     const servicesByCategory = useMemo(() => {
         const groups: Record<string, any[]> = {};
+        
+        // 1. Criar grupo de Populares (Ranking Smart)
+        if (popularServiceIds.length >= 3) {
+            groups['⭐ Mais Populares'] = services.filter(s => popularServiceIds.includes(s.id));
+        }
+
+        // 2. Agrupar por categorias normais
         services.forEach(s => {
             const cat = s.categoria || 'Outros';
             if (!groups[cat]) groups[cat] = [];
             groups[cat].push(s);
         });
+        
         return groups;
-    }, [services]);
+    }, [services, popularServiceIds]);
 
     const totalPrice = useMemo(() => {
         return selectedServices.reduce((acc, s) => acc + s.preco, 0);
@@ -299,6 +332,7 @@ const PublicBookingPreview: React.FC = () => {
                             services={items}
                             selectedIds={selectedServices.map(s => s.id)}
                             onToggleService={toggleService}
+                            defaultOpen={cat === '⭐ Mais Populares'} // REGRA: Abre autom. os mais populares
                         />
                     ))}
                 </div>
