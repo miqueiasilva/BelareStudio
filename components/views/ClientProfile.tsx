@@ -378,7 +378,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             console.error("DB Save Error:", err);
             // Debug detalhado conforme solicitado para identificar colunas faltantes ou tipos inválidos
             setToast({ 
-                message: `Erro ao persistir: ${err.message || "Erro desconhecido"}. Detalhes: ${err.details || "Verifique restrições de banco."}`, 
+                message: `Erro ao persistir: ${err.message || "Erro desconhecido"}. Detalhes: ${err.details || err.hint || "Verifique restrições de banco."}`, 
                 type: 'error' 
             });
         } finally {
