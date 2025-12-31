@@ -37,7 +37,6 @@ const KpiCard = ({ label, value, icon: Icon, color, trend, trendValue }: any) =>
     </div>
 );
 
-// FIX: Defined missing StarRating component to resolve "Cannot find name 'StarRating'" error.
 const StarRating = ({ rating, size = 16 }: { rating: number; size?: number }) => (
     <div className="flex gap-0.5">
         {[1, 2, 3, 4, 5].map((star) => (
@@ -50,7 +49,6 @@ const StarRating = ({ rating, size = 16 }: { rating: number; size?: number }) =>
     </div>
 );
 
-// FIX: Defined missing ReviewCard component to resolve "Cannot find name 'ReviewCard'" error.
 const ReviewCard = ({ review, onToggle, onDelete }: any) => (
     <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm group">
         <div className="flex justify-between items-start mb-4">
@@ -147,7 +145,6 @@ const AgendaOnlineView: React.FC = () => {
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [reviews, setReviews] = useState<any[]>([]);
     
-    // --- State: Analytics Data ---
     const [metrics, setMetrics] = useState({
         views: 0,
         bookings: 0,
@@ -175,16 +172,12 @@ const AgendaOnlineView: React.FC = () => {
         setIsRefreshing(true);
         try {
             const thirtyDaysAgo = subDays(new Date(), 30).toISOString();
-            
-            // 1. Fetch Bookings & Revenue (Origin = 'link')
             const { data: appts } = await supabase
                 .from('appointments')
                 .select('value, service_name, date')
                 .eq('origem', 'link')
                 .gte('date', thirtyDaysAgo);
 
-            // 2. Fetch Views (from a hypothetical analytics table)
-            // Fallback for demo if table doesn't exist yet
             const viewsCount = 450; 
 
             if (appts) {
@@ -199,7 +192,6 @@ const AgendaOnlineView: React.FC = () => {
                     conversion: Number(conversion.toFixed(1))
                 });
 
-                // Group for Ranking
                 const ranking: Record<string, number> = {};
                 appts.forEach(a => {
                     ranking[a.service_name] = (ranking[a.service_name] || 0) + 1;
@@ -210,11 +202,9 @@ const AgendaOnlineView: React.FC = () => {
                     .slice(0, 5);
                 setTopServices(sortedRanking);
 
-                // Prepare Chart Data (Last 7 days)
                 const last7Days = Array.from({ length: 7 }).map((_, i) => {
                     const d = subDays(new Date(), 6 - i);
                     const dayBookings = appts.filter(a => isSameDay(parseISO(a.date), d)).length;
-                    // Mock views for chart
                     const dayViews = Math.floor(Math.random() * 20) + 10; 
                     return {
                         name: format(d, 'dd/MM'),
@@ -272,7 +262,7 @@ const AgendaOnlineView: React.FC = () => {
         try {
             const payload = {
                 online_booking_active: config.isActive,
-                min_scheduling_notice: parseInt(config.min_scheduling_notice),
+                min_scheduling_notice: parseFloat(config.min_scheduling_notice), // Alterado para parseFloat para aceitar 0.5
                 max_scheduling_window: parseInt(config.max_scheduling_window),
                 cancellation_notice: parseInt(config.cancellation_notice),
                 cancellation_policy: config.cancellation_policy,
@@ -297,12 +287,12 @@ const AgendaOnlineView: React.FC = () => {
     if (isLoading) return <div className="h-full flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest text-[10px]"><Loader2 className="animate-spin text-orange-500 mr-2" /> Carregando Painel...</div>;
 
     return (
-        <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans">
+        <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans text-left">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 flex-shrink-0 z-30 shadow-sm">
                 <div>
-                    <h1 className="text-xl sm:text-2xl font-black text-slate-800 flex items-gap-2">
+                    <h1 className="text-xl sm:text-2xl font-black text-slate-800 flex items-center gap-2">
                         <Globe className="text-blue-500 w-6 h-6" />
                         Agenda Online
                     </h1>
@@ -335,22 +325,15 @@ const AgendaOnlineView: React.FC = () => {
             <div className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar">
                 <div className="max-w-4xl mx-auto pb-20">
                     
-                    {/* --- TAB: ANALYTICS (NOVA) --- */}
                     {activeTab === 'analytics' && (
                         <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                            
                             <div className="flex justify-between items-center px-2">
                                 <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Retorno dos últimos 30 dias</h2>
-                                <button 
-                                    onClick={fetchAnalytics}
-                                    disabled={isRefreshing}
-                                    className="flex items-center gap-2 text-[10px] font-black text-orange-500 uppercase tracking-widest hover:text-orange-600 transition-colors"
-                                >
+                                <button onClick={fetchAnalytics} disabled={isRefreshing} className="flex items-center gap-2 text-[10px] font-black text-orange-500 uppercase tracking-widest hover:text-orange-600 transition-colors">
                                     <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} /> Atualizar Dados
                                 </button>
                             </div>
 
-                            {/* KPI Grid */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                                 <KpiCard label="Acessos ao Link" value={metrics.views} icon={MousePointer2} color="bg-blue-500" trend="up" trendValue="12" />
                                 <KpiCard label="Agendamentos" value={metrics.bookings} icon={CalendarCheck} color="bg-purple-500" trend="up" trendValue="8" />
@@ -359,7 +342,6 @@ const AgendaOnlineView: React.FC = () => {
                             </div>
 
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                {/* Chart Area */}
                                 <Card title="Tendência de Acessos vs. Reservas" className="lg:col-span-2 rounded-[32px] overflow-hidden">
                                     <div className="h-64 mt-4">
                                         <ResponsiveContainer width="100%" height="100%">
@@ -373,10 +355,7 @@ const AgendaOnlineView: React.FC = () => {
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 'bold'}} />
                                                 <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} />
-                                                <Tooltip 
-                                                    contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}
-                                                    labelStyle={{fontWeight: '900', color: '#1e293b', marginBottom: '4px'}}
-                                                />
+                                                <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} labelStyle={{fontWeight: '900', color: '#1e293b', marginBottom: '4px'}} />
                                                 <Area type="monotone" dataKey="views" name="Acessos" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorViews)" />
                                                 <Area type="monotone" dataKey="bookings" name="Reservas" stroke="#f97316" strokeWidth={3} fill="transparent" />
                                             </AreaChart>
@@ -388,7 +367,6 @@ const AgendaOnlineView: React.FC = () => {
                                     </div>
                                 </Card>
 
-                                {/* Top Services Ranking */}
                                 <Card title="Mais Procurados" className="rounded-[32px]">
                                     <div className="space-y-4 mt-2">
                                         {topServices.map((service, index) => (
@@ -400,37 +378,15 @@ const AgendaOnlineView: React.FC = () => {
                                                     <p className="text-sm font-bold text-slate-700 truncate">{service.name}</p>
                                                     <div className="flex items-center gap-2 mt-0.5">
                                                         <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                                            <div 
-                                                                className="h-full bg-orange-400 rounded-full transition-all duration-1000" 
-                                                                style={{ width: `${(service.count / metrics.bookings) * 100}%` }}
-                                                            />
+                                                            <div className="h-full bg-orange-400 rounded-full transition-all duration-1000" style={{ width: `${(service.count / metrics.bookings) * 100}%` }} />
                                                         </div>
                                                         <span className="text-[10px] font-black text-slate-400">{service.count}</span>
                                                     </div>
                                                 </div>
                                             </div>
                                         ))}
-                                        {topServices.length === 0 && (
-                                            <div className="py-10 text-center text-slate-400 italic text-sm">Nenhum dado ainda.</div>
-                                        )}
                                     </div>
                                 </Card>
-                            </div>
-
-                            {/* JaciBot Insight */}
-                            <div className="bg-slate-900 rounded-[32px] p-8 text-white relative overflow-hidden shadow-xl">
-                                <div className="absolute top-0 right-0 w-64 h-64 bg-orange-500/10 rounded-full blur-[80px] -mr-32 -mt-32"></div>
-                                <div className="relative z-10 flex flex-col md:flex-row items-center gap-6">
-                                    <div className="w-16 h-16 bg-orange-500 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/20">
-                                        <Sparkles size={32} />
-                                    </div>
-                                    <div className="flex-1 text-center md:text-left">
-                                        <h4 className="text-lg font-black tracking-tight">Análise Inteligente JaciBot</h4>
-                                        <p className="text-sm text-slate-300 mt-1 leading-relaxed">
-                                            Seu link está com uma taxa de conversão de <b>{metrics.conversion}%</b>. Para aumentar este número, tente adicionar fotos reais dos serviços de <b>"{topServices[0]?.name || 'destaque'}"</b> na sua apresentação, elas aumentam a confiança do cliente em 40%.
-                                        </p>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     )}
@@ -461,7 +417,6 @@ const AgendaOnlineView: React.FC = () => {
                         </div>
                     )}
 
-                    {/* Outras abas mantidas conforme implementação anterior */}
                     {activeTab === 'regras' && (
                         <div className="space-y-6 animate-in slide-in-from-bottom-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -473,11 +428,17 @@ const AgendaOnlineView: React.FC = () => {
                                             value={config.min_scheduling_notice}
                                             onChange={(val: string) => setConfig({...config, min_scheduling_notice: val})}
                                             options={[
+                                                { value: '0.5', label: '30 minutos antes' },
                                                 { value: '1', label: '1 hora antes' },
-                                                { value: '2', label: '2 horas antes' },
+                                                { value: '2', label: '2 horas antes (Padrão)' },
+                                                { value: '3', label: '3 horas antes' },
                                                 { value: '4', label: '4 horas antes' },
+                                                { value: '6', label: '6 horas antes' },
+                                                { value: '12', label: '12 horas antes' },
                                                 { value: '24', label: '24 horas (1 dia)' },
+                                                { value: '48', label: '48 horas (2 dias)' },
                                             ]}
+                                            helperText="Tempo mínimo para você se organizar antes do cliente chegar."
                                         />
                                         <StyledSelect 
                                             label="Horizonte da Agenda"
@@ -485,29 +446,38 @@ const AgendaOnlineView: React.FC = () => {
                                             value={config.max_scheduling_window}
                                             onChange={(val: string) => setConfig({...config, max_scheduling_window: val})}
                                             options={[
-                                                { value: '15', label: 'Próximos 15 dias' },
-                                                { value: '30', label: 'Próximos 30 dias' },
-                                                { value: '60', label: 'Próximos 60 dias' },
+                                                { value: '7', label: 'Até 7 dias (Semana atual)' },
+                                                { value: '15', label: 'Até 15 dias' },
+                                                { value: '30', label: 'Até 30 dias (1 mês)' },
+                                                { value: '60', label: 'Até 60 dias (2 meses)' },
+                                                { value: '90', label: 'Até 90 dias (3 meses)' },
+                                                { value: '180', label: 'Até 6 meses' },
                                             ]}
+                                            helperText="Define até que data futura o cliente pode ver seus horários."
                                         />
                                     </div>
                                 </Card>
                                 <Card title="Política de Cancelamento" icon={<AlertTriangle size={20} className="text-orange-500" />} className="rounded-[32px]">
                                     <div className="space-y-6 mt-2">
                                         <StyledSelect 
-                                            label="Aviso Prévio"
+                                            label="Aviso de Cancelamento"
                                             icon={Info}
                                             value={config.cancellation_notice}
                                             onChange={(val: string) => setConfig({...config, cancellation_notice: val})}
                                             options={[
                                                 { value: '0', label: 'A qualquer momento' },
-                                                { value: '12', label: '12 horas antes' },
-                                                { value: '24', label: '24 horas antes' },
+                                                { value: '1', label: 'Até 1 hora antes' },
+                                                { value: '2', label: 'Até 2 horas antes' },
+                                                { value: '4', label: 'Até 4 horas antes' },
+                                                { value: '12', label: 'Até 12 horas antes' },
+                                                { value: '24', label: 'Até 24 horas antes' },
+                                                { value: '48', label: 'Até 48 horas antes' },
                                             ]}
+                                            helperText="Tempo de antecedência exigido para o cancelamento sem multa."
                                         />
-                                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                            <p className="text-[10px] text-slate-500 leading-relaxed font-bold italic">
-                                                * Regras claras evitam furos e prejuízos na agenda.
+                                        <div className="p-4 bg-orange-50 rounded-2xl border border-orange-100">
+                                            <p className="text-[10px] text-orange-800 leading-relaxed font-bold italic">
+                                                * Dica: Exigir 24h ajuda a manter sua taxa de ocupação estável.
                                             </p>
                                         </div>
                                     </div>
@@ -518,7 +488,6 @@ const AgendaOnlineView: React.FC = () => {
 
                     {activeTab === 'avaliacoes' && (
                         <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                            {/* Score Summary */}
                             <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-8">
                                 <div className="text-center md:text-left">
                                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Nota Média do Estúdio</p>
@@ -549,7 +518,6 @@ const AgendaOnlineView: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Reviews List */}
                             <div className="space-y-4">
                                 {reviews.length === 0 ? (
                                     <div className="bg-white p-20 rounded-[40px] border-2 border-dashed border-slate-100 text-center">
@@ -575,7 +543,6 @@ const AgendaOnlineView: React.FC = () => {
                             </div>
                         </div>
                     )}
-
                 </div>
             </div>
         </div>
