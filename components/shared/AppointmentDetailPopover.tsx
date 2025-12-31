@@ -49,7 +49,6 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
-        // Se o checkout estiver aberto, não fechamos o popover (ele já está escondido por CSS)
         if (!isCheckoutOpen) onClose();
       }
     };
@@ -93,9 +92,9 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     onClose();
   };
 
-  // Lógica de visibilidade do botão de Checkout
-  // Apenas agendamentos ativos podem ser finalizados
-  const canCheckout = !['concluido', 'cancelado', 'bloqueado', 'faltou'].includes(appointment.status);
+  // NOVA LÓGICA INCLUSIVA: O botão de checkout aparece para QUALQUER status que não seja "finalizado"
+  const isFinished = ['concluido', 'cancelado', 'bloqueado'].includes(appointment.status);
+  const canCheckout = !isFinished;
 
   return (
     <>
@@ -136,19 +135,21 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                     </div>
                 </div>
 
-                <div className="border-t border-slate-100 pt-4 flex flex-col gap-3">
-                    {/* Seletor de Status Simples */}
-                    <button
-                        ref={statusRef}
-                        onClick={() => setIsStatusPopoverOpen(true)}
-                        className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-500 bg-slate-50 hover:bg-slate-100 p-3 rounded-xl transition-all border border-slate-100"
-                    >
-                        <div className="flex items-center gap-2">
-                            <CheckCircle2 size={14} className="text-slate-400" />
-                            <span>{statusLabels[appointment.status]}</span>
-                        </div>
-                        <MoreVertical size={14} />
-                    </button>
+                <div className="border-t border-slate-100 pt-4 flex flex-col gap-3 pb-2">
+                    {/* Seletor de Status Simples com Margem para evitar clipping */}
+                    <div className="mb-2">
+                        <button
+                            ref={statusRef}
+                            onClick={() => setIsStatusPopoverOpen(true)}
+                            className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-500 bg-slate-50 hover:bg-slate-100 p-3 rounded-xl transition-all border border-slate-100"
+                        >
+                            <div className="flex items-center gap-2">
+                                <CheckCircle2 size={14} className="text-slate-400" />
+                                <span>{statusLabels[appointment.status]}</span>
+                            </div>
+                            <MoreVertical size={14} />
+                        </button>
+                    </div>
 
                     {/* BOTÃO DE CHECKOUT (FINTEACH DESIGN) */}
                     {canCheckout && (
@@ -187,8 +188,6 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                 isOpen={isCheckoutOpen}
                 onClose={() => { 
                     setIsCheckoutOpen(false); 
-                    // Não fechamos o popover pai imediatamente para evitar saltos de UI,
-                    // deixamos o usuário decidir ou fechamos no onSuccess
                 }}
                 appointment={{
                     id: appointment.id,
@@ -197,7 +196,6 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                     price: appointment.service.price
                 }}
                 onSuccess={() => {
-                    // Atualiza o estado na visualização da agenda e fecha tudo
                     onUpdateStatus(appointment.id, 'concluido');
                     setIsCheckoutOpen(false);
                     onClose();
@@ -209,4 +207,3 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
 };
 
 export default AppointmentDetailPopover;
-
