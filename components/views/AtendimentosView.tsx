@@ -20,17 +20,16 @@ import { supabase } from '../../services/supabaseClient';
 
 const START_HOUR = 8;
 const END_HOUR = 20; 
-const SLOT_PX_HEIGHT = 80; // Altura fixa de cada linha (h-20) no CSS
-const CARD_TOP_OFFSET = 10; // Deslocamento visual para não colar na linha superior
+const SLOT_PX_HEIGHT = 80; 
+const CARD_TOP_OFFSET = 10; 
 
-// Função de cálculo de posição refinada para ser precisa com a grade
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
 
     const top = (startMinutesSinceDayStart * pixelsPerMinute) + CARD_TOP_OFFSET;
-    const height = (durationMinutes * pixelsPerMinute) - 4; // Ajuste leve na altura para compensar o offset
+    const height = (durationMinutes * pixelsPerMinute) - 4; 
     
     return { top: `${top}px`, height: `${height}px` };
 };
@@ -109,7 +108,6 @@ interface AtendimentosViewProps {
 type PeriodType = 'Dia' | 'Semana' | 'Mês' | 'Lista';
 type ViewMode = 'profissional' | 'andamento' | 'pagamento';
 
-// FIX: Define DynamicColumn interface to resolve "Cannot find name 'DynamicColumn'" error.
 interface DynamicColumn {
     id: string | number;
     title: string;
@@ -174,7 +172,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         try {
             const { data, error } = await supabase
                 .from('professionals')
-                .select('id, name, photo_url, role, order_index, services_enabled') // REGRA: Agora buscamos as competências
+                .select('id, name, photo_url, role, order_index, services_enabled') 
                 .order('order_index', { ascending: true });
 
             if (error) throw error;
@@ -185,7 +183,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
                     role: p.role,
                     order_index: p.order_index,
-                    services_enabled: p.services_enabled || [] // Mapeado para o objeto do profissional
+                    services_enabled: p.services_enabled || [] 
                 }));
                 setResources(mapped);
             }
@@ -274,6 +272,51 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         } catch (e: any) { setToast({ message: 'Erro ao bloquear.', type: 'error' }); } finally { if(isMounted.current) setIsLoadingData(false); }
     };
 
+    const handleUpdateStatus = async (id: number, newStatus: AppointmentStatus) => {
+        const appointment = appointments.find(a => a.id === id);
+        if (!appointment) return;
+
+        // SEGURANÇA FINANCEIRA: Intercepta reabertura de agendamento pago
+        if (appointment.status === 'concluido' && newStatus !== 'concluido') {
+            const confirm = window.confirm(
+                "ATENÇÃO: Este agendamento já possui pagamento registrado.\n\n" +
+                "Ao alterar o status, o lançamento financeiro será ESTORNADO (excluído) do seu caixa para evitar duplicidade.\n\n" +
+                "Deseja continuar com a reabertura?"
+            );
+            
+            if (!confirm) return;
+
+            try {
+                // Remove a transação financeira vinculada
+                const { error: finError } = await supabase
+                    .from('financial_transactions')
+                    .delete()
+                    .eq('appointment_id', id);
+
+                if (finError) throw finError;
+                setToast({ message: 'Pagamento estornado do caixa.', type: 'info' });
+            } catch (err) {
+                console.error("Erro ao estornar:", err);
+                setToast({ message: 'Erro ao estornar financeiro.', type: 'error' });
+                return; // Interrompe para não atualizar status sem estornar
+            }
+        }
+
+        try {
+            const { error } = await supabase
+                .from('appointments')
+                .update({ status: newStatus })
+                .eq('id', id);
+
+            if (error) throw error;
+            
+            setAppointments(prev => prev.map(p => p.id === id ? { ...p, status: newStatus } : p));
+            setActiveAppointmentDetail(null); 
+        } catch (e) {
+            setToast({ message: 'Erro ao atualizar status.', type: 'error' });
+        }
+    };
+
     useEffect(() => { if (resources.length > 0) fetchAppointments(); }, [resources, currentDate]);
 
     const handleDateChange = (direction: number) => {
@@ -282,7 +325,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         else if (periodType === 'Mês') setCurrentDate(prev => addMonths(prev, direction));
     };
 
-    // FIX: Missing function moverEsq to handle reordering professionals to the left
     const moverEsq = (idx: number) => {
         if (idx <= 0) return;
         setOrderedProfessionals(prev => {
@@ -292,7 +334,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         });
     };
 
-    // FIX: Missing function moverDir to handle reordering professionals to the right
     const moverDir = (idx: number) => {
         if (idx >= orderedProfessionals.length - 1) return;
         setOrderedProfessionals(prev => {
@@ -601,11 +642,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         setActiveAppointmentDetail(null);
                         setToast({ message: 'Agendamento removido.', type: 'info' });
                     }} 
-                    onUpdateStatus={async (id, status) => { 
-                        setAppointments(prev => prev.map(p => p.id === id ? { ...p, status } : p));
-                        await supabase.from('appointments').update({ status }).eq('id', id); 
-                        setActiveAppointmentDetail(null); 
-                    }} 
+                    onUpdateStatus={handleUpdateStatus} 
                 />
             )}
 
