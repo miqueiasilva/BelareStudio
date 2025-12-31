@@ -1,13 +1,14 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
     Search, MoreVertical, Paperclip, Send, Smile, Check, CheckCheck, 
     MessageSquare, Settings, Bell, Calendar, Gift, Zap, Link as LinkIcon,
-    Smartphone, QrCode, RefreshCw, LogOut, Wifi, WifiOff, BatteryCharging
+    Smartphone, QrCode, RefreshCw, LogOut, Wifi, WifiOff, BatteryCharging,
+    ChevronLeft, ArrowLeft
 } from 'lucide-react';
 import { mockConversations } from '../../data/mockData';
 import { ChatConversation, ChatMessage } from '../../types';
 import { format } from 'date-fns';
-// FIX: Corrected locale import path to 'date-fns/locale/pt-BR' to resolve "no exported member 'ptBR'" error.
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import Toast, { ToastType } from '../shared/Toast';
@@ -36,7 +37,6 @@ const WhatsAppView: React.FC = () => {
     const [batteryLevel, setBatteryLevel] = useState(85);
 
     // --- Handlers ---
-
     const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
     const handleSendMessage = (e?: React.FormEvent) => {
@@ -75,7 +75,6 @@ const WhatsAppView: React.FC = () => {
     };
 
     // --- Connection Simulation Handlers ---
-    
     const startConnection = () => {
         setConnectionStatus('connecting');
         setTimeout(() => {
@@ -83,7 +82,6 @@ const WhatsAppView: React.FC = () => {
         }, 1500);
     };
 
-    // Simulate scanning the QR code by clicking on it
     const simulateScan = () => {
         setConnectionStatus('connecting');
         setTimeout(() => {
@@ -99,21 +97,22 @@ const WhatsAppView: React.FC = () => {
         }
     };
 
-    // --- Render ---
-
     return (
         <div className="flex h-full bg-slate-100 overflow-hidden relative">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-            {/* Sidebar (Left) */}
-            <div className="w-80 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
+            {/* Sidebar (Master List) - Condicional no Mobile */}
+            <div className={`
+                ${selectedChatId !== null ? 'hidden md:flex' : 'flex w-full md:w-80'} 
+                bg-white border-r border-slate-200 flex flex-col flex-shrink-0
+            `}>
                 {/* Sidebar Header */}
                 <div className="h-16 bg-slate-50 border-b border-slate-200 flex items-center justify-between px-4 flex-shrink-0">
                     <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-green-50 rounded-full flex items-center justify-center text-white">
+                        <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center text-white shadow-sm shadow-green-100">
                             <MessageSquare className="w-5 h-5" />
                         </div>
-                        <h2 className="font-bold text-slate-700">WhatsApp</h2>
+                        <h2 className="font-black text-slate-700 tracking-tight">WhatsApp</h2>
                     </div>
                     <div className="flex gap-1">
                         <button 
@@ -142,8 +141,7 @@ const WhatsAppView: React.FC = () => {
 
                 {activeTab === 'chats' && (
                     <>
-                        {/* Search */}
-                        <div className="p-3 border-b border-slate-100 bg-white">
+                        <div className="p-4 border-b border-slate-100 bg-white">
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                 <input 
@@ -151,35 +149,34 @@ const WhatsAppView: React.FC = () => {
                                     placeholder="Buscar conversa..." 
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full pl-9 pr-4 py-2 bg-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-200"
+                                    className="w-full pl-9 pr-4 py-2.5 bg-slate-100 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-green-100 border border-transparent focus:bg-white focus:border-green-200 transition-all"
                                 />
                             </div>
                         </div>
 
-                        {/* Conversation List */}
-                        <div className="flex-1 overflow-y-auto">
+                        <div className="flex-1 overflow-y-auto custom-scrollbar">
                             {conversations
                                 .filter(c => c.clientName.toLowerCase().includes(searchTerm.toLowerCase()))
                                 .map(chat => (
                                 <button
                                     key={chat.id}
                                     onClick={() => setSelectedChatId(chat.id)}
-                                    className={`w-full flex items-center gap-3 p-3 hover:bg-slate-50 transition border-b border-slate-50 ${selectedChatId === chat.id ? 'bg-green-50 hover:bg-green-50' : ''}`}
+                                    className={`w-full flex items-center gap-3 p-4 hover:bg-slate-50 transition border-b border-slate-50 active:bg-green-50 ${selectedChatId === chat.id ? 'bg-green-50' : ''}`}
                                 >
-                                    <div className="w-12 h-12 rounded-full bg-slate-200 flex-shrink-0 flex items-center justify-center text-slate-500 font-bold text-lg overflow-hidden">
-                                        {chat.clientAvatar ? <img src={chat.clientAvatar} alt="" /> : chat.clientName.charAt(0)}
+                                    <div className="w-14 h-14 rounded-full bg-slate-200 flex-shrink-0 flex items-center justify-center text-slate-500 font-black text-xl overflow-hidden border-2 border-white shadow-sm">
+                                        {chat.clientAvatar ? <img src={chat.clientAvatar} className="w-full h-full object-cover" alt="" /> : chat.clientName.charAt(0)}
                                     </div>
                                     <div className="flex-1 min-w-0 text-left">
                                         <div className="flex justify-between items-baseline mb-1">
-                                            <h3 className="font-semibold text-slate-800 truncate">{chat.clientName}</h3>
-                                            <span className="text-[10px] text-slate-400 flex-shrink-0">
+                                            <h3 className="font-bold text-slate-800 truncate">{chat.clientName}</h3>
+                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter flex-shrink-0">
                                                 {format(new Date(chat.lastMessageTime), 'HH:mm')}
                                             </span>
                                         </div>
-                                        <p className="text-sm text-slate-500 truncate">{chat.lastMessage}</p>
+                                        <p className="text-sm text-slate-500 truncate leading-tight">{chat.lastMessage}</p>
                                     </div>
                                     {chat.unreadCount > 0 && (
-                                        <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center text-[10px] text-white font-bold flex-shrink-0">
+                                        <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center text-[10px] text-white font-black flex-shrink-0 shadow-lg shadow-green-100">
                                             {chat.unreadCount}
                                         </div>
                                     )}
@@ -190,308 +187,151 @@ const WhatsAppView: React.FC = () => {
                 )}
                 
                 {activeTab === 'automations' && (
-                    <div className="p-4 space-y-4">
-                        <div className="bg-orange-50 p-4 rounded-xl border border-orange-100">
-                            <h3 className="font-bold text-orange-800 text-sm mb-2 flex items-center gap-2">
+                    <div className="p-6 space-y-4">
+                        <div className="bg-orange-50 p-5 rounded-2xl border border-orange-100 shadow-sm">
+                            <h3 className="font-black text-orange-800 text-sm mb-2 flex items-center gap-2">
                                 <Zap className="w-4 h-4"/> JaciBot Ativo
                             </h3>
-                            <p className="text-xs text-orange-700">
-                                O JaciBot está monitorando sua agenda e enviará mensagens automaticamente conforme configurado.
+                            <p className="text-xs text-orange-700 leading-relaxed font-medium">
+                                O assistente inteligente monitora sua agenda e realiza as cobranças e lembretes automaticamente.
                             </p>
-                        </div>
-                        <div className="text-sm text-slate-500">
-                            Selecione uma categoria de automação ao lado para configurar.
                         </div>
                     </div>
                 )}
 
                 {activeTab === 'connection' && (
-                    <div className="p-4 space-y-4">
-                        <div className={`p-4 rounded-xl border ${connectionStatus === 'connected' ? 'bg-green-50 border-green-100' : 'bg-slate-50 border-slate-200'}`}>
+                    <div className="p-6 space-y-4">
+                        <div className={`p-5 rounded-2xl border transition-all ${connectionStatus === 'connected' ? 'bg-green-50 border-green-100' : 'bg-slate-50 border-slate-200'}`}>
                             <div className="flex items-center gap-3 mb-2">
                                 {connectionStatus === 'connected' ? <Wifi className="text-green-600 w-5 h-5" /> : <WifiOff className="text-slate-400 w-5 h-5" />}
-                                <h3 className={`font-bold text-sm ${connectionStatus === 'connected' ? 'text-green-800' : 'text-slate-600'}`}>
-                                    {connectionStatus === 'connected' ? 'Conectado' : 'Desconectado'}
+                                <h3 className={`font-black text-sm uppercase tracking-wider ${connectionStatus === 'connected' ? 'text-green-800' : 'text-slate-600'}`}>
+                                    {connectionStatus === 'connected' ? 'Dispositivo Pareado' : 'Sem Conexão'}
                                 </h3>
                             </div>
-                            <p className="text-xs text-slate-500">
+                            <p className="text-xs text-slate-500 font-medium">
                                 {connectionStatus === 'connected' 
-                                    ? 'O sistema está sincronizado com seu WhatsApp.' 
-                                    : 'Conecte seu aparelho para enviar mensagens automáticas.'}
+                                    ? 'Sincronização em tempo real ativa.' 
+                                    : 'Escaneie o código para habilitar as automações.'}
                             </p>
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* Main Content Area */}
-            <div className="flex-1 flex flex-col bg-[#e5ddd5] relative">
+            {/* Chat Window (Detail View) - Condicional no Mobile */}
+            <div className={`
+                flex-1 flex flex-col bg-[#f0f2f5] relative 
+                ${selectedChatId === null ? 'hidden md:flex' : 'flex w-full md:w-auto'}
+            `}>
                 
-                {/* --- CHATS VIEW --- */}
-                {activeTab === 'chats' && (
-                    selectedChatId && activeChat ? (
-                        <>
-                            {/* Chat Header */}
-                            <header className="h-16 bg-slate-50 border-b border-slate-200 flex items-center justify-between px-4 flex-shrink-0 z-10">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold">
-                                        {activeChat.clientName.charAt(0)}
-                                    </div>
-                                    <div>
-                                        <h3 className="font-bold text-slate-800">{activeChat.clientName}</h3>
-                                        <p className="text-xs text-slate-500">
-                                            {activeChat.tags?.join(', ') || 'Cliente'}
-                                        </p>
-                                    </div>
-                                </div>
-                                <button className="p-2 text-slate-500 hover:bg-slate-100 rounded-full">
-                                    <MoreVertical className="w-5 h-5" />
+                {selectedChatId && activeChat ? (
+                    <>
+                        {/* Chat Header com Botão Voltar para Mobile */}
+                        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 flex-shrink-0 z-10 shadow-sm">
+                            <div className="flex items-center gap-3 overflow-hidden">
+                                <button 
+                                    onClick={() => setSelectedChatId(null)}
+                                    className="md:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors"
+                                >
+                                    <ArrowLeft size={24} />
                                 </button>
-                            </header>
+                                <div className="w-10 h-10 rounded-full bg-slate-200 flex-shrink-0 flex items-center justify-center text-slate-600 font-black border border-slate-100">
+                                    {activeChat.clientAvatar ? <img src={activeChat.clientAvatar} className="w-full h-full object-cover rounded-full" alt="" /> : activeChat.clientName.charAt(0)}
+                                </div>
+                                <div className="min-w-0">
+                                    <h3 className="font-bold text-slate-800 truncate">{activeChat.clientName}</h3>
+                                    <p className="text-[10px] text-green-600 font-black uppercase tracking-widest leading-none mt-0.5">Online agora</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all">
+                                    <Search size={20} />
+                                </button>
+                                <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all">
+                                    <MoreVertical size={20} />
+                                </button>
+                            </div>
+                        </header>
 
-                            {/* Messages Area */}
-                            <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundRepeat: 'repeat' }}>
-                                {activeChat.messages.map((msg) => (
-                                    <div 
-                                        key={msg.id} 
-                                        className={`flex ${msg.sender === 'user' || msg.sender === 'system' ? 'justify-end' : 'justify-start'}`}
-                                    >
-                                        <div className={`max-w-[70%] rounded-lg p-3 shadow-sm relative ${
-                                            msg.sender === 'user' ? 'bg-[#d9fdd3] text-slate-800 rounded-tr-none' : 
-                                            msg.sender === 'system' ? 'bg-yellow-50 text-slate-600 border border-yellow-100 text-xs text-center italic w-full max-w-[90%] self-center' :
-                                            'bg-white text-slate-800 rounded-tl-none'
-                                        }`}>
-                                            {msg.sender === 'system' && <span className="block font-bold mb-1 not-italic">🤖 JaciBot:</span>}
-                                            <p className="text-sm leading-relaxed">{msg.text}</p>
-                                            <div className="flex justify-end items-center gap-1 mt-1">
-                                                <span className="text-[10px] text-slate-400">
-                                                    {format(new Date(msg.timestamp), 'HH:mm')}
+                        {/* Messages Area */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar" style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundBlendMode: 'overlay' }}>
+                            {activeChat.messages.map((msg) => (
+                                <div 
+                                    key={msg.id} 
+                                    className={`flex ${msg.sender === 'user' || msg.sender === 'system' ? 'justify-end' : 'justify-start'}`}
+                                >
+                                    <div className={`max-w-[85%] sm:max-w-[70%] rounded-2xl p-3 shadow-sm relative ${
+                                        msg.sender === 'user' ? 'bg-[#d9fdd3] text-slate-800 rounded-tr-none border-t border-green-100' : 
+                                        msg.sender === 'system' ? 'bg-yellow-50 text-slate-700 border border-yellow-200 text-xs text-center italic w-full max-w-full my-4 rounded-xl' :
+                                        'bg-white text-slate-800 rounded-tl-none border-t border-white'
+                                    }`}>
+                                        {msg.sender === 'system' && (
+                                            <div className="flex items-center justify-center gap-2 mb-2 border-b border-yellow-100 pb-2">
+                                                <Zap size={14} className="text-orange-500" />
+                                                <span className="font-black uppercase tracking-widest text-[9px]">JaciBot Automático</span>
+                                            </div>
+                                        )}
+                                        <p className="text-sm leading-relaxed font-medium">{msg.text}</p>
+                                        <div className="flex justify-end items-center gap-1 mt-1">
+                                            <span className="text-[9px] font-bold text-slate-400 opacity-70">
+                                                {format(new Date(msg.timestamp), 'HH:mm')}
+                                            </span>
+                                            {msg.sender === 'user' && (
+                                                <span className={msg.status === 'read' ? 'text-blue-500' : 'text-slate-400'}>
+                                                    {msg.status === 'read' ? <CheckCheck size={14} strokeWidth={3}/> : <Check size={14} strokeWidth={3}/>}
                                                 </span>
-                                                {msg.sender === 'user' && (
-                                                    <span className={msg.status === 'read' ? 'text-blue-500' : 'text-slate-400'}>
-                                                        {msg.status === 'read' ? <CheckCheck size={14}/> : <Check size={14}/>}
-                                                    </span>
-                                                )}
-                                            </div>
+                                            )}
                                         </div>
                                     </div>
-                                ))}
-                            </div>
-
-                            {/* Input Area */}
-                            <div className="bg-slate-50 p-3 flex items-end gap-2 border-t border-slate-200">
-                                <button className="p-2 text-slate-500 hover:bg-slate-200 rounded-full">
-                                    <Smile className="w-6 h-6" />
-                                </button>
-                                <button className="p-2 text-slate-500 hover:bg-slate-200 rounded-full">
-                                    <Paperclip className="w-6 h-6" />
-                                </button>
-                                <div className="flex-1 bg-white rounded-xl border border-slate-200 flex flex-col">
-                                    <textarea 
-                                        value={messageInput}
-                                        onChange={(e) => setMessageInput(e.target.value)}
-                                        onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }}}
-                                        placeholder="Digite uma mensagem" 
-                                        className="w-full p-3 max-h-32 bg-transparent focus:outline-none resize-none text-sm"
-                                        rows={1}
-                                    />
-                                    {/* Quick Replies / Templates */}
-                                    <div className="px-2 pb-2 flex gap-2 overflow-x-auto scrollbar-hide">
-                                        <button onClick={() => handleQuickReply("Olá! Gostaria de confirmar seu agendamento?")} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded-full whitespace-nowrap text-slate-600">
-                                            Confirmar Agenda
-                                        </button>
-                                        <button onClick={() => handleQuickReply("Oi! Tudo bem? Já chegamos no seu horário.")} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded-full whitespace-nowrap text-slate-600">
-                                            Atraso
-                                        </button>
-                                        <button onClick={() => handleQuickReply("Obrigada pela preferência! 🥰")} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded-full whitespace-nowrap text-slate-600">
-                                            Agradecimento
-                                        </button>
-                                    </div>
                                 </div>
-                                <button 
-                                    onClick={() => handleSendMessage()}
-                                    className="p-3 bg-green-600 text-white rounded-full hover:bg-green-700 shadow-md transition-transform active:scale-95"
-                                >
-                                    <Send className="w-5 h-5" />
-                                </button>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-slate-500 opacity-60">
-                            <MessageSquare className="w-16 h-16 mb-4" />
-                            <p>Selecione uma conversa para iniciar</p>
+                            ))}
                         </div>
-                    )
-                )}
 
-                {/* --- AUTOMATIONS VIEW --- */}
-                {activeTab === 'automations' && (
-                    <div className="h-full bg-slate-50 overflow-y-auto p-8">
-                        <div className="max-w-3xl mx-auto space-y-8">
-                            <div className="flex items-center gap-4 mb-6">
-                                <div className="p-3 bg-orange-100 rounded-full text-orange-600">
-                                    <Zap className="w-8 h-8" />
-                                </div>
-                                <div>
-                                    <h2 className="text-2xl font-bold text-slate-800">Automações do JaciBot</h2>
-                                    <p className="text-slate-500">Configure as mensagens automáticas que o sistema enviará para seus clientes.</p>
+                        {/* Input Area */}
+                        <div className="bg-slate-50 p-3 md:p-4 flex items-end gap-2 border-t border-slate-200">
+                            <div className="hidden sm:flex items-center gap-1">
+                                <button className="p-2 text-slate-500 hover:bg-slate-200 rounded-full transition-all"><Smile className="w-6 h-6" /></button>
+                                <button className="p-2 text-slate-500 hover:bg-slate-200 rounded-full transition-all"><Paperclip className="w-6 h-6" /></button>
+                            </div>
+                            
+                            <div className="flex-1 bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden shadow-sm focus-within:ring-2 focus-within:ring-green-100 focus-within:border-green-400 transition-all">
+                                <textarea 
+                                    value={messageInput}
+                                    onChange={(e) => setMessageInput(e.target.value)}
+                                    onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }}}
+                                    placeholder="Digite uma mensagem..." 
+                                    className="w-full p-3 md:p-4 max-h-32 bg-transparent focus:outline-none resize-none text-sm font-medium"
+                                    rows={1}
+                                />
+                                {/* Quick Replies Otimizados para Toque */}
+                                <div className="px-3 pb-3 flex gap-2 overflow-x-auto scrollbar-hide touch-pan-x">
+                                    <button onClick={() => handleQuickReply("Olá! Gostaria de confirmar seu agendamento?")} className="text-[10px] font-black uppercase tracking-wider bg-slate-100 hover:bg-green-100 hover:text-green-700 px-3 py-1.5 rounded-full whitespace-nowrap text-slate-500 transition-all border border-slate-200/50">
+                                        Confirmar Agenda
+                                    </button>
+                                    <button onClick={() => handleQuickReply("Oi! Tudo bem? Já chegamos no seu horário.")} className="text-[10px] font-black uppercase tracking-wider bg-slate-100 hover:bg-amber-100 hover:text-amber-700 px-3 py-1.5 rounded-full whitespace-nowrap text-slate-500 transition-all border border-slate-200/50">
+                                        Atraso
+                                    </button>
+                                    <button onClick={() => handleQuickReply("Obrigada pela preferência! 🥰")} className="text-[10px] font-black uppercase tracking-wider bg-slate-100 hover:bg-pink-100 hover:text-pink-700 px-3 py-1.5 rounded-full whitespace-nowrap text-slate-500 transition-all border border-slate-200/50">
+                                        Agradecimento
+                                    </button>
                                 </div>
                             </div>
-
-                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                                <div className="p-6 border-b border-slate-100">
-                                    <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                                        <Calendar className="w-5 h-5 text-blue-500" />
-                                        Agenda e Lembretes
-                                    </h3>
-                                </div>
-                                <div className="divide-y divide-slate-100">
-                                    <div className="p-6 flex items-center justify-between">
-                                        <div>
-                                            <p className="font-semibold text-slate-800">Confirmação (24h antes)</p>
-                                            <p className="text-sm text-slate-500 max-w-md">Envia uma mensagem pedindo confirmação do horário um dia antes.</p>
-                                        </div>
-                                        <ToggleSwitch on={automations.confirm24h} onClick={() => toggleAutomation('confirm24h')} />
-                                    </div>
-                                    <div className="p-6 flex items-center justify-between">
-                                        <div>
-                                            <p className="font-semibold text-slate-800">Lembrete (2h antes)</p>
-                                            <p className="text-sm text-slate-500 max-w-md">Envia um lembrete rápido para o cliente não esquecer.</p>
-                                        </div>
-                                        <ToggleSwitch on={automations.remind2h} onClick={() => toggleAutomation('remind2h')} />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                                <div className="p-6 border-b border-slate-100">
-                                    <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                                        <Gift className="w-5 h-5 text-pink-500" />
-                                        Relacionamento
-                                    </h3>
-                                </div>
-                                <div className="divide-y divide-slate-100">
-                                    <div className="p-6 flex items-center justify-between">
-                                        <div>
-                                            <p className="font-semibold text-slate-800">Feliz Aniversário</p>
-                                            <p className="text-sm text-slate-500 max-w-md">Envia uma mensagem de parabéns com um cupom de desconto.</p>
-                                        </div>
-                                        <ToggleSwitch on={automations.birthday} onClick={() => toggleAutomation('birthday')} />
-                                    </div>
-                                    <div className="p-6 flex items-center justify-between">
-                                        <div>
-                                            <p className="font-semibold text-slate-800">Feedback Pós-Atendimento</p>
-                                            <p className="text-sm text-slate-500 max-w-md">Pergunta a nota do serviço 1h após a conclusão.</p>
-                                        </div>
-                                        <ToggleSwitch on={automations.feedback} onClick={() => toggleAutomation('feedback')} />
-                                    </div>
-                                     <div className="p-6 flex items-center justify-between">
-                                        <div>
-                                            <p className="font-semibold text-slate-800">Recuperação de Inativos</p>
-                                            <p className="text-sm text-slate-500 max-w-md">Envia uma oferta para clientes que não voltam há mais de 30 dias.</p>
-                                        </div>
-                                        <ToggleSwitch on={automations.recovery} onClick={() => toggleAutomation('recovery')} />
-                                    </div>
-                                </div>
-                            </div>
+                            
+                            <button 
+                                onClick={() => handleSendMessage()}
+                                className="p-4 bg-green-600 text-white rounded-2xl hover:bg-green-700 shadow-lg shadow-green-100 transition-all active:scale-90 flex-shrink-0"
+                            >
+                                <Send className="w-5 h-5" />
+                            </button>
                         </div>
-                    </div>
-                )}
-
-                {/* --- CONNECTION VIEW --- */}
-                {activeTab === 'connection' && (
-                    <div className="h-full bg-slate-50 overflow-y-auto flex flex-col items-center justify-center p-6">
-                        
-                        {connectionStatus === 'disconnected' && (
-                            <div className="bg-white p-10 rounded-3xl shadow-xl text-center max-w-md w-full animate-in zoom-in-95">
-                                <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                                    <LinkIcon className="w-10 h-10 text-slate-400" />
-                                </div>
-                                <h2 className="text-2xl font-bold text-slate-800 mb-2">Conectar WhatsApp</h2>
-                                <p className="text-slate-500 mb-8 leading-relaxed">
-                                    Para ativar o JaciBot e enviar mensagens automáticas, você precisa escanear o QR Code com seu celular.
-                                </p>
-                                <button 
-                                    onClick={startConnection}
-                                    className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-green-200 transition-all active:scale-95 flex items-center justify-center gap-2"
-                                >
-                                    <QrCode size={20} />
-                                    Gerar QR Code
-                                </button>
-                            </div>
-                        )}
-
-                        {(connectionStatus === 'connecting' || connectionStatus === 'qr_ready') && (
-                            <div className="bg-white p-8 rounded-3xl shadow-xl text-center max-w-md w-full animate-in fade-in">
-                                <h3 className="text-xl font-bold text-slate-800 mb-6">Escaneie o código</h3>
-                                
-                                <div className="bg-slate-900 p-4 rounded-xl inline-block mb-6 relative group cursor-pointer" onClick={simulateScan}>
-                                    {connectionStatus === 'connecting' ? (
-                                        <div className="w-64 h-64 flex items-center justify-center bg-white rounded-lg">
-                                            <RefreshCw className="w-10 h-10 text-slate-300 animate-spin" />
-                                        </div>
-                                    ) : (
-                                        <div className="relative">
-                                            {/* Mock QR Code Image */}
-                                            <img 
-                                                src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=BelaFlow-Auth-Token-12345" 
-                                                alt="Scan me" 
-                                                className="w-64 h-64 rounded-lg mix-blend-screen"
-                                            />
-                                            <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-sm font-bold backdrop-blur-sm rounded-lg">
-                                                Clique para simular leitura
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <ol className="text-left text-sm text-slate-600 space-y-3 bg-slate-50 p-4 rounded-xl">
-                                    <li className="flex gap-2"><span className="font-bold text-green-600">1.</span> Abra o WhatsApp no seu celular</li>
-                                    <li className="flex gap-2"><span className="font-bold text-green-600">2.</span> Toque em Menu (⋮) ou Configurações</li>
-                                    <li className="flex gap-2"><span className="font-bold text-green-600">3.</span> Selecione <b>Aparelhos Conectados</b></li>
-                                    <li className="flex gap-2"><span className="font-bold text-green-600">4.</span> Toque em <b>Conectar um aparelho</b></li>
-                                </ol>
-                            </div>
-                        )}
-
-                        {connectionStatus === 'connected' && (
-                            <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full animate-in zoom-in-95">
-                                <div className="flex items-center gap-4 mb-8">
-                                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center border-4 border-green-50">
-                                        <Smartphone className="w-8 h-8 text-green-600" />
-                                    </div>
-                                    <div>
-                                        <h2 className="text-xl font-bold text-slate-800">Conectado</h2>
-                                        <p className="text-green-600 font-medium text-sm flex items-center gap-1">
-                                            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                                            Online agora
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-4 mb-8">
-                                    <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
-                                        <span className="text-slate-500 text-sm">Sessão</span>
-                                        <span className="font-mono text-slate-800 text-sm">BelaFlow Web</span>
-                                    </div>
-                                    <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
-                                        <span className="text-slate-500 text-sm flex items-center gap-2">
-                                            <BatteryCharging className="w-4 h-4"/> Bateria
-                                        </span>
-                                        <span className="font-bold text-slate-800 text-sm">{batteryLevel}%</span>
-                                    </div>
-                                </div>
-
-                                <button 
-                                    onClick={handleDisconnect}
-                                    className="w-full border border-red-200 text-red-600 hover:bg-red-50 font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
-                                >
-                                    <LogOut size={18} />
-                                    Desconectar
-                                </button>
-                            </div>
-                        )}
-
+                    </>
+                ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center bg-white/50 backdrop-blur-sm">
+                        <div className="w-24 h-24 bg-white rounded-[40px] flex items-center justify-center shadow-xl border border-slate-100 mb-6">
+                            <MessageSquare className="w-10 h-10 text-slate-200" />
+                        </div>
+                        <h3 className="text-xl font-black text-slate-700 leading-tight">Canal WhatsApp BelaFlow</h3>
+                        <p className="text-sm font-medium text-slate-400 max-w-xs mt-2">Escolha uma conversa para ler as mensagens e responder em tempo real.</p>
                     </div>
                 )}
             </div>
