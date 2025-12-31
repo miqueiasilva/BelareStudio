@@ -13,6 +13,7 @@ interface CheckoutModalProps {
     onClose: () => void;
     appointment: {
         id: number;
+        client_id?: number;
         client_name: string;
         service_name: string;
         price: number;
@@ -37,15 +38,16 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const handleFinalize = async () => {
         setIsLoading(true);
         try {
-            // FIX: Mapeamento corrigido para o padrão de colunas em Inglês do Supabase
+            // FIX: Removido campo 'date' para usar o default 'created_at' do banco
+            // Payload limpo conforme o schema da tabela 'financial_transactions'
             const financialUpdate = {
                 amount: appointment.price,
                 description: `${appointment.service_name} - ${appointment.client_name}`,
                 type: 'income',
                 category: 'servico',
                 payment_method: selectedMethod,
-                date: new Date().toISOString(),
-                appointment_id: appointment.id
+                appointment_id: appointment.id,
+                client_id: appointment.client_id || null
             };
 
             // Transação Atômica: Atualiza Agendamento + Cria Lançamento Financeiro

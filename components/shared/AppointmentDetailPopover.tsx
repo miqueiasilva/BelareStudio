@@ -191,6 +191,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                 }}
                 appointment={{
                     id: appointment.id,
+                    client_id: appointment.client?.id,
                     client_name: appointment.client?.nome || 'Cliente',
                     service_name: appointment.service.name,
                     price: appointment.service.price
