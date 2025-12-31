@@ -4,9 +4,10 @@ import {
     ChevronLeft, ChevronRight, MessageSquare, 
     ChevronDown, RefreshCw, Calendar as CalendarIcon,
     ShoppingBag, Ban, Settings as SettingsIcon, Maximize2, 
-    LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock
+    LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock,
+    AlertTriangle, ArrowRight, CalendarDays
 } from 'lucide-react';
-import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
+import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, parseISO, addMinutes } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
@@ -22,6 +23,55 @@ const START_HOUR = 8;
 const END_HOUR = 20; 
 const SLOT_PX_HEIGHT = 80; 
 const CARD_TOP_OFFSET = 10; 
+
+// --- COMPONENTE INTERNO: MODAL DE CONFLITO ---
+const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) => {
+    return (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-300">
+            <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-orange-100">
+                <div className="bg-orange-50 p-8 text-center border-b border-orange-100">
+                    <div className="w-20 h-20 bg-orange-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-200 animate-bounce">
+                        <AlertTriangle size={40} />
+                    </div>
+                    <h2 className="text-2xl font-black text-slate-800 leading-tight">Conflito de Horário Detectado!</h2>
+                </div>
+                
+                <div className="p-8 space-y-6">
+                    <div className="space-y-4">
+                        <p className="text-slate-600 text-sm leading-relaxed text-center font-medium">
+                            O horário das <b className="text-slate-800">{format(newApp.start, 'HH:mm')}</b> às <b className="text-slate-800">{format(newApp.end, 'HH:mm')}</b> choca com o atendimento de:
+                        </p>
+                        
+                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex items-center gap-4">
+                            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-orange-500 shadow-sm border border-orange-100">
+                                <CalendarDays size={24} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="font-black text-slate-800 truncate">{conflictApp.client_name}</p>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{conflictApp.service_name}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                        <button 
+                            onClick={onConfirm}
+                            className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-orange-100 transition-all active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            Salvar Mesmo Assim (Encaixe)
+                        </button>
+                        <button 
+                            onClick={onCancel}
+                            className="w-full py-4 text-slate-400 font-bold text-sm hover:text-slate-600 transition-colors"
+                        >
+                            Voltar e Ajustar Horário
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
@@ -131,6 +181,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
 
+    // Conflitos de Horário
+    const [pendingConflict, setPendingConflict] = useState<{ newApp: LegacyAppointment, conflictWith: any } | null>(null);
+
     const [viewMode, setViewMode] = useState<ViewMode>('profissional');
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [colWidth, setColWidth] = useState(220);
@@ -236,14 +289,51 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     };
 
-    const handleSaveAppointment = async (app: LegacyAppointment) => {
+    // --- LOGICA DE PRE-SAVE E CONFLITO ---
+    const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
         setIsLoadingData(true);
         try {
+            // 1. Verificação de Conflito (Se não for forçado)
+            if (!force) {
+                const dayStart = new Date(app.start);
+                dayStart.setHours(0, 0, 0, 0);
+                const dayEnd = new Date(app.start);
+                dayEnd.setHours(23, 59, 59, 999);
+
+                const { data: existingOnDay } = await supabase
+                    .from('appointments')
+                    .select('*')
+                    .eq('resource_id', app.professional.id)
+                    .neq('status', 'cancelado')
+                    .gte('date', dayStart.toISOString())
+                    .lte('date', dayEnd.toISOString());
+
+                const conflict = existingOnDay?.find(row => {
+                    if (app.id && row.id === app.id) return false; // Ignora o próprio agendamento na edição
+
+                    const startE = new Date(row.date);
+                    const endE = addMinutes(startE, row.duration || 30);
+                    const startN = app.start;
+                    const endN = app.end;
+
+                    // Logica Coincidente: (NovoInicio < FimExistente) && (NovoFim > InicioExistente)
+                    return (startN < endE) && (endN > startE);
+                });
+
+                if (conflict) {
+                    setPendingConflict({ newApp: app, conflictWith: conflict });
+                    setIsLoadingData(false);
+                    return; // Interrompe para mostrar o alerta
+                }
+            }
+
+            // 2. Gravação Real
             const payload = {
                 client_name: app.client?.nome, resource_id: app.professional.id, professional_name: app.professional.name,
                 service_name: app.service.name, value: app.service.price, duration: app.service.duration,
                 date: app.start.toISOString(), status: app.status, notes: app.notas, origem: 'interno'
             };
+
             if (app.id && appointments.some(a => a.id === app.id)) {
                 const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
                 if (error) throw error;
@@ -251,10 +341,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 const { error } = await supabase.from('appointments').insert([payload]);
                 if (error) throw error;
             }
+
             setToast({ message: 'Agendamento salvo!', type: 'success' });
             setModalState(null);
+            setPendingConflict(null);
             fetchAppointments();
-        } catch (e: any) { setToast({ message: 'Erro ao salvar.', type: 'error' }); } finally { if(isMounted.current) setIsLoadingData(false); }
+        } catch (e: any) { 
+            setToast({ message: 'Erro ao salvar.', type: 'error' }); 
+        } finally { 
+            if(isMounted.current) setIsLoadingData(false); 
+        }
     };
 
     const handleSaveBlock = async (block: LegacyAppointment) => {
@@ -687,6 +783,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     type="receita"
                     onClose={() => setModalState(null)}
                     onSave={(t) => { onAddTransaction(t); setModalState(null); setToast({ message: 'Venda registrada!', type: 'success' }); }}
+                />
+            )}
+
+            {/* MODAL DE ALERTA DE CONFLITO */}
+            {pendingConflict && (
+                <ConflictAlertModal 
+                    newApp={pendingConflict.newApp}
+                    conflictApp={pendingConflict.conflictWith}
+                    onConfirm={() => handleSaveAppointment(pendingConflict.newApp, true)}
+                    onCancel={() => setPendingConflict(null)}
                 />
             )}
             
