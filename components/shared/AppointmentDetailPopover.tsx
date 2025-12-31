@@ -3,7 +3,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { LegacyAppointment, AppointmentStatus } from '../../types';
 import { 
     Calendar, Tag, DollarSign, Send, Edit, Trash2, 
-    User, MoreVertical, X, CheckCircle2 
+    User, MoreVertical, X, CheckCircle2, Receipt
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -49,6 +49,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+        // Se o checkout estiver aberto, não fechamos o popover (ele já está escondido por CSS)
         if (!isCheckoutOpen) onClose();
       }
     };
@@ -92,12 +93,16 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     onClose();
   };
 
+  // Lógica de visibilidade do botão de Checkout
+  // Apenas agendamentos ativos podem ser finalizados
+  const canCheckout = !['concluido', 'cancelado', 'bloqueado', 'faltou'].includes(appointment.status);
+
   return (
     <>
         <div
             ref={popoverRef}
-            className={`fixed z-40 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col transition-all duration-150 ${isCheckoutOpen ? 'hidden' : ''}`}
-            style={{ top: position.top, left: position.left, opacity: position.opacity }}
+            className={`fixed z-40 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col transition-all duration-150 ${isCheckoutOpen ? 'opacity-0 pointer-events-none scale-95' : 'scale-100'}`}
+            style={{ top: position.top, left: position.left, opacity: isCheckoutOpen ? 0 : position.opacity }}
             onClick={(e) => e.stopPropagation()}
         >
             <header className="flex items-center p-3 border-b border-slate-100 bg-slate-50/50">
@@ -115,7 +120,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                     <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mt-0.5">{appointment.service.name}</p>
                 </div>
                 
-                <div className="space-y-2">
+                <div className="space-y-3">
                     <div className="flex items-start gap-3 text-xs font-bold text-slate-600">
                         <Calendar size={14} className="mt-0.5 text-slate-400" />
                         <div>
@@ -131,31 +136,42 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                     </div>
                 </div>
 
-                <div className="border-t border-slate-100 pt-3 flex flex-col gap-2">
+                <div className="border-t border-slate-100 pt-4 flex flex-col gap-3">
+                    {/* Seletor de Status Simples */}
                     <button
                         ref={statusRef}
                         onClick={() => setIsStatusPopoverOpen(true)}
-                        className="w-full flex items-center justify-between text-xs font-black uppercase tracking-wider text-slate-500 bg-slate-50 hover:bg-slate-100 p-3 rounded-xl transition-all"
+                        className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-500 bg-slate-50 hover:bg-slate-100 p-3 rounded-xl transition-all border border-slate-100"
                     >
                         <div className="flex items-center gap-2">
-                            <CheckCircle2 size={14} />
+                            <CheckCircle2 size={14} className="text-slate-400" />
                             <span>{statusLabels[appointment.status]}</span>
                         </div>
                         <MoreVertical size={14} />
                     </button>
 
-                    {appointment.status !== 'concluido' && appointment.status !== 'bloqueado' && (
+                    {/* BOTÃO DE CHECKOUT (FINTEACH DESIGN) */}
+                    {canCheckout && (
                         <button
                             onClick={() => setIsCheckoutOpen(true)}
-                            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs uppercase tracking-[0.1em] py-4 rounded-xl shadow-lg shadow-emerald-100 transition-all active:scale-95 flex items-center justify-center gap-2"
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-[0.1em] py-4 rounded-2xl shadow-xl shadow-emerald-100 transition-all active:scale-95 flex items-center justify-center gap-2"
                         >
+                            <Receipt size={16} />
                             Finalizar Atendimento
                         </button>
+                    )}
+
+                    {appointment.status === 'concluido' && (
+                        <div className="flex items-center justify-center gap-2 py-3 bg-emerald-50 text-emerald-700 rounded-2xl border border-emerald-100">
+                            <CheckCircle2 size={16} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Pagamento Recebido</span>
+                        </div>
                     )}
                 </div>
             </main>
         </div>
 
+        {/* Modal de Status Flutuante */}
         {isStatusPopoverOpen && (
             <StatusUpdatePopover
                 appointment={appointment}
@@ -165,10 +181,15 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
             />
         )}
 
+        {/* MODAL DE CHECKOUT INTEGRADO */}
         {isCheckoutOpen && (
             <CheckoutModal 
                 isOpen={isCheckoutOpen}
-                onClose={() => { setIsCheckoutOpen(false); onClose(); }}
+                onClose={() => { 
+                    setIsCheckoutOpen(false); 
+                    // Não fechamos o popover pai imediatamente para evitar saltos de UI,
+                    // deixamos o usuário decidir ou fechamos no onSuccess
+                }}
                 appointment={{
                     id: appointment.id,
                     client_name: appointment.client?.nome || 'Cliente',
@@ -176,7 +197,10 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                     price: appointment.service.price
                 }}
                 onSuccess={() => {
+                    // Atualiza o estado na visualização da agenda e fecha tudo
                     onUpdateStatus(appointment.id, 'concluido');
+                    setIsCheckoutOpen(false);
+                    onClose();
                 }}
             />
         )}
@@ -185,3 +209,4 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
 };
 
 export default AppointmentDetailPopover;
+
