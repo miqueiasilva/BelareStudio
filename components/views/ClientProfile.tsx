@@ -22,45 +22,68 @@ interface ClientProfileProps {
     onSave: (client: any) => Promise<void>;
 }
 
-// --- Componente Interno: Assinatura Digital ---
+// --- Componente Interno: Assinatura Digital Refinada ---
 const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
+    const lastPos = useRef({ x: 0, y: 0 });
 
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        ctx.strokeStyle = '#1e293b';
-        ctx.lineWidth = 2;
+        
+        // Configurações de "Caneta Esferográfica"
+        ctx.strokeStyle = '#000080'; // Azul Marinho Profissional
         ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = 1.2; // Espessura base refinada
     }, []);
 
-    const startDrawing = (e: any) => {
+    const getPos = (e: any) => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!canvas) return { x: 0, y: 0 };
         const rect = canvas.getBoundingClientRect();
-        const x = (e.clientX || e.touches[0].clientX) - rect.left;
-        const y = (e.clientY || e.touches[0].clientY) - rect.top;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return {
+            x: clientX - rect.left,
+            y: clientY - rect.top
+        };
+    };
+
+    const startDrawing = (e: any) => {
+        const pos = getPos(e);
+        lastPos.current = pos;
         setIsDrawing(true);
+        
+        const ctx = canvasRef.current?.getContext('2d');
+        if (ctx) {
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+        }
     };
 
     const draw = (e: any) => {
         if (!isDrawing) return;
         const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        const rect = canvas.getBoundingClientRect();
-        const x = (e.clientX || e.touches[0].clientX) - rect.left;
-        const y = (e.clientY || e.touches[0].clientY) - rect.top;
-        ctx.lineTo(x, y);
+        const ctx = canvas?.getContext('2d');
+        if (!ctx || !canvas) return;
+
+        const pos = getPos(e);
+        
+        // Cálculo de velocidade para variar espessura (Simulação de Pressão)
+        const dist = Math.sqrt(Math.pow(pos.x - lastPos.current.x, 2) + Math.pow(pos.y - lastPos.current.y, 2));
+        const newWidth = Math.max(0.5, Math.min(2.5, 5 / (dist + 1)));
+        
+        // Suavização do traço
+        ctx.lineWidth = (ctx.lineWidth * 0.3) + (newWidth * 0.7); // Filtro de velocidade (Smoothing)
+        
+        ctx.lineTo(pos.x, pos.y);
         ctx.stroke();
+        
+        lastPos.current = pos;
     };
 
     const clear = () => {
@@ -73,29 +96,33 @@ const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
     const handleConfirm = () => {
         canvasRef.current?.toBlob((blob) => {
             if (blob) onSave(blob);
-        });
+        }, 'image/png');
     };
 
     return (
         <div className="space-y-3">
-            <div className="relative border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 overflow-hidden h-40 touch-none">
+            <div className="relative border-2 border-slate-200 rounded-3xl bg-white overflow-hidden h-48 touch-none shadow-inner">
+                {/* Linha Guia Estilo Papel */}
+                <div className="absolute bottom-12 left-8 right-8 h-px bg-slate-100 pointer-events-none"></div>
+                
                 <canvas 
                     ref={canvasRef}
-                    width={500}
+                    width={600}
                     height={200}
-                    className="w-full h-full cursor-crosshair"
+                    className="w-full h-full cursor-crosshair relative z-10"
                     onMouseDown={startDrawing}
                     onMouseMove={draw}
                     onMouseUp={() => setIsDrawing(false)}
-                    onTouchStart={startDrawing}
-                    onTouchMove={draw}
+                    onMouseLeave={() => setIsDrawing(false)}
+                    onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
+                    onTouchMove={(e) => { e.preventDefault(); draw(e); }}
                     onTouchEnd={() => setIsDrawing(false)}
                 />
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-none text-[9px] font-black text-slate-300 uppercase tracking-widest">Assine aqui</div>
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-none text-[9px] font-black text-slate-300 uppercase tracking-[0.3em] z-0">Assinatura Digital BelaFlow</div>
             </div>
             <div className="flex gap-2">
-                <button onClick={clear} className="flex-1 py-2 bg-slate-100 text-slate-500 rounded-xl text-xs font-bold flex items-center justify-center gap-2"><Eraser size={14}/> Limpar</button>
-                <button onClick={handleConfirm} className="flex-1 py-2 bg-orange-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2"><Check size={14}/> Salvar Assinatura</button>
+                <button onClick={clear} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors"><Eraser size={14}/> Limpar</button>
+                <button onClick={handleConfirm} className="flex-1 py-3 bg-orange-500 text-white rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-orange-600 shadow-lg shadow-orange-100 transition-all active:scale-95"><Check size={14}/> Confirmar Assinatura</button>
             </div>
         </div>
     );
