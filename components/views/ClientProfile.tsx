@@ -7,7 +7,7 @@ import {
     CreditCard, Briefcase, Home, Map, Hash, Info, Settings, 
     Camera, Loader2, FileText, Activity, AlertCircle, Maximize2,
     Trash2, PenTool, Eraser, Check, Image as ImageIcon, Instagram,
-    Navigation, Smile
+    Navigation, Smile, FilePlus, ChevronDown
 } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
@@ -128,18 +128,6 @@ const SignaturePad = ({ onSave }: { onSave: (blob: Blob) => void }) => {
     );
 };
 
-const ReadField = ({ label, value, icon: Icon, span = "col-span-1" }: any) => (
-    <div className={`flex items-start gap-3 py-3 border-b border-slate-50 last:border-0 group ${span}`}>
-        <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-orange-50 group-hover:text-orange-500 transition-colors flex-shrink-0 mt-1">
-            <Icon size={16} />
-        </div>
-        <div className="flex-1 min-w-0">
-            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">{label}</p>
-            <p className="text-sm font-bold text-slate-700 truncate">{value || '---'}</p>
-        </div>
-    </div>
-);
-
 const EditField = ({ label, name, value, onChange, type = "text", placeholder, span = "col-span-1", icon: Icon }: any) => (
     <div className={`space-y-1.5 ${span}`}>
         <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-wider">{label}</label>
@@ -170,6 +158,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const fileInputRef = useRef<HTMLInputElement>(null);
     const photoInputRef = useRef<HTMLInputElement>(null);
     
+    // Anamnese States
     const [anamnesis, setAnamnesis] = useState<any>({
         has_allergy: false,
         allergy_details: '',
@@ -179,6 +168,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         clinical_notes: '',
         signed_at: null
     });
+    const [templates, setTemplates] = useState<any[]>([]);
+    const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
 
     const [photos, setPhotos] = useState<any[]>([]);
 
@@ -210,6 +201,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         if (client.id) {
             fetchAnamnesis();
             fetchPhotos();
+            fetchTemplates();
         }
     }, [client.id]);
 
@@ -239,6 +231,26 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const fetchAnamnesis = async () => {
         const { data } = await supabase.from('client_anamnesis').select('*').eq('client_id', client.id).maybeSingle();
         if (data) setAnamnesis(data);
+    };
+
+    const fetchTemplates = async () => {
+        const { data } = await supabase.from('anamnesis_templates').select('id, name, content').order('name');
+        if (data) setTemplates(data);
+    };
+
+    const handleLoadTemplate = () => {
+        if (!selectedTemplateId) return;
+        const template = templates.find(t => t.id === Number(selectedTemplateId));
+        if (template) {
+            const currentNotes = anamnesis.clinical_notes || '';
+            const divider = currentNotes.trim() ? '\n\n---\n\n' : '';
+            setAnamnesis({
+                ...anamnesis,
+                clinical_notes: currentNotes + divider + template.content
+            });
+            setSelectedTemplateId('');
+            alert(`Roteiro "${template.name}" inserido com sucesso!`);
+        }
     };
 
     const fetchPhotos = async () => {
@@ -295,15 +307,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         await onSave(payload);
         setIsEditing(false);
     };
-
-    const clientAge = useMemo(() => {
-        if (!formData.nascimento) return null;
-        try {
-            const date = parseISO(formData.nascimento);
-            if (!isValid(date)) return null;
-            return differenceInYears(new Date(), date);
-        } catch { return null; }
-    }, [formData.nascimento]);
 
     return (
         <div className="fixed inset-0 bg-slate-100 z-[100] flex flex-col font-sans animate-in slide-in-from-right duration-300">
@@ -472,15 +475,44 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                         </div>
                                     ))}
 
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Observações Clínicas / Histórico</label>
-                                        <textarea 
-                                            value={anamnesis.clinical_notes}
-                                            onChange={(e) => setAnamnesis({...anamnesis, clinical_notes: e.target.value})}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-medium text-slate-600 outline-none focus:ring-2 focus:ring-orange-100"
-                                            rows={4}
-                                            placeholder="Anotações internas sobre a pele ou reações anteriores..."
-                                        />
+                                    {/* SEÇÃO DE TEMPLATES DINÂMICOS */}
+                                    <div className="pt-4 space-y-4">
+                                        <div className="flex flex-col sm:flex-row items-end gap-3 p-4 bg-orange-50 rounded-2xl border border-orange-100">
+                                            <div className="flex-1 w-full space-y-1.5">
+                                                <label className="text-[10px] font-black text-orange-600 uppercase tracking-widest ml-1">Carregar Modelo de Ficha</label>
+                                                <div className="relative">
+                                                    <select 
+                                                        value={selectedTemplateId}
+                                                        onChange={(e) => setSelectedTemplateId(e.target.value)}
+                                                        className="w-full bg-white border border-orange-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 outline-none appearance-none focus:ring-2 focus:ring-orange-200"
+                                                    >
+                                                        <option value="">Selecione um roteiro...</option>
+                                                        {templates.map(t => (
+                                                            <option key={t.id} value={t.id}>{t.name}</option>
+                                                        ))}
+                                                    </select>
+                                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-orange-400 pointer-events-none" size={16} />
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={handleLoadTemplate}
+                                                disabled={!selectedTemplateId}
+                                                className="w-full sm:w-auto px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+                                            >
+                                                <FilePlus size={16} /> Inserir Modelo
+                                            </button>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Observações Clínicas / Histórico</label>
+                                            <textarea 
+                                                value={anamnesis.clinical_notes}
+                                                onChange={(e) => setAnamnesis({...anamnesis, clinical_notes: e.target.value})}
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-medium text-slate-600 outline-none focus:ring-2 focus:ring-orange-100"
+                                                rows={8}
+                                                placeholder="Anotações internas sobre a pele ou reações anteriores..."
+                                            />
+                                        </div>
                                     </div>
 
                                     <div className="pt-6 border-t border-slate-100">
