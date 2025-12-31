@@ -118,22 +118,32 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const resetPassword = async (email: string) => supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
   const updatePassword = async (newPassword: string) => supabase.auth.updateUser({ password: newPassword });
   
-  // FIX: Logout Fail-Safe Robusto
+  /**
+   * LOGOUT FAIL-SAFE
+   * Implementação robusta que garante a saída do usuário independente da resposta do servidor.
+   */
   const signOut = async () => {
     try {
       setLoading(true);
-      // Tenta desconectar graciosamente no servidor
-      await supabase.auth.signOut();
+      // Tentativa de encerramento de sessão no servidor
+      if (supabase) {
+        await supabase.auth.signOut();
+      }
     } catch (error) {
-      console.error("AuthContext: Erro crítico ao desconectar do servidor:", error);
+      // Silenciamos o erro para o usuário não travar em uma tela de erro durante a saída
+      console.error("AuthContext: Erro ao desconectar do servidor:", error);
     } finally {
-      // ACONTEÇA O QUE ACONTECER: Limpa estado local e memória
+      // LIMPEZA LOCAL OBRIGATÓRIA (Mesmo se a rede falhar)
       setUser(null);
+      
+      // Limpeza nuclear de persistência local
       localStorage.clear();
       sessionStorage.clear();
+      
       setLoading(false);
       
-      // Redirecionamento nuclear para garantir que o app reinicie no estado de login
+      // Redirecionamento forçado para a raiz
+      // Em um SPA com controle de estado como este, o root sem 'user' disparará o LoginView.
       window.location.href = '/'; 
     }
   };
