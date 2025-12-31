@@ -351,56 +351,56 @@ const ConfiguracoesView: React.FC = () => {
                                         </div>
                                         
                                         {config.active ? (
-                                            <div className="flex flex-col md:flex-row items-center gap-4 xl:gap-6 w-full xl:w-3/4 justify-end">
+                                            <div className="flex flex-col md:flex-row items-center gap-4 xl:gap-6 w-full xl:w-3/4 justify-end flex-wrap">
                                                 
                                                 {/* TURNO 1 (MANHÃ) */}
-                                                <div className="flex items-center gap-2 group">
-                                                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all">
-                                                        <span className="text-[9px] font-black text-slate-400 uppercase">Início</span>
+                                                <div className="flex items-center gap-2 group flex-wrap md:flex-nowrap">
+                                                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-2.5 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all min-w-[125px]">
+                                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Início</span>
                                                         <input 
                                                             type="time" 
                                                             value={config.start || '08:00'} 
                                                             onChange={e => handleHourChange(day.key, 'start', e.target.value)} 
-                                                            className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 w-16" 
+                                                            className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 flex-1" 
                                                         />
                                                     </div>
-                                                    <span className="text-slate-300 font-bold">até</span>
-                                                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all">
-                                                        <span className="text-[9px] font-black text-slate-400 uppercase text-right">Almoço</span>
+                                                    <span className="text-slate-300 font-bold text-xs">até</span>
+                                                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-2.5 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all min-w-[125px]">
+                                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter text-right">Almoço</span>
                                                         <input 
                                                             type="time" 
                                                             value={config.break_start || '12:00'} 
                                                             onChange={e => handleHourChange(day.key, 'break_start', e.target.value)} 
-                                                            className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 w-16" 
+                                                            className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 flex-1" 
                                                         />
                                                     </div>
                                                 </div>
 
                                                 {/* INDICADOR DE PAUSA */}
-                                                <div className="flex items-center justify-center p-2 bg-orange-50 text-orange-500 rounded-full" title="Intervalo de Almoço">
+                                                <div className="flex items-center justify-center p-2.5 bg-orange-50 text-orange-500 rounded-full" title="Intervalo de Almoço">
                                                     <Coffee size={16} strokeWidth={3} />
                                                 </div>
 
                                                 {/* TURNO 2 (TARDE) */}
-                                                <div className="flex items-center gap-2">
-                                                    <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-all ${isBreakInvalid ? 'bg-rose-50 border-rose-200' : 'bg-slate-100 border-transparent focus-within:border-orange-200 focus-within:bg-white'}`}>
-                                                        <span className={`text-[9px] font-black uppercase ${isBreakInvalid ? 'text-rose-400' : 'text-slate-400'}`}>Volta</span>
+                                                <div className="flex items-center gap-2 group flex-wrap md:flex-nowrap">
+                                                    <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all min-w-[125px] ${isBreakInvalid ? 'bg-rose-50 border-rose-200' : 'bg-slate-100 border-transparent focus-within:border-orange-200 focus-within:bg-white'}`}>
+                                                        <span className={`text-[9px] font-black uppercase tracking-tighter ${isBreakInvalid ? 'text-rose-400' : 'text-slate-400'}`}>Volta</span>
                                                         <input 
                                                             type="time" 
                                                             value={config.break_end || '13:00'} 
                                                             onChange={e => handleHourChange(day.key, 'break_end', e.target.value)} 
-                                                            className={`bg-transparent border-none p-0 text-sm font-black outline-none focus:ring-0 w-16 ${isBreakInvalid ? 'text-rose-600' : 'text-slate-700'}`} 
+                                                            className={`bg-transparent border-none p-0 text-sm font-black outline-none focus:ring-0 flex-1 ${isBreakInvalid ? 'text-rose-600' : 'text-slate-700'}`} 
                                                         />
                                                         {isBreakInvalid && <AlertCircle size={14} className="text-rose-500 animate-pulse" />}
                                                     </div>
-                                                    <span className="text-slate-300 font-bold">até</span>
-                                                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all">
-                                                        <span className="text-[9px] font-black text-slate-400 uppercase text-right">Saída</span>
+                                                    <span className="text-slate-300 font-bold text-xs">até</span>
+                                                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-2.5 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all min-w-[125px]">
+                                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter text-right">Saída</span>
                                                         <input 
                                                             type="time" 
                                                             value={config.end || '18:00'} 
                                                             onChange={e => handleHourChange(day.key, 'end', e.target.value)} 
-                                                            className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 w-16" 
+                                                            className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 flex-1" 
                                                         />
                                                     </div>
                                                 </div>
