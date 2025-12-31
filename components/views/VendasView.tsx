@@ -1,16 +1,15 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-// FIX: Added missing 'Eraser' import from lucide-react.
 import { 
     Search, ShoppingCart, Plus, Minus, Trash2, CreditCard, 
     Banknote, Smartphone, CheckCircle, Package, Scissors, 
-    ChevronRight, Calendar, User, X, Printer, ArrowRight, Loader2,
+    Calendar, User, X, Printer, ArrowRight, Loader2,
     Eraser
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
-import { FinancialTransaction, PaymentMethod, Client, LegacyAppointment } from '../../types';
+import { FinancialTransaction, PaymentMethod, Client } from '../../types';
 import Toast, { ToastType } from '../shared/Toast';
-import { format, isSameDay } from 'date-fns';
+import { format } from 'date-fns';
 
 interface CartItem {
     uuid: string; // ID único para a instância do item no carrinho
@@ -25,10 +24,10 @@ interface VendasViewProps {
     onAddTransaction: (t: FinancialTransaction) => void;
 }
 
-const ReceiptModal = ({ transaction, onClose, onNewSale }: { transaction: FinancialTransaction, onClose: () => void, onNewSale: () => void }) => (
+const ReceiptModal = ({ transaction, onClose, onNewSale }: { transaction: any, onClose: () => void, onNewSale: () => void }) => (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
         <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="bg-green-50 p-6 text-center text-white">
+            <div className="bg-green-500 p-6 text-center text-white">
                 <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-md">
                     <CheckCircle className="w-10 h-10 text-white" />
                 </div>
@@ -39,18 +38,18 @@ const ReceiptModal = ({ transaction, onClose, onNewSale }: { transaction: Financ
             <div className="p-6 space-y-4">
                 <div className="text-center space-y-1 border-b border-slate-100 pb-4">
                     <p className="text-xs text-slate-400 uppercase font-bold">Valor Total</p>
-                    <p className="text-3xl font-extrabold text-slate-800">R$ {transaction.amount.toFixed(2)}</p>
-                    <p className="text-sm text-slate-500 capitalize">{transaction.paymentMethod.replace('_', ' ')}</p>
+                    <p className="text-3xl font-extrabold text-slate-800">R$ {Number(transaction.amount).toFixed(2)}</p>
+                    <p className="text-sm text-slate-500 capitalize">{transaction.payment_method?.replace('_', ' ') || 'Pix'}</p>
                 </div>
 
                 <div className="space-y-2 text-sm text-slate-600">
                     <div className="flex justify-between">
                         <span>Data:</span>
-                        <span className="font-medium">{format(transaction.date, 'dd/MM/yyyy HH:mm')}</span>
+                        <span className="font-medium">{format(new Date(), 'dd/MM/yyyy HH:mm')}</span>
                     </div>
                     <div className="flex justify-between">
                         <span>Itens:</span>
-                        <span className="font-medium truncate max-w-[200px]">{transaction.description.replace('Venda PDV: ', '')}</span>
+                        <span className="font-medium truncate max-w-[200px]">{transaction.description?.replace('Venda PDV: ', '')}</span>
                     </div>
                 </div>
 
@@ -75,15 +74,15 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
     const [discount, setDiscount] = useState<string>('');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-    const [lastTransaction, setLastTransaction] = useState<FinancialTransaction | null>(null);
+    const [lastTransaction, setLastTransaction] = useState<any | null>(null);
 
     // Estados para dados reais do banco
     const [dbServices, setDbServices] = useState<any[]>([]);
     const [dbProducts, setDbProducts] = useState<any[]>([]);
     const [dbAppointments, setDbAppointments] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isFinishing, setIsFinishing] = useState(false);
 
-    // 1. Fetch de Dados do Supabase
     const fetchPOSData = async () => {
         setIsLoading(true);
         try {
@@ -118,7 +117,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
         fetchPOSData();
     }, []);
 
-    // --- Dados Filtrados baseados na Aba Ativa ---
     const filteredItems = useMemo(() => {
         const term = searchTerm.toLowerCase();
         if (activeTab === 'servicos') {
@@ -133,8 +131,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
     const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
     const discountValue = parseFloat(discount) || 0;
     const total = Math.max(0, subtotal - discountValue);
-
-    // --- Handlers ---
 
     const addToCart = (item: any, type: 'servico' | 'produto') => {
         setCart(prev => {
@@ -160,7 +156,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
     };
 
     const importAppointment = (app: any) => {
-        // Busca o serviço correspondente na lista do banco para pegar os dados completos
         const service = dbServices.find(s => s.nome === app.service_name) || {
             id: app.service_id || 0,
             nome: app.service_name,
@@ -188,13 +183,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
         setCart(prev => prev.filter((_, i) => i !== index));
     };
 
-    const clearCart = () => {
-        if (cart.length === 0) return;
-        if (window.confirm('Tem certeza que deseja cancelar esta venda e limpar o carrinho?')) {
-            resetSaleState();
-        }
-    };
-
     const resetSaleState = () => {
         setCart([]);
         setDiscount('');
@@ -203,27 +191,74 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
         setLastTransaction(null);
     };
 
-    const handleCheckout = () => {
+    const clearCart = () => {
         if (cart.length === 0) return;
+        if (window.confirm('Tem certeza que deseja cancelar esta venda e limpar o carrinho?')) {
+            resetSaleState();
+        }
+    };
 
-        const description = selectedClient 
-            ? `Venda PDV - ${selectedClient.nome}: ${cart.map(i => i.name).join(', ')}`
-            : `Venda PDV: ${cart.map(i => `${i.quantity}x ${i.name}`).join(', ')}`;
+    const handleFinishSale = async () => {
+        if (cart.length === 0 || isFinishing) return;
+        setIsFinishing(true);
 
-        const transaction: FinancialTransaction = {
-            id: Date.now(),
-            description: description,
-            amount: total,
-            type: 'receita',
-            category: cart.some(i => i.type === 'produto') ? 'produto' : 'servico',
-            date: new Date(),
-            paymentMethod: paymentMethod,
-            status: 'pago',
-            clientId: selectedClient?.id
-        };
+        try {
+            // 1. Preparar Descrição e Payload da Transação
+            const itemsResumo = cart.map(i => `${i.quantity}x ${i.name}`).join(', ');
+            const description = selectedClient 
+                ? `Venda PDV - ${selectedClient.nome}: ${itemsResumo}`
+                : `Venda PDV: ${itemsResumo}`;
 
-        onAddTransaction(transaction);
-        setLastTransaction(transaction);
+            const transactionData = {
+                description: description,
+                amount: total,
+                type: 'income',
+                category: cart.some(i => i.type === 'produto') ? 'produto' : 'servico',
+                payment_method: paymentMethod,
+                client_id: selectedClient?.id || null,
+                appointment_id: null
+            };
+
+            // 2. Gravar Transação Financeira
+            const { data: transaction, error: transError } = await supabase
+                .from('financial_transactions')
+                .insert([transactionData])
+                .select()
+                .single();
+
+            if (transError) throw transError;
+
+            // 3. Baixa de Estoque (apenas para produtos)
+            const productItems = cart.filter(i => i.type === 'produto');
+            if (productItems.length > 0) {
+                const stockUpdates = productItems.map(item => {
+                    const dbProd = dbProducts.find(p => p.id === item.id);
+                    // Usando 'stock_quantity' conforme solicitado, fallback para 'qtd' se necessário
+                    const currentStock = dbProd?.stock_quantity ?? dbProd?.qtd ?? 0;
+                    return supabase
+                        .from('products')
+                        .update({ stock_quantity: Math.max(0, currentStock - item.quantity) })
+                        .eq('id', item.id);
+                });
+                
+                const updateResults = await Promise.all(stockUpdates);
+                const firstError = updateResults.find(r => r.error);
+                if (firstError) console.warn("Aviso: Falha parcial ao atualizar estoque:", firstError.error);
+            }
+
+            // 4. Sucesso
+            setToast({ message: "Venda realizada com sucesso! 💰", type: 'success' });
+            setLastTransaction(transaction);
+            
+            // Recarrega catálogo para atualizar estoques visuais
+            fetchPOSData();
+
+        } catch (error: any) {
+            console.error("Erro ao finalizar venda:", error);
+            setToast({ message: `Erro: ${error.message || "Não foi possível gravar a venda."}`, type: 'error' });
+        } finally {
+            setIsFinishing(false);
+        }
     };
 
     const paymentMethodsConfig = [
@@ -248,7 +283,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
 
             {/* COLUNA ESQUERDA: CATÁLOGO */}
             <div className="flex-1 flex flex-col min-w-0 border-r border-slate-200">
-                {/* Cabeçalho e Tabs */}
                 <div className="bg-white p-4 border-b border-slate-200 space-y-4">
                     <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
                         <button 
@@ -282,7 +316,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                     </div>
                 </div>
 
-                {/* Conteúdo da Grade */}
                 <div className="flex-1 overflow-y-auto p-4 bg-slate-50">
                     {isLoading ? (
                         <div className="h-full flex flex-col items-center justify-center text-slate-400">
@@ -325,43 +358,39 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                                 )}
                             </div>
                         ) : (
-                            /* VISÃO CATÁLOGO (Produtos/Serviços Reais) */
                             <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                                {filteredItems.map((item: any) => (
-                                    <button 
-                                        key={item.id}
-                                        onClick={() => addToCart(item, activeTab === 'servicos' ? 'servico' : 'produto')}
-                                        className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:border-orange-400 hover:shadow-md transition-all text-left flex flex-col h-full group"
-                                    >
-                                        <div className="flex-1">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <span className="text-[9px] uppercase font-black text-slate-400 tracking-wider bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">
-                                                    {item.categoria || (activeTab === 'servicos' ? 'Serviço' : 'Produto')}
-                                                </span>
-                                                {activeTab === 'produtos' && (
-                                                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase ${Number(item.qtd) < 5 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                                                        Estoque: {item.qtd}
+                                {filteredItems.map((item: any) => {
+                                    const stock = item.stock_quantity ?? item.qtd ?? 0;
+                                    return (
+                                        <button 
+                                            key={item.id}
+                                            onClick={() => addToCart(item, activeTab === 'servicos' ? 'servico' : 'produto')}
+                                            className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:border-orange-400 hover:shadow-md transition-all text-left flex flex-col h-full group"
+                                        >
+                                            <div className="flex-1">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <span className="text-[9px] uppercase font-black text-slate-400 tracking-wider bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">
+                                                        {item.categoria || (activeTab === 'servicos' ? 'Serviço' : 'Produto')}
                                                     </span>
-                                                )}
+                                                    {activeTab === 'produtos' && (
+                                                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase ${stock < 5 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                                            Estoque: {stock}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <h4 className="font-black text-slate-800 text-sm leading-tight mb-2 line-clamp-2">{item.nome}</h4>
                                             </div>
-                                            <h4 className="font-black text-slate-800 text-sm leading-tight mb-2 line-clamp-2">{item.nome}</h4>
-                                        </div>
-                                        <div className="mt-4 flex items-center justify-between">
-                                            <span className="font-black text-lg text-slate-800 tracking-tighter">
-                                                R$ {Number(item.preco).toFixed(2)}
-                                            </span>
-                                            <div className="w-9 h-9 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center group-hover:bg-orange-500 group-hover:text-white transition-all shadow-sm">
-                                                <Plus size={20} />
+                                            <div className="mt-4 flex items-center justify-between">
+                                                <span className="font-black text-lg text-slate-800 tracking-tighter">
+                                                    R$ {Number(item.preco).toFixed(2)}
+                                                </span>
+                                                <div className="w-9 h-9 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center group-hover:bg-orange-500 group-hover:text-white transition-all shadow-sm">
+                                                    <Plus size={20} />
+                                                </div>
                                             </div>
-                                        </div>
-                                    </button>
-                                ))}
-                                {filteredItems.length === 0 && (
-                                    <div className="col-span-full flex flex-col items-center justify-center py-12 text-slate-400">
-                                        <Search size={48} className="mb-2 opacity-20" />
-                                        <p className="text-xs font-bold uppercase tracking-widest">Nenhum item encontrado.</p>
-                                    </div>
-                                )}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         )
                     )}
@@ -386,7 +415,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                     )}
                 </div>
 
-                {/* Lista de Itens do Carrinho */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
                     {cart.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-4 opacity-60">
@@ -425,7 +453,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                     )}
                 </div>
 
-                {/* Resumo e Checkout */}
                 <div className="bg-slate-50/80 backdrop-blur-md p-6 border-t border-slate-200 space-y-6">
                     <div className="space-y-2">
                         <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-widest">
@@ -454,7 +481,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                         <span className="text-3xl font-black text-slate-800 tracking-tighter">R$ {total.toFixed(2)}</span>
                     </div>
 
-                    {/* Seletor de Pagamento */}
                     <div className="space-y-3">
                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Método de Recebimento</label>
                         <div className="grid grid-cols-4 gap-2">
@@ -478,19 +504,25 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                     <div className="flex gap-3 pt-2">
                         <button 
                             onClick={clearCart}
-                            disabled={cart.length === 0}
+                            disabled={cart.length === 0 || isFinishing}
                             className="p-4 bg-white border border-slate-200 text-slate-300 hover:text-rose-500 hover:border-rose-200 rounded-2xl transition-all disabled:opacity-50"
                             title="Limpar Tudo"
                         >
                             <Eraser size={24} />
                         </button>
                         <button 
-                            onClick={handleCheckout}
-                            disabled={cart.length === 0}
+                            onClick={handleFinishSale}
+                            disabled={cart.length === 0 || isFinishing}
                             className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-black py-5 rounded-2xl shadow-xl shadow-orange-100 transition-all active:scale-95 disabled:opacity-50 disabled:grayscale flex items-center justify-center gap-3 text-lg uppercase tracking-widest"
                         >
-                            <CheckCircle size={24} />
-                            Finalizar Venda
+                            {isFinishing ? (
+                                <Loader2 className="animate-spin" size={24} />
+                            ) : (
+                                <>
+                                    <CheckCircle size={24} />
+                                    Finalizar Venda
+                                </>
+                            )}
                         </button>
                     </div>
                 </div>
