@@ -35,13 +35,11 @@ const SignaturePad = ({ onSave, isSaving }: { onSave: (blob: Blob) => void, isSa
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        
         const dpr = window.devicePixelRatio || 1;
         const rect = canvas.getBoundingClientRect();
         canvas.width = rect.width * dpr;
         canvas.height = rect.height * dpr;
         ctx.scale(dpr, dpr);
-
         ctx.strokeStyle = '#000080'; 
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
@@ -166,7 +164,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const fileInputRef = useRef<HTMLInputElement>(null);
     const photoInputRef = useRef<HTMLInputElement>(null);
     
-    // Anamnese
+    // States
     const [anamnesis, setAnamnesis] = useState<any>({
         has_allergy: false,
         allergy_details: '',
@@ -181,7 +179,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
     const [photos, setPhotos] = useState<any[]>([]);
 
-    // Modelo de Estado Local Harmonizado com o Banco (Gender, Phone, Birth_date, etc)
+    // Modelo de Estado Local Sincronizado
     const [formData, setFormData] = useState<any>({
         id: null,
         full_name: '',
@@ -224,27 +222,27 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         if (data) {
             setFormData({
                 id: data.id,
-                full_name: data.full_name || data.nome || '',
-                nickname: data.nickname || data.apelido || '',
-                phone: data.phone || data.whatsapp || '',
+                full_name: data.full_name || '',
+                nickname: data.nickname || '',
+                phone: data.phone || '',
                 email: data.email || '',
                 instagram: data.instagram || '',
-                birth_date: data.birth_date || data.nascimento || '',
+                birth_date: data.birth_date || '',
                 cpf: data.cpf || '',
                 rg: data.rg || '',
-                gender: data.gender || data.sexo || '',
-                profession: data.profession || data.profissao || '',
-                postal_code: data.postal_code || data.cep || '',
-                address: data.address || data.endereco || '',
-                number: data.number || data.numero || '',
-                complement: data.complement || data.complemento || '',
-                neighborhood: data.neighborhood || data.bairro || '',
-                city: data.city || data.cidade || '',
-                state: data.state || data.estado || '',
+                gender: data.gender || '',
+                profession: data.profession || '',
+                postal_code: data.postal_code || '',
+                address: data.address || '',
+                number: data.number || '',
+                complement: data.complement || '',
+                neighborhood: data.neighborhood || '',
+                city: data.city || '',
+                state: data.state || '',
                 photo_url: data.photo_url || null,
                 online_booking_enabled: data.online_booking_enabled ?? true,
-                how_found: data.how_found || data.origem || 'Instagram',
-                notes: data.notes || data.notas_gerais || ''
+                how_found: data.how_found || 'Instagram',
+                notes: data.notes || ''
             });
         }
     };
@@ -301,7 +299,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         if (data) setPhotos(data);
     };
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setFormData((prev: any) => ({ ...prev, [name]: value }));
     };
@@ -340,41 +338,48 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
         setIsSaving(true);
         try {
+            // Normalização: Strings vazias em campos de data/número devem ser null
+            const payload = {
+                full_name: formData.full_name,
+                nickname: formData.nickname || null,
+                phone: formData.phone || null,
+                email: formData.email || null,
+                instagram: formData.instagram || null,
+                birth_date: formData.birth_date || null,
+                cpf: formData.cpf || null,
+                rg: formData.rg || null,
+                gender: formData.gender || null,
+                profession: formData.profession || null,
+                postal_code: formData.postal_code || null,
+                address: formData.address || null,
+                number: formData.number || null,
+                complement: formData.complement || null,
+                neighborhood: formData.neighborhood || null,
+                city: formData.city || null,
+                state: formData.state || null,
+                how_found: formData.how_found || 'Outros',
+                notes: formData.notes || null,
+                online_booking_enabled: formData.online_booking_enabled
+            };
+
             const { error } = await supabase
                 .from('clients')
-                .update({
-                    full_name: formData.full_name,
-                    nickname: formData.nickname,
-                    phone: formData.phone,
-                    email: formData.email,
-                    instagram: formData.instagram,
-                    birth_date: formData.birth_date || null,
-                    cpf: formData.cpf,
-                    rg: formData.rg,
-                    gender: formData.gender, // Coluna exata no DB
-                    profession: formData.profession,
-                    postal_code: formData.postal_code,
-                    address: formData.address,
-                    number: formData.number,
-                    complement: formData.complement,
-                    neighborhood: formData.neighborhood,
-                    city: formData.city,
-                    state: formData.state,
-                    how_found: formData.how_found,
-                    notes: formData.notes,
-                    online_booking_enabled: formData.online_booking_enabled
-                })
+                .update(payload)
                 .eq('id', formData.id);
 
             if (error) throw error;
             
-            setToast({ message: "Dados atualizados com sucesso! ✅", type: 'success' });
+            setToast({ message: "Perfil atualizado! ✅", type: 'success' });
             setIsEditing(false);
-            await refreshClientData(); // Refresh forçado
+            await refreshClientData();
             
         } catch (err: any) {
-            console.error("Erro ao salvar:", err);
-            setToast({ message: "Erro ao persistir no banco.", type: 'error' });
+            console.error("DB Save Error:", err);
+            // Debug detalhado no toast para o desenvolvedor e usuário
+            setToast({ 
+                message: `Erro: ${err.message || err.details || "Verifique as permissões de acesso."}`, 
+                type: 'error' 
+            });
         } finally {
             setIsSaving(false);
         }
@@ -405,7 +410,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                     className="px-6 py-2.5 bg-orange-600 text-white font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95 disabled:opacity-70"
                                 >
                                     {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                                    {isSaving ? 'Sincronizando...' : (isNew ? 'Criar Cliente' : 'Salvar Dados')}
+                                    {isSaving ? 'Gravando...' : (isNew ? 'Criar Cliente' : 'Confirmar Dados')}
                                 </button>
                             </div>
                         )}
@@ -486,7 +491,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                     </div>
                                     <EditField label="Profissão" name="profession" value={formData.profession} onChange={handleInputChange} disabled={!isEditing} icon={Briefcase} />
                                     <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Origem</label>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Como nos conheceu?</label>
                                         <select 
                                             name="how_found" 
                                             value={formData.how_found} 
@@ -499,7 +504,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                             <option value="Passagem">Passagem</option>
                                             <option value="Google">Google / Maps</option>
                                             <option value="Facebook">Facebook</option>
-                                            <option value="TikTok">TikTok</option>
                                             <option value="Outros">Outros</option>
                                         </select>
                                     </div>
