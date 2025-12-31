@@ -276,7 +276,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         const appointment = appointments.find(a => a.id === id);
         if (!appointment) return;
 
-        // SEGURANÇA FINANCEIRA: Intercepta reabertura de agendamento pago
         if (appointment.status === 'concluido' && newStatus !== 'concluido') {
             const confirm = window.confirm(
                 "ATENÇÃO: Este agendamento já possui pagamento registrado.\n\n" +
@@ -287,7 +286,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             if (!confirm) return;
 
             try {
-                // Remove a transação financeira vinculada
                 const { error: finError } = await supabase
                     .from('financial_transactions')
                     .delete()
@@ -298,7 +296,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             } catch (err) {
                 console.error("Erro ao estornar:", err);
                 setToast({ message: 'Erro ao estornar financeiro.', type: 'error' });
-                return; // Interrompe para não atualizar status sem estornar
+                return; 
             }
         }
 
@@ -392,7 +390,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     };
 
     return (
-        <div className="flex h-full bg-white relative flex-col font-sans">
+        <div className="flex h-full bg-white relative flex-col font-sans text-left">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
             <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-30 shadow-sm">
@@ -637,10 +635,31 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     onClose={() => setActiveAppointmentDetail(null)} 
                     onEdit={(app) => setModalState({ type: 'appointment', data: app })} 
                     onDelete={async (id) => { 
-                        setAppointments(prev => prev.filter(p => p.id !== id));
-                        await supabase.from('appointments').delete().eq('id', id); 
-                        setActiveAppointmentDetail(null);
-                        setToast({ message: 'Agendamento removido.', type: 'info' });
+                        // REGRAS DE SEGURANÇA NA EXCLUSÃO
+                        const app = appointments.find(a => a.id === id);
+                        const isLocked = ['concluido'].includes(app?.status?.toLowerCase() || '');
+                        
+                        if (isLocked) {
+                            setToast({ message: 'Agendamentos concluídos não podem ser excluídos diretamente.', type: 'error' });
+                            return;
+                        }
+
+                        if (!window.confirm("Deseja realmente excluir este agendamento?")) return;
+
+                        try {
+                            const { error } = await supabase.from('appointments').delete().eq('id', id);
+                            
+                            if (error) {
+                                console.error("Falha ao excluir:", error);
+                                setToast({ message: 'Erro: Este agendamento possui faturamento vinculado!', type: 'error' });
+                            } else {
+                                setAppointments(prev => prev.filter(p => p.id !== id));
+                                setActiveAppointmentDetail(null);
+                                setToast({ message: 'Agendamento removido com sucesso.', type: 'info' });
+                            }
+                        } catch (err) {
+                            setToast({ message: 'Erro de conexão ao tentar excluir.', type: 'error' });
+                        }
                     }} 
                     onUpdateStatus={handleUpdateStatus} 
                 />

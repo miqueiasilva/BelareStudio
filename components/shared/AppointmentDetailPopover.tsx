@@ -3,7 +3,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { LegacyAppointment, AppointmentStatus } from '../../types';
 import { 
     Calendar, Tag, DollarSign, Send, Edit, Trash2, 
-    User, MoreVertical, X, CheckCircle2, Receipt
+    User, MoreVertical, X, CheckCircle2, Receipt, Lock
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -92,9 +92,11 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     onClose();
   };
 
-  // NOVA LÓGICA INCLUSIVA: O botão de checkout aparece para QUALQUER status que não seja "finalizado"
   const isFinished = ['concluido', 'cancelado', 'bloqueado'].includes(appointment.status);
   const canCheckout = !isFinished;
+  
+  // SEGURANÇA: Bloqueio de exclusão para agendamentos pagos ou bloqueados
+  const isLockedForDelete = ['concluido', 'bloqueado'].includes(appointment.status?.toLowerCase());
 
   return (
     <>
@@ -106,8 +108,23 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
         >
             <header className="flex items-center p-3 border-b border-slate-100 bg-slate-50/50">
                 <div className="flex-1 flex items-center gap-1.5">
-                    <button onClick={() => { onEdit(appointment); onClose(); }} className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl" title="Editar"><Edit size={18} /></button>
-                    <button onClick={() => { onDelete(appointment.id); onClose(); }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl" title="Excluir"><Trash2 size={18} /></button>
+                    <button 
+                        onClick={() => { onEdit(appointment); onClose(); }} 
+                        className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl" 
+                        title="Editar"
+                    >
+                        <Edit size={18} />
+                    </button>
+                    
+                    <button 
+                        onClick={() => { if (!isLockedForDelete) onDelete(appointment.id); }} 
+                        disabled={isLockedForDelete}
+                        className={`p-2 rounded-xl transition-all ${isLockedForDelete ? 'text-slate-300 cursor-not-allowed opacity-50' : 'text-rose-500 hover:bg-rose-50'}`} 
+                        title={isLockedForDelete ? "Pagamento baixado: Exclusão bloqueada" : "Excluir Agendamento"}
+                    >
+                        {isLockedForDelete ? <Lock size={18} /> : <Trash2 size={18} />}
+                    </button>
+
                     <button className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl" title="Ver Perfil"><User size={18} /></button>
                 </div>
                 <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-100 rounded-full"><X size={18}/></button>
@@ -136,7 +153,6 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                 </div>
 
                 <div className="border-t border-slate-100 pt-4 flex flex-col gap-3 pb-2">
-                    {/* Seletor de Status Simples com Margem para evitar clipping */}
                     <div className="mb-2">
                         <button
                             ref={statusRef}
@@ -151,7 +167,6 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                         </button>
                     </div>
 
-                    {/* BOTÃO DE CHECKOUT (FINTEACH DESIGN) */}
                     {canCheckout && (
                         <button
                             onClick={() => setIsCheckoutOpen(true)}
@@ -172,7 +187,6 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
             </main>
         </div>
 
-        {/* Modal de Status Flutuante */}
         {isStatusPopoverOpen && (
             <StatusUpdatePopover
                 appointment={appointment}
@@ -182,7 +196,6 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
             />
         )}
 
-        {/* MODAL DE CHECKOUT INTEGRADO */}
         {isCheckoutOpen && (
             <CheckoutModal 
                 isOpen={isCheckoutOpen}
