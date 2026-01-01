@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     X, User, Phone, Mail, Calendar, Edit2, Save, 
@@ -155,7 +156,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const isNew = !client.id;
     const [isEditing, setIsEditing] = useState(isNew);
     const [isSaving, setIsSaving] = useState(false);
-    // FIX: Added missing isUploading state variable
     const [isUploading, setIsUploading] = useState(false);
     const [activeTab, setActiveTab] = useState<'geral' | 'anamnese' | 'fotos' | 'historico'>('geral');
     const [zoomImage, setZoomImage] = useState<string | null>(null);
@@ -204,22 +204,51 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         observacoes: ''
     });
 
+    /**
+     * FIX: Hidratação imediata do Formulário (Data Binding)
+     * Monitora a prop 'client' e mapeia campos nulos para strings vazias.
+     */
     useEffect(() => {
-        if (client.id) {
-            refreshClientData();
-            fetchAnamnesis();
-            fetchPhotos();
-            fetchTemplates();
-        } else {
-            setFormData(prev => ({ ...prev, nome: client.nome || '' }));
+        if (client) {
+            setFormData({
+                id: client.id || null,
+                nome: client.nome || '',
+                apelido: (client as any).apelido || '',
+                telefone: client.telefone || client.whatsapp || '',
+                email: client.email || '',
+                instagram: (client as any).instagram || '',
+                nascimento: (client as any).birth_date || client.nascimento || '',
+                cpf: (client as any).cpf || '',
+                rg: (client as any).rg || '',
+                sexo: (client as any).gender || (client as any).sexo || '',
+                profissao: (client as any).occupation || (client as any).profissao || '',
+                cep: (client as any).cep || '',
+                endereco: (client as any).endereco || '',
+                numero: (client as any).numero || '',
+                complemento: (client as any).complemento || '',
+                bairro: (client as any).bairro || '',
+                cidade: (client as any).cidade || '',
+                estado: (client as any).estado || '',
+                photo_url: client.photo_url || null,
+                online_booking_enabled: (client as any).online_booking_enabled ?? true,
+                origem: (client as any).referral_source || (client as any).origem || 'Instagram',
+                observacoes: (client as any).notes || (client as any).observacoes || ''
+            });
+
+            if (client.id) {
+                fetchAnamnesis();
+                fetchPhotos();
+                fetchTemplates();
+                // Sincronização secundária com o servidor para garantir dados frescos
+                refreshClientData();
+            }
         }
-    }, [client.id]);
+    }, [client]);
 
     const refreshClientData = async () => {
         if (!client.id) return;
-        const { data, error } = await supabase.from('clients').select('*').eq('id', client.id).single();
+        const { data } = await supabase.from('clients').select('*').eq('id', client.id).single();
         if (data) {
-            // MAPEBAMENTO INVERSO: Banco de Dados (Schema Real) -> Formulário (UI Português)
             setFormData({
                 id: data.id,
                 nome: data.nome || '',
@@ -227,11 +256,11 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 telefone: data.telefone || data.whatsapp || '',
                 email: data.email || '',
                 instagram: data.instagram || '',
-                nascimento: data.birth_date || '', // birth_date -> nascimento
+                nascimento: data.birth_date || '',
                 cpf: data.cpf || '',
                 rg: data.rg || '',
-                sexo: data.gender || '', // gender -> sexo
-                profissao: data.occupation || '', // occupation -> profissao
+                sexo: data.gender || '',
+                profissao: data.occupation || '',
                 cep: data.cep || '',
                 endereco: data.endereco || '',
                 numero: data.numero || '',
@@ -241,8 +270,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 estado: data.estado || '',
                 photo_url: data.photo_url || null,
                 online_booking_enabled: data.online_booking_enabled ?? true,
-                origem: data.referral_source || 'Instagram', // referral_source -> origem
-                observacoes: data.notes || '' // notes -> observacoes
+                origem: data.referral_source || 'Instagram',
+                observacoes: data.notes || ''
             });
         }
     };
@@ -330,9 +359,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         } finally { setIsSaving(false); }
     };
 
-    /**
-     * TAREFA: Mapeamento de Payload Robusto (Schema Mismatch Fix)
-     */
     const handleSave = async () => {
         if (!formData.nome) {
             setToast({ message: "Nome é obrigatório.", type: 'error' });
@@ -341,20 +367,18 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
         setIsSaving(true);
         try {
-            // MAPEAMENTO FINAL: Frontend UI -> Banco de Dados (English Keys)
             const payload = {
                 nome: formData.nome,
                 apelido: formData.apelido || null,
                 telefone: formData.telefone || null,
-                whatsapp: formData.telefone || null, // Sincroniza se o banco usar 'whatsapp'
+                whatsapp: formData.telefone || null,
                 email: formData.email || null,
-                instagram: formData.instagram || null, // Agora mapeado corretamente
-                gender: formData.sexo || null, // sexo -> gender
-                referral_source: formData.origem || 'Outros', // origem -> referral_source
-                occupation: formData.profissao || null, // profissao -> occupation
-                // CRÍTICO: Tratamento de data vazia para evitar erro de sintaxe DATE no Postgres
+                instagram: formData.instagram || null,
+                gender: formData.sexo || null,
+                referral_source: formData.origem || 'Outros',
+                occupation: formData.profissao || null,
                 birth_date: (formData.nascimento && formData.nascimento !== "") ? formData.nascimento : null,
-                notes: formData.observacoes || null, // observacoes -> notes
+                notes: formData.observacoes || null,
                 cep: formData.cep || null,
                 endereco: formData.endereco || null,
                 numero: formData.numero || null,
@@ -381,7 +405,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             
         } catch (err: any) {
             console.error("DB Update Error:", err);
-            // Mostramos o erro detalhado (Ex: 'instagram' column missing) para facilitar o debug técnico
             setToast({ 
                 message: `Erro ao salvar: ${err.message || "Verifique as permissões de banco."}`, 
                 type: 'error' 
@@ -654,7 +677,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                 <input type="file" ref={photoInputRef} className="hidden" accept="image/*" onChange={async (e) => {
                                     const file = e.target.files?.[0];
                                     if (!file || !formData.id) return;
-                                    // FIX: setIsUploading now exists in scope
                                     setIsUploading(true);
                                     try {
                                         const fileName = `evo_${formData.id}_${Date.now()}.jpg`;
@@ -667,7 +689,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                 }} />
                             </header>
 
-                            {/* Rest of the gallery UI */}
                             {photos.length === 0 ? (
                                 <div className="bg-white rounded-[32px] p-20 text-center border-2 border-dashed border-slate-100">
                                     <ImageIcon size={48} className="mx-auto text-slate-100 mb-4" />
