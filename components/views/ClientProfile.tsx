@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     X, User, Phone, Mail, Calendar, Edit2, Save, 
@@ -156,12 +155,12 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const isNew = !client.id;
     const [isEditing, setIsEditing] = useState(isNew);
     const [isSaving, setIsSaving] = useState(false);
+    // FIX: Added missing isUploading state variable
     const [isUploading, setIsUploading] = useState(false);
     const [activeTab, setActiveTab] = useState<'geral' | 'anamnese' | 'fotos' | 'historico'>('geral');
     const [zoomImage, setZoomImage] = useState<string | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     
-    const fileInputRef = useRef<HTMLInputElement>(null);
     const photoInputRef = useRef<HTMLInputElement>(null);
     
     // States: Anamnese
@@ -220,19 +219,19 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         if (!client.id) return;
         const { data, error } = await supabase.from('clients').select('*').eq('id', client.id).single();
         if (data) {
-            // MAPEBAMENTO: Banco de Dados -> Formulário (Português)
+            // MAPEBAMENTO INVERSO: Banco de Dados (Schema Real) -> Formulário (UI Português)
             setFormData({
                 id: data.id,
                 nome: data.nome || '',
                 apelido: data.apelido || '',
-                telefone: data.telefone || '',
+                telefone: data.telefone || data.whatsapp || '',
                 email: data.email || '',
-                instagram: data.instagram || '', // Mapeado conforme schema real
-                nascimento: data.birth_date || '', // Mapeado do schema 'birth_date'
+                instagram: data.instagram || '',
+                nascimento: data.birth_date || '', // birth_date -> nascimento
                 cpf: data.cpf || '',
                 rg: data.rg || '',
-                sexo: data.gender || '', // Mapeado do schema 'gender'
-                profissao: data.occupation || '', // Mapeado do schema 'occupation'
+                sexo: data.gender || '', // gender -> sexo
+                profissao: data.occupation || '', // occupation -> profissao
                 cep: data.cep || '',
                 endereco: data.endereco || '',
                 numero: data.numero || '',
@@ -242,8 +241,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 estado: data.estado || '',
                 photo_url: data.photo_url || null,
                 online_booking_enabled: data.online_booking_enabled ?? true,
-                origem: data.referral_source || 'Instagram', // Mapeado do schema 'referral_source'
-                observacoes: data.notes || '' // Mapeado do schema 'notes'
+                origem: data.referral_source || 'Instagram', // referral_source -> origem
+                observacoes: data.notes || '' // notes -> observacoes
             });
         }
     };
@@ -332,8 +331,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     };
 
     /**
-     * FIX: Mapeamento de Persistência com Schema Update
-     * Garante que os campos enviem as chaves exatas que o Postgres espera.
+     * TAREFA: Mapeamento de Payload Robusto (Schema Mismatch Fix)
      */
     const handleSave = async () => {
         if (!formData.nome) {
@@ -343,17 +341,19 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
         setIsSaving(true);
         try {
-            // MAPEAMENTO: Formulário -> Banco de Dados (Snake Case Schema)
+            // MAPEAMENTO FINAL: Frontend UI -> Banco de Dados (English Keys)
             const payload = {
                 nome: formData.nome,
                 apelido: formData.apelido || null,
                 telefone: formData.telefone || null,
+                whatsapp: formData.telefone || null, // Sincroniza se o banco usar 'whatsapp'
                 email: formData.email || null,
-                instagram: formData.instagram || null, // Coluna instagram garantida
-                gender: formData.sexo || null, // sex -> gender
+                instagram: formData.instagram || null, // Agora mapeado corretamente
+                gender: formData.sexo || null, // sexo -> gender
                 referral_source: formData.origem || 'Outros', // origem -> referral_source
                 occupation: formData.profissao || null, // profissao -> occupation
-                birth_date: formData.nascimento && formData.nascimento !== "" ? formData.nascimento : null, // Fix DATE type
+                // CRÍTICO: Tratamento de data vazia para evitar erro de sintaxe DATE no Postgres
+                birth_date: (formData.nascimento && formData.nascimento !== "") ? formData.nascimento : null,
                 notes: formData.observacoes || null, // observacoes -> notes
                 cep: formData.cep || null,
                 endereco: formData.endereco || null,
@@ -380,8 +380,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             await refreshClientData();
             
         } catch (err: any) {
-            console.error("DB Save Error:", err);
-            // Mostramos o erro detalhado para facilitar diagnóstico de colunas no Supabase
+            console.error("DB Update Error:", err);
+            // Mostramos o erro detalhado (Ex: 'instagram' column missing) para facilitar o debug técnico
             setToast({ 
                 message: `Erro ao salvar: ${err.message || "Verifique as permissões de banco."}`, 
                 type: 'error' 
@@ -643,10 +643,18 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                         <div className="space-y-6 animate-in fade-in duration-500">
                             <header className="flex justify-between items-center">
                                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-2">Galeria de Evolução</h3>
-                                <button onClick={() => photoInputRef.current?.click()} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-orange-600 flex items-center gap-2 shadow-sm hover:bg-orange-50 transition-all"><Plus size={16} /> Adicionar Foto</button>
+                                <button 
+                                    onClick={() => photoInputRef.current?.click()} 
+                                    disabled={isUploading}
+                                    className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-orange-600 flex items-center gap-2 shadow-sm hover:bg-orange-50 transition-all disabled:opacity-50"
+                                >
+                                    {isUploading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} 
+                                    {isUploading ? 'Enviando...' : 'Adicionar Foto'}
+                                </button>
                                 <input type="file" ref={photoInputRef} className="hidden" accept="image/*" onChange={async (e) => {
                                     const file = e.target.files?.[0];
                                     if (!file || !formData.id) return;
+                                    // FIX: setIsUploading now exists in scope
                                     setIsUploading(true);
                                     try {
                                         const fileName = `evo_${formData.id}_${Date.now()}.jpg`;
@@ -659,6 +667,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                 }} />
                             </header>
 
+                            {/* Rest of the gallery UI */}
                             {photos.length === 0 ? (
                                 <div className="bg-white rounded-[32px] p-20 text-center border-2 border-dashed border-slate-100">
                                     <ImageIcon size={48} className="mx-auto text-slate-100 mb-4" />
