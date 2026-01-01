@@ -27,7 +27,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Busca perfil unificado (Não bloqueante se falhar)
+  // Busca perfil unificado (Melhoria progressiva)
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
       const { data: profData } = await supabase
@@ -70,36 +70,27 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    // --- TIMEOUT DE SEGURANÇA (O Disjuntor) ---
-    // Se em 2.5s o Supabase não responder, liberamos a UI para evitar travamento.
+    // 1. TIMEOUT DE SEGURANÇA (O Disjuntor Original)
     const safetyTimeout = setTimeout(() => {
       if (mounted && loading) {
-        console.warn("AuthContext: Timeout de segurança atingido. Destravando UI...");
+        console.warn("AuthContext: Boot demorado detectado. Forçando carregamento da UI.");
         setLoading(false);
       }
-    }, 2500);
+    }, 3000);
 
+    // 2. FUNÇÃO DE INICIALIZAÇÃO DE SESSÃO
     const initializeAuth = async () => {
       try {
-        // Verificação Otimista: Se não há token no storage, não há porque esperar a rede.
-        const hasSession = Object.keys(localStorage).some(key => key.startsWith('sb-') && key.endsWith('-auth-token'));
-        if (!hasSession) {
-          if (mounted) setLoading(false);
-          clearTimeout(safetyTimeout);
-          return;
-        }
-
         const { data: { session }, error } = await supabase.auth.getSession();
         
-        if (error) {
-           await supabase.auth.signOut();
-           if (mounted) setUser(null);
-        } else if (session?.user && mounted) {
+        if (error) throw error;
+
+        if (session?.user && mounted) {
           const appUser = await fetchProfile(session.user);
           setUser(appUser);
         }
       } catch (err) {
-        console.error("AuthContext: Erro crítico no boot:", err);
+        console.error("AuthContext: Erro ao recuperar sessão inicial:", err);
       } finally {
         if (mounted) {
           setLoading(false);
@@ -110,21 +101,54 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
 
     initializeAuth();
 
-    // Listener para mudanças de estado (Login/Logout em outras abas)
+    // 3. LISTENER DE MUDANÇAS (Silent Updates)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user && mounted) {
-        const appUser = await fetchProfile(session.user);
-        setUser(appUser);
-      } else if (mounted) {
-        setUser(null);
+      if (!mounted) return;
+
+      console.log("AuthContext: Evento detectado ->", event);
+
+      // SIGNED_IN ou INITIAL_SESSION: Bloqueia apenas se não tivermos usuário
+      if (event === 'SIGNED_IN') {
+        if (session?.user) {
+          const appUser = await fetchProfile(session.user);
+          setUser(appUser);
+        }
+        setLoading(false);
       }
-      if (mounted) setLoading(false);
+
+      // TOKEN_REFRESHED ou USER_UPDATED: Atualiza dados SILENCIOSAMENTE em background
+      else if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        if (session?.user) {
+          const appUser = await fetchProfile(session.user);
+          setUser(appUser);
+        }
+        // Jamais chame setLoading(true) aqui! Apenas garante que está false.
+        setLoading(false); 
+      }
+
+      // SIGNED_OUT: Limpa estado e libera UI
+      else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setLoading(false);
+      }
     });
+
+    // 4. DISJUNTOR DE VISIBILIDADE (Anti-Travamento de Aba)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && loading) {
+        console.log("AuthContext: Aba retomou foco. Destravando loading residual...");
+        setTimeout(() => {
+          if (mounted) setLoading(false);
+        }, 500);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
       clearTimeout(safetyTimeout);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
@@ -137,19 +161,27 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const signOut = async () => {
     try {
       setLoading(true);
-      if (supabase) await supabase.auth.signOut();
+      await supabase.auth.signOut();
     } catch (error) {
-      console.error("AuthContext: Erro ao desconectar:", error);
+      console.error("AuthContext: Falha ao sair:", error);
     } finally {
       setUser(null);
       localStorage.clear();
-      sessionStorage.clear();
       setLoading(false);
       window.location.href = '/'; 
     }
   };
 
-  const value = useMemo(() => ({ user, loading, signIn, signUp, signInWithGoogle, resetPassword, updatePassword, signOut }), [user, loading]);
+  const value = useMemo(() => ({ 
+    user, 
+    loading, 
+    signIn, 
+    signUp, 
+    signInWithGoogle, 
+    resetPassword, 
+    updatePassword, 
+    signOut 
+  }), [user, loading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
