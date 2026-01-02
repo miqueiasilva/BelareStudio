@@ -81,7 +81,7 @@ const LoginView: React.FC = () => {
                     <div className="w-16 h-16 bg-gradient-to-tr from-orange-500 to-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-500/20 transition-transform hover:scale-105 duration-300">
                         <span className="text-white font-black text-3xl">B</span>
                     </div>
-                    <h1 className="text-3xl font-bold text-white tracking-tight">BelaFlow</h1>
+                    <h1 className="text-3xl font-bold text-white tracking-tight">BelareStudio</h1>
                     <p className="text-slate-400 mt-2 text-sm font-medium">Gestão Inteligente para Estúdios de Beleza</p>
                 </div>
 
@@ -223,7 +223,7 @@ const LoginView: React.FC = () => {
 
                 <div className="mt-10 text-center opacity-30">
                     <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">
-                        BelaFlow &copy; 2025 &bull; Todos os direitos reservados
+                        BelareStudio &copy; 2025 &bull; Todos os direitos reservados
                     </p>
                 </div>
             </div>
@@ -232,4 +232,3 @@ const LoginView: React.FC = () => {
 };
 
 export default LoginView;
-// Updated to BelaFlow

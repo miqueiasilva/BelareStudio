@@ -1,7 +1,9 @@
 
 import { 
     format, addDays, isSameDay, startOfDay, addMinutes, 
-    isAfter, isBefore, getDay, parseISO, subDays 
+    isAfter, isBefore, getDay, parseISO, subDays,
+    startOfMonth, endOfMonth, startOfWeek, endOfWeek,
+    eachDayOfInterval, addMonths, subMonths, isSameMonth
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
@@ -14,7 +16,7 @@ import {
     ChevronDown, ChevronUp, Share2, Loader2, MapPin, Phone, 
     User, Mail, ShoppingBag, Clock, Calendar, Scissors, 
     CheckCircle2, ArrowRight, UserCircle2, X, AlertTriangle,
-    ArrowLeft
+    ArrowLeft, ChevronRight
 } from 'lucide-react';
 
 const DEFAULT_COVER = "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1350&q=80";
@@ -116,11 +118,10 @@ const PublicBookingPreview: React.FC = () => {
         cancellationHours: 24
     });
 
-    const [availableDates, setAvailableDates] = useState<Date[]>([]);
-
     // Appointment Choices
     const [selectedProfessional, setSelectedProfessional] = useState<any>(null);
     const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
+    const [viewMonth, setViewMonth] = useState<Date>(startOfMonth(new Date()));
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
     const [availableSlots, setAvailableSlots] = useState<string[]>([]);
     const [isLoadingSlots, setIsLoadingSlots] = useState(false);
@@ -135,48 +136,27 @@ const PublicBookingPreview: React.FC = () => {
         0: 'sunday', 1: 'monday', 2: 'tuesday', 3: 'wednesday', 4: 'thursday', 5: 'friday', 6: 'saturday'
     };
 
-    // 1. Função de Geração de Datas (Lógica Requisitada)
-    const generateDates = (limit: number) => {
-        console.log("Gerando datas com limite de:", limit);
-        const dates = [];
-        const today = startOfDay(new Date());
-        for (let i = 0; i < limit; i++) {
-            dates.push(addDays(today, i));
-        }
-        setAvailableDates(dates);
-    };
-
     useEffect(() => {
         const fetchRulesAndData = async () => {
             setLoading(true);
             try {
-                // 2. Fetch Unificado (Busca e Regenera)
                 const { data: studioData } = await supabase
                     .from('studio_settings')
                     .select('*')
                     .limit(1)
                     .maybeSingle();
 
-                let currentWindow = 30; // Fallback seguro
-
                 if (studioData) {
                     setStudio(studioData);
-
-                    // Lógica de Antecedência (Horas p/ Minutos)
                     let rawNotice = parseFloat(studioData.min_scheduling_notice || '2');
                     let finalNoticeMinutes = rawNotice < 48 ? rawNotice * 60 : rawNotice;
 
-                    currentWindow = parseInt(studioData.max_scheduling_window || '30', 10);
-
                     setRules({
-                        windowDays: currentWindow,
+                        windowDays: parseInt(studioData.max_scheduling_window || '30', 10),
                         minNoticeMinutes: Math.round(finalNoticeMinutes),
                         cancellationHours: parseInt(studioData.cancellation_notice || '24', 10)
                     });
                 }
-
-                // O PULO DO GATO: Gera imediatamente com o valor carregado
-                generateDates(currentWindow);
 
                 const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true);
                 if (servicesData) setServices(servicesData);
@@ -184,7 +164,6 @@ const PublicBookingPreview: React.FC = () => {
                 const { data: profsData } = await supabase.from('professionals').select('*').eq('active', true).order('order_index');
                 if (profsData) setProfessionals(profsData);
 
-                // Lógica de Mais Populares
                 const sixtyDaysAgo = subDays(new Date(), 60).toISOString();
                 const { data: recentApps } = await supabase
                     .from('appointments')
@@ -207,13 +186,35 @@ const PublicBookingPreview: React.FC = () => {
 
             } catch (e) {
                 console.error("Erro ao buscar regras:", e);
-                generateDates(30); // Fallback em caso de erro
             } finally {
                 setLoading(false);
             }
         };
         fetchRulesAndData();
     }, []);
+
+    // --- LÓGICA DO CALENDÁRIO MENSAL (Refinada para UX) ---
+    const calendarDays = useMemo(() => {
+        const start = startOfWeek(startOfMonth(viewMonth), { weekStartsOn: 0 });
+        const end = endOfWeek(endOfMonth(viewMonth), { weekStartsOn: 0 });
+        return eachDayOfInterval({ start, end });
+    }, [viewMonth]);
+
+    const horizonLimit = useMemo(() => addDays(startOfDay(new Date()), rules.windowDays), [rules.windowDays]);
+
+    const handlePrevMonth = () => {
+        const prev = subMonths(viewMonth, 1);
+        if (!isBefore(endOfMonth(prev), startOfMonth(new Date()))) {
+            setViewMonth(prev);
+        }
+    };
+
+    const handleNextMonth = () => {
+        const next = addMonths(viewMonth, 1);
+        if (!isAfter(startOfMonth(next), horizonLimit)) {
+            setViewMonth(next);
+        }
+    };
 
     // --- FILTRAGEM DE HORÁRIOS ---
     const generateAvailableSlots = async (date: Date, professional: any) => {
@@ -372,14 +373,18 @@ const PublicBookingPreview: React.FC = () => {
 
     if (loading) return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
-            <Loader2 className="animate-spin text-orange-500 w-10 h-10 mb-4" />
-            <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Sincronizando com BelaFlow...</p>
+            <div className="relative">
+                <Loader2 className="animate-spin text-orange-500 w-12 h-12 mb-4" />
+                <div className="absolute inset-0 border-4 border-orange-100 rounded-full animate-ping opacity-20"></div>
+            </div>
+            <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">Sincronizando com BelaFlow...</p>
         </div>
     );
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans relative pb-40 text-left">
             
+            {/* Botão administrativo visível apenas para usuários logados */}
             {user && (
                 <button 
                     onClick={() => window.location.hash = '#/'}
@@ -461,7 +466,7 @@ const PublicBookingPreview: React.FC = () => {
                                 <header className="p-6 border-b border-slate-50 flex items-center justify-between">
                                     <div className="flex items-center gap-4">
                                         {bookingStep > 1 && (
-                                            <button onClick={() => setBookingStep(prev => prev - 1)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:bg-slate-200"><ChevronLeft size={20} /></button>
+                                            <button onClick={() => setBookingStep(prev => prev - 1)} className="p-2 bg-slate-100 rounded-xl text-slate-500 hover:bg-slate-200 transition-all"><ChevronLeft size={20} /></button>
                                         )}
                                         <div>
                                             <h3 className="font-black text-slate-800">
@@ -472,10 +477,10 @@ const PublicBookingPreview: React.FC = () => {
                                             <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Passo {bookingStep} de 3</p>
                                         </div>
                                     </div>
-                                    <button onClick={() => setIsBookingOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X size={24}/></button>
+                                    <button onClick={() => setIsBookingOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"><X size={24}/></button>
                                 </header>
 
-                                <main className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-slate-50/30">
+                                <main className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-slate-50/30 text-left">
                                     {bookingStep === 1 && (
                                         <div className="space-y-4">
                                             {professionals.map(p => (
@@ -483,7 +488,13 @@ const PublicBookingPreview: React.FC = () => {
                                                     key={p.id} onClick={() => { setSelectedProfessional(p); setBookingStep(2); }}
                                                     className={`w-full p-5 flex items-center gap-4 border-2 rounded-3xl transition-all text-left bg-white ${selectedProfessional?.id === p.id ? 'border-orange-500 bg-orange-50/30' : 'border-slate-100 hover:border-orange-200'}`}
                                                 >
-                                                    <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-md"><img src={p.photo_url || DEFAULT_LOGO} className="w-full h-full object-cover" /></div>
+                                                    <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-md bg-slate-100 flex items-center justify-center">
+                                                        {p.photo_url || p.avatarUrl ? (
+                                                            <img src={p.photo_url || p.avatarUrl} className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <User size={24} className="text-slate-300" />
+                                                        )}
+                                                    </div>
                                                     <div><p className="font-bold text-slate-800 text-base">{p.name}</p><p className="text-xs text-slate-400 mt-1 font-medium">{p.role}</p></div>
                                                 </button>
                                             ))}
@@ -491,71 +502,141 @@ const PublicBookingPreview: React.FC = () => {
                                     )}
 
                                     {bookingStep === 2 && (
-                                        <div className="space-y-8">
-                                            <div className="space-y-4">
-                                                <div className="flex justify-between items-end pr-2">
-                                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Selecione o Dia</h4>
-                                                    <p className="text-[9px] font-black text-slate-300 uppercase tracking-tighter">(Debug: {availableDates.length} dias carregados)</p>
+                                        <div className="space-y-8 animate-in fade-in duration-300">
+                                            {/* CALENDÁRIO MENSAL (GRID VIEW) */}
+                                            <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
+                                                <div className="flex justify-between items-center mb-6">
+                                                    <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                                                        <Calendar size={18} className="text-orange-500" />
+                                                        <span className="capitalize">{format(viewMonth, 'MMMM yyyy', { locale: pt })}</span>
+                                                    </h4>
+                                                    <div className="flex gap-1">
+                                                        <button 
+                                                            onClick={handlePrevMonth} 
+                                                            disabled={isSameMonth(viewMonth, new Date())}
+                                                            className="p-2 rounded-xl border border-slate-100 hover:bg-slate-50 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                                        >
+                                                            <ChevronLeft size={20} />
+                                                        </button>
+                                                        <button 
+                                                            onClick={handleNextMonth} 
+                                                            disabled={isAfter(endOfMonth(viewMonth), horizonLimit)}
+                                                            className="p-2 rounded-xl border border-slate-100 hover:bg-slate-50 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                                        >
+                                                            <ChevronRight size={20} />
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                {/* Container com scroll horizontal garantido */}
-                                                <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
-                                                    {availableDates.map((date) => {
-                                                        const isClosed = !studio?.business_hours?.[weekdayMap[getDay(date)]]?.active;
-                                                        const isSelected = isSameDay(date, selectedDate);
+
+                                                <div className="grid grid-cols-7 gap-1">
+                                                    {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map(d => (
+                                                        <div key={d} className="text-center text-[10px] font-black text-slate-400 py-2 tracking-widest">{d}</div>
+                                                    ))}
+                                                    {calendarDays.map((day) => {
+                                                        const isToday = isSameDay(day, new Date());
+                                                        const isSelected = isSameDay(day, selectedDate);
+                                                        const isCurrentMonth = isSameMonth(day, viewMonth);
+                                                        const isPast = isBefore(day, startOfDay(new Date()));
+                                                        const isOverLimit = isAfter(day, horizonLimit);
+                                                        const dayKey = weekdayMap[getDay(day)];
+                                                        const isClosed = !studio?.business_hours?.[dayKey]?.active;
+                                                        
+                                                        const isDisabled = isPast || isOverLimit || isClosed;
+
                                                         return (
                                                             <button
-                                                                key={date.toISOString()}
-                                                                disabled={isClosed}
-                                                                onClick={() => setSelectedDate(date)}
-                                                                className={`flex-shrink-0 w-16 h-20 rounded-2xl flex flex-col items-center justify-center transition-all border-2 ${
-                                                                    isSelected ? 'bg-orange-500 border-orange-500 text-white shadow-lg shadow-orange-100 scale-105' : 
-                                                                    isClosed ? 'bg-slate-100 border-transparent opacity-40 grayscale cursor-not-allowed' : 
-                                                                    'bg-white border-slate-100 text-slate-600 hover:border-orange-200'
-                                                                }`}
+                                                                key={day.toISOString()}
+                                                                disabled={isDisabled}
+                                                                onClick={() => { setSelectedDate(day); setSelectedTime(null); }}
+                                                                className={`
+                                                                    aspect-square rounded-2xl flex flex-col items-center justify-center text-sm font-bold transition-all relative
+                                                                    ${!isCurrentMonth ? 'opacity-20 pointer-events-none' : ''}
+                                                                    ${isSelected ? 'bg-orange-500 text-white shadow-lg shadow-orange-200 scale-110 z-10' : 
+                                                                      isDisabled ? 'text-slate-300 cursor-not-allowed' : 
+                                                                      'text-slate-600 hover:bg-orange-50 hover:text-orange-600'}
+                                                                `}
                                                             >
-                                                                <span className="text-[10px] font-black uppercase">{format(date, 'EEE', { locale: pt })}</span>
-                                                                <span className="text-xl font-black">{format(date, 'dd')}</span>
+                                                                {format(day, 'd')}
+                                                                {isToday && !isSelected && (
+                                                                    <div className="absolute bottom-1 w-1 h-1 rounded-full bg-orange-500"></div>
+                                                                )}
                                                             </button>
                                                         );
                                                     })}
                                                 </div>
                                             </div>
 
+                                            {/* SELEÇÃO DE HORÁRIOS */}
                                             <div className="space-y-4">
-                                                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Horários Disponíveis</h4>
+                                                <div className="flex items-center gap-2 ml-1">
+                                                    <Clock size={16} className="text-slate-400" />
+                                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Horários para {format(selectedDate, "dd/MM")}</h4>
+                                                </div>
+                                                
                                                 {isLoadingSlots ? (
                                                     <div className="py-10 text-center text-slate-400 flex flex-col items-center"><Loader2 className="animate-spin mb-2" /><p className="text-xs font-bold">Consultando agenda...</p></div>
                                                 ) : availableSlots.length > 0 ? (
-                                                    <div className="grid grid-cols-4 gap-2">
+                                                    <div className="grid grid-cols-4 gap-2 animate-in slide-in-from-top-2">
                                                         {availableSlots.map(time => (
-                                                            <button key={time} onClick={() => setSelectedTime(time)} className={`py-3 rounded-xl text-sm font-black border-2 transition-all ${selectedTime === time ? 'bg-slate-800 border-slate-800 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-600 hover:border-orange-300'}`}>{time}</button>
+                                                            <button 
+                                                                key={time} 
+                                                                onClick={() => setSelectedTime(time)} 
+                                                                className={`py-3 rounded-xl text-sm font-black border-2 transition-all ${selectedTime === time ? 'bg-slate-800 border-slate-800 text-white shadow-lg scale-105' : 'bg-white border-slate-100 text-slate-600 hover:border-orange-300'}`}
+                                                            >
+                                                                {time}
+                                                            </button>
                                                         ))}
                                                     </div>
                                                 ) : (
-                                                    <div className="p-8 bg-slate-100/50 rounded-3xl border border-dashed border-slate-200 text-center"><Clock className="mx-auto text-slate-300 mb-2" size={32} /><p className="text-sm font-bold text-slate-400 leading-tight">Nenhum horário livre para este dia.</p></div>
+                                                    <div className="p-8 bg-slate-100/50 rounded-[32px] border border-dashed border-slate-200 text-center">
+                                                        <Clock className="mx-auto text-slate-300 mb-2 opacity-40" size={32} />
+                                                        <p className="text-sm font-bold text-slate-400 leading-tight">Nenhum horário livre para este dia.</p>
+                                                    </div>
                                                 )}
                                             </div>
 
                                             {selectedTime && (
-                                                <button onClick={() => setBookingStep(3)} className="w-full bg-slate-800 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 animate-in slide-in-from-bottom-2">Continuar <ArrowRight size={20} /></button>
+                                                <button onClick={() => setBookingStep(3)} className="w-full bg-slate-800 text-white py-5 rounded-3xl font-black shadow-xl flex items-center justify-center gap-2 animate-in slide-in-from-bottom-2 transition-transform active:scale-95">Continuar <ArrowRight size={20} /></button>
                                             )}
                                         </div>
                                     )}
 
                                     {bookingStep === 3 && (
-                                        <div className="space-y-6">
+                                        <div className="space-y-6 animate-in fade-in duration-300">
                                             <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4">
-                                                <div className="flex items-center gap-4 pb-4 border-b border-slate-50"><div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600"><Calendar size={24} /></div><div><p className="text-xs font-black text-slate-400 uppercase tracking-widest">Seu Horário</p><p className="text-base font-black text-slate-800">{format(selectedDate, "dd 'de' MMMM", { locale: pt })} às {selectedTime}</p></div></div>
-                                                <div className="pt-3 border-t border-slate-50 flex justify-between items-center"><span className="text-xs font-black uppercase text-slate-400">Total</span><span className="text-xl font-black text-orange-600">R$ {totalPrice.toFixed(2)}</span></div>
+                                                <div className="flex items-center gap-4 pb-4 border-b border-slate-50">
+                                                    <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600 shadow-inner">
+                                                        <Calendar size={24} />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Resumo do Horário</p>
+                                                        <p className="text-base font-black text-slate-800">{format(selectedDate, "dd 'de' MMMM", { locale: pt })} às {selectedTime}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="pt-3 border-t border-slate-50 flex justify-between items-center">
+                                                    <span className="text-xs font-black uppercase text-slate-400">Total</span>
+                                                    <span className="text-xl font-black text-orange-600">R$ {totalPrice.toFixed(2)}</span>
+                                                </div>
                                             </div>
 
                                             <div className="space-y-4">
-                                                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Seu Nome Completo</label><input value={clientName} onChange={e => setClientName(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 outline-none font-bold shadow-sm" placeholder="Como devemos te chamar?" /></div>
-                                                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">WhatsApp para Lembrete</label><input value={clientPhone} onChange={e => setClientPhone(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 outline-none font-bold shadow-sm" placeholder="(00) 00000-0000" /></div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Seu Nome Completo</label>
+                                                    <input value={clientName} onChange={e => setClientName(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-4 outline-none font-bold shadow-sm focus:ring-4 focus:ring-orange-100 transition-all" placeholder="Como devemos te chamar?" />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">WhatsApp para Lembrete</label>
+                                                    <input value={clientPhone} onChange={e => setClientPhone(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-4 outline-none font-bold shadow-sm focus:ring-4 focus:ring-orange-100 transition-all" placeholder="(00) 00000-0000" />
+                                                </div>
                                             </div>
                                             
-                                            <button onClick={handleSubmitBooking} disabled={isFinalizing || !clientName || clientPhone.length < 10} className="w-full bg-green-600 hover:bg-green-700 text-white py-5 rounded-3xl font-black shadow-xl flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50">
-                                                {isFinalizing ? <Loader2 className="animate-spin" /> : <CheckCircle2 size={24} />} Finalizar Agendamento
+                                            <button 
+                                                onClick={handleSubmitBooking} 
+                                                disabled={isFinalizing || !clientName || clientPhone.length < 10} 
+                                                className="w-full bg-green-600 hover:bg-green-700 text-white py-5 rounded-3xl font-black shadow-xl flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50 disabled:grayscale"
+                                            >
+                                                {isFinalizing ? <Loader2 className="animate-spin" /> : <CheckCircle2 size={24} />} 
+                                                Finalizar Agendamento
                                             </button>
                                         </div>
                                     )}

@@ -1,11 +1,9 @@
-
 import React, { useState, useMemo } from 'react';
 import { 
     Search, MoreVertical, Paperclip, Send, Smile, Check, CheckCheck, 
     MessageSquare, Bell, Calendar, Heart, Star, Clock, Zap, 
     Link as LinkIcon, Smartphone, Wifi, WifiOff, LogOut, ChevronLeft, 
     ArrowLeft, CheckCircle2, User, Camera, Shield, Signal, Battery,
-    // FIX: Added missing QrCode and RefreshCw imports from lucide-react.
     QrCode, RefreshCw
 } from 'lucide-react';
 import { mockConversations } from '../../data/mockData';
@@ -19,7 +17,7 @@ import Toast, { ToastType } from '../shared/Toast';
 const PhonePreview = ({ type, time, active }: { type: string, time: string, active: boolean }) => {
     const getMessageText = () => {
         const clientName = "*Maria Silva*";
-        const studioName = "*Bela Studio*";
+        const studioName = "*BelareStudio*";
         
         switch (type) {
             case 'confirmation':
@@ -59,7 +57,7 @@ const PhonePreview = ({ type, time, active }: { type: string, time: string, acti
                         <img src="https://i.pravatar.cc/100?u=studio" className="w-full h-full object-cover" alt="" />
                     </div>
                     <div className="flex-1 min-w-0">
-                        <p className="text-xs font-bold truncate">Bela Studio Prime</p>
+                        <p className="text-xs font-bold truncate">BelareStudio Prime</p>
                         <p className="text-[8px] opacity-80">online</p>
                     </div>
                     <div className="flex gap-2">
@@ -424,7 +422,7 @@ const WhatsAppView: React.FC = () => {
                                         {msg.sender === 'system' && (
                                             <div className="flex items-center justify-center gap-2 mb-2 border-b border-slate-100 pb-2">
                                                 <Zap size={14} className="text-orange-500" />
-                                                <span className="font-black uppercase tracking-widest text-[9px]">Automação BelaFlow</span>
+                                                <span className="font-black uppercase tracking-widest text-[9px]">Automação BelareStudio</span>
                                             </div>
                                         )}
                                         <p className="text-sm leading-relaxed font-medium">{msg.text}</p>
@@ -473,7 +471,7 @@ const WhatsAppView: React.FC = () => {
                         <div className="w-24 h-24 bg-white rounded-[40px] flex items-center justify-center shadow-2xl border border-slate-100 mb-6">
                             <MessageSquare className="w-10 h-10 text-slate-200" />
                         </div>
-                        <h3 className="text-xl font-black text-slate-800 leading-tight">Canal WhatsApp BelaFlow</h3>
+                        <h3 className="text-xl font-black text-slate-800 leading-tight">Canal WhatsApp BelareStudio</h3>
                         <p className="text-xs font-bold text-slate-400 max-w-xs mt-3 uppercase tracking-widest leading-relaxed">Suas conversas sincronizadas e automatizadas em um único lugar.</p>
                     </div>
                 )}

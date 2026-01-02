@@ -97,7 +97,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, currentView, onNaviga
                 </button>
                 <div className="flex items-center gap-2">
                     <div className="w-6 h-6 bg-orange-500 rounded flex items-center justify-center font-bold text-white text-xs">B</div>
-                    <span className="font-bold text-slate-700 text-sm">BelaFlow</span>
+                    <span className="font-bold text-slate-700 text-sm">BelareStudio</span>
                 </div>
             </div>
         )}

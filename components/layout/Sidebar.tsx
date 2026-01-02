@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { 
     Home, Calendar, MessageSquare, ShoppingCart, ClipboardList, ArrowRightLeft, Archive,
@@ -109,7 +108,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                     B
                 </div>
                 <div>
-                    <h1 className="font-black text-slate-800 text-base leading-tight tracking-tight">BelaFlow</h1>
+                    <h1 className="font-black text-slate-800 text-base leading-tight tracking-tight">BelareStudio</h1>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Gestão Inteligente</p>
                 </div>
             </div>
