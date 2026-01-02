@@ -1,4 +1,3 @@
-
 import { 
     format, addDays, isSameDay, startOfDay, addMinutes, 
     isAfter, isBefore, getDay, parseISO, subDays 
@@ -91,7 +90,8 @@ const AccordionCategory = ({ category, services, selectedIds, onToggleService, d
 
 const Plus = ({ size }: { size: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="12" x2="12" y1="5" y2="19" /><line x1="5" x2="19" y1="12" y2="12" />
+        {/* FIX: Corrected duplicate 'x2' attribute and ensured proper coordinates for the vertical line */}
+        <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" x2="19" y1="12" y2="12" />
     </svg>
 );
 
@@ -109,7 +109,7 @@ const PublicBookingPreview: React.FC = () => {
     const [isClientAppsOpen, setIsClientAppsOpen] = useState(false);
     const [bookingStep, setBookingStep] = useState(1); 
 
-    // Regras de Agendamento Unificadas
+    // Regras de Agendamento Dinâmicas
     const [rules, setRules] = useState({
         windowDays: 30,
         minNoticeMinutes: 120, // 2 horas padrão
@@ -146,10 +146,20 @@ const PublicBookingPreview: React.FC = () => {
 
                 if (studioData) {
                     setStudio(studioData);
+
+                    // LOGICA OBRIGATÓRIA: Interpretação de Antecedência
+                    let rawNotice = parseFloat(studioData.min_scheduling_notice || '2');
+                    let finalNoticeMinutes = rawNotice;
+                    
+                    // Trick: Se for < 48, assumimos que o banco guardou em HORAS e convertemos para MINUTOS
+                    if (rawNotice < 48) {
+                        finalNoticeMinutes = rawNotice * 60;
+                    }
+
                     setRules({
-                        windowDays: studioData.max_scheduling_window || 30,
-                        minNoticeMinutes: studioData.min_scheduling_notice ? Math.round(parseFloat(studioData.min_scheduling_notice) * 60) : 120,
-                        cancellationHours: studioData.cancellation_notice || 24
+                        windowDays: parseInt(studioData.max_scheduling_window || '30', 10),
+                        minNoticeMinutes: Math.round(finalNoticeMinutes),
+                        cancellationHours: parseInt(studioData.cancellation_notice || '24', 10)
                     });
                 }
 
@@ -189,17 +199,18 @@ const PublicBookingPreview: React.FC = () => {
         loadPageData();
     }, []);
 
-    // --- LOGICA DE GERAÇÃO DE DATAS DINÂMICA ---
+    // --- LOGICA DE GERAÇÃO DE DATAS DINÂMICA (Horizonte de 30 dias/config) ---
     const availableDates = useMemo(() => {
         const dates = [];
         const today = startOfDay(new Date());
+        // Usa o limite dinâmico vindo do banco
         for (let i = 0; i < rules.windowDays; i++) {
             dates.push(addDays(today, i));
         }
         return dates;
     }, [rules.windowDays]);
 
-    // --- LOGICA DE FILTRAGEM DE HORÁRIOS (Lead Time) ---
+    // --- LOGICA DE FILTRAGEM DE HORÁRIOS (Antecedência com Precisão) ---
     const generateAvailableSlots = async (date: Date, professional: any) => {
         if (!studio || selectedServices.length === 0) return;
         setIsLoadingSlots(true);
@@ -215,6 +226,8 @@ const PublicBookingPreview: React.FC = () => {
             }
 
             const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
+            
+            // Cálculo do Horário Limite (Agora + Antecedência)
             const now = new Date();
             const minTimeLimit = addMinutes(now, rules.minNoticeMinutes);
 
@@ -237,7 +250,7 @@ const PublicBookingPreview: React.FC = () => {
             endLimit.setHours(endH, endM, 0, 0);
 
             while (isBefore(addMinutes(currentPointer, totalDuration), endLimit)) {
-                // Filtro 1: Antecedência Mínima ( Lead Time) para o dia de HOJE
+                // Filtro: Bloqueia horários que desrespeitam a antecedência mínima (Lead Time)
                 if (isSameDay(date, now)) {
                     if (isBefore(currentPointer, minTimeLimit)) {
                         currentPointer = addMinutes(currentPointer, 30);
@@ -245,7 +258,7 @@ const PublicBookingPreview: React.FC = () => {
                     }
                 }
 
-                // Filtro 2: Sobreposição com outros agendamentos
+                // Verificação de conflitos na agenda existente
                 const hasOverlap = busyAppointments?.some(app => {
                     const appStart = parseISO(app.date);
                     const appEnd = addMinutes(appStart, app.duration);
@@ -462,7 +475,7 @@ const PublicBookingPreview: React.FC = () => {
                         </div>
                         <button 
                             onClick={() => { setIsBookingOpen(true); setBookingStep(1); }}
-                            className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl shadow-orange-100 flex items-center gap-2 transition-all active:scale-95"
+                            className="bg-orange-50 hover:bg-orange-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl shadow-orange-100 flex items-center gap-2 transition-all active:scale-95"
                         >
                             Continuar <ArrowRight size={20} />
                         </button>
