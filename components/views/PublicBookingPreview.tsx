@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 
 const DEFAULT_COVER = "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1350&q=80";
-const DEFAULT_LOGO = "https://ui-avatars.com/api/?name=BelaFlow&background=random";
+const DEFAULT_LOGO = "https://ui-avatars.com/api/?name=BelareStudio&background=random";
 
 const ServiceItem = ({ service, isSelected, onToggle }: any) => (
     <div 
@@ -377,14 +377,14 @@ const PublicBookingPreview: React.FC = () => {
                 <Loader2 className="animate-spin text-orange-500 w-12 h-12 mb-4" />
                 <div className="absolute inset-0 border-4 border-orange-100 rounded-full animate-ping opacity-20"></div>
             </div>
-            <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">Sincronizando com BelaFlow...</p>
+            <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">Sincronizando com BelareStudio...</p>
         </div>
     );
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans relative pb-40 text-left">
             
-            {/* Botão administrativo visível apenas para usuários logados */}
+            {/* Botão administrativo visível APENAS para usuários logados */}
             {user && (
                 <button 
                     onClick={() => window.location.hash = '#/'}
