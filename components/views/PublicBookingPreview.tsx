@@ -1,3 +1,4 @@
+
 import { 
     format, addDays, isSameDay, startOfDay, addMinutes, 
     isAfter, isBefore, getDay, parseISO, subDays 
@@ -90,7 +91,6 @@ const AccordionCategory = ({ category, services, selectedIds, onToggleService, d
 
 const Plus = ({ size }: { size: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-        {/* FIX: Corrected duplicate 'x2' attribute and ensured proper coordinates for the vertical line */}
         <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" x2="19" y1="12" y2="12" />
     </svg>
 );
@@ -116,6 +116,8 @@ const PublicBookingPreview: React.FC = () => {
         cancellationHours: 24
     });
 
+    const [availableDates, setAvailableDates] = useState<Date[]>([]);
+
     // Appointment Choices
     const [selectedProfessional, setSelectedProfessional] = useState<any>(null);
     const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
@@ -133,6 +135,17 @@ const PublicBookingPreview: React.FC = () => {
         0: 'sunday', 1: 'monday', 2: 'tuesday', 3: 'wednesday', 4: 'thursday', 5: 'friday', 6: 'saturday'
     };
 
+    // Função de Geração de Datas (Explícita e Auditável)
+    const generateAvailableDates = (limit: number) => {
+        console.log(`[BelaFlow] Gerando horizonte de agendamento: ${limit} dias.`);
+        const dates = [];
+        const today = startOfDay(new Date());
+        for (let i = 0; i < limit; i++) {
+            dates.push(addDays(today, i));
+        }
+        setAvailableDates(dates);
+    };
+
     useEffect(() => {
         const loadPageData = async () => {
             setLoading(true);
@@ -144,24 +157,31 @@ const PublicBookingPreview: React.FC = () => {
                     .limit(1)
                     .maybeSingle();
 
+                let currentWindow = 30;
+
                 if (studioData) {
                     setStudio(studioData);
 
                     // LOGICA OBRIGATÓRIA: Interpretação de Antecedência
+                    // Se o valor for < 48, assumimos que são HORAS e convertemos para MINUTOS
                     let rawNotice = parseFloat(studioData.min_scheduling_notice || '2');
                     let finalNoticeMinutes = rawNotice;
                     
-                    // Trick: Se for < 48, assumimos que o banco guardou em HORAS e convertemos para MINUTOS
                     if (rawNotice < 48) {
                         finalNoticeMinutes = rawNotice * 60;
                     }
 
+                    currentWindow = parseInt(studioData.max_scheduling_window || '30', 10);
+
                     setRules({
-                        windowDays: parseInt(studioData.max_scheduling_window || '30', 10),
+                        windowDays: currentWindow,
                         minNoticeMinutes: Math.round(finalNoticeMinutes),
                         cancellationHours: parseInt(studioData.cancellation_notice || '24', 10)
                     });
                 }
+
+                // Dispara geração de datas imediatamente após as regras serem definidas
+                generateAvailableDates(currentWindow);
 
                 const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true);
                 if (servicesData) setServices(servicesData);
@@ -192,23 +212,13 @@ const PublicBookingPreview: React.FC = () => {
 
             } catch (e) {
                 console.error("Erro ao carregar dados públicos", e);
+                generateAvailableDates(30); // Fallback
             } finally {
                 setLoading(false);
             }
         };
         loadPageData();
     }, []);
-
-    // --- LOGICA DE GERAÇÃO DE DATAS DINÂMICA (Horizonte de 30 dias/config) ---
-    const availableDates = useMemo(() => {
-        const dates = [];
-        const today = startOfDay(new Date());
-        // Usa o limite dinâmico vindo do banco
-        for (let i = 0; i < rules.windowDays; i++) {
-            dates.push(addDays(today, i));
-        }
-        return dates;
-    }, [rules.windowDays]);
 
     // --- LOGICA DE FILTRAGEM DE HORÁRIOS (Antecedência com Precisão) ---
     const generateAvailableSlots = async (date: Date, professional: any) => {
@@ -405,15 +415,26 @@ const PublicBookingPreview: React.FC = () => {
                 </button>
             )}
 
-            <div className="relative h-48 md:h-64 bg-slate-900">
-                <img 
-                    src={studio?.cover_url || DEFAULT_COVER} 
-                    className="w-full h-full object-cover opacity-60"
-                    alt="Banner do Estúdio"
-                />
+            {/* CONTAINER DO BANNER (CORREÇÃO MOBILE) */}
+            <div 
+                className="relative w-full h-56 md:h-72 lg:h-96 bg-slate-200 bg-cover bg-center transition-all duration-500 overflow-hidden"
+                style={{ 
+                    backgroundImage: `url(${studio?.cover_url || DEFAULT_COVER})` 
+                }}
+            >
+                {/* Overlay para contraste e leitura */}
+                <div className="absolute inset-0 bg-slate-900/30"></div>
+
+                {/* Placeholder case a imagem falhe */}
+                {!studio?.cover_url && !DEFAULT_COVER && (
+                    <div className="flex items-center justify-center h-full text-slate-400">
+                        <ImageIcon size={48} />
+                    </div>
+                )}
+
                 <button 
                     onClick={() => setIsClientAppsOpen(true)}
-                    className="absolute top-6 right-6 p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-xl"
+                    className="absolute top-6 right-6 p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-xl z-20"
                 >
                     <UserCircle2 size={20} />
                     <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Meus Agendamentos</span>
