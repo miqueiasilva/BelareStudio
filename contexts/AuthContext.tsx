@@ -142,20 +142,30 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const updatePassword = async (newPassword: string) => supabase.auth.updateUser({ password: newPassword });
   
   const signOut = async () => {
+    // 1. Tenta avisar o servidor (mas não espera se der erro)
     try {
       if (supabase) {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut(); 
       }
     } catch (error) {
-      console.error("Erro ao sair (ignorado):", error);
+      console.error("Erro ao deslogar (ignorado):", error);
     } finally {
-      // Limpeza forçada
-      localStorage.clear();
+      // 2. LIMPEZA TOTAL (Isso é o que o F12 faz)
+      console.log("Executando limpeza forçada...");
+      
+      localStorage.clear(); 
       sessionStorage.clear();
+
+      // 3. Zera estados para garantir que a UI não tente renderizar nada
       setUser(null);
       setSession(null);
-      setLoading(false); // Destrava a tela
-      window.location.href = '/login'; // Hard Reload conforme solicitado
+      
+      // 4. IMPORTANTE: Destrava a tela antes de recarregar
+      setLoading(false);
+
+      // 5. REDIRECIONAMENTO FORÇADO (Hard Refresh)
+      // Isso joga o usuário na tela de login instantaneamente
+      window.location.href = '/login'; 
     }
   };
 
