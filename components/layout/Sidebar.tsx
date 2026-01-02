@@ -62,12 +62,23 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         onNavigate(viewId as ViewState);
     };
 
+    // CORREÇÃO: Função de Logout Forçado para garantir redirecionamento
     const handleLogout = async () => {
-        const confirmLogout = window.confirm("Deseja realmente sair do sistema?");
-        if (!confirmLogout) return;
-        
-        // Utiliza a função robusta do contexto
-        await signOut();
+        if (window.confirm("Deseja realmente sair do sistema?")) {
+            // Limpeza imediata do cache local
+            localStorage.clear();
+            sessionStorage.clear();
+            
+            // Tentativa de aviso ao Supabase (não bloqueante)
+            try {
+                signOut();
+            } catch (e) {
+                console.error("Erro ignorado ao notificar logout:", e);
+            }
+
+            // Redirecionamento forçado (Hard Refresh) para a tela de login
+            window.location.href = '/login';
+        }
     };
 
     const renderItem = (item: MenuItem) => {
