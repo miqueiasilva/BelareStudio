@@ -5,6 +5,7 @@ import {
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
+import { useAuth } from '../../contexts/AuthContext';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import ClientAppointmentsModal from '../modals/ClientAppointmentsModal';
 import React, { useState, useMemo, useEffect } from 'react';
@@ -12,7 +13,8 @@ import {
     ChevronLeft, Check, Star, Search, Image as ImageIcon, 
     ChevronDown, ChevronUp, Share2, Loader2, MapPin, Phone, 
     User, Mail, ShoppingBag, Clock, Calendar, Scissors, 
-    CheckCircle2, ArrowRight, UserCircle2, X, AlertTriangle
+    CheckCircle2, ArrowRight, UserCircle2, X, AlertTriangle,
+    ArrowLeft
 } from 'lucide-react';
 
 const DEFAULT_COVER = "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1350&q=80";
@@ -94,6 +96,7 @@ const Plus = ({ size }: { size: number }) => (
 );
 
 const PublicBookingPreview: React.FC = () => {
+    const { user } = useAuth();
     const [loading, setLoading] = useState(true);
     const [studio, setStudio] = useState<any>(null);
     const [services, setServices] = useState<any[]>([]);
@@ -352,6 +355,17 @@ const PublicBookingPreview: React.FC = () => {
     return (
         <div className="min-h-screen bg-slate-50 font-sans relative pb-40">
             
+            {/* BOTÃO VOLTAR (Só aparece para o dono logado) */}
+            {user && (
+                <button 
+                    onClick={() => window.location.hash = '#/'}
+                    className="fixed top-4 left-4 z-[60] bg-white/90 backdrop-blur-sm hover:bg-white text-slate-800 px-5 py-2.5 rounded-full shadow-2xl border border-slate-100 flex items-center gap-2 transition-all duration-300 font-black text-xs uppercase tracking-widest group"
+                >
+                    <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform text-orange-500" />
+                    Voltar ao Painel
+                </button>
+            )}
+
             {/* HEADER DINÂMICO COM DADOS DO BANCO */}
             <div className="relative h-48 md:h-64 bg-slate-900">
                 <img 
