@@ -50,50 +50,62 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const [monthlyGoal, setMonthlyGoal] = useState(0);
     const [monthRevenue, setMonthRevenue] = useState(0);
 
-    const fetchDashboardData = async () => {
-        setIsLoading(true);
-        try {
-            const now = new Date();
-            const start = startOfDay(now).toISOString();
-            const end = endOfDay(now).toISOString();
-
-            // 1. Agendamentos de HOJE
-            const { data: appts, error: apptsError } = await supabase
-                .from('appointments')
-                .select('*')
-                .gte('date', start)
-                .lte('date', end)
-                .order('date', { ascending: true });
-
-            if (apptsError) throw apptsError;
-            setTodayAppointments(appts || []);
-
-            // 2. Meta e Faturamento Mensal para o Card de Progresso
-            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-            const { data: monthData } = await supabase
-                .from('appointments')
-                .select('value')
-                .eq('status', 'concluido')
-                .gte('date', startOfMonth)
-                .lte('date', end);
-            
-            const totalMonth = monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0;
-            setMonthRevenue(totalMonth);
-
-            // 3. Busca meta do estúdio
-            const { data: settings } = await supabase.from('studio_settings').select('monthly_revenue_goal').maybeSingle();
-            setMonthlyGoal(settings?.monthly_revenue_goal || 0);
-
-        } catch (e) {
-            console.error("Erro no Dashboard:", e);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    // "Auto-Refresh" ao montar o componente
+    // --- CARREGAMENTO SEGURO (ANTI-HANG) ---
     useEffect(() => {
+        let mounted = true;
+
+        const fetchDashboardData = async () => {
+            try {
+                if (mounted) setIsLoading(true);
+
+                const now = new Date();
+                const start = startOfDay(now).toISOString();
+                const end = endOfDay(now).toISOString();
+
+                // 1. Agendamentos de HOJE
+                const { data: appts, error: apptsError } = await supabase
+                    .from('appointments')
+                    .select('*')
+                    .gte('date', start)
+                    .lte('date', end)
+                    .order('date', { ascending: true });
+
+                if (apptsError) throw apptsError;
+                if (mounted) setTodayAppointments(appts || []);
+
+                // 2. Meta e Faturamento Mensal
+                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+                const { data: monthData } = await supabase
+                    .from('appointments')
+                    .select('value')
+                    .eq('status', 'concluido')
+                    .gte('date', startOfMonth)
+                    .lte('date', end);
+                
+                const totalMonth = monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0;
+                if (mounted) setMonthRevenue(totalMonth);
+
+                // 3. Busca meta do estúdio
+                const { data: settings } = await supabase.from('studio_settings').select('monthly_revenue_goal').maybeSingle();
+                if (mounted) setMonthlyGoal(settings?.monthly_revenue_goal || 0);
+
+                // Delay de segurança para UX
+                await new Promise(resolve => setTimeout(resolve, 300));
+
+            } catch (e) {
+                console.error("Erro crítico ao sincronizar dashboard:", e);
+                // No caso de erro, apenas exibimos o que temos (ou vazio) mas liberamos a tela
+            } finally {
+                // GARANTIA DE DESTRAVAMENTO
+                if (mounted) setIsLoading(false);
+            }
+        };
+
         fetchDashboardData();
+
+        return () => {
+            mounted = false;
+        };
     }, []);
 
     // KPIs Calculados estritamente dos dados de hoje
@@ -116,8 +128,11 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     if (isLoading) {
         return (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-white">
-                <Loader2 className="animate-spin text-orange-500 mb-4" size={40} />
-                <p className="text-xs font-black uppercase tracking-widest animate-pulse">Sincronizando hoje...</p>
+                <div className="relative">
+                    <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
+                    <div className="absolute inset-0 animate-ping rounded-full border-4 border-orange-100"></div>
+                </div>
+                <p className="text-xs font-black uppercase tracking-[0.3em] animate-pulse mt-4">Sincronizando hoje...</p>
             </div>
         );
     }
