@@ -130,8 +130,12 @@ const PublicBookingPreview: React.FC = () => {
         const loadPageData = async () => {
             setLoading(true);
             try {
-                // Busca de configurações do estúdio (Horizonte e Antecedência)
-                const { data: studioData } = await supabase.from('studio_settings').select('*').maybeSingle();
+                // Sincronização obrigatória de max_scheduling_window
+                const { data: studioData } = await supabase
+                    .from('studio_settings')
+                    .select('*, max_scheduling_window, min_scheduling_notice')
+                    .maybeSingle();
+
                 if (studioData) setStudio(studioData);
 
                 const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true);
@@ -174,7 +178,7 @@ const PublicBookingPreview: React.FC = () => {
         loadPageData();
     }, []);
 
-    // --- LOGICA DE FILTRAGEM DE HORÁRIOS (Antecedência Mínima) ---
+    // --- LOGICA DE FILTRAGEM DE HORÁRIOS (Lead Time) ---
     const generateAvailableSlots = async (date: Date, professional: any) => {
         if (!studio || selectedServices.length === 0) return;
         setIsLoadingSlots(true);
@@ -191,7 +195,7 @@ const PublicBookingPreview: React.FC = () => {
 
             const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
             
-            // Regra de Antecedência Mínima: Converte horas (float) para minutos
+            // Regra de Antecedência Mínima (Min Notice)
             const minNoticeHours = parseFloat(studio.min_scheduling_notice || '2');
             const now = new Date();
             const minTimeLimit = addMinutes(now, Math.round(minNoticeHours * 60));
@@ -215,7 +219,7 @@ const PublicBookingPreview: React.FC = () => {
             endLimit.setHours(endH, endM, 0, 0);
 
             while (isBefore(addMinutes(currentPointer, totalDuration), endLimit)) {
-                // Filtro 1: Bloqueia horários passados ou dentro da janela de antecedência mínima
+                // Filtro 1: Bloqueia horários dentro da janela de antecedência mínima para HOJE
                 if (isSameDay(date, now)) {
                     if (isBefore(currentPointer, minTimeLimit)) {
                         currentPointer = addMinutes(currentPointer, 30);
@@ -245,7 +249,6 @@ const PublicBookingPreview: React.FC = () => {
         }
     };
 
-    // Atualiza slots sempre que a data, profissional ou SERVIÇOS mudarem
     useEffect(() => {
         if (bookingStep === 2 && selectedDate && selectedProfessional) {
             generateAvailableSlots(selectedDate, selectedProfessional);
@@ -350,10 +353,15 @@ const PublicBookingPreview: React.FC = () => {
         });
     };
 
-    // --- LOGICA DE HORIZONTE DINÂMICO (max_scheduling_window) ---
+    // --- LOGICA DE HORIZONTE DINÂMICO (CORRIGIDO: Obedece max_scheduling_window) ---
     const nextDays = useMemo(() => {
-        const windowSize = parseInt(studio?.max_scheduling_window || '30', 10);
-        return Array.from({ length: windowSize }).map((_, i) => addDays(new Date(), i));
+        // Fallback para 30 dias se o valor no banco for null ou indefinido
+        const daysLimit = parseInt(studio?.max_scheduling_window || '30', 10);
+        const dates = [];
+        for (let i = 0; i < daysLimit; i++) {
+            dates.push(addDays(new Date(), i));
+        }
+        return dates;
     }, [studio?.max_scheduling_window]);
 
     if (loading) return (
@@ -366,7 +374,7 @@ const PublicBookingPreview: React.FC = () => {
     return (
         <div className="min-h-screen bg-slate-50 font-sans relative pb-40 text-left">
             
-            {/* BOTÃO VOLTAR (Exibido apenas para Admin Logado) */}
+            {/* BOTÃO VOLTAR (Protegido por Autenticação) */}
             {user && (
                 <button 
                     onClick={() => window.location.hash = '#/'}
@@ -394,7 +402,7 @@ const PublicBookingPreview: React.FC = () => {
 
             <div className="max-w-xl mx-auto px-6 -mt-16 relative z-10 text-center">
                 <div className="bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 flex flex-col items-center">
-                    <div className="w-24 h-24 rounded-3xl bg-white border-4 border-white shadow-xl -mt-20 overflow-hidden mb-4 flex items-center justify-center">
+                    <div className="w-24 h-24 rounded-[28px] bg-white border-4 border-white shadow-xl -mt-20 overflow-hidden mb-4 flex items-center justify-center">
                         {studio?.profile_url ? (
                             <img src={studio.profile_url} className="w-full h-full object-cover" alt="Logo do Estúdio" />
                         ) : (
