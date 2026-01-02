@@ -5,7 +5,6 @@ import {
     Globe, Camera, Image as ImageIcon, Instagram, 
     Facebook, Layout, CreditCard, Hash, Map, Navigation, 
     CheckCircle2, Clock, Calendar, Coffee, AlertCircle, TrendingUp,
-    // FIX: Added missing DollarSign import from lucide-react.
     DollarSign
 } from 'lucide-react';
 import Card from '../shared/Card';
@@ -55,7 +54,6 @@ const ConfiguracoesView: React.FC = () => {
     const coverInputRef = useRef<HTMLInputElement>(null);
     const logoInputRef = useRef<HTMLInputElement>(null);
 
-    // Estado inicial alinhado com o Schema do Banco (snake_case)
     const [studioData, setStudioData] = useState<any>({
         studio_name: '',
         cnpj_cpf: '',
@@ -165,21 +163,21 @@ const ConfiguracoesView: React.FC = () => {
             if (pendingFiles.cover) finalCoverUrl = await uploadAsset(pendingFiles.cover, 'cover');
             if (pendingFiles.logo) finalProfileUrl = await uploadAsset(pendingFiles.logo, 'logo');
 
-            // Preparação do Payload Final para UPSERT (Correção do Erro 400)
+            // Preparação do Payload Final para UPSERT
             const payload = {
                 studio_id: user.id,
                 studio_name: studioData.studio_name || '',
                 cnpj_cpf: studioData.cnpj_cpf || '',
                 presentation_text: studioData.presentation_text || '',
                 
-                // FINANCEIRO (Resolvendo erro de Schema Mismatch)
+                // FINANCEIRO
                 monthly_revenue_goal: parseFloat(studioData.monthly_revenue_goal) || 0,
 
-                // IMAGENS (Alinhadas com nomes de colunas do banco)
+                // IMAGENS
                 cover_url: finalCoverUrl,
                 profile_url: finalProfileUrl,
 
-                // ENDEREÇO (Atômico + JSONB Backup)
+                // ENDEREÇO
                 address_street: studioData.address_street || '',
                 address_number: studioData.address_number || '',
                 address_neighborhood: studioData.address_neighborhood || '',
@@ -194,13 +192,18 @@ const ConfiguracoesView: React.FC = () => {
                     neighborhood: studioData.address_neighborhood
                 },
 
-                // REDES SOCIAIS (Agrupamento JSONB)
+                // REDES SOCIAIS (Mapeamento Robusto conforme solicitado)
                 phone_whatsapp: studioData.phone_whatsapp || '',
                 whatsapp: studioData.phone_whatsapp || '', 
                 instagram: studioData.instagram_handle || '', 
                 instagram_handle: studioData.instagram_handle || '',
+                
+                // Persistência robusta para Facebook e Website
                 facebook_url: studioData.facebook_url || '',
                 website_url: studioData.website_url || '',
+                facebook: studioData.facebook_url || '', // Fallback legado
+                website: studioData.website_url || '', // Fallback legado
+
                 social_links: {
                     instagram: studioData.instagram_handle || '',
                     facebook: studioData.facebook_url || '',
@@ -276,7 +279,6 @@ const ConfiguracoesView: React.FC = () => {
                             </button>
                             <input type="file" ref={coverInputRef} className="hidden" onChange={e => handleFileChange(e, 'cover')} accept="image/*" />
 
-                            {/* Logo Overlay */}
                             <div className="absolute -bottom-12 left-8">
                                 <div className="relative group">
                                     <div className="w-28 h-28 rounded-full bg-white border-4 border-white shadow-2xl overflow-hidden flex items-center justify-center">
