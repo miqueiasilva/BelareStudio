@@ -143,29 +143,19 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   
   const signOut = async () => {
     try {
-      // 1. Ativa o loading para evitar cliques duplos durante o processo
-      setLoading(true);
-      
-      // 2. Tenta desconectar no servidor (pode falhar se não houver rede)
       if (supabase) {
         await supabase.auth.signOut();
       }
     } catch (error) {
-      console.error("AuthContext: Erro ao avisar servidor do logout:", error);
+      console.error("Erro ao sair (ignorado):", error);
     } finally {
-      // 3. Ações Críticas (Executam sempre para DESTRAVAR o app):
-      setUser(null);
-      setSession(null);
-      
-      // Limpeza nuclear de dados locais
+      // Limpeza forçada
       localStorage.clear();
       sessionStorage.clear();
-
-      // Força o fim do estado de carregamento
-      setLoading(false);
-
-      // 4. Reset Total via Navegador (Cura definitiva para o limbo de estado React)
-      window.location.href = '/'; 
+      setUser(null);
+      setSession(null);
+      setLoading(false); // Destrava a tela
+      window.location.href = '/login'; // Hard Reload conforme solicitado
     }
   };
 
