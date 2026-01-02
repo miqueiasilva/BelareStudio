@@ -2,9 +2,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
     Package, Search, Plus, Filter, Edit2, Trash2, 
-    AlertTriangle, TrendingUp, DollarSign, Archive, LayoutGrid, List,
-    Loader2, ArrowUpDown, History, ShieldCheck, Save, X, RefreshCw,
-    ShoppingBag, ChevronRight
+    AlertTriangle, TrendingUp, Archive, LayoutGrid, List,
+    Loader2, History, Save, X, RefreshCw,
+    ShoppingBag, ChevronRight, MoreVertical
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
@@ -113,6 +113,32 @@ const ProdutosView: React.FC = () => {
 
     const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
+    const handleOpenNewProduct = () => {
+        setEditingProduct(null);
+        setIsModalOpen(true);
+    };
+
+    const handleEditProduct = (product: Product) => {
+        setEditingProduct(product);
+        setIsModalOpen(true);
+    };
+
+    const handleDeleteProduct = async (id: number) => {
+        if (!isAdmin) return showToast("Apenas administradores podem excluir itens.", "error");
+        
+        const confirmed = window.confirm('⚠️ ATENÇÃO: Esta ação é irreversível. Deseja realmente excluir este produto permanentemente?');
+        if (confirmed) {
+            try {
+                const { error } = await supabase.from('products').delete().eq('id', id);
+                if (error) throw error;
+                showToast('Produto removido com sucesso!', 'info');
+                fetchProducts();
+            } catch (e: any) {
+                showToast(`Erro ao excluir: ${e.message}`, 'error');
+            }
+        }
+    };
+
     const handleSaveProduct = async (productData: Product) => {
         setIsSaving(true);
         try {
@@ -155,13 +181,18 @@ const ProdutosView: React.FC = () => {
 
             if (prodError) throw prodError;
 
-            await supabase.from('stock_adjustments').insert([{
-                product_id: isAdjusting.id,
-                user_id: user?.id,
-                previous_quantity: isAdjusting.stock_quantity,
-                new_quantity: newQuantity,
-                reason: reason
-            }]);
+            // Registro histórico (Opcional - se a tabela existir)
+            try {
+                await supabase.from('stock_adjustments').insert([{
+                    product_id: isAdjusting.id,
+                    user_id: user?.id,
+                    previous_quantity: isAdjusting.stock_quantity,
+                    new_quantity: newQuantity,
+                    reason: reason
+                }]);
+            } catch (e) {
+                console.warn("Log de estoque não registrado: tabela ausente.");
+            }
 
             showToast("Estoque ajustado com sucesso!");
             setIsAdjusting(null);
@@ -173,18 +204,10 @@ const ProdutosView: React.FC = () => {
         }
     };
 
-    const handleDeleteProduct = async (id: number) => {
-        if (!isAdmin) return showToast("Sem permissão.", "error");
-        if (window.confirm('Excluir este produto permanentemente?')) {
-            const { error } = await supabase.from('products').delete().eq('id', id);
-            if (!error) { showToast('Produto removido.'); fetchProducts(); }
-        }
-    };
-
     const filteredProducts = useMemo(() => {
         return products.filter(p => {
             const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                                  p.sku?.toLowerCase().includes(searchTerm.toLowerCase());
+                                  (p.sku || '').toLowerCase().includes(searchTerm.toLowerCase());
             
             const isLow = p.stock_quantity <= (p.min_stock || 0);
             
@@ -213,37 +236,42 @@ const ProdutosView: React.FC = () => {
                         <Archive className="text-purple-500" size={28} />
                         Gestão de Estoque
                     </h1>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Sinalização de níveis críticos em tempo real</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Controle total de entradas, saídas e patrimônio</p>
                 </div>
                 
                 <div className="flex gap-2">
-                    <button onClick={fetchProducts} className="p-3 bg-slate-100 text-slate-500 rounded-2xl hover:bg-slate-200 transition-all"><RefreshCw size={20}/></button>
+                    <button onClick={fetchProducts} className="p-3 bg-slate-100 text-slate-500 rounded-2xl hover:bg-slate-200 transition-all" title="Atualizar Lista">
+                        <RefreshCw size={20}/>
+                    </button>
                     <button 
-                        onClick={() => { setEditingProduct(null); setIsModalOpen(true); }}
+                        onClick={handleOpenNewProduct}
                         className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-2xl font-black flex items-center gap-2 shadow-lg shadow-purple-100 transition-all active:scale-95"
                     >
-                        <Plus size={20} /> <span className="hidden sm:inline">Novo Produto</span>
+                        <Plus size={20} /> <span className="hidden sm:inline">Adicionar Produto</span>
                     </button>
                 </div>
             </header>
 
             {/* KPI Summary */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 px-6 pt-6">
-                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Patrimônio em Estoque</p>
-                    <p className="text-2xl font-black text-slate-800">R$ {stats.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Patrimônio (Custo)</p>
+                        <p className="text-2xl font-black text-slate-800">R$ {stats.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <TrendingUp className="text-emerald-500 opacity-20" size={40} />
                 </div>
                 <div className={`p-6 rounded-3xl border shadow-sm flex items-center justify-between transition-all ${stats.lowStock > 0 ? 'bg-rose-50 border-rose-100 shadow-rose-100' : 'bg-white border-slate-100'}`}>
                     <div>
-                        <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${stats.lowStock > 0 ? 'text-rose-500' : 'text-slate-400'}`}>Itens Críticos (Reposição)</p>
-                        <p className={`text-2xl font-black ${stats.lowStock > 0 ? 'text-rose-700' : 'text-slate-800'}`}>{stats.lowStock} produtos em alerta</p>
+                        <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${stats.lowStock > 0 ? 'text-rose-500' : 'text-slate-400'}`}>Itens em Alerta</p>
+                        <p className={`text-2xl font-black ${stats.lowStock > 0 ? 'text-rose-700' : 'text-slate-800'}`}>{stats.lowStock} reposições pendentes</p>
                     </div>
                     <AlertTriangle className={stats.lowStock > 0 ? 'text-rose-400 animate-pulse' : 'text-slate-200'} size={32} />
                 </div>
                 <div className="bg-slate-800 p-6 rounded-3xl text-white shadow-xl shadow-slate-200 flex items-center justify-between">
                     <div>
-                        <p className="text-[10px] font-black opacity-60 uppercase tracking-widest mb-1">Itens Ativos</p>
-                        <p className="text-2xl font-black">{stats.totalItems}</p>
+                        <p className="text-[10px] font-black opacity-60 uppercase tracking-widest mb-1">Catálogo Ativo</p>
+                        <p className="text-2xl font-black">{stats.totalItems} referências</p>
                     </div>
                     <Package className="text-purple-400" size={32} />
                 </div>
@@ -255,7 +283,7 @@ const ProdutosView: React.FC = () => {
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-purple-500 transition-colors" size={18} />
                     <input 
                         type="text" 
-                        placeholder="Buscar por nome ou SKU..." 
+                        placeholder="Pesquisar por nome ou código SKU..." 
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-full pl-11 pr-4 py-3.5 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-purple-100 focus:border-purple-400 outline-none font-bold text-slate-700 transition-all shadow-sm"
@@ -284,25 +312,26 @@ const ProdutosView: React.FC = () => {
                 {loading ? (
                     <div className="h-64 flex flex-col items-center justify-center text-slate-400">
                         <Loader2 className="animate-spin text-purple-500 mb-4" size={40} />
-                        <p className="text-[10px] font-black uppercase tracking-widest animate-pulse">Sincronizando inventário...</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest animate-pulse">Sincronizando inventário real...</p>
                     </div>
                 ) : filteredProducts.length === 0 ? (
-                    <div className="py-20 text-center flex flex-col items-center bg-white rounded-[40px] border-2 border-dashed border-slate-100">
+                    <div className="py-20 text-center flex flex-col items-center bg-white rounded-[40px] border-2 border-dashed border-slate-100 shadow-sm">
                         <Package size={64} className="text-slate-100 mb-4" />
-                        <h3 className="font-black text-slate-700 uppercase">O estoque está limpo</h3>
-                        <p className="text-slate-400 text-sm mt-1">Refine sua busca ou cadastre um novo item.</p>
+                        <h3 className="font-black text-slate-700 uppercase tracking-widest">Nada encontrado por aqui</h3>
+                        <p className="text-slate-400 text-sm mt-1 mb-6">Cadastre seus produtos reais para começar o controle.</p>
+                        <button onClick={handleOpenNewProduct} className="px-8 py-3 bg-purple-600 text-white font-black rounded-xl shadow-lg">Cadastrar Primeiro Produto</button>
                     </div>
                 ) : (
                     <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden overflow-x-auto">
                         <table className="w-full text-left text-sm min-w-[900px]">
                             <thead className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                                 <tr>
-                                    <th className="px-6 py-5">Produto</th>
-                                    <th className="px-6 py-5">SKU</th>
+                                    <th className="px-6 py-5">Produto / Marca</th>
+                                    <th className="px-6 py-5">Cód. SKU</th>
                                     <th className="px-6 py-5 text-center">Saldo Atual</th>
-                                    <th className="px-6 py-5 text-center">Nível de Alerta</th>
-                                    <th className="px-6 py-5 text-right">Custo Un.</th>
-                                    <th className="px-6 py-5 text-center">Status</th>
+                                    <th className="px-6 py-5 text-center">Mínimo</th>
+                                    <th className="px-6 py-5 text-right">Venda (R$)</th>
+                                    <th className="px-6 py-5 text-center">Visibilidade</th>
                                     <th className="px-6 py-5 text-right">Ações</th>
                                 </tr>
                             </thead>
@@ -314,15 +343,19 @@ const ProdutosView: React.FC = () => {
                                             <td className="px-6 py-4">
                                                 <div className="flex flex-col">
                                                     <span className={`font-bold text-slate-700 transition-colors ${isLow ? 'text-rose-700' : 'group-hover:text-purple-600'}`}>{p.name}</span>
-                                                    <span className="text-[10px] text-slate-400 font-bold uppercase">{(p as any).category || 'Geral'}</span>
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase">{(p as any).category || 'Item de Venda'}</span>
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 text-slate-400 font-mono text-xs">{p.sku || '-'}</td>
                                             <td className="px-6 py-4">
-                                                <div className="flex items-center justify-center gap-2">
-                                                    <div className={`px-4 py-2 rounded-2xl font-black text-xs min-w-[70px] text-center border-2 transition-all ${
-                                                        isLow ? 'bg-rose-100 text-rose-600 border-rose-200 animate-pulse shadow-sm shadow-rose-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                                                    }`}>
+                                                <div className="flex items-center justify-center">
+                                                    <div 
+                                                        onClick={() => setIsAdjusting(p)}
+                                                        title="Clique para ajustar estoque"
+                                                        className={`px-5 py-2.5 rounded-2xl font-black text-xs min-w-[80px] text-center border-2 cursor-pointer transition-all hover:scale-105 active:scale-95 ${
+                                                            isLow ? 'bg-rose-100 text-rose-600 border-rose-200 shadow-sm shadow-rose-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                                                        }`}
+                                                    >
                                                         {p.stock_quantity} un
                                                     </div>
                                                 </div>
@@ -330,33 +363,45 @@ const ProdutosView: React.FC = () => {
                                             <td className="px-6 py-4 text-center">
                                                 <span className="text-[11px] font-black text-slate-400">{p.min_stock || 0} un</span>
                                             </td>
-                                            <td className="px-6 py-4 text-right font-bold text-slate-400">R$ {Number(p.cost_price || 0).toFixed(2)}</td>
+                                            <td className="px-6 py-4 text-right">
+                                                <span className="font-black text-slate-800">R$ {Number(p.price || 0).toFixed(2)}</span>
+                                            </td>
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center justify-center">
-                                                    {isLow ? (
-                                                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-600 text-white text-[9px] font-black uppercase tracking-widest shadow-md">
-                                                            <AlertTriangle size={10} /> Repor Agora
+                                                    {p.active ? (
+                                                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-600 text-[9px] font-black uppercase tracking-widest border border-emerald-100">
+                                                            Ativo
                                                         </div>
                                                     ) : (
-                                                        <div className={`w-2.5 h-2.5 rounded-full ${p.active ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-300'}`}></div>
+                                                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 text-slate-400 text-[9px] font-black uppercase tracking-widest border border-slate-200">
+                                                            Inativo
+                                                        </div>
                                                     )}
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 text-right">
-                                                <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    {isAdmin && (
-                                                        <button 
-                                                            onClick={() => setIsAdjusting(p)}
-                                                            className="p-2.5 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all"
-                                                            title="Ajuste Rápido"
-                                                        >
-                                                            <History size={16} />
-                                                        </button>
-                                                    )}
-                                                    <button onClick={() => { setEditingProduct(p); setIsModalOpen(true); }} className="p-2.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-all"><Edit2 size={16} /></button>
-                                                    {isAdmin && (
-                                                        <button onClick={() => handleDeleteProduct(p.id)} className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={16} /></button>
-                                                    )}
+                                                <div className="flex items-center justify-end gap-1.5">
+                                                    <button 
+                                                        onClick={() => setIsAdjusting(p)}
+                                                        className="p-2.5 bg-slate-50 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all border border-slate-100"
+                                                        title="Ajuste de Inventário"
+                                                    >
+                                                        <History size={16} />
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleEditProduct(p)}
+                                                        className="p-2.5 bg-slate-50 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-all border border-slate-100"
+                                                        title="Editar Produto"
+                                                    >
+                                                        <Edit2 size={16} />
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleDeleteProduct(p.id)}
+                                                        className="p-2.5 bg-slate-50 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all border border-slate-100"
+                                                        title="Excluir Permanentemente"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -372,7 +417,7 @@ const ProdutosView: React.FC = () => {
             {isModalOpen && (
                 <ProductModal 
                     product={editingProduct}
-                    onClose={() => setIsModalOpen(false)}
+                    onClose={() => { setIsModalOpen(false); setEditingProduct(null); }}
                     onSave={handleSaveProduct}
                 />
             )}
