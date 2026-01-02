@@ -162,36 +162,46 @@ const ConfiguracoesView: React.FC = () => {
             if (pendingFiles.cover) finalCoverUrl = await uploadAsset(pendingFiles.cover, 'cover');
             if (pendingFiles.logo) finalLogoUrl = await uploadAsset(pendingFiles.logo, 'logo');
 
-            // Preparação do Payload para UPSERT com decomposição de endereço
+            // Preparação do Payload Final para UPSERT
             const payload = {
                 studio_id: user.id,
                 studio_name: studioData.studio_name || '',
                 cnpj_cpf: studioData.cnpj_cpf || '',
                 presentation_text: studioData.presentation_text || '',
                 
-                // Mapeamento explícito para as colunas do banco
+                // 1. MAPEAMENTO DE ENDEREÇO (Atômico + JSONB Backup)
                 address_street: studioData.address_street || '',
                 address_number: studioData.address_number || '',
                 address_neighborhood: studioData.address_neighborhood || '',
                 address_city: studioData.address_city || '',
                 address_state: studioData.address_state || '',
                 address_zip: studioData.address_zip || '',
-                
-                // Objeto de backup para retrocompatibilidade ou uso flexível
                 address: {
                     street: studioData.address_street,
                     number: studioData.address_number,
                     zip: studioData.address_zip,
-                    city: studioData.address_city
+                    city: studioData.address_city,
+                    neighborhood: studioData.address_neighborhood
                 },
 
+                // 2. MAPEAMENTO DE CONTATO E REDES SOCIAIS (Individual + JSONB)
                 phone_whatsapp: studioData.phone_whatsapp || '',
+                whatsapp: studioData.phone_whatsapp || '', // Espelhamento solicitado
+                instagram: studioData.instagram_handle || '', // Espelhamento solicitado
                 instagram_handle: studioData.instagram_handle || '',
                 facebook_url: studioData.facebook_url || '',
                 website_url: studioData.website_url || '',
+                social_links: {
+                    instagram: studioData.instagram_handle || '',
+                    facebook: studioData.facebook_url || '',
+                    website: studioData.website_url || ''
+                },
+
+                // 3. ASSETS E HORÁRIOS
                 cover_image_url: finalCoverUrl,
                 logo_image_url: finalLogoUrl,
-                business_hours: studioData.business_hours || {},
+                business_hours: studioData.business_hours || {}, // Mapeamento JSONB
+                
                 updated_at: new Date().toISOString()
             };
 
