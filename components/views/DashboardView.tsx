@@ -131,8 +131,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 const totalMonthRev = monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0;
                 if (mounted) setMonthRevenueTotal(totalMonthRev);
 
-                // 3. Busca meta configurada em studio_settings (revenue_goal)
-                // FIX: Busca dedicada da meta para garantir sincronização com as configurações
+                // 3. Busca DEDICADA da meta configurada em studio_settings (revenue_goal)
                 const { data: settings, error: settingsError } = await supabase
                     .from('studio_settings')
                     .select('revenue_goal')
@@ -140,8 +139,9 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 
                 if (settingsError) throw settingsError;
                 
-                const goal = settings?.revenue_goal || 5000;
-                if (mounted) setFinancialGoal(goal);
+                if (mounted) {
+                    setFinancialGoal(settings?.revenue_goal || 5000); // Fallback de 5000 se não houver meta
+                }
 
             } catch (e) {
                 console.error("Erro crítico ao sincronizar dashboard:", e);
@@ -169,12 +169,14 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         return { revenue, scheduled, completed };
     }, [appointments]);
 
-    const goalProgress = useMemo(() => {
-        if (financialGoal <= 0) return { percent: 0, visual: 0 };
-        const percent = (monthRevenueTotal / financialGoal) * 100;
+    // Lógica de Meta Financeira
+    const goalMetrics = useMemo(() => {
+        const goalProgress = financialGoal > 0 ? (monthRevenueTotal / financialGoal) * 100 : 0;
+        const displayGoal = financialGoal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
         return {
-            percent: percent.toFixed(1),
-            visual: Math.min(100, percent)
+            progress: goalProgress,
+            display: displayGoal,
+            visual: Math.min(goalProgress, 100)
         };
     }, [monthRevenueTotal, financialGoal]);
 
@@ -209,7 +211,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 </div>
 
                 <div className="flex flex-wrap items-center gap-4">
-                    {/* Filtro de Período UI - Senior UX Pill Style */}
+                    {/* Filtro de Período UI */}
                     <div className="flex flex-col gap-2 items-end">
                         <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                             <button 
@@ -298,20 +300,21 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     subtext="Finalizados"
                 />
                 
+                {/* CARD DE META FINANCEIRA DINÂMICA */}
                 <div className="bg-slate-800 p-4 sm:p-5 rounded-2xl text-white flex flex-col justify-between shadow-lg relative overflow-hidden group h-full transition-all hover:shadow-xl hover:shadow-slate-200">
                     <div className="flex justify-between items-start z-10">
-                        <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Meta Mensal</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest opacity-60">META MENSAL</p>
                         <TrendingUp size={12} className="text-orange-400" />
                     </div>
                     <div className="mt-2 z-10">
                         <div className="flex items-end justify-between mb-2">
-                            <h3 className="text-2xl font-black">{goalProgress.percent}%</h3>
-                            <span className="text-[10px] font-bold opacity-60">alvo: {formatCurrency(financialGoal)}</span>
+                            <h3 className="text-2xl font-black">{goalMetrics.progress.toFixed(1)}%</h3>
+                            <span className="text-[10px] font-bold opacity-60">alvo: {goalMetrics.display}</span>
                         </div>
                         <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden mb-1">
                             <div 
                                 className="h-full bg-orange-500 transition-all duration-1000 ease-out" 
-                                style={{ width: `${goalProgress.visual}%` }} 
+                                style={{ width: `${goalMetrics.visual}%` }} 
                             />
                         </div>
                         <p className="text-[8px] font-black uppercase tracking-tighter opacity-40 mt-1">Sincronizado com fechamentos do mês</p>
