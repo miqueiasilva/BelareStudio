@@ -58,7 +58,7 @@ const ConfiguracoesView: React.FC = () => {
         studio_name: '',
         cnpj_cpf: '',
         presentation_text: '',
-        monthly_revenue_goal: 0,
+        revenue_goal: 0,
         address_street: '',
         address_number: '',
         address_neighborhood: '',
@@ -95,6 +95,7 @@ const ConfiguracoesView: React.FC = () => {
                 // Sincroniza campos que podem vir com nomes diferentes do banco
                 setStudioData({
                     ...data,
+                    revenue_goal: data.revenue_goal || data.monthly_revenue_goal || 0,
                     presentation_text: data.presentation_text || data.description || '',
                     phone_whatsapp: data.phone_whatsapp || data.whatsapp || '',
                     instagram_handle: data.instagram_handle || data.instagram || '',
@@ -205,7 +206,8 @@ const ConfiguracoesView: React.FC = () => {
                 address_state: studioData.address_state || '',
                 
                 // Financeiro e Horários
-                monthly_revenue_goal: parseFloat(studioData.monthly_revenue_goal) || 0,
+                revenue_goal: parseFloat(studioData.revenue_goal) || 0,
+                monthly_revenue_goal: parseFloat(studioData.revenue_goal) || 0,
                 business_hours: studioData.business_hours || {}, 
                 social_links: {
                     instagram: studioData.instagram_handle || '',
@@ -339,9 +341,9 @@ const ConfiguracoesView: React.FC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
                             <InputField 
                                 label="Meta de Faturamento Mensal (R$)" 
-                                name="monthly_revenue_goal"
+                                name="revenue_goal"
                                 type="number"
-                                value={studioData.monthly_revenue_goal}
+                                value={studioData.revenue_goal}
                                 onChange={handleInputChange}
                                 placeholder="Ex: 10000"
                                 icon={DollarSign}

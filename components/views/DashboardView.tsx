@@ -110,24 +110,28 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 if (apptsError) throw apptsError;
                 if (mounted) setAppointments(appts || []);
 
-                // 2. Dados específicos para o card de Meta Mensal (Sempre do mês atual)
+                // 2. Dados específicos para o card de Meta Mensal (Sempre do mês atual acumulado)
                 const now = new Date();
-                const startM = startOfMonth(now).toISOString();
-                const endM = endOfMonth(now).toISOString();
+                const startMonth = startOfMonth(now).toISOString();
+                const endMonth = endOfMonth(now).toISOString();
                 
                 const { data: monthData } = await supabase
                     .from('appointments')
                     .select('value')
                     .eq('status', 'concluido')
-                    .gte('date', startM)
-                    .lte('date', endM);
+                    .gte('date', startMonth)
+                    .lte('date', endMonth);
                 
                 const totalMonthRev = monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0;
                 if (mounted) setMonthRevenueTotal(totalMonthRev);
 
-                // 3. Busca meta do estúdio
-                const { data: settings } = await supabase.from('studio_settings').select('monthly_revenue_goal').maybeSingle();
-                if (mounted) setMonthlyGoal(settings?.monthly_revenue_goal || 0);
+                // 3. Busca meta real do estúdio (revenue_goal)
+                const { data: settings } = await supabase
+                    .from('studio_settings')
+                    .select('revenue_goal')
+                    .maybeSingle();
+                
+                if (mounted) setMonthlyGoal(settings?.revenue_goal || 0);
 
             } catch (e) {
                 console.error("Erro crítico ao sincronizar dashboard:", e);
@@ -157,8 +161,11 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
 
     const goalPercent = useMemo(() => {
         if (monthlyGoal <= 0) return 0;
-        return Math.min(100, Math.round((monthRevenueTotal / monthlyGoal) * 100));
+        // Cálculo da porcentagem real sem limite para o texto, mas com limite de 100 para a barra
+        return Math.round((monthRevenueTotal / monthlyGoal) * 100);
     }, [monthRevenueTotal, monthlyGoal]);
+
+    const visualProgress = useMemo(() => Math.min(100, goalPercent), [goalPercent]);
 
     if (isLoading) {
         return (
@@ -279,9 +286,9 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                             <span className="text-[10px] font-bold opacity-60">alvo: {formatCurrency(monthlyGoal)}</span>
                         </div>
                         <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden mb-1">
-                            <div className="h-full bg-orange-500 transition-all duration-1000" style={{ width: `${goalPercent}%` }} />
+                            <div className="h-full bg-orange-500 transition-all duration-1000" style={{ width: `${visualProgress}%` }} />
                         </div>
-                        <p className="text-[8px] font-black uppercase tracking-tighter opacity-40 mt-1">Sincronizado com fechamentos do mês</p>
+                        <p className="text-[8px] font-black uppercase tracking-tighter opacity-40 mt-1">Acumulado do mês corrente</p>
                     </div>
                 </div>
             </div>
