@@ -298,13 +298,28 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         if (!selectedTemplateId) return;
         const template = templates.find(t => t.id === Number(selectedTemplateId));
         if (template) {
+            let textToInsert = "";
+            
+            // Lógica Obrigatória: Parser de JSON para String Legível
+            if (Array.isArray(template.content)) {
+                textToInsert = template.content
+                    .map((item: any) => `• ${item.question || item.label || 'Campo'}\n   R: `)
+                    .join('\n\n');
+            } else if (typeof template.content === 'string') {
+                textToInsert = template.content;
+            }
+
             const currentNotes = anamnesis.clinical_notes || '';
             const divider = currentNotes.trim() ? '\n\n---\n\n' : '';
-            setAnamnesis({
-                ...anamnesis,
-                clinical_notes: currentNotes + divider + template.content
-            });
+            
+            // Atualizar o Estado preservando o conteúdo existente (Append)
+            setAnamnesis((prev: any) => ({
+                ...prev,
+                clinical_notes: (currentNotes ? currentNotes + divider : "") + textToInsert
+            }));
+            
             setSelectedTemplateId('');
+            setToast({ message: "Modelo inserido!", type: 'success' });
         }
     };
 
