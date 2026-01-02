@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     X, User, Phone, Mail, Calendar, Edit2, Save, 
@@ -457,6 +458,34 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         }
     };
 
+    // --- LOGICA PARA REMOVER AVATAR ---
+    const handleRemoveAvatar = async () => {
+        if (!formData.id || !formData.photo_url) return;
+        
+        if (!confirm("Deseja realmente remover a foto de perfil?")) return;
+
+        setIsSaving(true);
+        try {
+            // 1. Atualizar banco de dados definindo a URL como null
+            const { error } = await supabase
+                .from('clients')
+                .update({ photo_url: null })
+                .eq('id', formData.id);
+
+            if (error) throw error;
+
+            // 2. Resetar estado local
+            setFormData((prev: any) => ({ ...prev, photo_url: null }));
+            setToast({ message: "Foto removida!", type: 'info' });
+
+        } catch (err: any) {
+            console.error("Remove Avatar Error:", err);
+            setToast({ message: "Erro ao remover foto.", type: 'error' });
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const handleSave = async () => {
         if (!formData.nome) {
             setToast({ message: "Nome é obrigatório.", type: 'error' });
@@ -555,26 +584,39 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
                 <div className="flex items-center gap-5">
                     <div className="relative group">
-                        {/* Avatar Clicável com Overlay de Câmera */}
-                        <div 
-                            onClick={() => isEditing && avatarInputRef.current?.click()}
-                            className={`w-20 h-20 rounded-[24px] flex items-center justify-center text-2xl font-black border-4 border-white shadow-xl overflow-hidden transition-all relative
-                                ${isEditing ? 'cursor-pointer hover:ring-4 hover:ring-orange-100 group' : ''} 
-                                ${formData.photo_url ? 'bg-white' : 'bg-orange-100 text-orange-600'}
-                                ${isUploading ? 'opacity-50' : 'opacity-100'}
-                            `}
-                        >
-                            {formData.photo_url ? (
-                                <img src={formData.photo_url} className="w-full h-full object-cover" alt="Avatar" />
-                            ) : (
-                                formData.nome?.charAt(0) || '?'
-                            )}
-                            
-                            {/* Overlay de Edição */}
-                            {isEditing && (
-                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    {isUploading ? <Loader2 className="text-white animate-spin" size={20} /> : <Camera className="text-white" size={20} />}
-                                </div>
+                        {/* Avatar Container */}
+                        <div className="relative">
+                            <div 
+                                onClick={() => isEditing && avatarInputRef.current?.click()}
+                                className={`w-20 h-20 rounded-[24px] flex items-center justify-center text-2xl font-black border-4 border-white shadow-xl overflow-hidden transition-all relative
+                                    ${isEditing ? 'cursor-pointer hover:ring-4 hover:ring-orange-100 group' : ''} 
+                                    ${formData.photo_url ? 'bg-white' : 'bg-orange-100 text-orange-600'}
+                                    ${isUploading ? 'opacity-50' : 'opacity-100'}
+                                `}
+                            >
+                                {formData.photo_url ? (
+                                    <img src={formData.photo_url} className="w-full h-full object-cover" alt="Avatar" />
+                                ) : (
+                                    formData.nome?.charAt(0) || '?'
+                                )}
+                                
+                                {/* Overlay de Edição (Upload) */}
+                                {isEditing && (
+                                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                        {isUploading ? <Loader2 className="text-white animate-spin" size={20} /> : <Camera className="text-white" size={20} />}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Botão de Remover Foto (Apenas se existir foto e em modo edição) */}
+                            {isEditing && formData.photo_url && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleRemoveAvatar(); }}
+                                    className="absolute -bottom-1 -right-1 p-1.5 bg-white text-rose-500 rounded-lg shadow-lg border border-slate-100 hover:bg-rose-50 transition-all active:scale-90 z-20"
+                                    title="Remover foto"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
                             )}
                         </div>
                     </div>
