@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     X, User, Phone, Mail, Calendar, Edit2, Save, 
@@ -6,7 +7,7 @@ import {
     CreditCard, Briefcase, Home, Map, Hash, Info, Settings, 
     Camera, Loader2, FileText, Activity, AlertCircle, Maximize2,
     Trash2, PenTool, Eraser, Check, Image as ImageIcon, Instagram,
-    Navigation, Smile, FilePlus, ChevronDown
+    Navigation, Smile, FilePlus, ChevronDown, HeartPulse
 } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
@@ -184,16 +185,16 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         is_pregnant: false,
         uses_meds: false,
         meds_details: '',
-        has_diabetes: false,
-        diabetes_type: '',
+        uses_acids: false,
+        acids_details: '',
         uses_roacutan: false,
         roacutan_time: '',
+        has_diabetes: false,
         has_keloid: false,
-        uses_acids: false,
         has_herpes: false,
-        has_autoimmune: false,
         uses_anticoagulants: false,
         recent_botox: false,
+        has_autoimmune: false,
         clinical_notes: '',
         signed_at: null,
         signature_url: null
@@ -310,7 +311,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             return;
         }
         
-        // CORREÇÃO CRÍTICA: Convertendo o ID para número para garantir o find
         const template = templates.find(t => String(t.id) === String(selectedTemplateId));
         if (!template) {
             alert("Erro: Modelo não encontrado.");
@@ -319,7 +319,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
         let textToInsert = "";
 
-        // 1. Parser Robusto de Conteúdo
         if (typeof template.content === 'string') {
             textToInsert = template.content
                 .replace(/^"|"$/g, '') 
@@ -340,7 +339,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             return;
         }
 
-        // 2. ATUALIZAÇÃO DO ESTADO USANDO PADRÃO FUNCIONAL (Garante sincronia)
         setAnamnesis((prev: any) => {
             const current = prev.clinical_notes || "";
             const divider = current.trim() ? "\n\n---\n\n" : "";
@@ -352,8 +350,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         });
         
         setSelectedTemplateId('');
-        
-        // 3. Feedback Visual solicitado para garantir que o usuário veja a ação
         alert("Modelo inserido com sucesso! Role o campo de texto para ver o conteúdo.");
     };
 
@@ -376,20 +372,16 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         else setToast({ message: "Erro na anamnese.", type: 'error' });
     };
 
-    // --- LOGICA DE SALVAMENTO DE ASSINATURA CORRIGIDA (UPLOAD ROBUSTO) ---
     const handleSaveSignature = async (dataUrl: string) => {
         if (!client.id) return;
         setIsSaving(true);
         
         try {
-            // 1. Converter Base64 para Blob
             const blob = dataURLtoBlob(dataUrl);
             if (!blob) throw new Error("Falha ao processar imagem da assinatura.");
 
-            // 2. Criar Nome Único
             const fileName = `sig_${client.id}_${Date.now()}.png`;
 
-            // 3. Upload Robusto com Metadados Corretos
             const { data: uploadData, error: uploadError } = await supabase.storage
                 .from('signatures')
                 .upload(fileName, blob, { 
@@ -399,14 +391,12 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
             if (uploadError) throw uploadError;
 
-            // 4. Obter URL Pública
             const { data: { publicUrl } } = supabase.storage
                 .from('signatures')
                 .getPublicUrl(fileName);
 
             const timestamp = new Date().toISOString();
 
-            // 5. Salvar na Tabela de Anamnese
             const { error: dbError } = await supabase
                 .from('client_anamnesis')
                 .upsert({ 
@@ -427,31 +417,26 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         }
     };
 
-    // --- LOGICA DE UPLOAD DE AVATAR (FOTO DE PERFIL) ---
     const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !formData.id) return;
 
         setIsUploading(true);
         try {
-            // 1. Criar nome único para o arquivo
             const fileExt = file.name.split('.').pop();
             const fileName = `avatar_${formData.id}_${Date.now()}.${fileExt}`;
             const filePath = `${formData.id}/${fileName}`;
 
-            // 2. Upload para o bucket 'avatars'
             const { error: uploadError } = await supabase.storage
                 .from('avatars')
                 .upload(filePath, file, { upsert: true });
 
             if (uploadError) throw uploadError;
 
-            // 3. Obter URL Pública
             const { data: { publicUrl } } = supabase.storage
                 .from('avatars')
                 .getPublicUrl(filePath);
 
-            // 4. Atualizar imediatamente a tabela clients
             const { error: dbError } = await supabase
                 .from('clients')
                 .update({ photo_url: publicUrl })
@@ -459,7 +444,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
             if (dbError) throw dbError;
 
-            // 5. Atualizar estado local
             setFormData((prev: any) => ({ ...prev, photo_url: publicUrl }));
             setToast({ message: "Foto de perfil atualizada!", type: 'success' });
 
@@ -472,26 +456,20 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         }
     };
 
-    // --- LOGICA PARA REMOVER AVATAR ---
     const handleRemoveAvatar = async () => {
         if (!formData.id || !formData.photo_url) return;
-        
         if (!confirm("Deseja realmente remover a foto de perfil?")) return;
 
         setIsSaving(true);
         try {
-            // 1. Atualizar banco de dados definindo a URL como null
             const { error } = await supabase
                 .from('clients')
                 .update({ photo_url: null })
                 .eq('id', formData.id);
 
             if (error) throw error;
-
-            // 2. Resetar estado local
             setFormData((prev: any) => ({ ...prev, photo_url: null }));
             setToast({ message: "Foto removida!", type: 'info' });
-
         } catch (err: any) {
             console.error("Remove Avatar Error:", err);
             setToast({ message: "Erro ao remover foto.", type: 'error' });
@@ -556,10 +534,9 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     };
 
     return (
-        <div className="fixed inset-0 bg-slate-100 z-[100] flex flex-col font-sans animate-in slide-in-from-right duration-300">
+        <div className="fixed inset-0 bg-slate-100 z-[100] flex flex-col font-sans animate-in slide-in-from-right duration-300 text-left">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
-            {/* Input de Arquivo Oculto para o Avatar */}
             <input 
                 type="file" 
                 ref={avatarInputRef} 
@@ -568,7 +545,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 accept="image/*" 
             />
 
-            {/* HEADER */}
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col gap-6 shadow-sm z-10">
                 <div className="flex items-center justify-between">
                     <button onClick={onClose} className="p-2 -ml-2 text-slate-400 hover:text-slate-600 transition-colors">
@@ -598,7 +574,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
                 <div className="flex items-center gap-5">
                     <div className="relative group">
-                        {/* Avatar Container */}
                         <div className="relative">
                             <div 
                                 onClick={() => isEditing && avatarInputRef.current?.click()}
@@ -614,7 +589,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                     formData.nome?.charAt(0) || '?'
                                 )}
                                 
-                                {/* Overlay de Edição (Upload) */}
                                 {isEditing && (
                                     <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                         {isUploading ? <Loader2 className="text-white animate-spin" size={20} /> : <Camera className="text-white" size={20} />}
@@ -622,7 +596,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                 )}
                             </div>
 
-                            {/* Botão de Remover Foto (Apenas se existir foto e em modo edição) */}
                             {isEditing && formData.photo_url && (
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); handleRemoveAvatar(); }}
@@ -639,13 +612,16 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                         <h2 className="text-2xl font-black text-slate-800 leading-tight">{formData.nome || 'Novo Cliente'}</h2>
                         <div className="flex items-center gap-3 mt-1">
                             <span className="px-2.5 py-0.5 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-200">{formData.origem}</span>
-                            {anamnesis.has_allergy && <span className="text-[10px] font-black uppercase text-rose-500 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100">⚠️ Alérgica</span>}
+                            {(anamnesis.has_allergy || anamnesis.is_pregnant || anamnesis.uses_roacutan) && (
+                                <span className="text-[10px] font-black uppercase text-rose-500 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100 flex items-center gap-1">
+                                    <AlertCircle size={10}/> Atenção Médica
+                                </span>
+                            )}
                         </div>
                     </div>
                 </div>
             </header>
 
-            {/* NAVIGATION */}
             <nav className="bg-white border-b border-slate-200 flex px-6 flex-shrink-0 overflow-x-auto scrollbar-hide">
                 <button onClick={() => setActiveTab('geral')} className={`py-4 px-4 font-black text-xs uppercase tracking-widest border-b-2 transition-all ${activeTab === 'geral' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400'}`}>Dados</button>
                 <button onClick={() => setActiveTab('anamnese')} className={`py-4 px-4 font-black text-xs uppercase tracking-widest border-b-2 transition-all ${activeTab === 'anamnese' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400'}`}>Anamnese</button>
@@ -657,7 +633,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                     
                     {activeTab === 'geral' && (
                         <div className="space-y-6 animate-in fade-in duration-500">
-                             
                              <Card title="Contato e Redes Sociais" icon={<Smartphone size={18} />}>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                     <EditField label="WhatsApp / Celular" name="telefone" value={formData.telefone} onChange={handleInputChange} disabled={!isEditing} placeholder="(00) 00000-0000" icon={Phone} />
@@ -734,39 +709,25 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                     />
                                 </div>
                              </Card>
-
-                             {isEditing && (
-                                <div className="flex justify-end pt-4">
-                                    <button 
-                                        onClick={handleSave} 
-                                        disabled={isSaving}
-                                        className="px-10 py-4 bg-slate-800 text-white font-black rounded-2xl hover:bg-slate-900 shadow-xl transition-all active:scale-95 disabled:opacity-70 flex items-center gap-3"
-                                    >
-                                        {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
-                                        {isSaving ? 'Sincronizando...' : 'Salvar Alterações'}
-                                    </button>
-                                </div>
-                             )}
                         </div>
                     )}
 
                     {activeTab === 'anamnese' && (
                         <div className="space-y-6 animate-in fade-in duration-500">
-                            <Card title="Ficha de Saúde Estética" icon={<Activity size={18} />}>
+                            <Card title="Checklist de Saúde (Anamnese Crítica)" icon={<HeartPulse size={20} className="text-rose-500" />}>
                                 <div className="space-y-8">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
                                         {[
-                                            { key: 'has_allergy', label: 'Possui Alguma Alergia?', hasDetails: true, detailKey: 'allergy_details', placeholder: 'Cite substâncias...' },
-                                            { key: 'is_pregnant', label: 'Está Gestante ou Lactante?', hasDetails: false },
-                                            { key: 'uses_meds', label: 'Usa Medicamentos Contínuos?', hasDetails: true, detailKey: 'meds_details', placeholder: 'Quais?' },
-                                            { key: 'has_diabetes', label: 'Possui Diabetes?', hasDetails: true, detailKey: 'diabetes_type', placeholder: 'Tipo I ou II?' },
-                                            { key: 'uses_roacutan', label: 'Usa ou usou Roacutan?', hasDetails: true, detailKey: 'roacutan_time', placeholder: 'Há quanto tempo usa/parou?' },
-                                            { key: 'has_keloid', label: 'Possui Quelóide?', hasDetails: false },
-                                            { key: 'uses_acids', label: 'Uso de Ácidos na face?', hasDetails: false },
+                                            { key: 'is_pregnant', label: 'Gestante ou Lactante?', hasDetails: false },
+                                            { key: 'has_allergy', label: 'Possui Alguma Alergia?', hasDetails: true, detailKey: 'allergy_details', placeholder: 'Cite substâncias (ex: pigmentos, anestésicos, iodo)...' },
+                                            { key: 'uses_acids', label: 'Usa Ácidos no Rosto?', hasDetails: true, detailKey: 'acids_details', placeholder: 'Quais ácidos e com qual frequência?' },
+                                            { key: 'uses_roacutan', label: 'Usa ou usou Roacutan?', hasDetails: true, detailKey: 'roacutan_time', placeholder: 'Há quanto tempo usa ou parou de usar?' },
+                                            { key: 'has_diabetes', label: 'Diabetes?', hasDetails: false },
+                                            { key: 'has_keloid', label: 'Problema de Quelóide?', hasDetails: false },
                                             { key: 'has_herpes', label: 'Histórico de Herpes Labial?', hasDetails: false },
-                                            { key: 'has_autoimmune', label: 'Doenças Autoimunes?', hasDetails: false },
-                                            { key: 'uses_anticoagulants', label: 'Uso de Anticoagulantes?', hasDetails: false },
-                                            { key: 'recent_botox', label: 'Fez Botox recentemente? (6 meses)', hasDetails: false }
+                                            { key: 'uses_anticoagulants', label: 'Usa Anticoagulantes?', hasDetails: false },
+                                            { key: 'recent_botox', label: 'Fez Botox recentemente (6 meses)?', hasDetails: false },
+                                            { key: 'has_autoimmune', label: 'Doenças Autoimunes?', hasDetails: false }
                                         ].map(q => (
                                             <div key={q.key} className="space-y-3 pb-4 border-b border-slate-50 last:border-0 md:border-b-0">
                                                 <div className="flex items-center justify-between gap-4">
@@ -779,7 +740,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                                             value={anamnesis[q.detailKey]}
                                                             onChange={(e) => setAnamnesis({...anamnesis, [q.detailKey]: e.target.value})}
                                                             placeholder={q.placeholder}
-                                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs font-medium text-slate-600 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs font-medium text-slate-600 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 shadow-inner"
                                                             rows={1}
                                                         />
                                                     </div>
@@ -806,19 +767,19 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-orange-400 pointer-events-none" size={16} />
                                                 </div>
                                             </div>
-                                            <button onClick={handleLoadTemplate} disabled={!selectedTemplateId} className="w-full sm:w-auto px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50">
+                                            <button onClick={handleLoadTemplate} disabled={!selectedTemplateId} className="w-full sm:w-auto px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-sm">
                                                 <FilePlus size={16} /> Inserir Modelo
                                             </button>
                                         </div>
 
                                         <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Observações Clínicas / Contrato</label>
+                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Observações Clínicas / Termos Adicionais</label>
                                             <textarea 
                                                 value={anamnesis.clinical_notes}
                                                 onChange={(e) => setAnamnesis({...anamnesis, clinical_notes: e.target.value})}
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-medium text-slate-600 outline-none focus:ring-2 focus:ring-orange-100"
                                                 rows={12}
-                                                placeholder="Anotações internas ou corpo do contrato assinado..."
+                                                placeholder="Anotações internas, corpo do contrato ou recomendações técnicas..."
                                             />
                                         </div>
                                     </div>
@@ -836,9 +797,9 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                         </div>
 
                                         {anamnesis.signature_url ? (
-                                            <div className="relative group bg-slate-50 rounded-3xl border-2 border-slate-100 p-4 h-56 flex items-center justify-center overflow-hidden">
+                                            <div className="relative group bg-slate-50 rounded-3xl border-2 border-slate-100 p-4 h-56 flex items-center justify-center overflow-hidden shadow-inner">
                                                 <img src={anamnesis.signature_url} className="max-h-full max-w-full object-contain mix-blend-multiply" alt="Assinatura" />
-                                                <button onClick={() => setAnamnesis({...anamnesis, signature_url: null, signed_at: null})} className="absolute top-4 right-4 p-2 bg-white text-rose-500 rounded-xl shadow-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 text-[10px] font-bold uppercase"><Trash2 size={14} /> Refazer</button>
+                                                <button onClick={() => setAnamnesis({...anamnesis, signature_url: null, signed_at: null})} className="absolute top-4 right-4 p-2 bg-white text-rose-500 rounded-xl shadow-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 text-[10px] font-bold uppercase border border-rose-50"><Trash2 size={14} /> Refazer</button>
                                             </div>
                                         ) : (
                                             <SignaturePad onSave={handleSaveSignature} isSaving={isSaving} />
@@ -881,7 +842,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                 }} />
                             </header>
 
-                            {/* Resto da galeria mantido igual */}
                             {photos.length === 0 ? (
                                 <div className="bg-white rounded-[32px] p-20 text-center border-2 border-dashed border-slate-100">
                                     <ImageIcon size={48} className="mx-auto text-slate-100 mb-4" />
