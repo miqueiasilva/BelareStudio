@@ -340,6 +340,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         const dataExtensa = `${hoje.getDate()} de ${meses[hoje.getMonth()]} de ${hoje.getFullYear()}`;
         
         const nomeProfissional = user?.nome || user?.user_metadata?.full_name || user?.user_metadata?.name || "JACILENE FÉLIX";
+        const emailProfissional = user?.email || "E-mail não identificado";
 
         let textToInsert = "";
         if (typeof template.content === 'string') {
@@ -380,10 +381,12 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         textToInsert = textToInsert.replace(/(Valor do Serviço|Valor):\s*R\$?\s*[_ ]+/gi, `$1: R$ ${displayValue} `);
         textToInsert = textToInsert.replace(/(Forma de )?Pagamento:\s*[_ ]+/gi, `$1Pagamento: ${displayMethod} `);
 
-        // E) ASSINATURA E TESTEMUNHA
+        // E) ASSINATURA E TESTEMUNHA (Incluindo E-mail para rastreabilidade)
         const assinaturaBloco = /PROFISSIONAL RESPONSÁVEL[\s\S]*?(?=\n\n|CLIENTE)/gi;
         const timestampFormatado = `${hoje.getHours().toString().padStart(2, '0')}:${hoje.getMinutes().toString().padStart(2, '0')}`;
-        const novaAssinatura = `PROFISSIONAL RESPONSÁVEL:\n${nomeProfissional.toUpperCase()}\n(Assinatura Digital validada em ${dataCurta} às ${timestampFormatado})\n\n________________________________________________\nTESTEMUNHA (Opcional)\nCPF:\n`;
+        
+        // NOVO FORMATO DE ASSINATURA COM E-MAIL (ID)
+        const novaAssinatura = `PROFISSIONAL RESPONSÁVEL:\n${nomeProfissional.toUpperCase()}\n(ID: ${emailProfissional})\n(Assinatura Digital validada em ${dataCurta} às ${timestampFormatado})\n\n________________________________________________\nTESTEMUNHA (Opcional)\nCPF:\n`;
         
         if (assinaturaBloco.test(textToInsert)) {
             textToInsert = textToInsert.replace(assinaturaBloco, novaAssinatura);
