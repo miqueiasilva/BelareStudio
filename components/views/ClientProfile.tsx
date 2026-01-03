@@ -342,19 +342,22 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             return;
         }
 
-        // --- MELHORIA SENIOR: PREENCHIMENTO AUTOMÁTICO DE DATA ---
+        // --- MELHORIA SENIOR: PREENCHIMENTO AUTOMÁTICO DE DATA E NOME ---
         const hoje = new Date();
-        const dia = hoje.getDate();
-        const ano = hoje.getFullYear();
         const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-        const mes = meses[hoje.getMonth()];
-        const dataFormatada = `Igarassu - PE, ${dia} de ${mes} de ${ano}.`;
+        const dataExtensa = `${hoje.getDate()} de ${meses[hoje.getMonth()]} de ${hoje.getFullYear()}`;
+        const cidadeData = `Igarassu - PE, ${dataExtensa}.`;
 
-        // Substitui o placeholder de data (Igarassu - PE, ______ de ... de 20____.) pela data real
-        textToInsert = textToInsert.replace(
-            /Igarassu - PE,.*?20.*?(\.|\n)/gi, 
-            dataFormatada + '\n'
-        );
+        // Substitui o placeholder de localidade e data (ex: Igarassu - PE, ______ de ... de 20____.)
+        textToInsert = textToInsert.replace(/Igarassu - PE,.*?20\d{0,2}[.]?/gi, cidadeData);
+        
+        // Substitui placeholders genéricos de data (ex: ___ de ________ de 20__)
+        textToInsert = textToInsert.replace(/_{2,}\s*de\s*_{2,}\s*de\s*20_{2,}/gi, dataExtensa);
+
+        // Substitui o placeholder de Nome do Cliente (ex: Nome: ______________________)
+        if (formData.nome) {
+            textToInsert = textToInsert.replace(/Nome:\s*_+/gi, `Nome: ${formData.nome}`);
+        }
 
         // 2. ATUALIZAÇÃO DO ESTADO USANDO PADRÃO FUNCIONAL
         setAnamnesis((prev: any) => {
@@ -368,7 +371,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         });
         
         setSelectedTemplateId('');
-        alert("Modelo inserido com sucesso!");
+        alert("Contrato carregado com Data e Nome preenchidos!");
     };
 
     const fetchPhotos = async () => {
