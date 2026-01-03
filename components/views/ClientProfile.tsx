@@ -6,7 +6,7 @@ import {
     CreditCard, Briefcase, Home, Map, Hash, Info, Settings, 
     Camera, Loader2, FileText, Activity, AlertCircle, Maximize2,
     Trash2, PenTool, Eraser, Check, Image as ImageIcon, Instagram,
-    Navigation, Smile, FilePlus, ChevronDown, HeartPulse
+    Navigation, Smile, FilePlus, ChevronDown, HeartPulse, ShieldCheck
 } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
@@ -198,6 +198,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         cancer_treatment: false,
         has_dermatitis: false,
         aspirin_use: false,
+        photo_authorized: true,
         clinical_notes: '',
         signed_at: null,
         signature_url: null
@@ -320,7 +321,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
         const dataExtensa = `${hoje.getDate()} de ${meses[hoje.getMonth()]} de ${hoje.getFullYear()}`;
         
-        // Nome do Profissional (Prioridade: Usuário Logado)
         const nomeProfissional = user?.nome || user?.user_metadata?.full_name || user?.user_metadata?.name || "JACILENE FÉLIX";
 
         let textToInsert = "";
@@ -333,17 +333,29 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             textToInsert = JSON.stringify(template.content, null, 2);
         }
 
-        // 2. SUBSTITUIÇÕES DE TEXTO (REGEX REFINADO)
+        // 2. SUBSTITUIÇÕES DE TEXTO (MOTOR DE MERGE INTELIGENTE)
 
-        // A) DATA (Limpeza de pontos/underscores excedentes)
+        // A) DATA E LOCALIDADE
         textToInsert = textToInsert.replace(/Igarassu - PE,.*?20.*?(\.|_| )+/gi, `Igarassu - PE, ${dataExtensa}.`);
 
-        // B) CLIENTE (Nome)
+        // B) DADOS CADASTRAIS (REGEX AGRESSIVO)
         if (formData.nome) {
             textToInsert = textToInsert.replace(/Nome:\s*_+/gi, `Nome: ${formData.nome.toUpperCase()}`);
         }
+        textToInsert = textToInsert.replace(/CPF:\s*_+/gi, `CPF: ${formData.cpf || "Não informado"}`);
+        textToInsert = textToInsert.replace(/RG:\s*_+/gi, `RG: ${formData.rg || "________"}`);
+        textToInsert = textToInsert.replace(/Telefone:\s*_+/gi, `Telefone: ${formData.telefone || "________"}`);
+        
+        const enderecoCompleto = formData.endereco 
+            ? `${formData.endereco}${formData.numero ? `, ${formData.numero}` : ''}${formData.bairro ? ` - ${formData.bairro}` : ''}` 
+            : "____________________";
+        textToInsert = textToInsert.replace(/Endereço:\s*_+/gi, `Endereço: ${enderecoCompleto}`);
 
-        // C) VALOR (Detetive Silencioso na Agenda)
+        // C) DECISÃO DE FOTO ([STATUS_FOTO])
+        const statusFotoTexto = anamnesis.photo_authorized ? "AUTORIZO" : "NÃO AUTORIZO";
+        textToInsert = textToInsert.replace(/\[STATUS_FOTO\]/gi, statusFotoTexto);
+
+        // D) VALOR (Detetive na Agenda)
         let valorTexto = "__________";
         try {
             const hojeIso = hoje.toISOString().split('T')[0];
@@ -359,16 +371,12 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             if (agendaHoje && agendaHoje.value) {
                 valorTexto = parseFloat(agendaHoje.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
             }
-        } catch (e) {
-            // Silencioso
-        }
+        } catch (e) {}
         textToInsert = textToInsert.replace(/Valor do Serviço: R\$[_ ]+/gi, `Valor do Serviço: R$ ${valorTexto} `);
 
-        // D) PROFISSIONAL (Assinatura Digital + Testemunha)
+        // E) ASSINATURA E TESTEMUNHA
         const assinaturaBloco = /PROFISSIONAL RESPONSÁVEL[\s\S]*?(?=\n\n|CLIENTE)/gi;
-        
         const timestampFormatado = `${hoje.getHours().toString().padStart(2, '0')}:${hoje.getMinutes().toString().padStart(2, '0')}`;
-        
         const novaAssinatura = `PROFISSIONAL RESPONSÁVEL:\n${nomeProfissional.toUpperCase()}\n(Assinatura Digital validada em ${dataCurta} às ${timestampFormatado})\n\n________________________________________________\nTESTEMUNHA (Opcional)\nCPF:\n`;
         
         if (assinaturaBloco.test(textToInsert)) {
@@ -388,6 +396,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         });
         
         setSelectedTemplateId('');
+        setToast({ message: "Contrato preenchido automaticamente!", type: 'success' });
     };
 
     const fetchPhotos = async () => {
@@ -695,6 +704,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                     <EditField label="Nome Completo" name="nome" value={formData.nome} onChange={handleInputChange} disabled={!isEditing} icon={User} span="md:col-span-2" />
                                     <EditField label="Apelido" name="apelido" value={formData.apelido} onChange={handleInputChange} disabled={!isEditing} icon={Smile} />
                                     <EditField label="CPF" name="cpf" value={formData.cpf} onChange={handleInputChange} disabled={!isEditing} placeholder="000.000.000-00" icon={CreditCard} />
+                                    <EditField label="RG" name="rg" value={formData.rg} onChange={handleInputChange} disabled={!isEditing} placeholder="00.000.000-0" icon={CreditCard} />
                                     <EditField label="Data de Nascimento" name="nascimento" type="date" value={formData.nascimento} onChange={handleInputChange} disabled={!isEditing} icon={Calendar} />
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Sexo</label>
@@ -753,6 +763,23 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                         <div className="space-y-6 animate-in fade-in duration-500">
                             <Card title="Checklist de Saúde (Anamnese Crítica)" icon={<HeartPulse size={20} className="text-rose-500" />}>
                                 <div className="space-y-8">
+                                    {/* SEÇÃO DE PRIVACIDADE E FOTOS */}
+                                    <div className="p-5 bg-orange-50 border-2 border-orange-100 rounded-3xl mb-8 flex items-center justify-between group hover:border-orange-300 transition-all">
+                                        <div className="flex items-center gap-4">
+                                            <div className="p-3 bg-white rounded-2xl text-orange-500 shadow-sm border border-orange-100">
+                                                <ImageIcon size={20} />
+                                            </div>
+                                            <div>
+                                                <p className="font-black text-slate-800 text-sm">Autoriza uso de fotos (Antes/Depois)?</p>
+                                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">Para fins de portfólio e marketing digital</p>
+                                            </div>
+                                        </div>
+                                        <ToggleSwitch 
+                                            on={anamnesis.photo_authorized} 
+                                            onClick={() => setAnamnesis({...anamnesis, photo_authorized: !anamnesis.photo_authorized})} 
+                                        />
+                                    </div>
+
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
                                         {[
                                             { key: 'is_pregnant', label: 'Gestante ou Lactante?', hasDetails: false },
