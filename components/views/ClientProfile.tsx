@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     X, User, Phone, Mail, Calendar, Edit2, Save, 
@@ -195,6 +194,9 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         uses_anticoagulants: false,
         recent_botox: false,
         has_autoimmune: false,
+        cancer_treatment: false,
+        has_dermatitis: false,
+        aspirin_use: false,
         clinical_notes: '',
         signed_at: null,
         signature_url: null
@@ -727,7 +729,10 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                             { key: 'has_herpes', label: 'Histórico de Herpes Labial?', hasDetails: false },
                                             { key: 'uses_anticoagulants', label: 'Usa Anticoagulantes?', hasDetails: false },
                                             { key: 'recent_botox', label: 'Fez Botox recentemente (6 meses)?', hasDetails: false },
-                                            { key: 'has_autoimmune', label: 'Doenças Autoimunes?', hasDetails: false }
+                                            { key: 'has_autoimmune', label: 'Doenças Autoimunes?', hasDetails: false },
+                                            { key: 'cancer_treatment', label: 'Em Tratamento Oncológico (Câncer)?', hasDetails: false },
+                                            { key: 'has_dermatitis', label: 'Possui Dermatite ou Lesão no local?', hasDetails: false },
+                                            { key: 'aspirin_use', label: 'Tomou Aspirina nos últimos 5 dias?', hasDetails: false }
                                         ].map(q => (
                                             <div key={q.key} className="space-y-3 pb-4 border-b border-slate-50 last:border-0 md:border-b-0">
                                                 <div className="flex items-center justify-between gap-4">
