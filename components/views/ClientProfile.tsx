@@ -7,7 +7,7 @@ import {
     Camera, Loader2, FileText, Activity, AlertCircle, Maximize2,
     Trash2, PenTool, Eraser, Check, Image as ImageIcon, Instagram,
     Navigation, Smile, FilePlus, ChevronDown, HeartPulse, ShieldCheck,
-    DollarSign
+    DollarSign, Share2
 } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
@@ -17,6 +17,7 @@ import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
 import Toast, { ToastType } from '../shared/Toast';
+import { jsPDF } from 'jspdf';
 
 // --- Função Auxiliar Obrigatória: Base64 para Blob ---
 const dataURLtoBlob = (dataURL: string) => {
@@ -173,6 +174,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const [isEditing, setIsEditing] = useState(isNew);
     const [isSaving, setIsSaving] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
+    // FIX: Added missing isLoading state to resolve "Cannot find name 'setIsLoading'" errors in handleGeneratePDF.
+    const [isLoading, setIsLoading] = useState(false);
     const [activeTab, setActiveTab] = useState<'geral' | 'anamnese' | 'fotos' | 'historico'>('geral');
     const [zoomImage, setZoomImage] = useState<string | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -338,10 +341,10 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
         // 2. SUBSTITUIÇÕES DE TEXTO (MOTOR DE MERGE INTELIGENTE)
 
-        // A) DATA E LOCALIDADE (Limpeza de pontos/underscores excedentes)
+        // A) DATA E LOCALIDADE
         textToInsert = textToInsert.replace(/Igarassu - PE,.*?20.*?(\.|_| )+/gi, `Igarassu - PE, ${dataExtensa}.`);
 
-        // B) DADOS CADASTRAIS (REGEX AGRESSIVO)
+        // B) DADOS CADASTRAIS
         if (formData.nome) {
             textToInsert = textToInsert.replace(/Nome:\s*_+/gi, `Nome: ${formData.nome.toUpperCase()}`);
         }
@@ -354,11 +357,11 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             : "____________________";
         textToInsert = textToInsert.replace(/Endereço:\s*_+/gi, `Endereço: ${enderecoCompleto}`);
 
-        // C) DECISÃO DE FOTO ([STATUS_FOTO])
+        // C) DECISÃO DE FOTO
         const statusFotoTexto = anamnesis.photo_authorized ? "AUTORIZO" : "NÃO AUTORIZO";
         textToInsert = textToInsert.replace(/\[STATUS_FOTO\]/gi, statusFotoTexto);
 
-        // D) FINANCEIRO (VALOR E PAGAMENTO - PRIORIDADE PARA CAMPOS MANUAIS)
+        // D) FINANCEIRO
         const displayValue = anamnesis.service_value || "__________";
         const displayMethod = anamnesis.payment_method || "__________";
         
@@ -373,7 +376,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         if (assinaturaBloco.test(textToInsert)) {
             textToInsert = textToInsert.replace(assinaturaBloco, novaAssinatura);
         } else {
-            textToInsert += `\n\n${novaAssinatura}`;
+            textToInsert += `\n\n${novaAssHook}`;
         }
 
         // 3. ATUALIZAÇÃO DO ESTADO
@@ -388,6 +391,118 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         
         setSelectedTemplateId('');
         setToast({ message: "Contrato preenchido automaticamente!", type: 'success' });
+    };
+
+    // FIX: Added logic inside handleGeneratePDF that now safely references isLoading via setIsLoading.
+    const handleGeneratePDF = async () => {
+        setIsLoading(true);
+        try {
+            const doc = new jsPDF();
+            const margin = 20;
+            let y = 20;
+
+            // 1. CABEÇALHO
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(18);
+            doc.text("JACILENE FÉLIX STUDIO", 105, y, { align: 'center' });
+            y += 10;
+            doc.setFontSize(14);
+            doc.text("FICHA DE ANAMNESE E CONTRATO", 105, y, { align: 'center' });
+            y += 15;
+
+            // 2. DADOS DO CLIENTE
+            doc.setFontSize(10);
+            doc.setFont("helvetica", "bold");
+            doc.text("DADOS DO CLIENTE", margin, y);
+            y += 7;
+            doc.setFont("helvetica", "normal");
+            doc.text(`Nome: ${formData.nome.toUpperCase()}`, margin, y);
+            y += 5;
+            doc.text(`CPF: ${formData.cpf || '---'} | Telefone: ${formData.telefone || '---'}`, margin, y);
+            y += 12;
+
+            // 3. RESUMO DE SAÚDE
+            doc.setFont("helvetica", "bold");
+            doc.text("RESUMO DE SAÚDE / ANAMNESE", margin, y);
+            y += 7;
+            doc.setFont("helvetica", "normal");
+
+            const healthItems = [
+                { label: "Gestante/Lactante", value: anamnesis.is_pregnant },
+                { label: "Alergias", value: anamnesis.has_allergy, details: anamnesis.allergy_details },
+                { label: "Usa Ácidos", value: anamnesis.uses_acids },
+                { label: "Usa Roacutan", value: anamnesis.uses_roacutan },
+                { label: "Diabetes", value: anamnesis.has_diabetes },
+                { label: "Problema Quelóide", value: anamnesis.has_keloid },
+                { label: "Histórico Herpes", value: anamnesis.has_herpes },
+                { label: "Autorização de Imagem", value: anamnesis.photo_authorized, isSpecial: true }
+            ];
+
+            healthItems.forEach(item => {
+                if (y > 270) { doc.addPage(); y = 20; }
+                const status = item.value ? "SIM" : "NÃO";
+                doc.setFont("helvetica", item.isSpecial ? "bold" : "normal");
+                let line = `${item.label}: ${status}`;
+                if (item.value && item.details) line += ` (${item.details})`;
+                doc.text(line, margin, y);
+                y += 5;
+            });
+            y += 10;
+
+            // 4. CONTRATO (TEXTO LONGO)
+            doc.setFont("helvetica", "bold");
+            doc.text("TERMOS DO CONTRATO E CIÊNCIA", margin, y);
+            y += 7;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9);
+            
+            const splitText = doc.splitTextToSize(anamnesis.clinical_notes || "Nenhum termo registrado.", 170);
+            splitText.forEach((line: string) => {
+                if (y > 280) { doc.addPage(); y = 20; }
+                doc.text(line, margin, y);
+                y += 5;
+            });
+
+            // 5. ASSINATURA VISUAL (Se existir)
+            if (anamnesis.signature_url) {
+                if (y > 240) { doc.addPage(); y = 20; }
+                y += 10;
+                doc.text("__________________________________________", 105, y, { align: 'center' });
+                y += 5;
+                doc.setFont("helvetica", "bold");
+                doc.text("ASSINATURA DO CLIENTE", 105, y, { align: 'center' });
+                // Nota: O jspdf exige processar a URL da imagem para blob antes de adicionar. 
+                // Para simplificar esta versão, focamos no texto validado.
+            }
+
+            // 6. RODAPÉ
+            const now = format(new Date(), "dd/MM/yyyy HH:mm");
+            doc.setFontSize(7);
+            doc.text(`Gerado eletronicamente via BelareStudio em ${now}`, 105, 290, { align: 'center' });
+
+            // FINALIZAÇÃO (Share ou Save)
+            const pdfBlob = doc.output('blob');
+            const fileName = `Contrato_${formData.nome.replace(/\s+/g, '_')}.pdf`;
+
+            if (navigator.share && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+                const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+                await navigator.share({
+                    files: [file],
+                    title: 'Contrato de Serviço - Jacilene Félix',
+                    text: 'Segue a ficha de anamnese e contrato assinada.'
+                });
+            } else {
+                doc.save(fileName);
+            }
+
+            setToast({ message: "PDF gerado com sucesso!", type: 'success' });
+        } catch (e: any) {
+            console.error("PDF Error:", e);
+            setToast({ message: "Erro ao gerar PDF.", type: 'error' });
+        } finally {
+            // FIX: Successfully reset isLoading to false in the finally block.
+            setIsLoading(false);
+        }
     };
 
     const fetchPhotos = async () => {
@@ -873,16 +988,22 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                             </button>
                                         </div>
 
-                                        <div className="space-y-2">
+                                        <div className="flex justify-between items-center px-1">
                                             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Observações Clínicas / Termos Adicionais</label>
-                                            <textarea 
-                                                value={anamnesis.clinical_notes}
-                                                onChange={(e) => setAnamnesis({...anamnesis, clinical_notes: e.target.value})}
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-medium text-slate-600 outline-none focus:ring-2 focus:ring-orange-100"
-                                                rows={12}
-                                                placeholder="Anotações internas, corpo do contrato ou recomendações técnicas..."
-                                            />
+                                            <button 
+                                                onClick={handleGeneratePDF}
+                                                className="text-[10px] font-black text-orange-600 uppercase tracking-widest flex items-center gap-2 px-3 py-1 bg-white border border-orange-200 rounded-lg hover:bg-orange-50 transition-colors"
+                                            >
+                                                <Share2 size={12} /> Compartilhar Contrato (PDF)
+                                            </button>
                                         </div>
+                                        <textarea 
+                                            value={anamnesis.clinical_notes}
+                                            onChange={(e) => setAnamnesis({...anamnesis, clinical_notes: e.target.value})}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-medium text-slate-600 outline-none focus:ring-2 focus:ring-orange-100"
+                                            rows={12}
+                                            placeholder="Anotações internas, corpo do contrato ou recomendações técnicas..."
+                                        />
                                     </div>
 
                                     <div className="pt-6 border-t border-slate-100">
