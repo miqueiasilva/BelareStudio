@@ -14,6 +14,7 @@ import { Client } from '../../types';
 import { differenceInYears, parseISO, isValid, format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
+import { useAuth } from '../../contexts/AuthContext';
 import Toast, { ToastType } from '../shared/Toast';
 
 // --- Função Auxiliar Obrigatória: Base64 para Blob ---
@@ -167,6 +168,7 @@ const EditField = ({ label, name, value, onChange, type = "text", placeholder, s
 );
 
 const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }) => {
+    const { user } = useAuth();
     const isNew = !client.id;
     const [isEditing, setIsEditing] = useState(isNew);
     const [isSaving, setIsSaving] = useState(false);
@@ -342,24 +344,35 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             return;
         }
 
-        // --- MELHORIA SENIOR: PREENCHIMENTO AUTOMÁTICO DE DATA E NOME ---
+        // --- MELHORIA SENIOR: PREENCHIMENTO INTELIGENTE ---
+        
+        // 1. Preparação dos Dados Atuais
         const hoje = new Date();
         const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
         const dataExtensa = `${hoje.getDate()} de ${meses[hoje.getMonth()]} de ${hoje.getFullYear()}`;
         const cidadeData = `Igarassu - PE, ${dataExtensa}.`;
+        const professionalName = user?.nome || "Profissional Responsável";
 
-        // Substitui o placeholder de localidade e data (ex: Igarassu - PE, ______ de ... de 20____.)
+        // 2. Substituição de DATA (Padrão de localidade ou underscores)
         textToInsert = textToInsert.replace(/Igarassu - PE,.*?20\d{0,2}[.]?/gi, cidadeData);
-        
-        // Substitui placeholders genéricos de data (ex: ___ de ________ de 20__)
         textToInsert = textToInsert.replace(/_{2,}\s*de\s*_{2,}\s*de\s*20_{2,}/gi, dataExtensa);
 
-        // Substitui o placeholder de Nome do Cliente (ex: Nome: ______________________)
+        // 3. Substituição de NOME DO CLIENTE
         if (formData.nome) {
             textToInsert = textToInsert.replace(/Nome:\s*_+/gi, `Nome: ${formData.nome}`);
         }
 
-        // 2. ATUALIZAÇÃO DO ESTADO USANDO PADRÃO FUNCIONAL
+        // 4. Substituição de VALOR (Destaque para edição)
+        textToInsert = textToInsert.replace(/Valor do Serviço:\s*R\$\s*_+/gi, "Valor do Serviço: R$ [DIGITE O VALOR]");
+
+        // 5. Substituição do BLOCO DE PROFISSIONAL (Assinatura nominada)
+        // Busca o cabeçalho do profissional e substitui o conteúdo até o próximo divisor lógico
+        textToInsert = textToInsert.replace(
+            /PROFISSIONAL RESPONSÁVEL:[\s\S]*?(?=\n\n|TESTEMUNHA|CLIENTE)/gi, 
+            `PROFISSIONAL RESPONSÁVEL:\n${professionalName.toUpperCase()}\n(Validação Digital em ${dataExtensa})`
+        );
+
+        // 6. Atualização do Estado do Componente
         setAnamnesis((prev: any) => {
             const current = prev.clinical_notes || "";
             const divider = current.trim() ? "\n\n---\n\n" : "";
@@ -371,7 +384,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         });
         
         setSelectedTemplateId('');
-        alert("Contrato carregado com Data e Nome preenchidos!");
+        alert(`Contrato preenchido automaticamente para o profissional: ${professionalName}`);
     };
 
     const fetchPhotos = async () => {
