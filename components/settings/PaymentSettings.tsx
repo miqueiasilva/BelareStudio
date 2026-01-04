@@ -53,25 +53,41 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
     useEffect(() => { fetchMethods(); }, []);
 
+    // --- BUGFIX: Lógica de Salvamento Consolidada ---
     const handleSaveMethod = async () => {
-        if (!editingMethod || !editingMethod.name) {
-            setToast({ message: "O nome do método é obrigatório.", type: 'error' });
+        if (!editingMethod) return;
+
+        // 1. Validação de Campos Obrigatórios
+        if (!editingMethod.name.trim()) {
+            alert("O nome do método (Adquirente) é obrigatório.");
             return;
         }
 
         setIsSaving(true);
         try {
+            // 2. Preparação do Objeto de Taxas (JSONB)
+            // Filtramos apenas as parcelas permitidas pelo max_installments selecionado
+            const finalRates: Record<string, number> = {};
+            
+            if (editingMethod.type === 'credit' && editingMethod.allow_installments) {
+                for (let i = 2; i <= editingMethod.max_installments; i++) {
+                    const rateValue = editingMethod.installment_rates[i.toString()];
+                    finalRates[i.toString()] = parseFloat(String(rateValue)) || 0;
+                }
+            }
+
+            // 3. Montagem do Payload Final
             const payload = {
-                id: editingMethod.id,
+                id: editingMethod.id, // Se for nulo, o Supabase trata como INSERT
                 name: editingMethod.name,
                 type: editingMethod.type,
                 brand: (editingMethod.type === 'credit' || editingMethod.type === 'debit') ? editingMethod.brand : null,
-                rate_cash: Number(editingMethod.rate_cash) || 0,
+                rate_cash: parseFloat(String(editingMethod.rate_cash)) || 0,
                 allow_installments: editingMethod.type === 'credit' ? editingMethod.allow_installments : false,
-                max_installments: editingMethod.type === 'credit' ? Number(editingMethod.max_installments) : 1,
-                installment_rates: editingMethod.type === 'credit' ? editingMethod.installment_rates : {},
+                max_installments: editingMethod.type === 'credit' && editingMethod.allow_installments ? Number(editingMethod.max_installments) : 1,
+                installment_rates: finalRates,
                 is_active: editingMethod.is_active,
-                updated_at: new Date()
+                updated_at: new Date().toISOString()
             };
 
             const { error } = await supabase
@@ -80,18 +96,20 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             if (error) throw error;
 
-            setToast({ message: "Configuração de taxas salva!", type: 'success' });
+            // 4. Sucesso e Reset
+            alert('Configurações salvas com sucesso!');
             setEditingMethod(null);
             fetchMethods();
         } catch (err: any) {
-            setToast({ message: `Erro ao salvar: ${err.message}`, type: 'error' });
+            console.error("Erro crítico ao salvar:", err);
+            alert(`Erro ao salvar no banco de dados: ${err.message}`);
         } finally {
             setIsSaving(false);
         }
     };
 
     const handleDelete = async (id: number) => {
-        if (!confirm("Deseja excluir este método de pagamento permanentemente?")) return;
+        if (!confirm("⚠️ EXCLUSÃO PERMANENTE\n\nDeseja realmente remover este método de pagamento? Esta ação não pode ser desfeita.")) return;
         
         try {
             const { error } = await supabase
@@ -100,11 +118,11 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 .eq('id', id);
 
             if (error) throw error;
-            setToast({ message: "Método removido.", type: 'info' });
             fetchMethods();
             setEditingMethod(null);
+            alert("Método removido com sucesso.");
         } catch (err: any) {
-            setToast({ message: "Erro ao excluir método.", type: 'error' });
+            alert("Erro ao excluir: " + err.message);
         }
     };
 
@@ -142,7 +160,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     </button>
                     <div>
                         <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter leading-tight">Pagamentos & Taxas</h2>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Gestão de adquirentes e parcelamento</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Gestão financeira do terminal (PDV)</p>
                     </div>
                 </div>
                 <button 
@@ -152,7 +170,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         brand: 'VISA', 
                         rate_cash: 0, 
                         allow_installments: false,
-                        max_installments: 1,
+                        max_installments: 2,
                         installment_rates: {},
                         is_active: true 
                     })}
@@ -165,7 +183,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             {loading ? (
                 <div className="py-24 flex flex-col items-center justify-center text-slate-400">
                     <Loader2 className="animate-spin mb-4 text-orange-500" size={32} />
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse">Sincronizando taxas...</p>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse">Consultando adquirentes...</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -180,7 +198,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                     {getIcon(method.type)}
                                 </div>
                                 <div className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter ${method.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                                    {method.is_active ? 'Ativo' : 'Inativo'}
+                                    {method.is_active ? 'Ativo' : 'Pausado'}
                                 </div>
                             </div>
                             
@@ -209,7 +227,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 </div>
                                 {method.allow_installments && (
                                     <div className="text-right space-y-0.5">
-                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Taxa Máx ({method.max_installments}x)</p>
+                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Taxa {method.max_installments}x</p>
                                         <p className="text-sm font-black text-orange-600">
                                             {method.installment_rates[method.max_installments.toString()] || 0}%
                                         </p>
@@ -221,35 +239,35 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 </div>
             )}
 
-            {/* Modal de Edição */}
+            {/* Modal de Edição (Corrigido para disparar handleSaveMethod) */}
             {editingMethod && (
                 <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[200] flex items-center justify-center p-4">
                     <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200 border border-white/20">
                         <header className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                             <div>
                                 <h2 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Configurar Adquirente</h2>
-                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Ajuste de taxas e parcelas</p>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Ajuste de taxas por bandeira</p>
                             </div>
                             <button onClick={() => setEditingMethod(null)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400 transition-all"><X size={24} /></button>
                         </header>
 
                         <div className="p-8 space-y-8 text-left max-h-[75vh] overflow-y-auto custom-scrollbar">
                             
-                            {/* Seção 1: Básicos */}
+                            {/* Básicos */}
                             <div className="space-y-5">
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Nome Identificador</label>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Nome Identificador (Ex: Stone - Visa)</label>
                                     <input 
                                         value={editingMethod.name}
                                         onChange={e => setEditingMethod({...editingMethod, name: e.target.value})}
                                         className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all"
-                                        placeholder="Ex: Stone - Visa"
+                                        placeholder="Nome do cartão/maquininha"
                                     />
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tipo</label>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tipo de Cartão</label>
                                         <select 
                                             value={editingMethod.type}
                                             onChange={e => setEditingMethod({...editingMethod, type: e.target.value as any})}
@@ -287,14 +305,14 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                         <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
                                         <input 
                                             type="number" step="0.01" value={editingMethod.rate_cash}
-                                            onChange={e => setEditingMethod({...editingMethod, rate_cash: parseFloat(e.target.value)})}
+                                            onChange={e => setEditingMethod({...editingMethod, rate_cash: parseFloat(e.target.value) || 0})}
                                             className="w-full pl-10 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-black text-emerald-600 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50"
                                         />
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Seção 2: Parcelamento (Apenas Crédito) */}
+                            {/* Seção 2: Parcelamento (Dinâmico) */}
                             {editingMethod.type === 'credit' && (
                                 <div className="pt-6 border-t border-slate-100 space-y-6 animate-in slide-in-from-bottom-2 duration-300">
                                     <div className="flex items-center justify-between p-5 bg-orange-50/30 rounded-3xl border border-orange-100">
@@ -331,10 +349,9 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                                 </div>
                                             </div>
 
-                                            {/* Grid Dinâmico de Taxas */}
                                             <div className="bg-slate-50/50 p-6 rounded-[32px] border border-slate-200">
                                                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                                    <Percent size={12} /> Tabela de Taxas por Parcela
+                                                    <Percent size={12} /> Tabela de Taxas Adquirente
                                                 </h4>
                                                 <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                                                     {Array.from({ length: editingMethod.max_installments - 1 }, (_, i) => i + 2).map(n => (
@@ -356,11 +373,11 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 </div>
                             )}
 
-                            {/* Status Ativo/Inativo */}
+                            {/* Status */}
                             <div className="flex items-center justify-between p-5 bg-slate-50 rounded-3xl border border-slate-200">
                                 <div>
                                     <p className="font-black text-slate-700 text-sm">Método Ativo?</p>
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase">Disponível para seleção no PDV</p>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Habilita seleção no fluxo de venda</p>
                                 </div>
                                 <ToggleSwitch 
                                     on={editingMethod.is_active} 
@@ -384,7 +401,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 className="flex-1 bg-slate-800 hover:bg-slate-900 text-white font-black py-4 rounded-2xl shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
                             >
                                 {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                                Salvar Tabela de Taxas
+                                {isSaving ? 'Gravando...' : 'Salvar Configuração'}
                             </button>
                         </footer>
                     </div>
@@ -397,9 +414,9 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     <Info className="text-blue-600" size={20} />
                 </div>
                 <div className="space-y-1">
-                    <p className="text-xs text-blue-900 font-bold">Importante</p>
+                    <p className="text-xs text-blue-900 font-bold">Lembrete Financeiro</p>
                     <p className="text-xs text-blue-700 leading-relaxed font-medium">
-                        As taxas configuradas serão aplicadas automaticamente nos cálculos de fechamento de caixa e relatórios de lucratividade líquida. Mantenha os valores atualizados conforme o contrato com sua operadora.
+                        O BelareStudio utiliza estas taxas para projetar seu recebimento líquido real. Mantenha os valores atualizados conforme os reajustes da sua operadora de cartão para evitar furos no caixa.
                     </p>
                 </div>
             </div>
