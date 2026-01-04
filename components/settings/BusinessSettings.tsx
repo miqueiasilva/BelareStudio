@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
     Store, Save, Loader2, MapPin, Phone, Instagram, 
-    Camera, ArrowLeft, Clock, Coffee, Building2, Hash
+    Camera, ArrowLeft, Clock, Coffee, Building2, Hash, Mail, Globe
 } from 'lucide-react';
 import Card from '../shared/Card';
 import Toast, { ToastType } from '../shared/Toast';
@@ -33,22 +33,24 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     
     const [formData, setFormData] = useState<any>({
-        studio_name: '',
-        cnpj: '',
-        whatsapp: '',
+        id: null,
+        business_name: '',
+        cnpj_cpf: '',
+        phone: '',
+        email: '',
         instagram_handle: '',
+        description: '',
         cover_url: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1200&q=80',
-        profile_url: '',
-        address_zip: '',
-        address_street: '',
-        address_number: '',
-        address_neighborhood: '',
-        address_city: '',
-        address_state: '',
-        business_hours: {} // Será preenchido na sanitização
+        logo_url: '',
+        zip_code: '',
+        street: '',
+        number: '',
+        district: '',
+        city: '',
+        state: '',
+        business_hours: {} 
     });
 
-    // Função de Sanitização: Garante que todos os dias existam e tenham a estrutura correta
     const sanitizeBusinessHours = (rawHours: any) => {
         const sanitized: any = {};
         const source = rawHours || {};
@@ -73,21 +75,25 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
         const fetchSettings = async () => {
             setIsLoading(true);
             try {
-                const { data, error } = await supabase.from('studio_settings').select('*').limit(1).maybeSingle();
+                // Tabela correta: business_settings
+                const { data, error } = await supabase.from('business_settings').select('*').limit(1).maybeSingle();
+                
+                if (error) throw error;
+
                 if (data) {
                     setFormData({
                         ...data,
                         business_hours: sanitizeBusinessHours(data.business_hours)
                     });
                 } else {
-                    // Inicializa com horas vazias mas sanitizadas se não houver registro
                     setFormData((prev: any) => ({
                         ...prev,
                         business_hours: sanitizeBusinessHours({})
                     }));
                 }
-            } catch (err) {
+            } catch (err: any) {
                 console.error("Erro ao carregar configurações:", err);
+                setToast({ message: "Erro ao carregar dados do servidor.", type: 'error' });
             } finally {
                 setIsLoading(false);
             }
@@ -98,16 +104,36 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            const { error } = await supabase.from('studio_settings').upsert({
-                ...formData,
+            // Mapeamento rigoroso para o schema business_settings
+            const payload = {
+                id: formData.id,
+                business_name: formData.business_name,
+                cnpj_cpf: formData.cnpj_cpf,
+                phone: formData.phone,
+                email: formData.email,
+                description: formData.description,
+                zip_code: formData.zip_code,
+                street: formData.street,
+                number: formData.number,
+                district: formData.district,
+                city: formData.city,
+                state: formData.state,
+                business_hours: formData.business_hours,
+                cover_url: formData.cover_url,
+                logo_url: formData.logo_url,
                 updated_at: new Date()
-            }, { onConflict: 'id' });
+            };
+
+            const { error } = await supabase
+                .from('business_settings')
+                .upsert(payload);
             
             if (error) throw error;
             
             setToast({ message: "Configurações salvas com sucesso!", type: 'success' });
-            setTimeout(onBack, 1500);
+            setTimeout(onBack, 1000);
         } catch (error: any) {
+            console.error("Erro ao salvar:", error);
             setToast({ message: `Erro ao salvar: ${error.message}`, type: 'error' });
         } finally {
             setIsSaving(false);
@@ -140,22 +166,22 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
     if (isLoading) return (
         <div className="h-64 flex flex-col items-center justify-center text-slate-400">
             <Loader2 className="animate-spin mb-4 text-orange-500" size={40} />
-            <p className="text-xs font-black uppercase tracking-widest">Carregando perfil...</p>
+            <p className="text-xs font-black uppercase tracking-widest">Sincronizando dados...</p>
         </div>
     );
 
     return (
-        <div className="max-w-4xl mx-auto pb-32 animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
+        <div className="max-w-4xl mx-auto pb-32 animate-in fade-in duration-500 text-left">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-            {/* Header / Botão Voltar */}
+            {/* Header */}
             <div className="flex items-center gap-4 mb-6">
                 <button onClick={onBack} className="p-3 bg-white border border-slate-200 rounded-2xl text-slate-500 hover:text-orange-600 transition-all shadow-sm">
                     <ArrowLeft size={20} />
                 </button>
                 <div>
-                    <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Perfil do Negócio</h1>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Identidade e regras de atendimento</p>
+                    <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tighter leading-tight">Perfil do Negócio</h1>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Gerencie a identidade oficial do estúdio</p>
                 </div>
             </div>
 
@@ -174,10 +200,10 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                     <div className="absolute -bottom-10 left-10">
                         <div className="relative group/logo">
                             <div className="w-32 h-32 rounded-full ring-8 ring-white shadow-2xl overflow-hidden bg-white border border-slate-100">
-                                {formData.profile_url ? (
-                                    <img src={formData.profile_url} className="w-full h-full object-cover" alt="Logo" />
+                                {formData.logo_url ? (
+                                    <img src={formData.logo_url} className="w-full h-full object-cover" alt="Logo" />
                                 ) : (
-                                    <div className="w-full h-full flex items-center justify-center bg-orange-100 text-orange-50">
+                                    <div className="w-full h-full flex items-center justify-center bg-orange-100 text-orange-500">
                                         <Store size={40} />
                                     </div>
                                 )}
@@ -195,20 +221,21 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                 <Card title="Informações Gerais" icon={<Building2 size={18} />}>
                     <div className="space-y-5">
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome Fantasia</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome do Estúdio</label>
                             <input 
-                                value={formData.studio_name}
-                                onChange={e => setFormData({...formData, studio_name: e.target.value})}
+                                value={formData.business_name}
+                                onChange={e => setFormData({...formData, business_name: e.target.value})}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-100 transition-all shadow-sm"
+                                placeholder="Nome fantasia"
                             />
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">CNPJ</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">CNPJ / CPF</label>
                             <div className="relative">
                                 <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
                                 <input 
-                                    value={formData.cnpj}
-                                    onChange={e => setFormData({...formData, cnpj: e.target.value})}
+                                    value={formData.cnpj_cpf}
+                                    onChange={e => setFormData({...formData, cnpj_cpf: e.target.value})}
                                     className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"
                                     placeholder="00.000.000/0000-00"
                                 />
@@ -216,74 +243,98 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">WhatsApp</label>
-                                <input 
-                                    value={formData.whatsapp}
-                                    onChange={e => setFormData({...formData, whatsapp: e.target.value})}
-                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"
-                                />
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">WhatsApp (Fixo)</label>
+                                <div className="relative">
+                                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                                    <input 
+                                        value={formData.phone}
+                                        onChange={e => setFormData({...formData, phone: e.target.value})}
+                                        className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"
+                                        placeholder="(00) 00000-0000"
+                                    />
+                                </div>
                             </div>
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Instagram (@)</label>
-                                <input 
-                                    value={formData.instagram_handle}
-                                    onChange={e => setFormData({...formData, instagram_handle: e.target.value})}
-                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"
-                                />
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">E-mail Adm.</label>
+                                <div className="relative">
+                                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                                    <input 
+                                        type="email"
+                                        value={formData.email}
+                                        onChange={e => setFormData({...formData, email: e.target.value})}
+                                        className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"
+                                        placeholder="contato@empresa.com"
+                                    />
+                                </div>
                             </div>
                         </div>
                     </div>
                 </Card>
 
                 {/* Localização */}
-                <Card title="Localização" icon={<MapPin size={18} />}>
+                <Card title="Endereço da Unidade" icon={<MapPin size={18} />}>
                     <div className="grid grid-cols-3 gap-4">
                         <div className="col-span-1 space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">CEP</label>
                             <input 
-                                value={formData.address_zip}
-                                onChange={e => setFormData({...formData, address_zip: e.target.value})}
+                                value={formData.zip_code}
+                                onChange={e => setFormData({...formData, zip_code: e.target.value})}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none"
                             />
                         </div>
                         <div className="col-span-2 space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cidade e UF</label>
                             <input 
-                                value={formData.address_city}
-                                onChange={e => setFormData({...formData, address_city: e.target.value})}
+                                value={formData.city}
+                                onChange={e => setFormData({...formData, city: e.target.value})}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none"
                             />
                         </div>
                         <div className="col-span-2 space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Logradouro</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Rua / Avenida</label>
                             <input 
-                                value={formData.address_street}
-                                onChange={e => setFormData({...formData, address_street: e.target.value})}
+                                value={formData.street}
+                                onChange={e => setFormData({...formData, street: e.target.value})}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none"
                             />
                         </div>
                         <div className="col-span-1 space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Número</label>
                             <input 
-                                value={formData.address_number}
-                                onChange={e => setFormData({...formData, address_number: e.target.value})}
+                                value={formData.number}
+                                onChange={e => setFormData({...formData, number: e.target.value})}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none"
                             />
                         </div>
                         <div className="col-span-3 space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Bairro</label>
                             <input 
-                                value={formData.address_neighborhood}
-                                onChange={e => setFormData({...formData, address_neighborhood: e.target.value})}
+                                value={formData.district}
+                                onChange={e => setFormData({...formData, district: e.target.value})}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none"
                             />
                         </div>
                     </div>
                 </Card>
 
-                {/* Horários de Operação - Implementação Fixa por DAYS_ORDER */}
+                {/* Descrição / Sobre */}
                 <div className="md:col-span-2">
-                    <Card title="Horários de Operação" icon={<Clock size={18} />}>
+                    <Card title="Apresentação do Estúdio" icon={<Globe size={18} />}>
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Texto de Boas-vindas (Agenda Online)</label>
+                            <textarea 
+                                value={formData.description}
+                                onChange={e => setFormData({...formData, description: e.target.value})}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-3xl p-6 min-h-[120px] outline-none focus:ring-4 focus:ring-orange-50 font-medium text-slate-600 resize-none"
+                                placeholder="Conte um pouco sobre a história e especialidades do seu estúdio..."
+                            />
+                        </div>
+                    </Card>
+                </div>
+
+                {/* Horários */}
+                <div className="md:col-span-2">
+                    <Card title="Horários de Atendimento" icon={<Clock size={18} />}>
                         <div className="grid grid-cols-1 gap-3">
                             {DAYS_ORDER.map(({ key, label }) => {
                                 const config = formData.business_hours[key] || DEFAULT_DAY;
@@ -342,6 +393,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                 </div>
             </div>
 
+            {/* Floating Action Button */}
             <div className="fixed bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-white via-white to-transparent flex justify-center pointer-events-none z-50">
                 <button 
                     onClick={handleSave}
@@ -349,7 +401,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                     className="pointer-events-auto min-w-[240px] px-12 py-5 bg-slate-800 hover:bg-slate-900 text-white font-black rounded-[24px] shadow-2xl flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50"
                 >
                     {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                    {isSaving ? 'Gravando Alterações...' : 'Salvar Perfil do Estúdio'}
+                    {isSaving ? 'Sincronizando...' : 'Salvar Perfil do Estúdio'}
                 </button>
             </div>
         </div>
