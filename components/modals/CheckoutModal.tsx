@@ -121,6 +121,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         };
     }, [currentMethod, installments, appointment.price]);
 
+    // --- Lógica de Finalização de Recebimento ---
     const handleFinalize = async () => {
         if (!currentMethod) {
             setToast({ message: "Selecione um método de pagamento.", type: 'error' });
@@ -129,25 +130,32 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         setIsLoading(true);
         try {
-            // Payload enriquecido com dados de auditoria financeira
+            // 1. Montagem do Payload Financeiro Completo
             const financialUpdate = {
                 amount: appointment.price, // Valor Bruto
-                net_value: financialMetrics.netValue, // Valor Líquido (Real que entra)
-                description: `${appointment.service_name} - ${appointment.client_name}`,
+                net_value: financialMetrics.netValue, // Valor Líquido (Crucial para Comissões)
+                tax_rate: financialMetrics.rate, // Porcentagem da taxa aplicada
+                description: `Recebimento: ${appointment.service_name} - ${appointment.client_name}`,
                 type: 'income',
                 category: 'servico',
                 payment_method: selectedCategory, // Slug legado ('pix', 'cartao_credito'...)
-                payment_method_id: currentMethod.id, // ID real da configuração
+                payment_method_id: currentMethod.id, // UUID/ID da configuração de taxas
                 installments: installments,
                 appointment_id: appointment.id,
-                client_id: appointment.client_id || null
+                client_id: appointment.client_id || null,
+                status: 'paid', // Status de pagamento efetivado
+                date: new Date().toISOString()
             };
 
+            // 2. Execução das operações atômicas no banco
             const [apptResult, finResult] = await Promise.all([
+                // Marca agendamento como CONCLUÍDO
                 supabase
                     .from('appointments')
                     .update({ status: 'concluido' })
                     .eq('id', appointment.id),
+                
+                // Registra a transação no fluxo de caixa
                 supabase
                     .from('financial_transactions')
                     .insert([financialUpdate])
@@ -156,15 +164,17 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             if (apptResult.error) throw apptResult.error;
             if (finResult.error) throw finResult.error;
 
-            setToast({ message: "Venda Finalizada! Saldo atualizado.", type: 'success' });
+            setToast({ message: "Venda realizada com sucesso! 💰", type: 'success' });
             
+            // 3. Feedback e Fechamento
             setTimeout(() => {
                 onSuccess();
                 onClose();
             }, 1000);
 
         } catch (error: any) {
-            setToast({ message: `Erro: ${error.message}`, type: 'error' });
+            console.error("Erro ao processar checkout:", error);
+            setToast({ message: `Erro ao finalizar: ${error.message}`, type: 'error' });
         } finally {
             setIsLoading(false);
         }
