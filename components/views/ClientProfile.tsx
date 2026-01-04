@@ -327,6 +327,15 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         if (data) setTemplates(data);
     };
 
+    const handleClearAnamnesisText = () => {
+        if (!window.confirm("Deseja realmente limpar todo o texto da ficha? Esta ação não pode ser desfeita.")) return;
+        setAnamnesis((prev: any) => ({
+            ...prev,
+            clinical_notes: ""
+        }));
+        setToast({ message: "Conteúdo removido!", type: 'info' });
+    };
+
     const handleLoadTemplate = async () => {
         if (!selectedTemplateId) return alert("Selecione um modelo!");
         
@@ -975,7 +984,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                             </div>
                                         </div>
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Forma de Pagamento</label>
+                                            <label className="text-[10px) font-black text-slate-400 uppercase tracking-widest ml-1">Forma de Pagamento</label>
                                             <div className="relative group">
                                                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500">
                                                     <CreditCard size={18} />
@@ -1054,9 +1063,14 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-orange-400 pointer-events-none" size={16} />
                                                 </div>
                                             </div>
-                                            <button onClick={handleLoadTemplate} disabled={!selectedTemplateId} className="w-full sm:w-auto px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-sm">
-                                                <FilePlus size={16} /> Inserir Modelo
-                                            </button>
+                                            <div className="flex w-full sm:w-auto gap-2">
+                                                <button onClick={handleLoadTemplate} disabled={!selectedTemplateId} className="flex-1 sm:flex-none px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-sm">
+                                                    <FilePlus size={16} /> Inserir Modelo
+                                                </button>
+                                                <button onClick={handleClearAnamnesisText} className="px-4 py-2.5 bg-white border border-slate-200 text-slate-400 hover:text-rose-500 hover:border-rose-100 rounded-xl text-xs flex items-center justify-center transition-all shadow-sm active:scale-95" title="Limpar tudo">
+                                                    <Eraser size={16} />
+                                                </button>
+                                            </div>
                                         </div>
 
                                         <div className="flex justify-between items-center px-1">
