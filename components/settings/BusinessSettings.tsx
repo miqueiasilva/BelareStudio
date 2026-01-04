@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useRef } from 'react';
 import { 
     Store, Save, Loader2, MapPin, Phone, Instagram, 
-    Camera, ArrowLeft, Clock, Coffee, Building2, Hash, Mail, Globe, Plus,
-    Image as ImageIcon
+    Camera, ArrowLeft, Clock, Coffee, Building2, Hash, Mail, Globe, 
+    Image as ImageIcon, RefreshCw
 } from 'lucide-react';
 import Card from '../shared/Card';
 import Toast, { ToastType } from '../shared/Toast';
@@ -30,8 +31,13 @@ const DEFAULT_DAY = {
 const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
     const [isSaving, setIsSaving] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [isUploading, setIsUploading] = useState<'cover' | 'logo' | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     
+    // Refs para Inputs de Arquivo
+    const coverInputRef = useRef<HTMLInputElement>(null);
+    const logoInputRef = useRef<HTMLInputElement>(null);
+
     const [formData, setFormData] = useState<any>({
         id: null,
         business_name: '',
@@ -100,13 +106,47 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
         fetchSettings();
     }, []);
 
-    const handleUpdateImage = (type: 'cover_url' | 'logo_url') => {
-        const msg = type === 'cover_url' ? "Cole o link (URL) da imagem de Capa:" : "Cole o link (URL) da sua Logo:";
-        const currentUrl = formData[type];
-        const newUrl = window.prompt(msg, currentUrl || "");
-        
-        if (newUrl !== null) {
-            setFormData({ ...formData, [type]: newUrl });
+    // --- Lógica de Upload de Imagem ---
+    const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, type: 'cover' | 'logo') => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        // Validação básica de tipo
+        if (!file.type.startsWith('image/')) {
+            setToast({ message: "Por favor, selecione um arquivo de imagem.", type: 'error' });
+            return;
+        }
+
+        setIsUploading(type);
+        try {
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${Date.now()}_${type}.${fileExt}`;
+            const filePath = `business-profile/${fileName}`;
+
+            // 1. Upload para o bucket 'business-media'
+            const { error: uploadError } = await supabase.storage
+                .from('business-media')
+                .upload(filePath, file);
+
+            if (uploadError) throw uploadError;
+
+            // 2. Obter URL Pública
+            const { data: { publicUrl } } = supabase.storage
+                .from('business-media')
+                .getPublicUrl(filePath);
+
+            // 3. Atualizar Estado
+            const field = type === 'cover' ? 'cover_url' : 'logo_url';
+            setFormData((prev: any) => ({ ...prev, [field]: publicUrl }));
+            
+            setToast({ message: "Imagem enviada com sucesso!", type: 'success' });
+        } catch (error: any) {
+            console.error("Erro no upload:", error);
+            setToast({ message: `Erro no upload: ${error.message}`, type: 'error' });
+        } finally {
+            setIsUploading(null);
+            // Reseta o input para permitir selecionar o mesmo arquivo novamente se necessário
+            if (event.target) event.target.value = '';
         }
     };
 
@@ -182,6 +222,22 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
         <div className="max-w-4xl mx-auto pb-32 animate-in fade-in duration-500 text-left">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
+            {/* Hidden Inputs for File Selection */}
+            <input 
+                type="file" 
+                ref={coverInputRef} 
+                onChange={(e) => handleFileUpload(e, 'cover')} 
+                hidden 
+                accept="image/*" 
+            />
+            <input 
+                type="file" 
+                ref={logoInputRef} 
+                onChange={(e) => handleFileUpload(e, 'logo')} 
+                hidden 
+                accept="image/*" 
+            />
+
             {/* Header */}
             <div className="flex items-center gap-4 mb-8">
                 <button onClick={onBack} className="p-3 bg-white border border-slate-200 rounded-2xl text-slate-500 hover:text-orange-600 transition-all shadow-sm">
@@ -193,43 +249,55 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                 </div>
             </div>
 
-            {/* Hero: Banner + Logo RESTAURADO */}
+            {/* Hero: Banner + Logo com Upload Real */}
             <div className="mb-16">
                 <div className="relative group">
                     {/* Container da Capa */}
                     <div 
-                        onClick={() => handleUpdateImage('cover_url')}
-                        className="h-48 md:h-64 w-full rounded-[40px] overflow-hidden bg-slate-200 shadow-inner border border-slate-100 cursor-pointer relative"
+                        onClick={() => !isUploading && coverInputRef.current?.click()}
+                        className={`h-48 md:h-64 w-full rounded-[40px] overflow-hidden bg-slate-200 shadow-inner border border-slate-100 cursor-pointer relative ${isUploading === 'cover' ? 'opacity-70' : ''}`}
                     >
                         {formData.cover_url ? (
                             <img src={formData.cover_url} className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-500" alt="Capa" />
                         ) : (
                             <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-2">
-                                {/* FIX: ImageIcon is now properly imported from lucide-react */}
                                 <ImageIcon size={40} className="opacity-20" />
-                                <span className="text-[10px] font-black uppercase tracking-widest">Clique para adicionar Capa</span>
+                                <span className="text-[10px] font-black uppercase tracking-widest">Clique para enviar Capa</span>
                             </div>
                         )}
+                        
                         <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                             <button className="bg-white/90 backdrop-blur px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center gap-2 shadow-xl">
-                                <Camera size={18} /> Alterar Capa
+                                <Camera size={18} /> {isUploading === 'cover' ? 'Enviando...' : 'Alterar Capa'}
                             </button>
                         </div>
+
+                        {isUploading === 'cover' && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-white/40 backdrop-blur-[2px]">
+                                <RefreshCw className="animate-spin text-orange-500" size={32} />
+                            </div>
+                        )}
                     </div>
 
                     {/* Container da Logo (Avatar) */}
                     <div className="absolute -bottom-10 left-10">
                         <div 
-                            onClick={() => handleUpdateImage('logo_url')}
-                            className="relative group/logo cursor-pointer"
+                            onClick={() => !isUploading && logoInputRef.current?.click()}
+                            className={`relative group/logo cursor-pointer ${isUploading === 'logo' ? 'opacity-70' : ''}`}
                         >
-                            <div className="w-32 h-32 rounded-full ring-8 ring-white shadow-2xl overflow-hidden bg-white border border-slate-100 flex items-center justify-center">
+                            <div className="w-32 h-32 rounded-full ring-8 ring-white shadow-2xl overflow-hidden bg-white border border-slate-100 flex items-center justify-center relative">
                                 {formData.logo_url ? (
                                     <img src={formData.logo_url} className="w-full h-full object-cover" alt="Logo" />
                                 ) : (
                                     <div className="w-full h-full flex flex-col items-center justify-center bg-orange-100 text-orange-500">
                                         <Store size={40} />
-                                        <span className="text-[8px] font-black uppercase mt-1">Logo</span>
+                                        <span className="text-[8px] font-black uppercase mt-1 text-center px-2">Upload Logo</span>
+                                    </div>
+                                )}
+                                
+                                {isUploading === 'logo' && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-white/40 backdrop-blur-[2px]">
+                                        <RefreshCw className="animate-spin text-orange-500" size={24} />
                                     </div>
                                 )}
                             </div>
@@ -245,7 +313,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                 {/* Dados Básicos */}
                 <Card title="Informações Gerais" icon={<Building2 size={18} />}>
                     <div className="space-y-5">
-                        <div className="space-y-1">
+                        <div className="space-y-1.5">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome do Estúdio</label>
                             <input 
                                 value={formData.business_name}
@@ -254,7 +322,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                                 placeholder="Nome fantasia"
                             />
                         </div>
-                        <div className="space-y-1">
+                        <div className="space-y-1.5">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">CNPJ / CPF</label>
                             <div className="relative">
                                 <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
@@ -267,7 +335,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                             </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1">
+                            <div className="space-y-1.5">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">WhatsApp (Fixo)</label>
                                 <div className="relative">
                                     <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
@@ -279,7 +347,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                                     />
                                 </div>
                             </div>
-                            <div className="space-y-1">
+                            <div className="space-y-1.5">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">E-mail Adm.</label>
                                 <div className="relative">
                                     <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
@@ -299,7 +367,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                 {/* Localização */}
                 <Card title="Endereço da Unidade" icon={<MapPin size={18} />}>
                     <div className="grid grid-cols-3 gap-4">
-                        <div className="col-span-1 space-y-1">
+                        <div className="col-span-1 space-y-1.5">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">CEP</label>
                             <input 
                                 value={formData.zip_code}
@@ -307,7 +375,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none"
                             />
                         </div>
-                        <div className="col-span-2 space-y-1">
+                        <div className="col-span-2 space-y-1.5">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cidade e UF</label>
                             <input 
                                 value={formData.city}
@@ -315,7 +383,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none"
                             />
                         </div>
-                        <div className="col-span-2 space-y-1">
+                        <div className="col-span-2 space-y-1.5">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Rua / Avenida</label>
                             <input 
                                 value={formData.street}
@@ -323,7 +391,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none"
                             />
                         </div>
-                        <div className="col-span-1 space-y-1">
+                        <div className="col-span-1 space-y-1.5">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Número</label>
                             <input 
                                 value={formData.number}
@@ -331,7 +399,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none"
                             />
                         </div>
-                        <div className="col-span-3 space-y-1">
+                        <div className="col-span-3 space-y-1.5">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Bairro</label>
                             <input 
                                 value={formData.district}
@@ -351,7 +419,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                                 value={formData.description}
                                 onChange={e => setFormData({...formData, description: e.target.value})}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-3xl p-6 min-h-[120px] outline-none focus:ring-4 focus:ring-orange-50 font-medium text-slate-600 resize-none"
-                                placeholder="Conte um pouco sobre a história e especialidades do seu estúdio..."
+                                placeholder="Conte um pouco sobre a histria e especialidades do seu estúdio..."
                             />
                         </div>
                     </Card>
