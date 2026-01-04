@@ -1,18 +1,30 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
     Store, Save, Loader2, MapPin, Phone, Instagram, 
-    Camera, Image as ImageIcon, ArrowLeft, Clock, 
-    ChevronDown, Coffee, Building2, Map, Hash, Globe
+    Camera, ArrowLeft, Clock, Coffee, Building2, Hash
 } from 'lucide-react';
 import Card from '../shared/Card';
 import Toast, { ToastType } from '../shared/Toast';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import { supabase } from '../../services/supabaseClient';
 
-const DAYS_LABEL: Record<string, string> = {
-    monday: 'Segunda', tuesday: 'Terça', wednesday: 'Quarta', 
-    thursday: 'Quinta', friday: 'Sexta', saturday: 'Sábado', sunday: 'Domingo'
+// --- Constantes de Configuração Segura ---
+const DAYS_ORDER = [
+    { key: 'monday', label: 'Segunda-feira' },
+    { key: 'tuesday', label: 'Terça-feira' },
+    { key: 'wednesday', label: 'Quarta-feira' },
+    { key: 'thursday', label: 'Quinta-feira' },
+    { key: 'friday', label: 'Sexta-feira' },
+    { key: 'saturday', label: 'Sábado' },
+    { key: 'sunday', label: 'Domingo' }
+];
+
+const DEFAULT_DAY = { 
+    open: false, 
+    start: '09:00', 
+    end: '18:00', 
+    break: { active: false, start: '12:00', end: '13:00' } 
 };
 
 const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
@@ -20,7 +32,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     
-    const [formData, setFormData] = useState({
+    const [formData, setFormData] = useState<any>({
         studio_name: '',
         cnpj: '',
         whatsapp: '',
@@ -33,74 +45,96 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
         address_neighborhood: '',
         address_city: '',
         address_state: '',
-        business_hours: {
-            monday: { open: true, start: '08:00', end: '18:00', break: { active: true, start: '12:00', end: '13:00' } },
-            tuesday: { open: true, start: '08:00', end: '18:00', break: { active: true, start: '12:00', end: '13:00' } },
-            wednesday: { open: true, start: '08:00', end: '18:00', break: { active: true, start: '12:00', end: '13:00' } },
-            thursday: { open: true, start: '08:00', end: '18:00', break: { active: true, start: '12:00', end: '13:00' } },
-            friday: { open: true, start: '08:00', end: '18:00', break: { active: true, start: '12:00', end: '13:00' } },
-            saturday: { open: true, start: '08:00', end: '12:00', break: { active: false, start: '12:00', end: '13:00' } },
-            sunday: { open: false, start: '08:00', end: '18:00', break: { active: false, start: '12:00', end: '13:00' } }
-        }
+        business_hours: {} // Será preenchido na sanitização
     });
+
+    // Função de Sanitização: Garante que todos os dias existam e tenham a estrutura correta
+    const sanitizeBusinessHours = (rawHours: any) => {
+        const sanitized: any = {};
+        const source = rawHours || {};
+        
+        DAYS_ORDER.forEach(({ key }) => {
+            const dayData = source[key] || {};
+            sanitized[key] = {
+                open: dayData.open ?? DEFAULT_DAY.open,
+                start: dayData.start || DEFAULT_DAY.start,
+                end: dayData.end || DEFAULT_DAY.end,
+                break: {
+                    active: dayData.break?.active ?? DEFAULT_DAY.break.active,
+                    start: dayData.break?.start || DEFAULT_DAY.break.start,
+                    end: dayData.break?.end || DEFAULT_DAY.break.end
+                }
+            };
+        });
+        return sanitized;
+    };
 
     useEffect(() => {
         const fetchSettings = async () => {
             setIsLoading(true);
-            const { data, error } = await supabase.from('studio_settings').select('*').limit(1).maybeSingle();
-            if (data) {
-                setFormData(prev => ({
-                    ...prev,
-                    ...data,
-                    // Garante que business_hours tenha a estrutura correta se vier nulo ou incompleto
-                    business_hours: data.business_hours || prev.business_hours
-                }));
+            try {
+                const { data, error } = await supabase.from('studio_settings').select('*').limit(1).maybeSingle();
+                if (data) {
+                    setFormData({
+                        ...data,
+                        business_hours: sanitizeBusinessHours(data.business_hours)
+                    });
+                } else {
+                    // Inicializa com horas vazias mas sanitizadas se não houver registro
+                    setFormData((prev: any) => ({
+                        ...prev,
+                        business_hours: sanitizeBusinessHours({})
+                    }));
+                }
+            } catch (err) {
+                console.error("Erro ao carregar configurações:", err);
+            } finally {
+                setIsLoading(false);
             }
-            setIsLoading(false);
         };
         fetchSettings();
     }, []);
 
     const handleSave = async () => {
         setIsSaving(true);
-        const { error } = await supabase.from('studio_settings').upsert({
-            ...formData,
-            updated_at: new Date()
-        });
-        
-        setIsSaving(false);
-        if (!error) {
+        try {
+            const { error } = await supabase.from('studio_settings').upsert({
+                ...formData,
+                updated_at: new Date()
+            }, { onConflict: 'id' });
+            
+            if (error) throw error;
+            
             setToast({ message: "Configurações salvas com sucesso!", type: 'success' });
             setTimeout(onBack, 1500);
-        } else {
+        } catch (error: any) {
             setToast({ message: `Erro ao salvar: ${error.message}`, type: 'error' });
+        } finally {
+            setIsSaving(false);
         }
     };
 
     const updateDay = (day: string, field: string, value: any) => {
-        setFormData(prev => ({
+        setFormData((prev: any) => ({
             ...prev,
             business_hours: {
                 ...prev.business_hours,
-                [day]: { ...(prev.business_hours as any)[day], [field]: value }
+                [day]: { ...prev.business_hours[day], [field]: value }
             }
         }));
     };
 
     const updateBreak = (day: string, field: string, value: any) => {
-        setFormData(prev => {
-            const currentDay = (prev.business_hours as any)[day];
-            return {
-                ...prev,
-                business_hours: {
-                    ...prev.business_hours,
-                    [day]: { 
-                        ...currentDay, 
-                        break: { ...currentDay.break, [field]: value } 
-                    }
+        setFormData((prev: any) => ({
+            ...prev,
+            business_hours: {
+                ...prev.business_hours,
+                [day]: { 
+                    ...prev.business_hours[day], 
+                    break: { ...prev.business_hours[day].break, [field]: value } 
                 }
-            };
-        });
+            }
+        }));
     };
 
     if (isLoading) return (
@@ -125,10 +159,9 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                 </div>
             </div>
 
-            {/* SEÇÃO 1: IDENTIDADE VISUAL (BANNER + LOGO) */}
+            {/* Hero: Banner + Logo */}
             <div className="mb-12">
                 <div className="relative group">
-                    {/* Banner de Capa */}
                     <div className="h-48 md:h-64 w-full rounded-[40px] overflow-hidden bg-slate-200 shadow-inner border border-slate-100">
                         <img src={formData.cover_url} className="w-full h-full object-cover" alt="Capa" />
                         <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -138,14 +171,13 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                         </div>
                     </div>
 
-                    {/* Avatar / Logo */}
                     <div className="absolute -bottom-10 left-10">
                         <div className="relative group/logo">
                             <div className="w-32 h-32 rounded-full ring-8 ring-white shadow-2xl overflow-hidden bg-white border border-slate-100">
                                 {formData.profile_url ? (
                                     <img src={formData.profile_url} className="w-full h-full object-cover" alt="Logo" />
                                 ) : (
-                                    <div className="w-full h-full flex items-center justify-center bg-orange-100 text-orange-500">
+                                    <div className="w-full h-full flex items-center justify-center bg-orange-100 text-orange-50">
                                         <Store size={40} />
                                     </div>
                                 )}
@@ -159,21 +191,19 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-16">
-                
-                {/* SEÇÃO 2: DADOS BÁSICOS */}
+                {/* Dados Básicos */}
                 <Card title="Informações Gerais" icon={<Building2 size={18} />}>
                     <div className="space-y-5">
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome Fantasia do Estúdio</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome Fantasia</label>
                             <input 
                                 value={formData.studio_name}
                                 onChange={e => setFormData({...formData, studio_name: e.target.value})}
-                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all shadow-sm"
-                                placeholder="Nome da sua empresa"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-100 transition-all shadow-sm"
                             />
                         </div>
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">CNPJ / Documento</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">CNPJ</label>
                             <div className="relative">
                                 <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
                                 <input 
@@ -187,31 +217,25 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">WhatsApp</label>
-                                <div className="relative">
-                                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                                    <input 
-                                        value={formData.whatsapp}
-                                        onChange={e => setFormData({...formData, whatsapp: e.target.value})}
-                                        className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"
-                                    />
-                                </div>
+                                <input 
+                                    value={formData.whatsapp}
+                                    onChange={e => setFormData({...formData, whatsapp: e.target.value})}
+                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"
+                                />
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Instagram (@)</label>
-                                <div className="relative">
-                                    <Instagram className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                                    <input 
-                                        value={formData.instagram_handle}
-                                        onChange={e => setFormData({...formData, instagram_handle: e.target.value})}
-                                        className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"
-                                    />
-                                </div>
+                                <input 
+                                    value={formData.instagram_handle}
+                                    onChange={e => setFormData({...formData, instagram_handle: e.target.value})}
+                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"
+                                />
                             </div>
                         </div>
                     </div>
                 </Card>
 
-                {/* SEÇÃO 3: ENDEREÇO */}
+                {/* Localização */}
                 <Card title="Localização" icon={<MapPin size={18} />}>
                     <div className="grid grid-cols-3 gap-4">
                         <div className="col-span-1 space-y-1">
@@ -220,7 +244,6 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                                 value={formData.address_zip}
                                 onChange={e => setFormData({...formData, address_zip: e.target.value})}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none"
-                                placeholder="00000-000"
                             />
                         </div>
                         <div className="col-span-2 space-y-1">
@@ -229,11 +252,10 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                                 value={formData.address_city}
                                 onChange={e => setFormData({...formData, address_city: e.target.value})}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none"
-                                placeholder="Cidade - UF"
                             />
                         </div>
                         <div className="col-span-2 space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Logradouro (Rua/Av)</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Logradouro</label>
                             <input 
                                 value={formData.address_street}
                                 onChange={e => setFormData({...formData, address_street: e.target.value})}
@@ -246,7 +268,6 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                                 value={formData.address_number}
                                 onChange={e => setFormData({...formData, address_number: e.target.value})}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none"
-                                placeholder="S/N"
                             />
                         </div>
                         <div className="col-span-3 space-y-1">
@@ -260,68 +281,67 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                     </div>
                 </Card>
 
-                {/* SEÇÃO 4: HORÁRIOS DE ATENDIMENTO */}
+                {/* Horários de Operação - Implementação Fixa por DAYS_ORDER */}
                 <div className="md:col-span-2">
                     <Card title="Horários de Operação" icon={<Clock size={18} />}>
                         <div className="grid grid-cols-1 gap-3">
-                            {Object.entries(formData.business_hours).map(([dayKey, config]: [string, any]) => (
-                                <div key={dayKey} className={`flex flex-col xl:flex-row items-center justify-between p-5 rounded-3xl border transition-all ${config.open ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-transparent opacity-60'}`}>
-                                    <div className="flex items-center gap-4 w-full xl:w-1/4 mb-4 xl:mb-0">
-                                        <ToggleSwitch on={config.open} onClick={() => updateDay(dayKey, 'open', !config.open)} />
-                                        <span className="font-black text-slate-700 text-sm w-32 uppercase tracking-tighter">{DAYS_LABEL[dayKey]}</span>
-                                    </div>
-                                    
-                                    {config.open ? (
-                                        <div className="flex flex-col md:flex-row items-center gap-4 xl:gap-8 w-full xl:w-3/4 justify-end">
-                                            {/* Turno Principal */}
-                                            <div className="flex items-center gap-2">
-                                                <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all">
-                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Início</span>
-                                                    <input type="time" value={config.start} onChange={e => updateDay(dayKey, 'start', e.target.value)} className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0" />
-                                                </div>
-                                                <span className="text-slate-300 font-bold text-xs">até</span>
-                                                <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all">
-                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Fim</span>
-                                                    <input type="time" value={config.end} onChange={e => updateDay(dayKey, 'end', e.target.value)} className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0" />
-                                                </div>
-                                            </div>
-
-                                            {/* Intervalo */}
-                                            <div className="flex items-center gap-4 border-l-2 border-slate-100 pl-8">
+                            {DAYS_ORDER.map(({ key, label }) => {
+                                const config = formData.business_hours[key] || DEFAULT_DAY;
+                                return (
+                                    <div key={key} className={`flex flex-col xl:flex-row items-center justify-between p-5 rounded-3xl border transition-all ${config.open ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-transparent opacity-60'}`}>
+                                        <div className="flex items-center gap-4 w-full xl:w-1/4 mb-4 xl:mb-0">
+                                            <ToggleSwitch on={config.open} onClick={() => updateDay(key, 'open', !config.open)} />
+                                            <span className="font-black text-slate-700 text-sm w-32 uppercase tracking-tighter">{label}</span>
+                                        </div>
+                                        
+                                        {config.open ? (
+                                            <div className="flex flex-col md:flex-row items-center gap-4 xl:gap-8 w-full xl:w-3/4 justify-end">
                                                 <div className="flex items-center gap-2">
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={config.break.active} 
-                                                        onChange={e => updateBreak(dayKey, 'active', e.target.checked)}
-                                                        className="w-5 h-5 rounded text-orange-500 border-slate-300 focus:ring-orange-500"
-                                                    />
-                                                    <Coffee size={16} className={config.break.active ? "text-orange-500" : "text-slate-300"} />
-                                                </div>
-                                                {config.break.active && (
-                                                    <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2">
-                                                        <div className="flex items-center gap-2 bg-orange-50 px-3 py-2 rounded-xl border border-orange-100">
-                                                            <input type="time" value={config.break.start} onChange={e => updateBreak(dayKey, 'start', e.target.value)} className="bg-transparent border-none p-0 text-xs font-black text-orange-600 outline-none focus:ring-0" />
-                                                            <span className="text-[10px] font-bold text-orange-300">às</span>
-                                                            <input type="time" value={config.break.end} onChange={e => updateBreak(dayKey, 'end', e.target.value)} className="bg-transparent border-none p-0 text-xs font-black text-orange-600 outline-none focus:ring-0" />
-                                                        </div>
+                                                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all">
+                                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Início</span>
+                                                        <input type="time" value={config.start} onChange={e => updateDay(key, 'start', e.target.value)} className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0" />
                                                     </div>
-                                                )}
+                                                    <span className="text-slate-300 font-bold text-xs">até</span>
+                                                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all">
+                                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Fim</span>
+                                                        <input type="time" value={config.end} onChange={e => updateDay(key, 'end', e.target.value)} className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0" />
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-center gap-4 border-l-2 border-slate-100 pl-8">
+                                                    <div className="flex items-center gap-2">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={config.break?.active ?? false} 
+                                                            onChange={e => updateBreak(key, 'active', e.target.checked)}
+                                                            className="w-5 h-5 rounded text-orange-500 border-slate-300 focus:ring-orange-500"
+                                                        />
+                                                        <Coffee size={16} className={config.break?.active ? "text-orange-500" : "text-slate-300"} />
+                                                    </div>
+                                                    {config.break?.active && (
+                                                        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2">
+                                                            <div className="flex items-center gap-2 bg-orange-50 px-3 py-2 rounded-xl border border-orange-100">
+                                                                <input type="time" value={config.break.start} onChange={e => updateBreak(key, 'start', e.target.value)} className="bg-transparent border-none p-0 text-xs font-black text-orange-600 outline-none focus:ring-0" />
+                                                                <span className="text-[10px] font-bold text-orange-300">às</span>
+                                                                <input type="time" value={config.break.end} onChange={e => updateBreak(key, 'end', e.target.value)} className="bg-transparent border-none p-0 text-xs font-black text-orange-600 outline-none focus:ring-0" />
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ) : (
-                                        <div className="flex-1 text-right">
-                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-100 px-4 py-2 rounded-xl border border-slate-200/50">Fechado / Folga</span>
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
+                                        ) : (
+                                            <div className="flex-1 text-right">
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-100 px-4 py-2 rounded-xl">Fechado</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
                     </Card>
                 </div>
-
             </div>
 
-            {/* Ação Flutuante para Salvar */}
             <div className="fixed bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-white via-white to-transparent flex justify-center pointer-events-none z-50">
                 <button 
                     onClick={handleSave}
