@@ -1,8 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
     Store, Save, Loader2, MapPin, Phone, Instagram, 
-    Camera, ArrowLeft, Clock, Coffee, Building2, Hash, Mail, Globe
+    Camera, ArrowLeft, Clock, Coffee, Building2, Hash, Mail, Globe, Plus,
+    Image as ImageIcon
 } from 'lucide-react';
 import Card from '../shared/Card';
 import Toast, { ToastType } from '../shared/Toast';
@@ -40,7 +40,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
         email: '',
         instagram_handle: '',
         description: '',
-        cover_url: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1200&q=80',
+        cover_url: '',
         logo_url: '',
         zip_code: '',
         street: '',
@@ -75,7 +75,6 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
         const fetchSettings = async () => {
             setIsLoading(true);
             try {
-                // Tabela correta: business_settings
                 const { data, error } = await supabase.from('business_settings').select('*').limit(1).maybeSingle();
                 
                 if (error) throw error;
@@ -101,10 +100,19 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
         fetchSettings();
     }, []);
 
+    const handleUpdateImage = (type: 'cover_url' | 'logo_url') => {
+        const msg = type === 'cover_url' ? "Cole o link (URL) da imagem de Capa:" : "Cole o link (URL) da sua Logo:";
+        const currentUrl = formData[type];
+        const newUrl = window.prompt(msg, currentUrl || "");
+        
+        if (newUrl !== null) {
+            setFormData({ ...formData, [type]: newUrl });
+        }
+    };
+
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            // Mapeamento rigoroso para o schema business_settings
             const payload = {
                 id: formData.id,
                 business_name: formData.business_name,
@@ -130,7 +138,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
             
             if (error) throw error;
             
-            setToast({ message: "Configurações salvas com sucesso!", type: 'success' });
+            setToast({ message: "Perfil do negócio atualizado com sucesso!", type: 'success' });
             setTimeout(onBack, 1000);
         } catch (error: any) {
             console.error("Erro ao salvar:", error);
@@ -175,42 +183,59 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
             {/* Header */}
-            <div className="flex items-center gap-4 mb-6">
+            <div className="flex items-center gap-4 mb-8">
                 <button onClick={onBack} className="p-3 bg-white border border-slate-200 rounded-2xl text-slate-500 hover:text-orange-600 transition-all shadow-sm">
                     <ArrowLeft size={20} />
                 </button>
                 <div>
                     <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tighter leading-tight">Perfil do Negócio</h1>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Gerencie a identidade oficial do estúdio</p>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Configurações de marca e atendimento</p>
                 </div>
             </div>
 
-            {/* Hero: Banner + Logo */}
-            <div className="mb-12">
+            {/* Hero: Banner + Logo RESTAURADO */}
+            <div className="mb-16">
                 <div className="relative group">
-                    <div className="h-48 md:h-64 w-full rounded-[40px] overflow-hidden bg-slate-200 shadow-inner border border-slate-100">
-                        <img src={formData.cover_url} className="w-full h-full object-cover" alt="Capa" />
-                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <button className="bg-white/90 backdrop-blur p-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center gap-2 shadow-xl active:scale-95">
+                    {/* Container da Capa */}
+                    <div 
+                        onClick={() => handleUpdateImage('cover_url')}
+                        className="h-48 md:h-64 w-full rounded-[40px] overflow-hidden bg-slate-200 shadow-inner border border-slate-100 cursor-pointer relative"
+                    >
+                        {formData.cover_url ? (
+                            <img src={formData.cover_url} className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-500" alt="Capa" />
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-2">
+                                {/* FIX: ImageIcon is now properly imported from lucide-react */}
+                                <ImageIcon size={40} className="opacity-20" />
+                                <span className="text-[10px] font-black uppercase tracking-widest">Clique para adicionar Capa</span>
+                            </div>
+                        )}
+                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                            <button className="bg-white/90 backdrop-blur px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center gap-2 shadow-xl">
                                 <Camera size={18} /> Alterar Capa
                             </button>
                         </div>
                     </div>
 
+                    {/* Container da Logo (Avatar) */}
                     <div className="absolute -bottom-10 left-10">
-                        <div className="relative group/logo">
-                            <div className="w-32 h-32 rounded-full ring-8 ring-white shadow-2xl overflow-hidden bg-white border border-slate-100">
+                        <div 
+                            onClick={() => handleUpdateImage('logo_url')}
+                            className="relative group/logo cursor-pointer"
+                        >
+                            <div className="w-32 h-32 rounded-full ring-8 ring-white shadow-2xl overflow-hidden bg-white border border-slate-100 flex items-center justify-center">
                                 {formData.logo_url ? (
                                     <img src={formData.logo_url} className="w-full h-full object-cover" alt="Logo" />
                                 ) : (
-                                    <div className="w-full h-full flex items-center justify-center bg-orange-100 text-orange-500">
+                                    <div className="w-full h-full flex flex-col items-center justify-center bg-orange-100 text-orange-500">
                                         <Store size={40} />
+                                        <span className="text-[8px] font-black uppercase mt-1">Logo</span>
                                     </div>
                                 )}
                             </div>
-                            <button className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/logo:opacity-100 transition-opacity">
+                            <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/logo:opacity-100 transition-opacity pointer-events-none">
                                 <Camera className="text-white" size={24} />
-                            </button>
+                            </div>
                         </div>
                     </div>
                 </div>
