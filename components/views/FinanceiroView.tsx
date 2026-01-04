@@ -1,286 +1,406 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
-    ArrowUpCircle, ArrowDownCircle, Wallet, TrendingUp, AlertTriangle, CheckCircle, Plus
+    ArrowUpCircle, ArrowDownCircle, Wallet, TrendingUp, AlertTriangle, 
+    CheckCircle, Plus, Loader2, Calendar, Search, Filter, Download,
+    RefreshCw, ChevronLeft, ChevronRight, FileText, Clock
 } from 'lucide-react';
 import Card from '../shared/Card';
-import SafeBar from '../charts/SafeBar';
 import SafePie from '../charts/SafePie';
 import NewTransactionModal from '../modals/NewTransactionModal';
-import { professionals } from '../../data/mockData';
 import { FinancialTransaction, TransactionType } from '../../types';
-import { format, isSameDay, isSameWeek, isSameMonth } from 'date-fns';
+import { supabase } from '../../services/supabaseClient';
+import { 
+    format, isSameDay, isSameWeek, isSameMonth, 
+    startOfDay, endOfDay, startOfWeek, endOfWeek, 
+    startOfMonth, endOfMonth, parseISO 
+} from 'date-fns';
+import { ptBR as pt } from 'date-fns/locale/pt-BR';
+import Toast, { ToastType } from '../shared/Toast';
+
+// Helper de formatação BRL
+const formatBRL = (value: number) => {
+    return value.toLocaleString('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+    });
+};
 
 interface FinanceiroViewProps {
-    transactions: FinancialTransaction[];
+    transactions?: FinancialTransaction[]; // Prop legada mantida para não quebrar App.tsx
     onAddTransaction: (t: FinancialTransaction) => void;
 }
 
-const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions, onAddTransaction }) => {
-    const [currentDate] = useState(new Date());
-    const [viewMode, setViewMode] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => {
+    const [dbTransactions, setDbTransactions] = useState<any[]>([]);
+    const [professionals, setProfessionals] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [currentDate, setCurrentDate] = useState(new Date());
+    const [viewMode, setViewMode] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
     const [activeTab, setActiveTab] = useState<'visao_geral' | 'extrato' | 'comissoes'>('visao_geral');
     const [showModal, setShowModal] = useState<TransactionType | null>(null);
+    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // --- Logic & Calculations ---
+    // --- Data Fetching ---
+    const fetchData = async () => {
+        setLoading(true);
+        try {
+            // Busca transações e profissionais simultaneamente
+            const [transRes, profsRes] = await Promise.all([
+                supabase
+                    .from('financial_transactions')
+                    .select('*')
+                    .order('date', { ascending: false }),
+                supabase
+                    .from('professionals')
+                    .select('id, name, photo_url, role')
+                    .eq('active', true)
+            ]);
 
+            if (transRes.error) throw transRes.error;
+            if (profsRes.error) throw profsRes.error;
+
+            setDbTransactions(transRes.data || []);
+            setProfessionals(profsRes.data || []);
+        } catch (error: any) {
+            console.error("Erro financeiro:", error);
+            setToast({ message: "Erro ao sincronizar dados financeiros.", type: 'error' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    // --- Filtros e Cálculos ---
     const filteredTransactions = useMemo(() => {
-        return transactions.filter(t => {
-            const tDate = new Date(t.date);
+        return dbTransactions.filter(t => {
+            const tDate = parseISO(t.date);
             if (viewMode === 'daily') return isSameDay(tDate, currentDate);
-            if (viewMode === 'weekly') return isSameWeek(tDate, currentDate);
+            
+            if (viewMode === 'weekly') {
+                const start = startOfWeek(currentDate, { weekStartsOn: 1 });
+                const end = endOfWeek(currentDate, { weekStartsOn: 1 });
+                return tDate >= start && tDate <= end;
+            }
+            
             if (viewMode === 'monthly') return isSameMonth(tDate, currentDate);
             return true;
         });
-    }, [transactions, currentDate, viewMode]);
+    }, [dbTransactions, currentDate, viewMode]);
 
     const metrics = useMemo(() => {
-        const income = filteredTransactions.filter(t => t.type === 'receita').reduce((acc, t) => acc + t.amount, 0);
-        const expense = filteredTransactions.filter(t => t.type === 'despesa').reduce((acc, t) => acc + t.amount, 0);
+        const income = filteredTransactions
+            .filter(t => t.type === 'income' || t.type === 'receita')
+            .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
+            
+        const expense = filteredTransactions
+            .filter(t => t.type === 'expense' || t.type === 'despesa')
+            .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
+            
         const balance = income - expense;
         
-        // Mock previous balance logic
-        const previousBalance = 1500; // Starting balance for demo
-        
-        return { income, expense, balance, finalBalance: previousBalance + balance };
+        return { income, expense, balance };
     }, [filteredTransactions]);
 
     const chartData = useMemo(() => {
-        // Prepare data for charts
-        const expenseByCategory: {[key: string]: number} = {};
+        const expenseByCategory: Record<string, number> = {};
         filteredTransactions
-            .filter(t => t.type === 'despesa')
+            .filter(t => t.type === 'expense' || t.type === 'despesa')
             .forEach(t => {
-                expenseByCategory[t.category] = (expenseByCategory[t.category] || 0) + t.amount;
+                const cat = t.category || 'Outros';
+                expenseByCategory[cat] = (expenseByCategory[cat] || 0) + (Number(t.amount) || 0);
             });
 
         return Object.entries(expenseByCategory).map(([name, value]) => ({ name, receita: value }));
     }, [filteredTransactions]);
 
     // --- Handlers ---
-
-    const handleAddTransaction = (transaction: FinancialTransaction) => {
-        onAddTransaction(transaction);
+    const handleAddTransaction = async (transaction: any) => {
+        // Recarrega os dados após um novo lançamento via modal
+        await fetchData();
+        onAddTransaction(transaction); // Mantém sincronia com o pai se necessário
         setShowModal(null);
     };
 
-    // --- Render ---
+    const handleNavigateDate = (direction: number) => {
+        const newDate = new Date(currentDate);
+        if (viewMode === 'daily') newDate.setDate(newDate.getDate() + direction);
+        else if (viewMode === 'weekly') newDate.setDate(newDate.getDate() + (direction * 7));
+        else if (viewMode === 'monthly') newDate.setMonth(newDate.getMonth() + direction);
+        setCurrentDate(newDate);
+    };
+
+    if (loading && dbTransactions.length === 0) {
+        return (
+            <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50">
+                <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
+                <p className="text-xs font-black uppercase tracking-widest animate-pulse">Auditando Fluxo de Caixa...</p>
+            </div>
+        );
+    }
 
     return (
-        <div className="h-full flex flex-col bg-slate-50 overflow-hidden">
+        <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans text-left">
+            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
             {/* Header */}
-            <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
+            <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 flex-shrink-0 z-30 shadow-sm">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                    <h1 className="text-xl md:text-2xl font-black text-slate-800 flex items-center gap-2">
                         <Wallet className="text-orange-500" />
                         Fluxo de Caixa
                     </h1>
-                    <p className="text-slate-500 text-sm">Controle financeiro inteligente do seu estúdio.</p>
+                    <div className="flex items-center gap-3 mt-1">
+                        <div className="flex items-center gap-1">
+                            <button onClick={() => handleNavigateDate(-1)} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400"><ChevronLeft size={16}/></button>
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest min-w-[120px] text-center">
+                                {viewMode === 'daily' && format(currentDate, "dd 'de' MMMM", { locale: pt })}
+                                {viewMode === 'weekly' && `Semana ${format(currentDate, "dd/MM")}`}
+                                {viewMode === 'monthly' && format(currentDate, "MMMM 'de' yyyy", { locale: pt })}
+                            </span>
+                            <button onClick={() => handleNavigateDate(1)} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400"><ChevronRight size={16}/></button>
+                        </div>
+                    </div>
                 </div>
                 
-                <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
-                    <button 
-                        onClick={() => setViewMode('daily')}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'daily' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        Dia
-                    </button>
-                    <button 
-                        onClick={() => setViewMode('weekly')}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'weekly' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        Semana
-                    </button>
-                    <button 
-                        onClick={() => setViewMode('monthly')}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'monthly' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        Mês
-                    </button>
-                </div>
+                <div className="flex items-center gap-4 w-full lg:w-auto">
+                    <div className="flex flex-1 items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                        {(['daily', 'weekly', 'monthly'] as const).map((mode) => (
+                            <button 
+                                key={mode}
+                                onClick={() => setViewMode(mode)}
+                                className={`flex-1 px-4 py-2 text-[10px] font-black uppercase tracking-tighter rounded-lg transition-all ${viewMode === mode ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}
+                            >
+                                {mode === 'daily' ? 'Dia' : mode === 'weekly' ? 'Semana' : 'Mês'}
+                            </button>
+                        ))}
+                    </div>
 
-                <div className="flex gap-2">
-                    <button onClick={() => setShowModal('receita')} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm">
-                        <Plus className="w-4 h-4"/> Receita
-                    </button>
-                    <button onClick={() => setShowModal('despesa')} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm">
-                        <Plus className="w-4 h-4"/> Despesa
-                    </button>
+                    <div className="flex gap-2">
+                        <button onClick={() => setShowModal('receita')} className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-emerald-100 transition-all active:scale-95">
+                            <Plus size={16} strokeWidth={3}/> Receita
+                        </button>
+                        <button onClick={() => setShowModal('despesa')} className="bg-rose-500 hover:bg-rose-600 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-rose-100 transition-all active:scale-95">
+                            <Plus size={16} strokeWidth={3}/> Despesa
+                        </button>
+                    </div>
                 </div>
             </header>
 
-            {/* JaciBot Insight */}
-            <div className="px-6 pt-4">
-                <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 flex items-start gap-3">
-                    <div className="bg-indigo-100 p-2 rounded-full">
-                        <TrendingUp className="w-4 h-4 text-indigo-600" />
-                    </div>
-                    <div>
-                        <p className="text-xs font-bold text-indigo-800 uppercase">Insight Financeiro</p>
-                        <p className="text-sm text-indigo-700">
-                            Sua margem de lucro está <strong>15% maior</strong> que a semana passada. O serviço "Volume Egípcio" representa 40% da sua receita hoje.
-                        </p>
-                    </div>
-                </div>
-            </div>
-
             {/* Main Content */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 custom-scrollbar">
                 
-                {/* KPI Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                        <p className="text-slate-400 text-xs font-bold uppercase">Saldo do Período</p>
-                        <p className={`text-2xl font-bold mt-1 ${metrics.balance >= 0 ? 'text-slate-800' : 'text-red-600'}`}>
-                            R$ {metrics.balance.toFixed(2)}
-                        </p>
+                {/* KPI Cards Reais */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
+                        <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Saldo Líquido</p>
+                        <h3 className={`text-2xl font-black tracking-tighter ${metrics.balance >= 0 ? 'text-slate-800' : 'text-rose-600'}`}>
+                            {formatBRL(metrics.balance)}
+                        </h3>
                     </div>
-                    <div className="bg-white p-4 rounded-xl border border-green-100 bg-green-50/50 shadow-sm">
-                        <div className="flex justify-between items-start">
-                            <div>
-                                <p className="text-green-600/70 text-xs font-bold uppercase">Receitas</p>
-                                <p className="text-2xl font-bold text-green-600 mt-1">R$ {metrics.income.toFixed(2)}</p>
-                            </div>
-                            <ArrowUpCircle className="text-green-400 w-5 h-5"/>
+                    <div className="bg-white p-6 rounded-[32px] border border-emerald-50 bg-emerald-50/20 shadow-sm relative overflow-hidden group">
+                        <div className="relative z-10">
+                            <p className="text-emerald-600/70 text-[10px] font-black uppercase tracking-widest mb-1">Total Receitas</p>
+                            <h3 className="text-2xl font-black text-emerald-600 tracking-tighter">{formatBRL(metrics.income)}</h3>
                         </div>
+                        <ArrowUpCircle className="absolute -right-2 -bottom-2 text-emerald-500/10 group-hover:scale-110 transition-transform" size={80}/>
                     </div>
-                    <div className="bg-white p-4 rounded-xl border border-red-100 bg-red-50/50 shadow-sm">
-                        <div className="flex justify-between items-start">
-                            <div>
-                                <p className="text-red-600/70 text-xs font-bold uppercase">Despesas</p>
-                                <p className="text-2xl font-bold text-red-600 mt-1">R$ {metrics.expense.toFixed(2)}</p>
-                            </div>
-                            <ArrowDownCircle className="text-red-400 w-5 h-5"/>
+                    <div className="bg-white p-6 rounded-[32px] border border-rose-50 bg-rose-50/20 shadow-sm relative overflow-hidden group">
+                        <div className="relative z-10">
+                            <p className="text-rose-600/70 text-[10px] font-black uppercase tracking-widest mb-1">Total Despesas</p>
+                            <h3 className="text-2xl font-black text-rose-600 tracking-tighter">{formatBRL(metrics.expense)}</h3>
                         </div>
+                        <ArrowDownCircle className="absolute -right-2 -bottom-2 text-rose-500/10 group-hover:scale-110 transition-transform" size={80}/>
                     </div>
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                        <p className="text-slate-400 text-xs font-bold uppercase">Previsão (Fim do Mês)</p>
-                        <p className="text-2xl font-bold text-blue-600 mt-1">R$ {(metrics.income * 1.2).toFixed(2)}</p>
-                        <span className="text-[10px] text-slate-400">Baseado na média diária</span>
+                    <div className="bg-slate-900 p-6 rounded-[32px] text-white shadow-xl shadow-slate-200 flex flex-col justify-center">
+                        <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Operações</p>
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-xl font-black text-orange-400">{filteredTransactions.length}</h3>
+                            <div className="flex items-center gap-1 text-[9px] font-bold text-slate-500 uppercase">
+                                <TrendingUp size={12} className="text-emerald-400" /> {((metrics.income / (metrics.expense || 1)) * 100).toFixed(0)}% ROI
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 {/* Tabs Navigation */}
-                <div className="border-b border-slate-200">
-                    <nav className="-mb-px flex gap-6">
-                        <button onClick={() => setActiveTab('visao_geral')} className={`pb-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'visao_geral' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-                            Visão Geral
-                        </button>
-                        <button onClick={() => setActiveTab('extrato')} className={`pb-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'extrato' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-                            Extrato Detalhado
-                        </button>
-                        <button onClick={() => setActiveTab('comissoes')} className={`pb-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'comissoes' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-                            Comissões a Pagar
-                        </button>
-                    </nav>
+                <div className="flex border-b border-slate-200 overflow-x-auto scrollbar-hide">
+                    <button onClick={() => setActiveTab('visao_geral')} className={`px-6 pb-4 text-xs font-black uppercase tracking-widest transition-all border-b-4 whitespace-nowrap ${activeTab === 'visao_geral' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                        Gráficos e Insights
+                    </button>
+                    <button onClick={() => setActiveTab('extrato')} className={`px-6 pb-4 text-xs font-black uppercase tracking-widest transition-all border-b-4 whitespace-nowrap ${activeTab === 'extrato' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                        Extrato Detalhado
+                    </button>
+                    <button onClick={() => setActiveTab('comissoes')} className={`px-6 pb-4 text-xs font-black uppercase tracking-widest transition-all border-b-4 whitespace-nowrap ${activeTab === 'comissoes' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                        Comissões & Equipe
+                    </button>
                 </div>
 
                 {/* TAB CONTENT */}
 
                 {activeTab === 'visao_geral' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <Card title="Fluxo de Receita vs. Despesa">
-                            <div className="h-64">
-                                {/* Simulating simple visual comparison since SafeBar is time-based */}
-                                <div className="flex h-full items-end justify-center gap-16 pb-4">
-                                    <div className="w-24 bg-green-500 rounded-t-lg transition-all duration-500 relative group" style={{ height: `${Math.min(100, (metrics.income / 3000) * 100)}%` }}>
-                                        <span className="absolute -top-6 w-full text-center font-bold text-green-700 text-xs">Receita</span>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-500">
+                        <Card title="Comparativo Faturamento" className="rounded-[40px]">
+                            <div className="h-72 flex items-end justify-center gap-12 lg:gap-24 pb-8">
+                                <div className="flex flex-col items-center gap-4 w-full max-w-[120px]">
+                                    <div className="w-full bg-emerald-500 rounded-2xl transition-all duration-700 shadow-lg shadow-emerald-50 relative group" style={{ height: `${Math.max(10, Math.min(100, (metrics.income / Math.max(metrics.income, metrics.expense, 1)) * 100))}%` }}>
+                                        <div className="absolute -top-8 w-full text-center font-black text-emerald-600 text-xs">{formatBRL(metrics.income)}</div>
                                     </div>
-                                    <div className="w-24 bg-red-500 rounded-t-lg transition-all duration-500 relative group" style={{ height: `${Math.min(100, (metrics.expense / 3000) * 100)}%` }}>
-                                        <span className="absolute -top-6 w-full text-center font-bold text-red-700 text-xs">Despesa</span>
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Entradas</span>
+                                </div>
+                                <div className="flex flex-col items-center gap-4 w-full max-w-[120px]">
+                                    <div className="w-full bg-rose-500 rounded-2xl transition-all duration-700 shadow-lg shadow-rose-50 relative group" style={{ height: `${Math.max(10, Math.min(100, (metrics.expense / Math.max(metrics.income, metrics.expense, 1)) * 100))}%` }}>
+                                        <div className="absolute -top-8 w-full text-center font-black text-rose-600 text-xs">{formatBRL(metrics.expense)}</div>
                                     </div>
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Saídas</span>
                                 </div>
                             </div>
                         </Card>
-                        <Card title="Distribuição de Despesas">
-                            <div className="h-64">
-                                <SafePie 
-                                    data={chartData}
-                                    colors={['#f87171', '#fb923c', '#facc15', '#a78bfa', '#60a5fa']}
-                                />
+                        
+                        <Card title="Origem dos Gastos" className="rounded-[40px]">
+                            <div className="h-72 flex items-center justify-center">
+                                {chartData.length > 0 ? (
+                                    <SafePie 
+                                        data={chartData}
+                                        colors={['#f87171', '#fb923c', '#facc15', '#a78bfa', '#60a5fa', '#10b981']}
+                                    />
+                                ) : (
+                                    <div className="text-center text-slate-300">
+                                        <AlertTriangle size={32} className="mx-auto mb-2 opacity-20" />
+                                        <p className="text-[10px] font-black uppercase tracking-widest">Sem despesas no período</p>
+                                    </div>
+                                )}
                             </div>
                         </Card>
+
+                        {/* JaciBot Strategic Box */}
+                        <div className="lg:col-span-2 bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-[40px] p-8 text-white shadow-2xl relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-12 opacity-10">
+                                <TrendingUp size={140} />
+                            </div>
+                            <div className="relative z-10 flex flex-col md:flex-row items-center gap-8">
+                                <div className="p-4 bg-white/10 backdrop-blur-md rounded-3xl border border-white/20">
+                                    <TrendingUp size={32} className="text-orange-400" />
+                                </div>
+                                <div className="text-center md:text-left flex-1">
+                                    <h4 className="text-lg font-black uppercase tracking-widest text-indigo-200">Insight Estratégico</h4>
+                                    <p className="text-base font-medium leading-relaxed mt-2 italic opacity-90">
+                                        "Analisando seus dados reais, notei que {metrics.income > metrics.expense ? 'seu estúdio está operando no azul este mês!' : 'atenção: suas despesas superaram a receita no período selecionado.'} {metrics.balance > 2000 ? 'Considere investir em marketing para os horários de baixa ocupação.' : 'Revise seus custos fixos para melhorar sua margem de lucro.'}"
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 )}
 
                 {activeTab === 'extrato' && (
-                    <Card className="overflow-hidden p-0">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase text-xs">
-                                <tr>
-                                    <th className="px-6 py-3 font-bold">Data</th>
-                                    <th className="px-6 py-3 font-bold">Descrição</th>
-                                    <th className="px-6 py-3 font-bold">Categoria</th>
-                                    <th className="px-6 py-3 font-bold text-right">Valor</th>
-                                    <th className="px-6 py-3 font-bold text-center">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {filteredTransactions.map(t => (
-                                    <tr key={t.id} className="hover:bg-slate-50/50">
-                                        <td className="px-6 py-3 text-slate-600">{format(new Date(t.date), 'dd/MM/yyyy')}</td>
-                                        <td className="px-6 py-3 font-medium text-slate-800">{t.description}</td>
-                                        <td className="px-6 py-3">
-                                            <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs capitalize">
-                                                {t.category}
-                                            </span>
-                                        </td>
-                                        <td className={`px-6 py-3 text-right font-bold ${t.type === 'receita' ? 'text-green-600' : 'text-red-600'}`}>
-                                            {t.type === 'despesa' ? '- ' : '+ '}
-                                            R$ {t.amount.toFixed(2)}
-                                        </td>
-                                        <td className="px-6 py-3 text-center">
-                                            {t.status === 'pago' ? (
-                                                <CheckCircle className="w-4 h-4 text-green-500 mx-auto"/>
-                                            ) : (
-                                                <AlertTriangle className="w-4 h-4 text-amber-500 mx-auto"/>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
-                                {filteredTransactions.length === 0 && (
+                    <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4 duration-500">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-slate-50/50 border-b border-slate-100 text-slate-400 uppercase text-[10px] font-black tracking-widest">
                                     <tr>
-                                        <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">
-                                            Nenhuma transação encontrada neste período.
-                                        </td>
+                                        <th className="px-8 py-5">Lançamento</th>
+                                        <th className="px-8 py-5">Categoria</th>
+                                        <th className="px-8 py-5">Método</th>
+                                        <th className="px-8 py-5 text-right">Valor Final</th>
+                                        <th className="px-8 py-5 text-center">Status</th>
                                     </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </Card>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50">
+                                    {filteredTransactions.map(t => (
+                                        <tr key={t.id} className="hover:bg-slate-50/50 group transition-colors">
+                                            <td className="px-8 py-4">
+                                                <p className="font-black text-slate-800 group-hover:text-orange-600 transition-colors">{t.description}</p>
+                                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter mt-0.5">{format(parseISO(t.date), 'dd MMM yyyy • HH:mm', { locale: pt })}</p>
+                                            </td>
+                                            <td className="px-8 py-4">
+                                                <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${t.type === 'income' || t.type === 'receita' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'}`}>
+                                                    {t.category || 'Geral'}
+                                                </span>
+                                            </td>
+                                            <td className="px-8 py-4">
+                                                <span className="text-xs font-bold text-slate-500 uppercase">{t.payment_method?.replace('_', ' ') || '---'}</span>
+                                            </td>
+                                            <td className={`px-8 py-4 text-right font-black text-base tracking-tighter ${t.type === 'income' || t.type === 'receita' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                {t.type === 'expense' || t.type === 'despesa' ? '- ' : '+ '}
+                                                {formatBRL(Number(t.amount))}
+                                            </td>
+                                            <td className="px-8 py-4 text-center">
+                                                {t.status === 'paid' || t.status === 'pago' ? (
+                                                    <div className="flex items-center justify-center gap-1.5 text-emerald-500 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100 w-fit mx-auto">
+                                                        <CheckCircle size={12}/> <span className="text-[9px] font-black uppercase">Liquidado</span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center justify-center gap-1.5 text-amber-500 bg-amber-50 px-2 py-1 rounded-lg border border-amber-100 w-fit mx-auto">
+                                                        <Clock size={12}/> <span className="text-[9px] font-black uppercase">Pendente</span>
+                                                    </div>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {filteredTransactions.length === 0 && (
+                                        <tr>
+                                            <td colSpan={5} className="px-8 py-20 text-center flex flex-col items-center">
+                                                <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center mb-4 text-slate-300">
+                                                    <FileText size={32} />
+                                                </div>
+                                                <h4 className="font-black text-slate-700">Nenhuma movimentação</h4>
+                                                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Realize vendas no PDV para ver o extrato.</p>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 )}
 
                 {activeTab === 'comissoes' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {professionals.map(prof => {
-                            // Calculate commission based on transactions tagged with this professional
-                            const profRevenue = transactions
-                                .filter(t => t.professionalId === prof.id && t.type === 'receita')
-                                .reduce((acc, t) => acc + t.amount, 0);
-                            const commission = profRevenue * 0.5; // 50% rule example
+                    <div className="space-y-6 animate-in fade-in duration-500">
+                        <div className="bg-amber-50 border border-amber-100 rounded-3xl p-6 flex items-center gap-4">
+                            <div className="p-3 bg-white rounded-2xl text-amber-500 shadow-sm">
+                                <RefreshCw className="animate-spin-slow" size={24} />
+                            </div>
+                            <div>
+                                <h4 className="text-sm font-black text-amber-900 uppercase">Módulo de Repasses em Sincronização</h4>
+                                <p className="text-xs text-amber-700 font-medium">As comissões reais estão sendo calculadas individualmente. Abaixo listamos a equipe ativa para verificação manual enquanto o processador automático é atualizado.</p>
+                            </div>
+                        </div>
 
-                            return (
-                                <div key={prof.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
-                                    <img src={prof.avatarUrl} alt={prof.name} className="w-14 h-14 rounded-full object-cover" />
-                                    <div className="flex-1">
-                                        <h3 className="font-bold text-slate-800">{prof.name}</h3>
-                                        <div className="flex justify-between mt-2 text-sm">
-                                            <span className="text-slate-500">Gerado: <b className="text-slate-700">R$ {profRevenue.toFixed(2)}</b></span>
-                                            <span className="text-green-600 font-bold">Comissão: R$ {commission.toFixed(2)}</span>
-                                        </div>
-                                        <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
-                                            <div className="bg-green-500 h-full" style={{ width: '50%' }}></div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {professionals.map(prof => (
+                                <div key={prof.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-4 group hover:shadow-xl transition-all">
+                                    <div className="w-16 h-16 rounded-[20px] bg-slate-100 overflow-hidden border-2 border-white shadow-md flex-shrink-0 group-hover:scale-105 transition-transform">
+                                        {prof.photo_url ? (
+                                            <img src={prof.photo_url} alt={prof.name} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center text-slate-300 font-black text-xl">
+                                                {prof.name.charAt(0)}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <h3 className="font-black text-slate-800 truncate">{prof.name}</h3>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{prof.role || 'Profissional'}</p>
+                                        <div className="flex items-center justify-between mt-3">
+                                            <span className="text-[10px] font-black text-slate-300 uppercase italic">Aguardando fechamento...</span>
+                                            <button className="p-2 text-slate-300 hover:text-orange-500 transition-colors">
+                                                <ChevronRight size={18} />
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
-                            )
-                        })}
+                            ))}
+                        </div>
                     </div>
                 )}
 
             </div>
             
-            {/* Modal */}
+            {/* Modal de Transação */}
             {showModal && (
                 <NewTransactionModal 
                     type={showModal} 
@@ -288,6 +408,16 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions, onAddTran
                     onSave={handleAddTransaction}
                 />
             )}
+
+            <style dangerouslySetInnerHTML={{ __html: `
+                @keyframes spin-slow {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+                .animate-spin-slow {
+                    animation: spin-slow 8s linear infinite;
+                }
+            `}} />
         </div>
     );
 };
