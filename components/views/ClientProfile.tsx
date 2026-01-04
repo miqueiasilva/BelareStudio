@@ -427,7 +427,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             // 1. CABEÇALHO
             doc.setFont("helvetica", "bold");
             doc.setFontSize(18);
-            doc.text("JACILENE FÉLIX STUDIO", pageWidth / 2, y, { align: 'center' });
+            doc.text("Studio Jacilene Félix", pageWidth / 2, y, { align: 'center' });
             y += 10;
             doc.setFontSize(14);
             doc.text("FICHA DE ANAMNESE E CONTRATO", pageWidth / 2, y, { align: 'center' });
