@@ -287,9 +287,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         </div>
                     ) : (
                         <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl flex items-center gap-3">
-                            {/* FIX: Use AlertTriangle from lucide-react */}
                             <AlertTriangle className="text-amber-500" size={18} />
-                            <p className="text-[10px] font-bold text-amber-700 uppercase leading-tight">Nenhum método de {selectedCategory} configurado. <br/>Vá em Configurações > Pagamentos.</p>
+                            <p className="text-[10px] font-bold text-amber-700 uppercase leading-tight">Nenhum método de {selectedCategory} configurado. <br/>Vá em Configurações &gt; Pagamentos.</p>
                         </div>
                     )}
 
