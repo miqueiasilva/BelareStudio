@@ -4,7 +4,7 @@ import {
     X, CheckCircle, Wallet, CreditCard, Banknote, 
     Smartphone, Loader2, ShoppingCart, ArrowRight,
     ChevronDown, Info, Percent, Layers, AlertTriangle,
-    User
+    User, Search
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { PaymentMethod as PaymentMethodType } from '../../types';
@@ -19,7 +19,6 @@ const formatCurrency = (value: number) => {
 };
 
 // --- HELPER DE SEGURANÇA PARA UUID ---
-// Garante que o banco de dados receba 'null' em vez de "0" ou strings vazias em colunas UUID
 const sanitizeUuid = (id: any) => {
     if (!id || id === '0' || id === 0 || id === 'null' || id === 'undefined' || String(id).trim() === '') {
         return null;
@@ -49,7 +48,7 @@ interface CheckoutModalProps {
         client_name: string;
         service_name: string;
         price: number;
-        professional_id: number | string; // ID obrigatório para remuneração
+        professional_id: number | string; 
         professional_name: string;
     };
     onSuccess: () => void;
@@ -60,37 +59,45 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const [isFetching, setIsFetching] = useState(true);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // Estados de Seleção
+    // Estados de Dados do Banco
     const [allMethods, setAllMethods] = useState<DBPaymentMethod[]>([]);
+    const [allProfessionals, setAllProfessionals] = useState<any[]>([]); // Para Smart Lookup
+
+    // Estados de Seleção
     const [selectedCategory, setSelectedCategory] = useState<'pix' | 'money' | 'credit' | 'debit'>('pix');
     const [selectedMethodId, setSelectedMethodId] = useState<string>('');
     const [installments, setInstallments] = useState(1);
 
-    // 1. Busca configurações reais do banco
+    // 1. Busca configurações e profissionais (para garantir o ID correto)
     useEffect(() => {
-        const fetchConfig = async () => {
+        const fetchRequiredData = async () => {
             setIsFetching(true);
             try {
-                const { data, error } = await supabase
-                    .from('payment_methods_config')
-                    .select('*')
-                    .eq('is_active', true);
+                const [methodsRes, profsRes] = await Promise.all([
+                    supabase.from('payment_methods_config').select('*').eq('is_active', true),
+                    supabase.from('professionals').select('id, name') // Necessário para o Smart Lookup
+                ]);
 
-                if (error) throw error;
-                if (data) {
-                    setAllMethods(data);
-                    // Pré-seleciona o primeiro método disponível para a categoria inicial (pix)
-                    const firstPix = data.find(m => m.type === 'pix');
+                if (methodsRes.error) throw methodsRes.error;
+                if (profsRes.error) throw profsRes.error;
+
+                if (methodsRes.data) {
+                    setAllMethods(methodsRes.data);
+                    const firstPix = methodsRes.data.find(m => m.type === 'pix');
                     if (firstPix) setSelectedMethodId(firstPix.id.toString());
                 }
+
+                if (profsRes.data) {
+                    setAllProfessionals(profsRes.data);
+                }
             } catch (err: any) {
-                console.error("Erro ao carregar taxas:", err);
+                console.error("Erro ao carregar dados de checkout:", err);
             } finally {
                 setIsFetching(false);
             }
         };
 
-        if (isOpen) fetchConfig();
+        if (isOpen) fetchRequiredData();
     }, [isOpen]);
 
     // 2. Filtra métodos baseados na categoria selecionada
@@ -133,7 +140,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- Lógica de Finalização de Recebimento (SMART OVERWRITE) ---
+    // --- Lógica de Finalização (Com Smart Lookup e Recuperação de ID) ---
     const handleFinalize = async () => {
         if (!currentMethod) {
             setToast({ message: "Selecione um método de pagamento.", type: 'error' });
@@ -142,29 +149,47 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         setIsLoading(true);
 
-        // --- CAPTURA E VALIDAÇÃO DO PROFISSIONAL ---
-        const professionalIdToSave = sanitizeUuid(appointment?.professional_id);
+        // --- SMART LOOKUP & RECURSÃO DE ID DO PROFISSIONAL ---
+        // 1. Tenta pegar o ID vindo do agendamento (prioridade 1)
+        let professionalIdToSave = sanitizeUuid(appointment?.professional_id) || sanitizeUuid((appointment as any)?.professionalId);
         
+        // 2. PLANO B: Se não tem ID mas tem Nome, busca na lista carregada (Smart Lookup)
+        if (!professionalIdToSave && appointment.professional_name && allProfessionals.length > 0) {
+            const found = allProfessionals.find(p => 
+                p.name?.toLowerCase().trim() === appointment.professional_name.toLowerCase().trim()
+            );
+            if (found) {
+                console.log(`[FINANCEIRO] Smart Lookup: ID ${found.id} encontrado para "${appointment.professional_name}"`);
+                professionalIdToSave = found.id;
+            }
+        }
+
+        console.log('[FINANCEIRO] Tentando salvar venda:', {
+            nome_exibido: appointment.professional_name,
+            id_final: professionalIdToSave,
+            agendamento_id: appointment.id
+        });
+
+        // 3. Validação Final
         if (!professionalIdToSave) {
-            console.error('[FINANCEIRO] Erro: Tentativa de venda sem ID de profissional vinculado.');
+            console.error('[FINANCEIRO] Erro Fatal: Impossível determinar o ID do profissional para comissão.');
             setToast({ 
-                message: "Erro crítico: Nenhum profissional vinculado a este atendimento.", 
+                message: `Erro crítico: Nenhum ID encontrado para o responsável "${appointment.professional_name}". Verifique o cadastro da equipe.`, 
                 type: 'error' 
             });
             setIsLoading(false);
             return;
         }
+        // -----------------------------------------------------------
 
         try {
-            // LOGICA SMART OVERWRITE:
-            // 1. Limpar pagamentos antigos vinculados a este agendamento para evitar duplicidade no caixa
-            console.log(`[FINANCEIRO] Limpando registros antigos para agendamento #${appointment.id}...`);
+            // SMART OVERWRITE: Limpa registros antigos do mesmo agendamento
             await supabase
                 .from('financial_transactions')
                 .delete()
                 .eq('appointment_id', appointment.id);
 
-            // 2. Montagem do novo Payload Financeiro
+            // Montagem do novo Payload Financeiro
             const financialUpdate = {
                 amount: appointment.price, 
                 net_value: financialMetrics.netValue, 
@@ -174,25 +199,17 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 category: 'servico',
                 payment_method: selectedCategory,
                 payment_method_id: sanitizeUuid(currentMethod.id),
-                professional_id: professionalIdToSave,
+                professional_id: professionalIdToSave, // ID Recuperado via Waterfall/Lookup
                 client_id: sanitizeUuid(appointment.client_id),
-                appointment_id: appointment.id, // Vínculo crucial para Smart Overwrite
+                appointment_id: appointment.id,
                 installments: installments,
                 status: 'paid',
                 date: new Date().toISOString()
             };
 
-            // 3. Execução das operações de gravação e atualização de status
-            console.log('[FINANCEIRO] Gravando novo pagamento...');
             const [finResult, apptResult] = await Promise.all([
-                supabase
-                    .from('financial_transactions')
-                    .insert([financialUpdate]),
-                
-                supabase
-                    .from('appointments')
-                    .update({ status: 'concluido' })
-                    .eq('id', appointment.id)
+                supabase.from('financial_transactions').insert([financialUpdate]),
+                supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id)
             ]);
 
             if (finResult.error) throw finResult.error;
@@ -206,8 +223,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             }, 1000);
 
         } catch (error: any) {
-            console.error("[FINANCEIRO] Erro fatal ao processar checkout:", error);
-            setToast({ message: `Erro ao finalizar: ${error.message || "Falha de comunicação com o banco"}`, type: 'error' });
+            console.error("[FINANCEIRO] Erro ao processar checkout:", error);
+            setToast({ message: `Erro ao finalizar: ${error.message}`, type: 'error' });
         } finally {
             setIsLoading(false);
         }
@@ -227,7 +244,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
             <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                {/* Header com Botão Fechar */}
                 <header className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl">
@@ -244,7 +260,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 </header>
 
                 <main className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                    {/* Resumo Financeiro */}
                     <div className="bg-slate-900 rounded-[32px] p-6 text-white shadow-xl relative overflow-hidden">
                         <div className="absolute top-0 right-0 p-8 opacity-5">
                             <ShoppingCart size={120} />
@@ -275,7 +290,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         </div>
                     </div>
 
-                    {/* 1. Seletor de Categoria */}
+                    {/* Forma de Pagamento */}
                     <div className="space-y-3">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">1. Forma de Pagamento</label>
                         <div className="grid grid-cols-4 gap-2">
@@ -283,26 +298,16 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                 <button
                                     key={cat.id}
                                     onClick={() => setSelectedCategory(cat.id as any)}
-                                    className={`
-                                        flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all duration-200
-                                        ${selectedCategory === cat.id 
-                                            ? 'border-orange-500 bg-orange-50/50 shadow-md ring-4 ring-orange-50' 
-                                            : 'border-slate-50 bg-white hover:border-slate-200'
-                                        }
-                                    `}
+                                    className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all duration-200 ${selectedCategory === cat.id ? 'border-orange-500 bg-orange-50/50 shadow-md ring-4 ring-orange-50' : 'border-slate-50 bg-white hover:border-slate-200'}`}
                                 >
-                                    <div className={`p-2 rounded-xl mb-1 ${cat.bg} ${cat.color}`}>
-                                        <cat.icon size={20} />
-                                    </div>
-                                    <span className="text-[9px] font-black text-slate-700 uppercase tracking-tighter">
-                                        {cat.label}
-                                    </span>
+                                    <div className={`p-2 rounded-xl mb-1 ${cat.bg} ${cat.color}`}><cat.icon size={20} /></div>
+                                    <span className="text-[9px] font-black text-slate-700 uppercase tracking-tighter">{cat.label}</span>
                                 </button>
                             ))}
                         </div>
                     </div>
 
-                    {/* 2. Seletor de Adquirente/Bandeira (Condicional) */}
+                    {/* Seleção de Operadora */}
                     {isFetching ? (
                         <div className="py-4 flex justify-center"><Loader2 className="animate-spin text-orange-500" /></div>
                     ) : filteredMethods.length > 0 ? (
@@ -323,7 +328,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                 </div>
                             </div>
 
-                            {/* 3. Parcelamento (Apenas se permitido) */}
                             {currentMethod?.type === 'credit' && currentMethod.allow_installments && (
                                 <div className="space-y-1.5 animate-in fade-in">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">3. Parcelamento</label>
@@ -340,22 +344,16 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                         </select>
                                         <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={18} />
                                     </div>
-                                    {installments > 1 && (
-                                        <p className="text-xs font-black text-orange-600 ml-2 mt-2">
-                                            {installments}x de {formatCurrency(financialMetrics.installmentValue)}
-                                        </p>
-                                    )}
                                 </div>
                             )}
                         </div>
                     ) : (
                         <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl flex items-center gap-3">
                             <AlertTriangle className="text-amber-500" size={18} />
-                            <p className="text-[10px] font-bold text-amber-700 uppercase leading-tight">Nenhum método de {selectedCategory} configurado. <br/>Vá em Configurações &gt; Pagamentos.</p>
+                            <p className="text-[10px] font-bold text-amber-700 uppercase leading-tight">Nenhum método configurado para {selectedCategory}.</p>
                         </div>
                     )}
 
-                    {/* Resumo de Taxas */}
                     {currentMethod && (
                         <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-2">
                             <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -363,29 +361,19 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                 <span className="text-slate-600">{financialMetrics.rate}%</span>
                             </div>
                             <div className="flex justify-between items-center">
-                                <div className="flex items-center gap-1.5">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                                    <span className="text-xs font-bold text-slate-500">Recebimento Líquido</span>
-                                </div>
-                                <span className="text-sm font-black text-slate-700">
-                                    {formatCurrency(financialMetrics.netValue)}
-                                </span>
+                                <span className="text-xs font-bold text-slate-500">Recebimento Líquido</span>
+                                <span className="text-sm font-black text-slate-700">{formatCurrency(financialMetrics.netValue)}</span>
                             </div>
                         </div>
                     )}
                 </main>
 
                 <footer className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
-                    <button 
-                        onClick={onClose}
-                        className="flex-1 py-4 text-slate-500 font-black uppercase tracking-widest text-xs hover:bg-slate-200 rounded-2xl transition-all"
-                    >
-                        Cancelar
-                    </button>
+                    <button onClick={onClose} className="flex-1 py-4 text-slate-500 font-black uppercase tracking-widest text-xs hover:bg-slate-200 rounded-2xl transition-all">Cancelar</button>
                     <button
                         onClick={handleFinalize}
                         disabled={isLoading || !currentMethod}
-                        className="flex-[2] bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl shadow-slate-100 flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+                        className="flex-[2] bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
                     >
                         {isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
                         Confirmar Recebimento
