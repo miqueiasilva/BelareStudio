@@ -207,7 +207,9 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                     client_id: appointment.client?.id,
                     client_name: appointment.client?.nome || 'Cliente',
                     service_name: appointment.service.name,
-                    price: appointment.service.price
+                    price: appointment.service.price,
+                    professional_id: appointment.professional.id, // Adicionado ID do profissional
+                    professional_name: appointment.professional.name // Adicionado Nome do profissional
                 }}
                 onSuccess={() => {
                     onUpdateStatus(appointment.id, 'concluido');

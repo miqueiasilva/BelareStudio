@@ -3,7 +3,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
     X, CheckCircle, Wallet, CreditCard, Banknote, 
     Smartphone, Loader2, ShoppingCart, ArrowRight,
-    ChevronDown, Info, Percent, Layers, AlertTriangle
+    ChevronDown, Info, Percent, Layers, AlertTriangle,
+    User
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { PaymentMethod as PaymentMethodType } from '../../types';
@@ -39,6 +40,8 @@ interface CheckoutModalProps {
         client_name: string;
         service_name: string;
         price: number;
+        professional_id: number; // ID obrigatório para remuneração
+        professional_name: string;
     };
     onSuccess: () => void;
 }
@@ -138,24 +141,23 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 description: `Recebimento: ${appointment.service_name} - ${appointment.client_name}`,
                 type: 'income',
                 category: 'servico',
-                payment_method: selectedCategory, // Slug legado ('pix', 'cartao_credito'...)
-                payment_method_id: currentMethod.id, // UUID/ID da configuração de taxas
+                payment_method: selectedCategory,
+                payment_method_id: currentMethod.id,
+                professional_id: appointment.professional_id, // Vínculo para remuneração
                 installments: installments,
                 appointment_id: appointment.id,
                 client_id: appointment.client_id || null,
-                status: 'paid', // Status de pagamento efetivado
+                status: 'paid',
                 date: new Date().toISOString()
             };
 
             // 2. Execução das operações atômicas no banco
             const [apptResult, finResult] = await Promise.all([
-                // Marca agendamento como CONCLUÍDO
                 supabase
                     .from('appointments')
                     .update({ status: 'concluido' })
                     .eq('id', appointment.id),
                 
-                // Registra a transação no fluxo de caixa
                 supabase
                     .from('financial_transactions')
                     .insert([financialUpdate])
@@ -166,7 +168,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
             setToast({ message: "Venda realizada com sucesso! 💰", type: 'success' });
             
-            // 3. Feedback e Fechamento
             setTimeout(() => {
                 onSuccess();
                 onClose();
@@ -216,16 +217,28 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         <div className="absolute top-0 right-0 p-8 opacity-5">
                             <ShoppingCart size={120} />
                         </div>
-                        <div className="relative z-10 flex justify-between items-end">
-                            <div>
-                                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">{appointment.service_name}</p>
-                                <p className="text-sm font-bold text-slate-300">{appointment.client_name}</p>
+                        <div className="relative z-10 flex flex-col gap-4">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">{appointment.service_name}</p>
+                                    <p className="text-sm font-bold text-slate-300">{appointment.client_name}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total</p>
+                                    <p className="text-3xl font-black text-emerald-400 tracking-tighter">
+                                        {formatCurrency(appointment.price)}
+                                    </p>
+                                </div>
                             </div>
-                            <div className="text-right">
-                                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total</p>
-                                <p className="text-3xl font-black text-emerald-400 tracking-tighter">
-                                    {formatCurrency(appointment.price)}
-                                </p>
+                            
+                            <div className="flex items-center gap-2 pt-3 border-t border-white/10">
+                                <div className="p-1.5 bg-white/10 rounded-lg text-orange-400">
+                                    <User size={14} />
+                                </div>
+                                <div>
+                                    <p className="text-[9px] font-black uppercase text-white/40 leading-none">Responsável</p>
+                                    <p className="text-[11px] font-bold text-white/80">{appointment.professional_name}</p>
+                                </div>
                             </div>
                         </div>
                     </div>
