@@ -84,30 +84,38 @@ const RemuneracoesView: React.FC = () => {
       // Filtra transações deste profissional (Suporte a UUID e ID legados)
       const myTrans = transactions.filter(t => String(t.professional_id) === String(member.id));
       
-      // Soma do faturamento bruto do profissional no mês
-      const totalSales = myTrans.reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
+      // Cálculo da base (Líquido se houver taxa, senão Bruto)
+      const totalBase = myTrans.reduce((acc, t) => {
+          // Prioridade para net_value se ele for válido e menor que o bruto (indicando taxa deduzida)
+          // Se net_value for nulo ou zero (venda em dinheiro sem taxa configurada), usa amount
+          const baseValue = (t.net_value !== null && t.net_value !== undefined && Number(t.net_value) > 0) 
+            ? Number(t.net_value) 
+            : Number(t.amount);
+          
+          return acc + (baseValue || 0);
+      }, 0);
       
-      // Cálculo da comissão baseada no rate cadastrado no perfil do membro
+      // Cálculo da comissão baseada no rate cadastrado no perfil do membro sobre a base calculada
       const rate = Number(member.commission_rate) || 0;
-      const commissionValue = totalSales * (rate / 100);
+      const commissionValue = totalBase * (rate / 100);
 
       return {
         member,
         transactions: myTrans,
-        totalSales,
+        totalBase,
         commissionValue,
         count: myTrans.length,
         rate
       };
-    }).sort((a, b) => b.totalSales - a.totalSales);
+    }).sort((a, b) => b.totalBase - a.totalBase);
   }, [teamMembers, transactions]);
 
   // Totais Consolidados
   const totals = useMemo(() => {
     return payroll.reduce((acc, curr) => ({
-      gross: acc.gross + curr.totalSales,
+      base: acc.base + curr.totalBase,
       payout: acc.payout + curr.commissionValue
-    }), { gross: 0, payout: 0 });
+    }), { base: 0, payout: 0 });
   }, [payroll]);
 
   const formatBRL = (val: number) => {
@@ -130,7 +138,7 @@ const RemuneracoesView: React.FC = () => {
             <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
                 <Wallet className="text-orange-500" /> Remunerações
             </h1>
-            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Cálculo de repasse baseado em vendas liquidadas</p>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Cálculo de repasse baseado em vendas liquidadas (Líquido de Taxas)</p>
         </div>
         <div className="flex items-center bg-white rounded-2xl border border-slate-200 p-1.5 shadow-sm">
           <button onClick={() => setCurrentDate(prev => addMonths(prev, -1))} className="p-2 hover:bg-slate-50 text-slate-400 rounded-xl transition-colors"><ChevronDown className="w-5 h-5 rotate-90" /></button>
@@ -144,9 +152,9 @@ const RemuneracoesView: React.FC = () => {
       {/* Cards de Resumo Mensal */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm relative overflow-hidden group">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Produção Total da Equipe</p>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Base de Cálculo Total (Líquido)</p>
             <div className="flex items-center justify-between relative z-10">
-                <h3 className="text-3xl font-black text-slate-800">{formatBRL(totals.gross)}</h3>
+                <h3 className="text-3xl font-black text-slate-800">{formatBRL(totals.base)}</h3>
                 <TrendingUp size={24} className="text-emerald-500" />
             </div>
             <div className="absolute -right-2 -bottom-2 opacity-5 group-hover:scale-110 transition-transform">
@@ -193,8 +201,8 @@ const RemuneracoesView: React.FC = () => {
                     
                     <div className="flex items-center gap-10">
                         <div className="text-right">
-                            <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-0.5">Produção Bruta</p>
-                            <p className="text-sm font-bold text-slate-400">{formatBRL(item.totalSales)}</p>
+                            <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-0.5">Base de Cálculo</p>
+                            <p className="text-sm font-bold text-slate-400">{formatBRL(item.totalBase)}</p>
                         </div>
                         <div className="text-right min-w-[140px]">
                             <p className="text-[9px] font-black uppercase tracking-widest mb-0.5 text-orange-500">A Receber</p>
@@ -211,7 +219,7 @@ const RemuneracoesView: React.FC = () => {
                         <div className="flex items-center justify-between mb-6">
                             <h4 className="text-xs font-black text-slate-600 uppercase tracking-[0.2em]">Detalhamento das Vendas</h4>
                             <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 border border-blue-100">
-                                <Info size={14} /> Somente vendas liquidadas
+                                <Info size={14} /> Base líquida de taxas administrativas
                             </div>
                         </div>
 
@@ -222,27 +230,33 @@ const RemuneracoesView: React.FC = () => {
                                         <tr>
                                             <th className="px-8 py-5">Item / Serviço</th>
                                             <th className="px-8 py-5">Data</th>
-                                            <th className="px-8 py-5 text-right">Valor Total</th>
+                                            <th className="px-8 py-5 text-right">Valor Final (Líquido)</th>
                                             <th className="px-8 py-5 text-right text-orange-600">Comissão ({item.rate}%)</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {item.transactions.map((t: any) => (
-                                            <tr key={t.id} className="hover:bg-slate-50 transition-colors group">
-                                                <td className="px-8 py-4">
-                                                    <p className="font-bold text-slate-700 group-hover:text-orange-600 transition-colors">{t.description}</p>
-                                                </td>
-                                                <td className="px-8 py-4 text-slate-400 text-xs">
-                                                    {format(new Date(t.date), 'dd/MM HH:mm')}
-                                                </td>
-                                                <td className="px-8 py-4 text-right text-slate-400 font-mono text-xs">
-                                                    {formatBRL(Number(t.amount))}
-                                                </td>
-                                                <td className="px-8 py-4 text-right text-orange-600 font-black font-mono">
-                                                    {formatBRL(Number(t.amount) * (item.rate / 100))}
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {item.transactions.map((t: any) => {
+                                            const base = (t.net_value !== null && t.net_value !== undefined && Number(t.net_value) > 0) 
+                                                ? Number(t.net_value) 
+                                                : Number(t.amount);
+                                            
+                                            return (
+                                                <tr key={t.id} className="hover:bg-slate-50 transition-colors group">
+                                                    <td className="px-8 py-4">
+                                                        <p className="font-bold text-slate-700 group-hover:text-orange-600 transition-colors">{t.description}</p>
+                                                    </td>
+                                                    <td className="px-8 py-4 text-slate-400 text-xs">
+                                                        {format(new Date(t.date), 'dd/MM HH:mm')}
+                                                    </td>
+                                                    <td className="px-8 py-4 text-right text-slate-400 font-mono text-xs">
+                                                        {formatBRL(base)}
+                                                    </td>
+                                                    <td className="px-8 py-4 text-right text-orange-600 font-black font-mono">
+                                                        {formatBRL(base * (item.rate / 100))}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
