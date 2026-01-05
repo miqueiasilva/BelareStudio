@@ -99,37 +99,22 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     }, [isOpen]);
 
     // --- 3. BUGFIX: SINCRONIZAÇÃO REATIVA DE ESTADO (Anti-Race Condition) ---
-    // Dependência crucial: dbProfessionals. Só tenta selecionar quando a lista chega do banco.
     useEffect(() => {
         if (isOpen && appointment && dbProfessionals.length > 0) {
-            // Se o usuário já mexeu e selecionou algo, não sobrescrevemos
             if (selectedProfessionalId && isRealUUID(selectedProfessionalId)) return;
 
             let targetId = '';
             
-            // Tentativa 1: UUID já presente no objeto do agendamento
             if (isRealUUID(appointment.professional_id)) {
                 targetId = String(appointment.professional_id);
             } 
-            // Tentativa 2: Buscar pelo nome na lista que acabou de carregar (Smart Match)
             else if (appointment.professional_name) {
                 const nameRef = appointment.professional_name.trim().toLowerCase();
                 const found = dbProfessionals.find(p => p.name.trim().toLowerCase() === nameRef);
-                
-                if (found) {
-                    targetId = found.id;
-                    console.log(`[CHECKOUT] Sincronia Tardia: Profissional "${found.name}" identificado.`);
-                } else {
-                    // Busca parcial por primeiro nome
-                    const firstName = nameRef.split(' ')[0];
-                    const fuzzy = dbProfessionals.find(p => p.name.trim().toLowerCase().startsWith(firstName));
-                    if (fuzzy) targetId = fuzzy.id;
-                }
+                if (found) targetId = found.id;
             }
 
-            if (targetId) {
-                setSelectedProfessionalId(targetId);
-            }
+            if (targetId) setSelectedProfessionalId(targetId);
         }
     }, [isOpen, appointment, dbProfessionals]);
 
@@ -167,23 +152,37 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- 6. FINALIZAÇÃO (Tratamento de integridade e erro 409) ---
+    // --- 6. FINALIZAÇÃO (LÓGICA UNBLOCKED & AUTO-COMISSÃO) ---
     const handleFinalize = async () => {
         if (!currentMethod) {
             setToast({ message: "Selecione o método de pagamento.", type: 'error' });
             return;
         }
 
-        // Validação definitiva do Estado do React
-        if (!isRealUUID(selectedProfessionalId)) {
-            setToast({ message: "ERRO: Por favor, selecione o profissional no campo acima!", type: 'error' });
-            return;
+        // --- MOTOR DE DECISÃO DE PROFISSIONAL (VERDADE ABSOLUTA) ---
+        let finalProfessionalId = selectedProfessionalId;
+
+        // Se o select manual estiver vazio, recorre ao agendamento (Auto-Comissão)
+        if (!isRealUUID(finalProfessionalId) && appointment) {
+            if (isRealUUID(appointment.professional_id)) {
+                finalProfessionalId = String(appointment.professional_id);
+                console.log("[CHECKOUT] Usando professional_id do agendamento original.");
+            } 
+            else if (appointment.professional_name && dbProfessionals.length > 0) {
+                const fallback = dbProfessionals.find(p => 
+                    p.name.trim().toLowerCase() === appointment.professional_name.trim().toLowerCase()
+                );
+                if (fallback) {
+                    finalProfessionalId = fallback.id;
+                    console.log("[CHECKOUT] Usando fallback por nome do agendamento.");
+                }
+            }
         }
 
         setIsLoading(true);
 
         try {
-            // Prevenção de Erro de Conflito (409): Deletamos transações fantasmas antes de reinserir
+            // Prevenção de Conflitos: Deletar duplicatas
             await supabase.from('financial_transactions').delete().eq('appointment_id', appointment.id);
 
             const payload = {
@@ -195,7 +194,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 category: 'servico',
                 payment_method: selectedCategory,
                 payment_method_id: currentMethod.id, 
-                professional_id: selectedProfessionalId, 
+                professional_id: isRealUUID(finalProfessionalId) ? finalProfessionalId : null, 
                 client_id: isRealUUID(appointment.client_id) ? appointment.client_id : null,
                 appointment_id: appointment.id,
                 installments: installments,
@@ -203,18 +202,23 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 date: new Date().toISOString()
             };
 
-            // Execução sequencial para evitar race conditions no DB
             const { error: finError } = await supabase.from('financial_transactions').insert([payload]);
             if (finError) throw finError;
 
             const { error: apptError } = await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
             if (apptError) throw apptError;
 
-            setToast({ message: "Venda registrada com sucesso! 💰", type: 'success' });
+            // Feedback dinâmico: Se não identificamos ninguém, avisamos sutilmente mas confirmamos o dinheiro
+            if (!isRealUUID(finalProfessionalId)) {
+                setToast({ message: "Venda registrada! (Sem profissional vinculado)", type: 'success' });
+            } else {
+                setToast({ message: "Venda e Comissão registradas! 💰", type: 'success' });
+            }
+
             setTimeout(() => { onSuccess(); onClose(); }, 800);
 
         } catch (error: any) {
-            console.error("[CHECKOUT] Falha crítica:", error);
+            console.error("[CHECKOUT] Erro ao processar venda:", error);
             setToast({ message: `Erro: ${error.message || "Tente novamente."}`, type: 'error' });
         } finally {
             setIsLoading(false);
@@ -240,7 +244,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
                         <div>
                             <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Recebimento</h2>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Conferência de Venda</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Sincronização de Venda</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
@@ -264,7 +268,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         </div>
                     </div>
 
-                    {/* SELETOR MANUAL DE PROFISSIONAL */}
+                    {/* SELETOR DE PROFISSIONAL (OPCIONAL/AUTO-SYNC) */}
                     <div className="space-y-1.5">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-1.5">
                             <UserCheck size={12} className="text-orange-500" />
@@ -277,9 +281,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                             <select 
                                 value={selectedProfessionalId}
                                 onChange={(e) => setSelectedProfessionalId(e.target.value)}
-                                className={`w-full pl-12 pr-10 py-4 bg-slate-50 border-2 rounded-2xl appearance-none outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold cursor-pointer shadow-sm ${!selectedProfessionalId ? 'border-orange-200 text-slate-400' : 'border-slate-100 text-slate-700'}`}
+                                className={`w-full pl-12 pr-10 py-4 bg-slate-50 border-2 rounded-2xl appearance-none outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold cursor-pointer shadow-sm ${!selectedProfessionalId ? 'border-slate-100 text-slate-400 italic' : 'border-slate-100 text-slate-700'}`}
                             >
-                                <option value="">-- SELECIONE O PROFISSIONAL --</option>
+                                <option value="">Auto-Detectar do Agendamento</option>
                                 {dbProfessionals.map(prof => (
                                     <option key={prof.id} value={prof.id}>{prof.name}</option>
                                 ))}
@@ -288,11 +292,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                 <ChevronDown size={18} />
                             </div>
                         </div>
-                        {!selectedProfessionalId && isFetching === false && (
-                            <p className="text-[9px] text-rose-500 font-bold ml-2 animate-pulse flex items-center gap-1">
-                                <AlertTriangle size={10} /> Obrigatório para o fechamento.
-                            </p>
-                        )}
                     </div>
 
                     {/* SELETOR DE PAGAMENTO */}
@@ -376,7 +375,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     <button onClick={onClose} className="flex-1 py-4 text-slate-500 font-black uppercase tracking-widest text-xs hover:bg-slate-200 rounded-2xl transition-all">Cancelar</button>
                     <button
                         onClick={handleFinalize}
-                        disabled={isLoading || !currentMethod || !selectedProfessionalId}
+                        disabled={isLoading || !currentMethod}
                         className="flex-[2] bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
                     >
                         {isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
