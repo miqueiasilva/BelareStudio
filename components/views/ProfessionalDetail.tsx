@@ -1,8 +1,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { 
+    /* FIX: Added Phone and Mail icons to imports to resolve "Cannot find name" errors. */
     ChevronLeft, User, Save, Trash2, Camera, Scissors, 
-    Loader2, Shield, Clock, DollarSign, CheckCircle, AlertCircle, Coffee
+    Loader2, Shield, Clock, DollarSign, CheckCircle, AlertCircle, Coffee,
+    Phone, Mail
 } from 'lucide-react';
 import { LegacyProfessional, LegacyService } from '../../types';
 import Card from '../shared/Card';
@@ -15,7 +17,6 @@ interface ProfessionalDetailProps {
     onSave: () => void;
 }
 
-// FIX: Renamed DAYS_OF_WEEK to DAYS_ORDER to resolve "Cannot find name 'DAYS_ORDER'" error on line 362.
 const DAYS_ORDER = [
     { key: 'monday', label: 'Segunda-feira' },
     { key: 'tuesday', label: 'Terça-feira' },
@@ -25,6 +26,29 @@ const DAYS_ORDER = [
     { key: 'saturday', label: 'Sábado' },
     { key: 'sunday', label: 'Domingo' }
 ];
+
+/* FIX: Defined EditField component locally to resolve "Cannot find name 'EditField'" errors. */
+const EditField = ({ label, name, value, onChange, type = "text", placeholder, span = "col-span-1", icon: Icon, disabled }: any) => (
+    <div className={`space-y-1.5 ${span}`}>
+        <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-wider">{label}</label>
+        <div className="relative group">
+            {Icon && (
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors">
+                    <Icon size={16} />
+                </div>
+            )}
+            <input 
+                type={type}
+                name={name}
+                value={value || ''}
+                onChange={onChange}
+                disabled={disabled}
+                placeholder={placeholder}
+                className={`w-full bg-white border border-slate-200 rounded-xl py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all shadow-sm ${Icon ? 'pl-11 pr-4' : 'px-4'} disabled:opacity-60 disabled:bg-slate-50`}
+            />
+        </div>
+    </div>
+);
 
 const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: initialProf, onBack, onSave }) => {
     // --- State ---
@@ -39,11 +63,10 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
     // --- Initialization ---
     useEffect(() => {
         const init = async () => {
-            // Fetch all available services for the selection tab
             const { data: svcs } = await supabase.from('services').select('*').order('nome');
             if (svcs) setAllServices(svcs as any);
 
-            // Normalize professional data (handle missing fields and JSON structures)
+            // Normalização: Prioriza photo_url (DB) sobre avatarUrl (Legacy/Mock)
             const normalized = {
                 ...initialProf,
                 cpf: (initialProf as any).cpf || '',
@@ -51,7 +74,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 email: (initialProf as any).email || '',
                 phone: (initialProf as any).phone || '',
                 birth_date: (initialProf as any).birth_date || '',
-                commission_rate: (initialProf as any).commission_rate ?? 30, // Default 30% if new
+                commission_rate: (initialProf as any).commission_rate ?? 30,
                 permissions: (initialProf as any).permissions || { view_calendar: true, edit_calendar: true },
                 services_enabled: (initialProf as any).services_enabled || [],
                 work_schedule: (initialProf as any).work_schedule || {},
@@ -62,57 +85,56 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         init();
     }, [initialProf]);
 
-    // --- Upload Logic ---
+    // --- LOGICA DE UPLOAD CORRIGIDA ---
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (!file || !prof) return;
+        if (!file || !prof?.id) return;
 
         setIsUploading(true);
         try {
             const fileExt = file.name.split('.').pop();
-            const fileName = `${Date.now()}_${prof.id}.${fileExt}`;
-            const filePath = `public/${fileName}`;
+            const fileName = `prof_${prof.id}_${Date.now()}.${fileExt}`;
+            const filePath = `avatars/${fileName}`;
 
-            // 1. Upload to Supabase Storage
+            // 1. Upload para o bucket 'avatars'
             const { error: uploadError } = await supabase.storage
                 .from('avatars')
                 .upload(filePath, file, { upsert: true });
 
             if (uploadError) throw uploadError;
 
-            // 2. Get Public URL
+            // 2. Geração da URL Pública
             const { data: { publicUrl } } = supabase.storage
                 .from('avatars')
                 .getPublicUrl(filePath);
 
-            // 3. Update local state and DB immediately for photo
-            setProf({ ...prof, photo_url: publicUrl });
-            
-            // MIGRADO: De 'professionals' para 'team_members'
-            const { error: updateError } = await supabase
+            // 3. Persistência IMEDIATA no Banco de Dados (Tabela team_members)
+            const { error: dbError } = await supabase
                 .from('team_members')
                 .update({ photo_url: publicUrl })
                 .eq('id', prof.id);
 
-            if (updateError) throw updateError;
+            if (dbError) throw dbError;
 
-            alert("Foto atualizada com sucesso!");
+            // 4. Atualização do Estado Local para Feedback Instantâneo
+            setProf(prev => ({ ...prev, photo_url: publicUrl }));
+            
+            alert("Foto de perfil atualizada!");
         } catch (error: any) {
-            console.error("Upload error:", error);
-            alert(`Erro no upload: ${error.message}`);
+            console.error("[UPLOAD_ERROR]", error);
+            alert(`Falha no upload: ${error.message}`);
         } finally {
             setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
-    // --- Save Logic (Anti-Crash) ---
+    // --- Save Logic ---
     const handleSave = async () => {
         if (!prof) return;
         setIsLoading(true);
         
         try {
-            // Preparação do Payload conforme regra de negócio
             const payload = {
                 name: prof.name || 'Sem nome',
                 role: prof.role || 'Profissional',
@@ -122,17 +144,15 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 bio: prof.bio || null,
                 active: !!prof.active,
                 birth_date: prof.birth_date === "" ? null : prof.birth_date,
-                // REGRA CRÍTICA: Garante que a taxa é salva como float decimal
                 commission_rate: parseFloat(String(prof.commission_rate || 0)),
-                // Campos JSON
                 permissions: prof.permissions,
                 services_enabled: prof.services_enabled,
                 work_schedule: prof.work_schedule,
-                photo_url: prof.photo_url,
+                photo_url: prof.photo_url, // Mantém a URL persistida
                 online_booking: !!prof.online_booking
             };
 
-            // MIGRADO: De 'professionals' para 'team_members'
+            // Destino: Tabela de produção oficial
             const { error } = await supabase
                 .from('team_members')
                 .update(payload)
@@ -140,39 +160,32 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
 
             if (error) throw error;
 
-            alert("Perfil salvo com sucesso! ✅");
-            onSave();
+            alert("Dados salvos com sucesso! ✅");
+            onSave(); // Notifica pai para atualizar listas
         } catch (error: any) {
-            console.error("Save error:", error);
+            console.error("[SAVE_ERROR]", error);
             alert(`Erro ao salvar: ${error.message}`);
         } finally {
             setIsLoading(false);
         }
     };
 
-    // --- Delete Logic ---
     const handleDelete = async () => {
         if (!prof) return;
-        if (!window.confirm("Tem certeza que deseja excluir este colaborador permanentemente?")) return;
+        if (!window.confirm("Excluir este colaborador permanentemente?")) return;
         
         setIsLoading(true);
         try {
-            // MIGRADO: De 'professionals' para 'team_members'
-            const { error } = await supabase
-                .from('team_members')
-                .delete()
-                .eq('id', prof.id);
-                
+            const { error } = await supabase.from('team_members').delete().eq('id', prof.id);
             if (error) throw error;
             onBack();
         } catch (error: any) {
-            alert(`Erro ao excluir: ${error.message}`);
+            alert(`Erro: ${error.message}`);
         } finally {
             setIsLoading(false);
         }
     };
 
-    // --- Helper Setters ---
     const toggleService = (id: number) => {
         const current = prof.services_enabled || [];
         const next = current.includes(id) ? current.filter((sId: number) => sId !== id) : [...current, id];
@@ -180,66 +193,38 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
     };
 
     const updateSchedule = (day: string, field: string, value: any) => {
-        const current = prof.work_schedule[day] || { 
-            active: false, 
-            start: '09:00', 
-            break_start: '12:00', 
-            break_end: '13:00', 
-            end: '18:00' 
-        };
+        const current = prof.work_schedule[day] || { active: false, start: '09:00', break_start: '12:00', break_end: '13:00', end: '18:00' };
         setProf({
             ...prof,
-            work_schedule: {
-                ...prof.work_schedule,
-                [day]: { ...current, [field]: value }
-            }
+            work_schedule: { ...prof.work_schedule, [day]: { ...current, [field]: value } }
         });
     };
 
     const updatePermission = (key: string, value: boolean) => {
-        setProf({
-            ...prof,
-            permissions: { ...prof.permissions, [key]: value }
-        });
+        setProf({ ...prof, permissions: { ...prof.permissions, [key]: value } });
     };
 
-    if (!prof) {
-        return (
-            <div className="h-full flex items-center justify-center">
-                <Loader2 className="animate-spin text-orange-500 w-10 h-10" />
-            </div>
-        );
-    }
+    if (!prof) return <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-orange-500 w-10 h-10" /></div>;
 
     return (
         <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans text-left">
-            {/* Header */}
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between z-20 shadow-sm">
                 <div className="flex items-center gap-4">
-                    <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors">
-                        <ChevronLeft size={24} />
-                    </button>
+                    <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"><ChevronLeft size={24} /></button>
                     <div>
                         <h2 className="text-xl font-bold text-slate-800">{prof.name}</h2>
                         <p className="text-xs text-slate-500 font-medium uppercase tracking-widest">{prof.role}</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button onClick={handleDelete} className="p-3 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors" title="Excluir">
-                        <Trash2 size={20} />
-                    </button>
-                    <button 
-                        onClick={handleSave}
-                        disabled={isLoading}
-                        className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-orange-100 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
-                    >
+                    <button onClick={handleDelete} className="p-3 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"><Trash2 size={20} /></button>
+                    <button onClick={handleSave} disabled={isLoading} className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-orange-100 flex items-center gap-2 disabled:opacity-50">
                         {isLoading ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                        {isLoading ? 'Salvando...' : 'Salvar Dados'}
+                        Salvar Alterações
                     </button>
                 </div>
             </header>
 
-            {/* Navigation Tabs */}
             <div className="bg-white border-b border-slate-200 px-6 overflow-x-auto scrollbar-hide">
                 <div className="flex gap-8 max-w-5xl mx-auto">
                     {[
@@ -252,9 +237,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id as any)}
-                            className={`flex items-center gap-2 py-4 border-b-2 font-bold text-sm transition-all whitespace-nowrap ${
-                                activeTab === tab.id ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400 hover:text-slate-600'
-                            }`}
+                            className={`flex items-center gap-2 py-4 border-b-2 font-bold text-sm transition-all whitespace-nowrap ${activeTab === tab.id ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
                         >
                             <tab.icon size={16} /> {tab.label}
                         </button>
@@ -264,88 +247,59 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
 
             <main className="flex-1 overflow-y-auto p-6 custom-scrollbar">
                 <div className="max-w-5xl mx-auto">
-                    
-                    {/* TAB: PERFIL */}
                     {activeTab === 'perfil' && (
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-300">
                             <Card className="lg:col-span-1 h-fit">
-                                <div className="flex flex-col items-center py-6">
+                                <div className="flex flex-col items-center py-6 text-center">
                                     <div 
-                                        className="w-36 h-36 rounded-full border-4 border-white shadow-xl overflow-hidden bg-slate-100 mb-6 relative group cursor-pointer"
+                                        className="w-40 h-40 rounded-[32px] border-4 border-white shadow-2xl overflow-hidden bg-slate-100 mb-6 relative group cursor-pointer"
                                         onClick={() => fileInputRef.current?.click()}
                                     >
                                         {prof.photo_url ? (
                                             <img src={prof.photo_url} className="w-full h-full object-cover" alt="Avatar" />
                                         ) : (
-                                            <User size={56} className="m-10 text-slate-300" />
+                                            <User size={64} className="m-12 text-slate-300" />
                                         )}
-                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                             {isUploading ? <Loader2 className="animate-spin text-white" /> : <Camera className="text-white" />}
+                                            <span className="text-[10px] text-white font-black uppercase mt-2">Trocar Foto</span>
                                         </div>
                                     </div>
                                     <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*" />
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Clique para trocar a foto</p>
+                                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-tight px-4">
+                                        As fotos aparecem nos cards de equipe e extratos de comissão.
+                                    </p>
                                 </div>
                             </Card>
                             
                             <div className="lg:col-span-2 space-y-6">
                                 <Card title="Informações Pessoais">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nome Completo</label>
-                                            <input value={prof.name} onChange={e => setProf({...prof, name: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none" />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cargo / Especialidade</label>
-                                            <input value={prof.role} onChange={e => setProf({...prof, role: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none" />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">CPF</label>
-                                            <input value={prof.cpf} onChange={e => setProf({...prof, cpf: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none" placeholder="000.000.000-00" />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data de Nascimento</label>
-                                            <input type="date" value={prof.birth_date} onChange={e => setProf({...prof, birth_date: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none" />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">WhatsApp</label>
-                                            <input value={prof.phone} onChange={e => setProf({...prof, phone: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none" placeholder="(00) 00000-0000" />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">E-mail</label>
-                                            <input type="email" value={prof.email} onChange={e => setProf({...prof, email: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none" placeholder="email@exemplo.com" />
-                                        </div>
+                                        <EditField label="Nome Completo" name="name" value={prof.name} onChange={handleInputChange} icon={User} span="md:col-span-2" />
+                                        <EditField label="Cargo / Especialidade" name="role" value={prof.role} onChange={handleInputChange} />
+                                        <EditField label="WhatsApp" name="phone" value={prof.phone} onChange={handleInputChange} icon={Phone} placeholder="(00) 00000-0000" />
+                                        <EditField label="E-mail" name="email" value={prof.email} onChange={handleInputChange} icon={Mail} placeholder="email@exemplo.com" />
+                                        <EditField label="Data de Nascimento" name="birth_date" type="date" value={prof.birth_date} onChange={handleInputChange} />
                                     </div>
-                                    <div className="mt-4 space-y-1">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Biografia / Notas</label>
-                                        <textarea value={prof.bio} onChange={e => setProf({...prof, bio: e.target.value})} className="w-full h-24 border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500 outline-none resize-none" placeholder="Experiência profissional..." />
+                                    <div className="mt-6 space-y-1.5">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Biografia e Notas</label>
+                                        <textarea value={prof.bio} name="bio" onChange={handleInputChange} className="w-full h-24 border border-slate-200 rounded-2xl p-4 focus:ring-2 focus:ring-orange-50 outline-none resize-none font-medium text-slate-600 shadow-sm" placeholder="Experiência profissional..." />
                                     </div>
                                 </Card>
                             </div>
                         </div>
                     )}
 
-                    {/* TAB: SERVICOS */}
                     {activeTab === 'servicos' && (
-                        <Card title="Serviços Habilitados" className="animate-in fade-in duration-300">
-                            <p className="text-sm text-slate-500 mb-6">Este profissional aparecerá na agenda apenas para os serviços marcados abaixo.</p>
+                        <Card title="Habilidades e Catálogo" className="animate-in fade-in">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                 {allServices.map(service => {
                                     const isEnabled = prof.services_enabled?.includes(service.id);
                                     return (
-                                        <button
-                                            key={service.id}
-                                            onClick={() => toggleService(service.id)}
-                                            className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all text-left ${
-                                                isEnabled ? 'border-orange-500 bg-orange-50' : 'border-slate-100 hover:border-slate-200 bg-white'
-                                            }`}
-                                        >
-                                            <div className="flex items-center gap-3 overflow-hidden">
-                                                <div className="w-2 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: service.cor_hex || '#f97316' }}></div>
-                                                <div className="overflow-hidden">
-                                                    <p className={`font-bold text-sm truncate ${isEnabled ? 'text-orange-900' : 'text-slate-700'}`}>{service.nome}</p>
-                                                    <p className="text-[10px] text-slate-400 font-bold uppercase">{service.duracao_min} min</p>
-                                                </div>
+                                        <button key={service.id} onClick={() => toggleService(service.id)} className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all text-left ${isEnabled ? 'border-orange-500 bg-orange-50 shadow-md' : 'border-slate-100 hover:border-slate-200 bg-white'}`}>
+                                            <div className="overflow-hidden">
+                                                <p className={`font-bold text-sm truncate ${isEnabled ? 'text-orange-900' : 'text-slate-700'}`}>{service.nome}</p>
+                                                <p className="text-[10px] text-slate-400 font-bold uppercase">{service.duracao_min} min</p>
                                             </div>
                                             {isEnabled && <CheckCircle size={18} className="text-orange-500 flex-shrink-0" />}
                                         </button>
@@ -355,87 +309,22 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </Card>
                     )}
 
-                    {/* TAB: HORARIOS */}
                     {activeTab === 'horarios' && (
-                        <Card title="Grade Semanal com Intervalos" className="animate-in fade-in duration-300">
-                            <p className="text-xs text-slate-500 mb-6 -mt-2">Defina os horários de início, pausa para almoço e encerramento para cada dia.</p>
+                        <Card title="Disponibilidade Semanal" className="animate-in fade-in">
                             <div className="space-y-4">
                                 {DAYS_ORDER.map(day => {
-                                    const config = prof.work_schedule[day.key] || { 
-                                        active: false, 
-                                        start: '09:00', 
-                                        break_start: '12:00', 
-                                        break_end: '13:00', 
-                                        end: '18:00' 
-                                    };
-
-                                    const isBreakInvalid = config.active && config.break_end <= config.break_start;
-
+                                    const config = prof.work_schedule[day.key] || { active: false, start: '09:00', end: '18:00' };
                                     return (
-                                        <div key={day.key} className={`flex flex-col xl:flex-row items-center justify-between p-5 rounded-3xl border transition-all ${config.active ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-transparent opacity-60'}`}>
-                                            <div className="flex items-center gap-4 w-full xl:w-1/4 mb-4 xl:mb-0">
+                                        <div key={day.key} className={`flex items-center justify-between p-5 rounded-3xl border transition-all ${config.active ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-transparent opacity-60'}`}>
+                                            <div className="flex items-center gap-4 w-48">
                                                 <ToggleSwitch on={config.active} onClick={() => updateSchedule(day.key, 'active', !config.active)} />
-                                                <span className="font-black text-slate-700 text-sm w-32">{day.label}</span>
+                                                <span className="font-black text-slate-700 text-sm uppercase tracking-tighter">{day.label}</span>
                                             </div>
-                                            
-                                            {config.active ? (
-                                                <div className="flex flex-col md:flex-row items-center gap-4 xl:gap-6 w-full xl:w-3/4 justify-end flex-wrap">
-                                                    
-                                                    {/* TURNO 1 */}
-                                                    <div className="flex items-center gap-2 group flex-wrap md:flex-nowrap">
-                                                        <div className="flex items-center gap-2 bg-slate-100 px-3 py-2.5 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all min-w-[125px]">
-                                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Início</span>
-                                                            <input 
-                                                                type="time" 
-                                                                value={config.start || '09:00'} 
-                                                                onChange={e => updateSchedule(day.key, 'start', e.target.value)} 
-                                                                className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 flex-1" 
-                                                            />
-                                                        </div>
-                                                        <span className="text-slate-300 font-bold text-xs">até</span>
-                                                        <div className="flex items-center gap-2 bg-slate-100 px-3 py-2.5 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all min-w-[125px]">
-                                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter text-right">Almoço</span>
-                                                            <input 
-                                                                type="time" 
-                                                                value={config.break_start || '12:00'} 
-                                                                onChange={e => updateSchedule(day.key, 'break_start', e.target.value)} 
-                                                                className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 flex-1" 
-                                                            />
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="flex items-center justify-center p-2.5 bg-orange-50 text-orange-500 rounded-full" title="Intervalo">
-                                                        <Coffee size={16} strokeWidth={3} />
-                                                    </div>
-
-                                                    {/* TURNO 2 */}
-                                                    <div className="flex items-center gap-2 group flex-wrap md:flex-nowrap">
-                                                        <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all min-w-[125px] ${isBreakInvalid ? 'bg-rose-50 border-rose-200' : 'bg-slate-100 border-transparent focus-within:border-orange-200 focus-within:bg-white'}`}>
-                                                            <span className={`text-[9px] font-black uppercase tracking-tighter ${isBreakInvalid ? 'text-rose-400' : 'text-slate-400'}`}>Volta</span>
-                                                            <input 
-                                                                type="time" 
-                                                                value={config.break_end || '13:00'} 
-                                                                onChange={e => updateSchedule(day.key, 'break_end', e.target.value)} 
-                                                                className={`bg-transparent border-none p-0 text-sm font-black outline-none focus:ring-0 flex-1 ${isBreakInvalid ? 'text-rose-600' : 'text-slate-700'}`} 
-                                                            />
-                                                            {isBreakInvalid && <AlertCircle size={14} className="text-rose-500 animate-pulse" />}
-                                                        </div>
-                                                        <span className="text-slate-300 font-bold text-xs">até</span>
-                                                        <div className="flex items-center gap-2 bg-slate-100 px-3 py-2.5 rounded-xl border border-transparent focus-within:border-orange-200 focus-within:bg-white transition-all min-w-[125px]">
-                                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter text-right">Saída</span>
-                                                            <input 
-                                                                type="time" 
-                                                                value={config.end || '18:00'} 
-                                                                onChange={e => updateSchedule(day.key, 'end', e.target.value)} 
-                                                                className="bg-transparent border-none p-0 text-sm font-black text-slate-700 outline-none focus:ring-0 flex-1" 
-                                                            />
-                                                        </div>
-                                                    </div>
-
-                                                </div>
-                                            ) : (
-                                                <div className="flex-1 text-right">
-                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-200/40 px-4 py-2 rounded-xl">Indisponível</span>
+                                            {config.active && (
+                                                <div className="flex items-center gap-2">
+                                                    <input type="time" value={config.start} onChange={e => updateSchedule(day.key, 'start', e.target.value)} className="bg-slate-100 px-3 py-2 rounded-xl text-sm font-bold text-slate-700 border-none outline-none focus:ring-2 focus:ring-orange-200" />
+                                                    <span className="text-slate-300 font-bold">às</span>
+                                                    <input type="time" value={config.end} onChange={e => updateSchedule(day.key, 'end', e.target.value)} className="bg-slate-100 px-3 py-2 rounded-xl text-sm font-bold text-slate-700 border-none outline-none focus:ring-2 focus:ring-orange-200" />
                                                 </div>
                                             )}
                                         </div>
@@ -445,72 +334,45 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         </Card>
                     )}
 
-                    {/* TAB: COMISSOES */}
                     {activeTab === 'comissoes' && (
-                        <Card title="Repasse e Produtividade" className="animate-in fade-in duration-300 max-w-2xl mx-auto">
-                            <div className="p-8 bg-gradient-to-br from-orange-50 to-orange-100 rounded-3xl border border-orange-200 mb-6">
-                                <label className="block text-xs font-black text-orange-800 uppercase mb-4 tracking-widest text-center">Comissão Padrão (%)</label>
-                                <div className="flex flex-col md:flex-row items-center gap-8 justify-center">
-                                    <div className="relative">
-                                        <input 
-                                            type="number" 
-                                            step="0.01"
-                                            value={prof.commission_rate}
-                                            onChange={e => setProf({...prof, commission_rate: e.target.value})}
-                                            className="w-40 border-2 border-orange-300 rounded-3xl px-6 py-5 text-5xl font-black text-orange-600 outline-none focus:border-orange-500 bg-white shadow-inner text-center"
-                                        />
-                                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-2xl font-black text-orange-300">%</span>
-                                    </div>
-                                    <div className="space-y-1 flex-1 text-center md:text-left">
-                                        <p className="text-lg font-bold text-orange-900">Ganhos Diretos</p>
-                                        <p className="text-xs text-orange-700 font-medium">Este percentual é utilizado como base para o cálculo das remunerações mensais do colaborador.</p>
-                                    </div>
+                        <Card title="Remuneração" className="animate-in fade-in max-w-2xl mx-auto">
+                            <div className="p-8 bg-gradient-to-br from-orange-50 to-orange-100 rounded-[32px] border border-orange-200 text-center">
+                                <label className="block text-[10px] font-black text-orange-800 uppercase tracking-widest mb-4">Taxa de Comissão Padrão (%)</label>
+                                <div className="relative inline-block">
+                                    <input type="number" step="0.01" value={prof.commission_rate} onChange={handleInputChange} name="commission_rate" className="w-40 border-2 border-orange-300 rounded-3xl px-6 py-5 text-5xl font-black text-orange-600 outline-none focus:border-orange-500 bg-white shadow-inner text-center" />
+                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-2xl font-black text-orange-300">%</span>
                                 </div>
-                            </div>
-                            
-                            <div className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-3xl shadow-sm">
-                                <div>
-                                    <p className="font-bold text-slate-800">Liberar Agenda Online?</p>
-                                    <p className="text-xs text-slate-500">Permite que clientes agendem com este profissional pelo link público.</p>
-                                </div>
-                                <ToggleSwitch on={!!prof.online_booking} onClick={() => setProf({...prof, online_booking: !prof.online_booking})} />
+                                <p className="text-xs text-orange-700 font-medium mt-6">Este valor será a base para o cálculo de todos os serviços realizados por este profissional no módulo de Remunerações.</p>
                             </div>
                         </Card>
                     )}
 
-                    {/* TAB: PERMISSOES */}
                     {activeTab === 'permissoes' && (
-                        <Card title="Permissões de Acesso ao Sistema" className="animate-in fade-in duration-300 max-w-2xl mx-auto">
-                            <div className="space-y-4">
-                                <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 flex gap-3 mb-4">
-                                    <Shield size={20} className="text-indigo-600 flex-shrink-0" />
-                                    <p className="text-xs text-indigo-700 leading-relaxed">As permissões abaixo definem o nível de acesso do colaborador. Administradores têm acesso total por padrão.</p>
-                                </div>
+                        <Card title="Acessos ao Sistema" className="animate-in fade-in max-w-2xl mx-auto">
+                             <div className="space-y-4">
                                 {[
-                                    { key: 'view_calendar', label: 'Ver agenda de terceiros', sub: 'Pode visualizar horários de outros profissionais.' },
-                                    { key: 'edit_calendar', label: 'Gerenciar própria agenda', sub: 'Pode mover, cancelar ou reagendar seus serviços.' },
-                                    { key: 'view_finance', label: 'Acesso ao Financeiro / PDV', sub: 'Pode realizar vendas e fechar comandas.' },
-                                    { key: 'edit_stock', label: 'Controle de Estoque', sub: 'Pode lançar entradas e saídas de produtos.' }
+                                    { key: 'view_calendar', label: 'Ver agenda de terceiros' },
+                                    { key: 'edit_calendar', label: 'Gerenciar própria agenda' },
+                                    { key: 'view_finance', label: 'Acesso ao Financeiro / PDV' },
+                                    { key: 'edit_stock', label: 'Controle de Estoque' }
                                 ].map(item => (
                                     <div key={item.key} className="flex items-center justify-between p-5 hover:bg-slate-50 rounded-3xl transition-colors border border-transparent hover:border-slate-100">
-                                        <div>
-                                            <p className="font-bold text-slate-800 text-sm">{item.label}</p>
-                                            <p className="text-xs text-slate-400 font-medium">{item.sub}</p>
-                                        </div>
-                                        <ToggleSwitch 
-                                            on={!!prof.permissions?.[item.key]} 
-                                            onClick={() => updatePermission(item.key, !prof.permissions?.[item.key])} 
-                                        />
+                                        <p className="font-bold text-slate-800 text-sm">{item.label}</p>
+                                        <ToggleSwitch on={!!prof.permissions?.[item.key]} onClick={() => updatePermission(item.key, !prof.permissions?.[item.key])} />
                                     </div>
                                 ))}
                             </div>
                         </Card>
                     )}
-
                 </div>
             </main>
         </div>
     );
+
+    function handleInputChange(e: any) {
+        const { name, value } = e.target;
+        setProf(prev => ({ ...prev, [name]: value }));
+    }
 };
 
 export default ProfessionalDetail;
