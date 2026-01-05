@@ -4,7 +4,7 @@ import {
     X, CheckCircle, Wallet, CreditCard, Banknote, 
     Smartphone, Loader2, ShoppingCart, ArrowRight,
     ChevronDown, Info, Percent, Layers, AlertTriangle,
-    User
+    User, Receipt
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import Toast, { ToastType } from '../shared/Toast';
@@ -62,7 +62,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const isRealUUID = (id: any): boolean => {
         if (!id) return false;
         const sid = String(id).trim();
-        // UUIDs reais (v4) possuem 36 caracteres. Rejeitamos explicitamente IDs curtos (mock).
         return typeof id === 'string' && sid.length > 20 && sid !== 'undefined' && sid !== 'null';
     };
 
@@ -131,7 +130,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- 5. FINALIZAÇÃO COM RECUPERAÇÃO INTELIGENTE DE ID (BUGFIX COMISSÃO) ---
+    // --- 5. FINALIZAÇÃO COM BUSCA DIRETA NO BANCO (BUGFIX DEFINITIVO LOOKUP) ---
     const handleFinalize = async () => {
         if (!currentMethod) {
             setToast({ message: "Selecione o método de pagamento.", type: 'error' });
@@ -140,38 +139,36 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         setIsLoading(true);
 
-        // A) GARANTIA DE CARREGAMENTO: Se a lista de profissionais sumiu, recarrega agora
-        let activeProfs = dbProfessionals;
-        if (activeProfs.length === 0) {
-            const { data } = await supabase.from('professionals').select('id, name').eq('active', true);
-            if (data) activeProfs = data;
-        }
-
-        // B) LÓGICA DE RECUPERAÇÃO (WATERFALL)
+        // A) TENTATIVA 1: ID original do objeto
         let finalProfId = appointment?.professional_id;
         
-        // Se o ID for inválido (ex: '5', '0', null), tentamos buscar pelo Nome
+        // B) TENTATIVA 2: Se o ID for inválido (legado/nulo), tentamos FALLBACK ROBUSTO
         if (!isRealUUID(finalProfId)) {
-            const nameToMatch = appointment?.professional_name?.toLowerCase().trim();
+            const nameToSearch = appointment?.professional_name?.trim();
             
-            if (nameToMatch && activeProfs.length > 0) {
-                console.log(`[CHECKOUT] ID '${finalProfId}' inválido. Tentando match por nome: '${nameToMatch}'`);
+            if (nameToSearch) {
+                console.log(`[CHECKOUT] Iniciando busca direta no banco para: "${nameToSearch}"`);
                 
-                const matchedProf = activeProfs.find(p => 
-                    p.name?.toLowerCase().trim() === nameToMatch
-                );
+                // Consulta assíncrona exata ao Supabase para evitar falha por cache local vazio
+                const { data: memberData, error: memberError } = await supabase
+                    .from('professionals')
+                    .select('id')
+                    .ilike('name', nameToSearch)
+                    .maybeSingle();
 
-                if (matchedProf && isRealUUID(matchedProf.id)) {
-                    finalProfId = matchedProf.id;
-                    console.log(`[CHECKOUT] UUID Recuperado via Nome: ${finalProfId}`);
+                if (memberData?.id && isRealUUID(memberData.id)) {
+                    finalProfId = memberData.id;
+                    console.log(`[CHECKOUT] ID Encontrado via Direct Fetch: ${finalProfId}`);
+                } else {
+                    console.warn(`[CHECKOUT] Falha: Profissional "${nameToSearch}" não localizado no banco.`);
                 }
             }
         }
         
-        // C) TRAVA DE SEGURANÇA: Se não achou UUID, bloqueia para não perder comissão
+        // C) TRAVA DE SEGURANÇA FINAL: Se não resolveu o UUID, abortamos para proteger a comissão
         if (!isRealUUID(finalProfId)) {
             setToast({ 
-                message: `Erro: Não foi possível identificar o profissional "${appointment.professional_name}" no banco de dados. Verifique o cadastro para garantir a comissão.`, 
+                message: `Erro Crítico: O profissional "${appointment.professional_name}" não foi identificado na tabela de Equipe. Venda bloqueada para evitar erro de comissão.`, 
                 type: 'error' 
             });
             setIsLoading(false);
@@ -179,10 +176,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         }
 
         try {
-            // Limpa lançamentos duplicados
+            // Limpa lançamentos prévios do mesmo agendamento para evitar duplicidade
             await supabase.from('financial_transactions').delete().eq('appointment_id', appointment.id);
 
-            // Payload 100% UUID-Safe
+            // Payload com UUID Validado
             const payload = {
                 amount: appointment.price, 
                 net_value: financialMetrics.netValue, 
@@ -192,7 +189,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 category: 'servico',
                 payment_method: selectedCategory,
                 payment_method_id: currentMethod.id, 
-                professional_id: finalProfId, // UUID Real garantido aqui
+                professional_id: finalProfId, // UUID Sanitizado Garantido
                 client_id: isRealUUID(appointment.client_id) ? appointment.client_id : null,
                 appointment_id: appointment.id,
                 installments: installments,
@@ -212,7 +209,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             setTimeout(() => { onSuccess(); onClose(); }, 1000);
 
         } catch (error: any) {
-            console.error("[CHECKOUT] Falha Crítica:", error);
+            console.error("[CHECKOUT] Falha Crítica de Gravação:", error);
             setToast({ message: `Erro de integridade: ${error.message}`, type: 'error' });
         } finally {
             setIsLoading(false);
@@ -238,7 +235,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
                         <div>
                             <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Recebimento</h2>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Identificação de Equipe Ativa</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Busca Direta em Banco Ativa</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
