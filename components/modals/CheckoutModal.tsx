@@ -4,13 +4,12 @@ import {
     X, CheckCircle, Wallet, CreditCard, Banknote, 
     Smartphone, Loader2, ShoppingCart, ArrowRight,
     ChevronDown, Info, Percent, Layers, AlertTriangle,
-    User, Search
+    User
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
-import { PaymentMethod as PaymentMethodType } from '../../types';
 import Toast, { ToastType } from '../shared/Toast';
 
-// Helper de formatação de moeda BRL
+// --- HELPERS DE FORMATAÇÃO E SEGURANÇA ---
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
         style: 'currency',
@@ -18,22 +17,22 @@ const formatCurrency = (value: number) => {
     }).format(value);
 };
 
-// --- HELPER DE SEGURANÇA PARA UUID ---
-// Bloqueia IDs numéricos (mock) e garante que apenas strings (UUIDs) ou null sejam enviados
+// Sanitização Rigorosa: Bloqueia IDs de mock (números ou strings curtas)
 const sanitizeUuid = (id: any) => {
-    if (!id || id === '0' || id === 0 || id === 'null' || id === 'undefined' || String(id).trim() === '') {
+    const sid = String(id).trim();
+    if (!id || sid === '0' || sid === 'null' || sid === 'undefined' || sid === '') return null;
+    
+    // Se o ID for numérico ou tiver menos de 20 caracteres, é um ID de MOCK e deve ser descartado
+    if (!isNaN(Number(sid)) || sid.length < 20) {
+        console.warn(`[SEGURANÇA] ID legado detectado e descartado: ${sid}`);
         return null;
     }
-    // Se for um número puro (legado/mock), tratamos como inválido para o banco UUID
-    if (!isNaN(Number(id)) && typeof id !== 'boolean') {
-        return null;
-    }
-    return id;
+    return sid;
 };
 
-// Interface para métodos de pagamento do DB
+// --- INTERFACES ---
 interface DBPaymentMethod {
-    id: string; 
+    id: string; // UUID Real
     name: string;
     type: 'credit' | 'debit' | 'pix' | 'money';
     brand: string;
@@ -41,7 +40,6 @@ interface DBPaymentMethod {
     allow_installments: boolean;
     max_installments: number;
     installment_rates: Record<string, number>;
-    is_active: boolean;
 }
 
 interface CheckoutModalProps {
@@ -64,21 +62,20 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const [isFetching, setIsFetching] = useState(true);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // --- ESTADOS DE DADOS REAIS (SEM MOCKS) ---
+    // --- ESTADOS DE DADOS REAIS (INICIADOS VAZIOS) ---
     const [dbProfessionals, setDbProfessionals] = useState<any[]>([]);
     const [dbPaymentMethods, setDbPaymentMethods] = useState<DBPaymentMethod[]>([]);
 
-    // Estados de Seleção
+    // Estados de Seleção UI
     const [selectedCategory, setSelectedCategory] = useState<'pix' | 'money' | 'credit' | 'debit'>('pix');
     const [selectedMethodId, setSelectedMethodId] = useState<string>('');
     const [installments, setInstallments] = useState(1);
 
-    // 1. Fetch de dados reais ao abrir o modal
+    // 1. FETCH DE DADOS REAIS DO SUPABASE (Única fonte de verdade)
     useEffect(() => {
-        const fetchRequiredData = async () => {
+        const loadSystemData = async () => {
             setIsFetching(true);
             try {
-                // Busca em paralelo para performance
                 const [profsRes, methodsRes] = await Promise.all([
                     supabase.from('professionals').select('id, name').eq('active', true),
                     supabase.from('payment_methods_config').select('*').eq('is_active', true)
@@ -90,120 +87,102 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 setDbProfessionals(profsRes.data || []);
                 setDbPaymentMethods(methodsRes.data || []);
 
-                // Seleção inicial inteligente
-                if (methodsRes.data && methodsRes.data.length > 0) {
+                // Seleção inicial automática do primeiro PIX
+                if (methodsRes.data) {
                     const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
-                    if (firstPix) setSelectedMethodId(firstPix.id.toString());
+                    if (firstPix) setSelectedMethodId(firstPix.id);
                 }
             } catch (err: any) {
-                console.error("[CHECKOUT] Erro ao sincronizar dados do DB:", err);
-                setToast({ message: "Erro ao carregar configurações de pagamento.", type: 'error' });
+                console.error("[CHECKOUT] Erro na carga de dados:", err);
+                setToast({ message: "Erro ao sincronizar com o servidor.", type: 'error' });
             } finally {
                 setIsFetching(false);
             }
         };
 
-        if (isOpen) fetchRequiredData();
+        if (isOpen) loadSystemData();
     }, [isOpen]);
 
-    // 2. Filtragem de métodos por categoria
+    // 2. FILTRAGEM DINÂMICA
     const filteredMethods = useMemo(() => {
         return dbPaymentMethods.filter(m => m.type === selectedCategory);
     }, [dbPaymentMethods, selectedCategory]);
 
-    // Reseta seleção ao trocar categoria
     useEffect(() => {
         if (filteredMethods.length > 0) {
-            setSelectedMethodId(filteredMethods[0].id.toString());
+            setSelectedMethodId(filteredMethods[0].id);
             setInstallments(1);
         } else {
             setSelectedMethodId('');
         }
     }, [selectedCategory, filteredMethods]);
 
-    // 3. Método selecionado atual
     const currentMethod = useMemo(() => {
-        return dbPaymentMethods.find(m => m.id.toString() === selectedMethodId);
+        return dbPaymentMethods.find(m => m.id === selectedMethodId);
     }, [dbPaymentMethods, selectedMethodId]);
 
-    // 4. Cálculos Financeiros
+    // 3. CÁLCULOS
     const financialMetrics = useMemo(() => {
-        if (!currentMethod) return { rate: 0, netValue: appointment.price, installmentValue: appointment.price };
-
+        if (!currentMethod) return { rate: 0, netValue: appointment.price };
+        
         let rate = 0;
         if (installments === 1) {
-            rate = currentMethod.rate_cash || 0;
+            rate = Number(currentMethod.rate_cash || 0);
         } else {
             const rates = currentMethod.installment_rates || {};
             rate = Number(rates[installments.toString()] || 0);
         }
 
         const discount = (appointment.price * rate) / 100;
-        return {
-            rate,
-            netValue: appointment.price - discount,
-            installmentValue: appointment.price / installments
-        };
+        return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- Lógica de Finalização (SMART LOOKUP & SMART OVERWRITE) ---
+    // --- 4. FINALIZAÇÃO COM TRAVA DE SEGURANÇA UUID ---
     const handleFinalize = async () => {
         if (!currentMethod) {
-            setToast({ message: "Selecione uma operadora.", type: 'error' });
+            setToast({ message: "Selecione o método de pagamento.", type: 'error' });
             return;
         }
 
         setIsLoading(true);
 
-        // --- SMART LOOKUP PARA UUID REAL ---
-        // Se o ID vindo for numérico (mock) ou nulo, tentamos casar pelo nome na lista do DB
+        // A) WATERFALL DE ID (Tenta ID do objeto -> Tenta Lookup por Nome)
         let finalProfessionalId = sanitizeUuid(appointment?.professional_id);
         
         if (!finalProfessionalId && appointment.professional_name) {
+            // Busca o UUID real na lista vinda do DB
             const found = dbProfessionals.find(p => 
                 p.name?.toLowerCase().trim() === appointment.professional_name.toLowerCase().trim()
             );
             if (found) {
-                console.log(`[FINANCEIRO] Smart Lookup: UUID ${found.id} recuperado para "${appointment.professional_name}"`);
+                console.log(`[CHECKOUT] Smart Lookup: UUID ${found.id} obtido para "${appointment.professional_name}"`);
                 finalProfessionalId = found.id;
             }
         }
 
-        // Debug Log
-        console.log('[FINANCEIRO] Iniciando gravação de venda:', {
-            appointment_id: appointment.id,
-            professional_name: appointment.professional_name,
-            final_uuid: finalProfessionalId
-        });
-
-        // Validação de segurança final
-        if (!finalProfessionalId) {
-            setToast({ 
-                message: `Erro: O profissional "${appointment.professional_name}" não possui um ID válido no sistema. Verifique o cadastro da equipe.`, 
-                type: 'error' 
-            });
+        // B) TRAVA DE SEGURANÇA ANTI-LEGACY
+        console.log('Validando ID Profissional:', finalProfessionalId);
+        if (!finalProfessionalId || String(finalProfessionalId).length < 20) {
+            alert(`ERRO DE DADOS: O sistema tentou usar um ID inválido ou de teste ('${appointment.professional_id}').\n\nPor favor, recarregue a página ou verifique se o profissional "${appointment.professional_name}" está devidamente cadastrado no menu Equipe.`);
             setIsLoading(false);
             return;
         }
 
         try {
-            // 1. SMART OVERWRITE: Remove lançamentos duplicados deste agendamento
-            await supabase
-                .from('financial_transactions')
-                .delete()
-                .eq('appointment_id', appointment.id);
+            // 1. SMART OVERWRITE: Limpa lixo anterior
+            await supabase.from('financial_transactions').delete().eq('appointment_id', appointment.id);
 
-            // 2. Montagem do Payload Financeiro
-            const financialUpdate = {
+            // 2. PREPARAÇÃO DO PAYLOAD REAL
+            const payload = {
                 amount: appointment.price, 
                 net_value: financialMetrics.netValue, 
                 tax_rate: financialMetrics.rate, 
-                description: `Venda Direta: ${appointment.service_name} - ${appointment.client_name}`,
+                description: `Venda: ${appointment.service_name} - ${appointment.client_name}`,
                 type: 'income',
                 category: 'servico',
                 payment_method: selectedCategory,
-                payment_method_id: currentMethod.id,
-                professional_id: finalProfessionalId, // UUID garantido aqui
+                payment_method_id: currentMethod.id, // UUID do DB
+                professional_id: finalProfessionalId, // UUID validado acima
                 client_id: sanitizeUuid(appointment.client_id),
                 appointment_id: appointment.id,
                 installments: installments,
@@ -211,25 +190,21 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 date: new Date().toISOString()
             };
 
-            // 3. Persistência Atômica
-            const [finResult, apptResult] = await Promise.all([
-                supabase.from('financial_transactions').insert([financialUpdate]),
+            // 3. PERSISTÊNCIA
+            const [finRes, apptRes] = await Promise.all([
+                supabase.from('financial_transactions').insert([payload]),
                 supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id)
             ]);
 
-            if (finResult.error) throw finResult.error;
-            if (apptResult.error) throw apptResult.error;
+            if (finRes.error) throw finRes.error;
+            if (apptRes.error) throw apptRes.error;
 
-            setToast({ message: "Recebimento confirmado com sucesso! 💰", type: 'success' });
-            
-            setTimeout(() => {
-                onSuccess();
-                onClose();
-            }, 1000);
+            setToast({ message: "Venda registrada com sucesso! 💰", type: 'success' });
+            setTimeout(() => { onSuccess(); onClose(); }, 1000);
 
         } catch (error: any) {
-            console.error("[FINANCEIRO] Erro fatal no checkout:", error);
-            setToast({ message: `Erro ao finalizar: ${error.message || "Falha de conexão"}`, type: 'error' });
+            console.error("[CHECKOUT] Falha Crítica:", error);
+            setToast({ message: `Erro no banco: ${error.message}`, type: 'error' });
         } finally {
             setIsLoading(false);
         }
@@ -251,26 +226,19 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                 <header className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl">
-                            <CheckCircle size={24} />
-                        </div>
+                        <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
                         <div>
                             <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Recebimento</h2>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Dados reais do servidor</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Conexão ativa: Supabase Cloud</p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all">
-                        <X size={24} />
-                    </button>
+                    <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
                 </header>
 
                 <main className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                    {/* Card de Resumo */}
                     <div className="bg-slate-900 rounded-[32px] p-6 text-white shadow-xl relative overflow-hidden">
-                        <div className="absolute top-0 right-0 p-8 opacity-5">
-                            <ShoppingCart size={120} />
-                        </div>
-                        <div className="relative z-10 flex flex-col gap-4">
+                        <div className="absolute top-0 right-0 p-8 opacity-5"><ShoppingCart size={120} /></div>
+                        <div className="relative z-10 space-y-4">
                             <div className="flex justify-between items-start">
                                 <div>
                                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">{appointment.service_name}</p>
@@ -278,27 +246,18 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                 </div>
                                 <div className="text-right">
                                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total</p>
-                                    <p className="text-3xl font-black text-emerald-400 tracking-tighter">
-                                        {formatCurrency(appointment.price)}
-                                    </p>
+                                    <p className="text-3xl font-black text-emerald-400 tracking-tighter">{formatCurrency(appointment.price)}</p>
                                 </div>
                             </div>
-                            
                             <div className="flex items-center gap-2 pt-3 border-t border-white/10">
-                                <div className="p-1.5 bg-white/10 rounded-lg text-orange-400">
-                                    <User size={14} />
-                                </div>
-                                <div>
-                                    <p className="text-[9px] font-black uppercase text-white/40 leading-none">Responsável</p>
-                                    <p className="text-[11px] font-bold text-white/80">{appointment.professional_name}</p>
-                                </div>
+                                <User size={14} className="text-orange-400" />
+                                <p className="text-[11px] font-bold text-white/80">{appointment.professional_name}</p>
                             </div>
                         </div>
                     </div>
 
-                    {/* Forma de Pagamento */}
                     <div className="space-y-3">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">1. Forma de Pagamento</label>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">1. Forma de Pagamento</label>
                         <div className="grid grid-cols-4 gap-2">
                             {categories.map((cat) => (
                                 <button
@@ -313,7 +272,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         </div>
                     </div>
 
-                    {/* Seleção de Operadora Real */}
                     {isFetching ? (
                         <div className="py-4 flex justify-center"><Loader2 className="animate-spin text-orange-500" /></div>
                     ) : filteredMethods.length > 0 ? (
@@ -382,7 +340,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         className="flex-[2] bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
                     >
                         {isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
-                        Confirmar Recebimento
+                        Finalizar e Baixar
                     </button>
                 </footer>
             </div>
