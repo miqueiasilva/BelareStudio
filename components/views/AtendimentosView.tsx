@@ -771,24 +771,34 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     onClose={() => setActiveAppointmentDetail(null)} 
                     onEdit={(app) => setModalState({ type: 'appointment', data: app })} 
                     onDelete={async (id) => { 
-                        const app = appointments.find(a => a.id === id);
-                        const isLocked = ['concluido'].includes(app?.status?.toLowerCase() || '');
-                        if (isLocked) {
-                            setToast({ message: 'Agendamentos concluídos não podem ser excluídos diretamente.', type: 'error' });
-                            return;
-                        }
-                        if (!window.confirm("Deseja realmente excluir este agendamento?")) return;
+                        if (!window.confirm("Deseja realmente excluir este agendamento? Todos os registros financeiros vinculados também serão removidos.")) return;
+                        
                         try {
-                            const { error } = await supabase.from('appointments').delete().eq('id', id);
+                            // 1. Limpeza Cascata Manual: Remove transações vinculadas
+                            const { error: finError } = await supabase
+                                .from('financial_transactions')
+                                .delete()
+                                .eq('appointment_id', id);
+
+                            if (finError) {
+                                console.warn("Aviso ao limpar financeiro:", finError.message);
+                            }
+
+                            // 2. Exclusão do Agendamento Principal
+                            const { error } = await supabase
+                                .from('appointments')
+                                .delete()
+                                .eq('id', id);
+
                             if (error) {
-                                setToast({ message: 'Erro ao excluir agendamento.', type: 'error' });
+                                setToast({ message: `Erro ao excluir: ${error.message}`, type: 'error' });
                             } else {
                                 setAppointments(prev => prev.filter(p => p.id !== id));
                                 setActiveAppointmentDetail(null);
-                                setToast({ message: 'Agendamento removido.', type: 'info' });
+                                setToast({ message: 'Agendamento e financeiro removidos.', type: 'info' });
                             }
                         } catch (err) {
-                            setToast({ message: 'Erro de conexão.', type: 'error' });
+                            setToast({ message: 'Falha na comunicação com o banco.', type: 'error' });
                         }
                     }} 
                     onUpdateStatus={handleUpdateStatus} 
