@@ -59,19 +59,20 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const [selectedMethodId, setSelectedMethodId] = useState<string>('');
     const [installments, setInstallments] = useState(1);
 
-    // 1. VERIFICADOR ESTREITO DE UUID
-    const isRealUUID = (id: any): boolean => {
+    // 1. VALIDADOR ESTRITO DE UUID (Blindagem contra IDs numéricos "2", "3", etc)
+    const isUUID = (id: any): boolean => {
         if (!id) return false;
         const sid = String(id).trim();
+        // Um UUID real tem 36 caracteres. Checamos > 20 para segurança contra IDs simples de tabelas legadas.
         return typeof id === 'string' && sid.length > 20 && sid !== 'undefined' && sid !== 'null';
     };
 
-    // 2. FETCH DE DADOS REAIS
+    // 2. FETCH DE DADOS REAIS (Atualizado para team_members)
     const loadSystemData = async () => {
         setIsFetching(true);
         try {
             const [profsRes, methodsRes] = await Promise.all([
-                supabase.from('professionals').select('id, name').eq('active', true).order('name'),
+                supabase.from('team_members').select('id, name').eq('active', true).order('name'),
                 supabase.from('payment_methods_config').select('*').eq('is_active', true)
             ]);
 
@@ -98,20 +99,20 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         if (isOpen) loadSystemData();
     }, [isOpen]);
 
-    // --- 3. BUGFIX: SINCRONIZAÇÃO REATIVA DE ESTADO (Anti-Race Condition) ---
+    // 3. SINCRONIZAÇÃO REATIVA (Garante que o ID inicial seja um UUID)
     useEffect(() => {
         if (isOpen && appointment && dbProfessionals.length > 0) {
-            if (selectedProfessionalId && isRealUUID(selectedProfessionalId)) return;
+            if (selectedProfessionalId && isUUID(selectedProfessionalId)) return;
 
             let targetId = '';
             
-            if (isRealUUID(appointment.professional_id)) {
+            if (isUUID(appointment.professional_id)) {
                 targetId = String(appointment.professional_id);
             } 
             else if (appointment.professional_name) {
                 const nameRef = appointment.professional_name.trim().toLowerCase();
                 const found = dbProfessionals.find(p => p.name.trim().toLowerCase() === nameRef);
-                if (found) targetId = found.id;
+                if (found && isUUID(found.id)) targetId = found.id;
             }
 
             if (targetId) setSelectedProfessionalId(targetId);
@@ -161,31 +162,36 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         setIsLoading(true);
 
-        // --- MOTOR DE BUSCA ATÔMICA (Bypass de Estado React) ---
-        let finalProfessionalId = selectedProfessionalId;
+        // 1. Tenta pegar do Select ou do Agendamento
+        let finalProfessionalId: any = selectedProfessionalId || appointment?.professional_id;
 
-        // Se o estado estiver vazio, realizamos uma busca direta no servidor ANTES de processar
-        if (!isRealUUID(finalProfessionalId) && appointment?.professional_name) {
-            console.log("[CHECKOUT] JIT: Buscando profissional diretamente no banco para garantir comissão...");
+        // 2. BUSCA ATÔMICA (Bypass de Estado e Tabela Legada)
+        // Se o ID for nulo, ou for um número (ex: "2"), buscamos o UUID em team_members
+        if (!isUUID(finalProfessionalId) && appointment?.professional_name) {
+            console.log("[CHECKOUT] ID inválido ou inteiro detectado. Iniciando busca JIT em 'team_members'...");
             try {
-                const { data: directMatch } = await supabase
-                    .from('professionals')
+                const { data: member } = await supabase
+                    .from('team_members') // <--- GARANTIA: Busca na tabela nova de UUIDs
                     .select('id')
                     .ilike('name', appointment.professional_name.trim())
                     .maybeSingle();
                 
-                if (directMatch?.id) {
-                    finalProfessionalId = String(directMatch.id);
-                    console.log("[CHECKOUT] JIT: Sucesso! ID recuperado:", finalProfessionalId);
+                if (member?.id && isUUID(member.id)) {
+                    finalProfessionalId = String(member.id);
+                    console.log("[CHECKOUT] JIT: UUID Válido recuperado:", finalProfessionalId);
+                } else {
+                    console.warn("[CHECKOUT] JIT: Nenhum UUID encontrado para este nome em team_members.");
+                    finalProfessionalId = null; // Evita enviar IDs numéricos ("2") para o banco
                 }
             } catch (err) {
                 console.error("[CHECKOUT] Falha na busca JIT:", err);
+                finalProfessionalId = null;
             }
         }
 
-        // Fallback final para o ID do agendamento se ainda estiver nulo
-        if (!isRealUUID(finalProfessionalId) && isRealUUID(appointment.professional_id)) {
-            finalProfessionalId = String(appointment.professional_id);
+        // 3. Validação Final Pré-Insert
+        if (!isUUID(finalProfessionalId)) {
+            finalProfessionalId = null; // Garante null ao invés de inteiro para não dar erro 400
         }
 
         try {
@@ -201,8 +207,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 category: 'servico',
                 payment_method: selectedCategory,
                 payment_method_id: currentMethod.id, 
-                professional_id: isRealUUID(finalProfessionalId) ? finalProfessionalId : null, 
-                client_id: isRealUUID(appointment.client_id) ? appointment.client_id : null,
+                professional_id: finalProfessionalId, // Enviando apenas UUID ou NULL
+                client_id: isUUID(appointment.client_id) ? appointment.client_id : null,
                 appointment_id: appointment.id,
                 installments: installments,
                 status: 'paid',
@@ -216,8 +222,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             if (apptError) throw apptError;
 
             // Feedback dinâmico
-            if (!isRealUUID(finalProfessionalId)) {
-                console.warn("[CHECKOUT] Venda registrada sem vínculo de profissional.");
+            if (!finalProfessionalId) {
+                console.warn("[CHECKOUT] Venda registrada sem comissão (UUID não encontrado).");
                 setToast({ message: "Venda registrada! (Sem profissional identificado)", type: 'success' });
             } else {
                 setToast({ message: "Venda e Comissão registradas com sucesso! 💰", type: 'success' });
@@ -276,7 +282,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         </div>
                     </div>
 
-                    {/* SELETOR DE PROFISSIONAL (OPCIONAL/AUTO-SYNC) */}
+                    {/* SELETOR DE PROFISSIONAL */}
                     <div className="space-y-1.5">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-1.5">
                             <UserCheck size={12} className="text-orange-500" />
