@@ -130,7 +130,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- 5. FINALIZAÇÃO COM BUSCA DIRETA NO BANCO (BUGFIX DEFINITIVO LOOKUP) ---
+    // --- 5. FINALIZAÇÃO COM BUSCA APROXIMADA (BUGFIX DEFINITIVO LOOKUP) ---
     const handleFinalize = async () => {
         if (!currentMethod) {
             setToast({ message: "Selecione o método de pagamento.", type: 'error' });
@@ -142,25 +142,34 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         // A) TENTATIVA 1: ID original do objeto
         let finalProfId = appointment?.professional_id;
         
-        // B) TENTATIVA 2: Se o ID for inválido (legado/nulo), tentamos FALLBACK ROBUSTO
+        // B) TENTATIVA 2: Se o ID for inválido (legado/nulo), iniciamos BUSCA APROXIMADA
         if (!isRealUUID(finalProfId)) {
-            const nameToSearch = appointment?.professional_name?.trim();
+            const nameRef = appointment?.professional_name?.trim();
             
-            if (nameToSearch) {
-                console.log(`[CHECKOUT] Iniciando busca direta no banco para: "${nameToSearch}"`);
+            if (nameRef) {
+                // Pega o primeiro nome para uma busca mais flexível (evita erros de sobrenome/espaços)
+                const firstName = nameRef.split(' ')[0].trim();
+                console.log(`[CHECKOUT] Iniciando busca flexível por primeiro nome: "${firstName}"...`);
                 
-                // Consulta assíncrona exata ao Supabase para evitar falha por cache local vazio
-                const { data: memberData, error: memberError } = await supabase
+                // Busca registros que comecem com o primeiro nome informado
+                const { data: candidates, error: searchError } = await supabase
                     .from('professionals')
-                    .select('id')
-                    .ilike('name', nameToSearch)
-                    .maybeSingle();
+                    .select('id, name')
+                    .ilike('name', `${firstName}%`);
 
-                if (memberData?.id && isRealUUID(memberData.id)) {
-                    finalProfId = memberData.id;
-                    console.log(`[CHECKOUT] ID Encontrado via Direct Fetch: ${finalProfId}`);
+                if (candidates && candidates.length > 0) {
+                    // Refinamento: Se houver mais de um, tenta o que mais se parece com o nome completo
+                    // Caso contrário, pega o primeiro da lista para não travar a venda
+                    const bestMatch = candidates.find(c => 
+                        c.name.toLowerCase().includes(nameRef.toLowerCase())
+                    ) || candidates[0];
+
+                    if (bestMatch?.id && isRealUUID(bestMatch.id)) {
+                        finalProfId = bestMatch.id;
+                        console.log(`[CHECKOUT] ID Encontrado via Busca Flexível: ${finalProfId} (${bestMatch.name})`);
+                    }
                 } else {
-                    console.warn(`[CHECKOUT] Falha: Profissional "${nameToSearch}" não localizado no banco.`);
+                    console.warn(`[CHECKOUT] ALERTA: Tabela professionals parece vazia ou inacessível via RLS para o nome "${firstName}".`);
                 }
             }
         }
@@ -168,7 +177,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         // C) TRAVA DE SEGURANÇA FINAL: Se não resolveu o UUID, abortamos para proteger a comissão
         if (!isRealUUID(finalProfId)) {
             setToast({ 
-                message: `Erro Crítico: O profissional "${appointment.professional_name}" não foi identificado na tabela de Equipe. Venda bloqueada para evitar erro de comissão.`, 
+                message: `Erro Crítico: O profissional "${appointment.professional_name}" não foi identificado. Verifique se o nome está escrito corretamente no cadastro de Equipe.`, 
                 type: 'error' 
             });
             setIsLoading(false);
@@ -189,7 +198,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 category: 'servico',
                 payment_method: selectedCategory,
                 payment_method_id: currentMethod.id, 
-                professional_id: finalProfId, // UUID Sanitizado Garantido
+                professional_id: finalProfId, // UUID Sanitizado e Validado
                 client_id: isRealUUID(appointment.client_id) ? appointment.client_id : null,
                 appointment_id: appointment.id,
                 installments: installments,
@@ -235,7 +244,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
                         <div>
                             <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Recebimento</h2>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Busca Direta em Banco Ativa</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Smart Lookup Ativado</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
