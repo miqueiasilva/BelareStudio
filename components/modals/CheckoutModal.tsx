@@ -81,11 +81,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             setDbProfessionals(profsRes.data || []);
             setDbPaymentMethods(methodsRes.data || []);
 
-            // Lógica de Pré-Seleção do Profissional do Agendamento
-            if (isRealUUID(appointment?.professional_id)) {
-                setSelectedProfessionalId(String(appointment.professional_id));
-            }
-
             // Pré-seleção de pagamento padrão (Pix)
             if (methodsRes.data && methodsRes.data.length > 0) {
                 const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
@@ -103,7 +98,39 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         if (isOpen) loadSystemData();
     }, [isOpen]);
 
-    // 3. FILTRAGEM DINÂMICA DE MÉTODOS
+    // --- 3. BUGFIX: SINCRONIZAÇÃO DE ESTADO INICIAL ---
+    // Garante que o selectedProfessionalId seja preenchido assim que os dados chegarem
+    useEffect(() => {
+        if (isOpen && appointment) {
+            let initialId = '';
+            
+            // Prioridade 1: Já temos um ID real (UUID) no objeto?
+            if (isRealUUID(appointment.professional_id)) {
+                initialId = String(appointment.professional_id);
+            } 
+            // Prioridade 2: Buscar pelo nome na lista que acabou de carregar
+            else if (appointment.professional_name && dbProfessionals.length > 0) {
+                const nameRef = appointment.professional_name.trim().toLowerCase();
+                const found = dbProfessionals.find(p => p.name.trim().toLowerCase() === nameRef);
+                
+                if (found) {
+                    initialId = found.id;
+                    console.log(`[CHECKOUT] Auto-selecionado por nome: ${found.name}`);
+                } else {
+                    // Tenta busca parcial por primeiro nome se o exato falhar
+                    const firstName = nameRef.split(' ')[0];
+                    const fuzzy = dbProfessionals.find(p => p.name.trim().toLowerCase().startsWith(firstName));
+                    if (fuzzy) initialId = fuzzy.id;
+                }
+            }
+
+            if (initialId && initialId !== selectedProfessionalId) {
+                setSelectedProfessionalId(initialId);
+            }
+        }
+    }, [isOpen, appointment, dbProfessionals]);
+
+    // 4. FILTRAGEM DINÂMICA DE MÉTODOS
     const filteredMethods = useMemo(() => {
         return dbPaymentMethods.filter(m => m.type === selectedCategory);
     }, [dbPaymentMethods, selectedCategory]);
@@ -121,7 +148,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return dbPaymentMethods.find(m => m.id === selectedMethodId);
     }, [dbPaymentMethods, selectedMethodId]);
 
-    // 4. CÁLCULOS FINANCEIROS
+    // 5. CÁLCULOS FINANCEIROS
     const financialMetrics = useMemo(() => {
         if (!currentMethod) return { rate: 0, netValue: appointment.price };
         
@@ -137,14 +164,14 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- 5. FINALIZAÇÃO COM SELEÇÃO MANUAL ---
+    // --- 6. FINALIZAÇÃO ---
     const handleFinalize = async () => {
         if (!currentMethod) {
             setToast({ message: "Selecione o método de pagamento.", type: 'error' });
             return;
         }
 
-        // BLOQUEIO CRÍTICO: Não permite venda sem profissional selecionado
+        // BLOQUEIO CRÍTICO RE-VALIDADO
         if (!isRealUUID(selectedProfessionalId)) {
             setToast({ message: "ERRO: Selecione quem executou o serviço para a comissão!", type: 'error' });
             return;
@@ -156,7 +183,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             // Limpa lançamentos prévios do mesmo agendamento para evitar duplicidade
             await supabase.from('financial_transactions').delete().eq('appointment_id', appointment.id);
 
-            // Payload 100% amarrado ao Estado do Dropdown
             const payload = {
                 amount: appointment.price, 
                 net_value: financialMetrics.netValue, 
@@ -166,7 +192,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 category: 'servico',
                 payment_method: selectedCategory,
                 payment_method_id: currentMethod.id, 
-                professional_id: selectedProfessionalId, // UUID Garantido pela seleção manual
+                professional_id: selectedProfessionalId, 
                 client_id: isRealUUID(appointment.client_id) ? appointment.client_id : null,
                 appointment_id: appointment.id,
                 installments: installments,
@@ -212,7 +238,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
                         <div>
                             <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Recebimento</h2>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Fluxo de Caixa Garantido</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Sincronização de Venda</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
@@ -236,7 +262,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         </div>
                     </div>
 
-                    {/* SELETOR MANUAL DE PROFISSIONAL (UPGRADE OBRIGATÓRIO) */}
+                    {/* SELETOR MANUAL DE PROFISSIONAL */}
                     <div className="space-y-1.5">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-1.5">
                             <UserCheck size={12} className="text-orange-500" />
@@ -248,10 +274,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                             </div>
                             <select 
                                 value={selectedProfessionalId}
-                                onChange={(e) => {
-                                    console.log("[CHECKOUT] Seleção manual:", e.target.value);
-                                    setSelectedProfessionalId(e.target.value);
-                                }}
+                                onChange={(e) => setSelectedProfessionalId(e.target.value)}
                                 className={`w-full pl-12 pr-10 py-4 bg-slate-50 border-2 rounded-2xl appearance-none outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold cursor-pointer shadow-sm ${!selectedProfessionalId ? 'border-orange-200 text-slate-400' : 'border-slate-100 text-slate-700'}`}
                             >
                                 <option value="">-- SELECIONE O PROFISSIONAL --</option>
@@ -265,7 +288,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         </div>
                         {!selectedProfessionalId && (
                             <p className="text-[9px] text-rose-500 font-bold ml-2 animate-pulse flex items-center gap-1">
-                                <AlertTriangle size={10} /> Campo obrigatório para garantir o pagamento.
+                                <AlertTriangle size={10} /> Seleção obrigatória para processar o pagamento.
                             </p>
                         )}
                     </div>
