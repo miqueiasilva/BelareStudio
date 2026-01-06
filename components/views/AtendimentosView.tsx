@@ -269,7 +269,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         };
     }, []);
 
-    // --- LOGICA DE REORDENAÇÃO (FIX: useCallback + Blindagem) ---
+    // --- LOGICA DE REORDENAÇÃO ---
     const handleReorderProfessional = useCallback(async (e: React.MouseEvent, currentIndex: number, direction: 'left' | 'right') => {
         if (e) {
             e.preventDefault();
@@ -284,7 +284,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         newResources[currentIndex] = newResources[targetIndex];
         newResources[targetIndex] = temp;
 
-        // Atualização Otimista
         setResources(newResources);
 
         try {
@@ -351,10 +350,19 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const handleUpdateStatus = async (id: number, newStatus: AppointmentStatus) => {
         const appointment = appointments.find(a => a.id === id);
         if (!appointment) return;
+        
+        // SEGURANÇA: Bloqueio de mudança de status se for 'concluido' por não-admins (proteção financeira)
+        const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
+        if (!isAdmin && appointment.status === 'concluido') {
+            setToast({ message: "Segurança: Registros financeiros só podem ser alterados pelo Gestor.", type: 'error' });
+            return;
+        }
+
         if (appointment.status === 'concluido' && newStatus !== 'concluido') {
-            if (!window.confirm("Lançamento financeiro será ESTORNADO. Continuar?")) return;
+            if (!window.confirm("Atenção: O lançamento financeiro será ESTORNADO. Continuar?")) return;
             await supabase.from('financial_transactions').delete().eq('appointment_id', id);
         }
+        
         const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
         if (!error) {
             setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
@@ -362,6 +370,48 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             fetchAppointments();
         }
         setActiveAppointmentDetail(null);
+    };
+
+    // --- SEGURANÇA RBAC: Exclusão Segura baseada em Perfil e Status Financeiro ---
+    const handleDeleteAppointmentFull = async (id: number) => {
+        const appointment = appointments.find(a => a.id === id);
+        if (!appointment) return;
+
+        const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
+        const isFinancial = appointment.status === 'concluido';
+
+        // REGRA: Staff não pode apagar agendamentos já liquidados (concluídos)
+        if (!isAdmin && isFinancial) {
+            setToast({ 
+                message: "Segurança: Somente o Gestor pode excluir registros com recebimento confirmado.", 
+                type: 'error' 
+            });
+            return;
+        }
+
+        const confirmMsg = isFinancial 
+            ? "⚠️ ATENÇÃO GESTOR: Este agendamento possui recebimento financeiro. A exclusão removerá o valor do fluxo de caixa. Continuar?"
+            : "Deseja realmente excluir este agendamento?";
+
+        if (!window.confirm(confirmMsg)) return;
+        
+        setIsLoadingData(true);
+        try {
+            // 1. Remove transação vinculada se houver (Prevenção de Erro 409)
+            await supabase.from('financial_transactions').delete().eq('appointment_id', id);
+
+            // 2. Remove o agendamento
+            const { error: apptError } = await supabase.from('appointments').delete().eq('id', id);
+            if (apptError) throw apptError;
+
+            setAppointments(prev => prev.filter(p => p.id !== id));
+            setToast({ message: 'Registro removido do sistema.', type: 'info' });
+            setActiveAppointmentDetail(null);
+        } catch (e: any) {
+            setToast({ message: "Falha ao processar exclusão.", type: 'error' });
+        } finally {
+            setIsLoadingData(false);
+        }
     };
 
     const handleDateChange = (direction: number) => {
@@ -538,7 +588,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 </div>
             )}
 
-            {activeAppointmentDetail && <AppointmentDetailPopover appointment={activeAppointmentDetail} targetElement={appointmentRefs.current.get(activeAppointmentDetail.id) || null} onClose={() => setActiveAppointmentDetail(null)} onEdit={(app) => setModalState({ type: 'appointment', data: app })} onDelete={async (id) => { if (window.confirm("Excluir agendamento?")) { await supabase.from('appointments').delete().eq('id', id); setAppointments(prev => prev.filter(p => p.id !== id)); setActiveAppointmentDetail(null); } }} onUpdateStatus={handleUpdateStatus} />}
+            {activeAppointmentDetail && (
+                <AppointmentDetailPopover 
+                    appointment={activeAppointmentDetail} 
+                    targetElement={appointmentRefs.current.get(activeAppointmentDetail.id) || null} 
+                    onClose={() => setActiveAppointmentDetail(null)} 
+                    onEdit={(app) => setModalState({ type: 'appointment', data: app })} 
+                    onDelete={handleDeleteAppointmentFull} 
+                    onUpdateStatus={handleUpdateStatus} 
+                />
+            )}
             {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />}
             {modalState?.type === 'block' && <BlockTimeModal professional={modalState.data.professional} startTime={modalState.data.start} onClose={() => setModalState(null)} onSave={handleSaveAppointment as any} />}
             {modalState?.type === 'sale' && <NewTransactionModal type="receita" onClose={() => setModalState(null)} onSave={(t) => { onAddTransaction(t); setModalState(null); setToast({ message: 'Venda registrada!', type: 'success' }); }} />}

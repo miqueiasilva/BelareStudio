@@ -3,7 +3,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
     ArrowUpCircle, ArrowDownCircle, Wallet, TrendingUp, AlertTriangle, 
     CheckCircle, Plus, Loader2, Calendar, Search, Filter, Download,
-    RefreshCw, ChevronLeft, ChevronRight, FileText, Clock
+    RefreshCw, ChevronLeft, ChevronRight, FileText, Clock, User,
+    Coins, Banknote, Percent
 } from 'lucide-react';
 import Card from '../shared/Card';
 import SafePie from '../charts/SafePie';
@@ -27,7 +28,7 @@ const formatBRL = (value: number) => {
 };
 
 interface FinanceiroViewProps {
-    transactions?: FinancialTransaction[]; // Prop legada mantida para não quebrar App.tsx
+    transactions?: FinancialTransaction[]; 
     onAddTransaction: (t: FinancialTransaction) => void;
 }
 
@@ -45,15 +46,15 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
     const fetchData = async () => {
         setLoading(true);
         try {
-            // Busca transações e profissionais simultaneamente
+            // Busca transações e profissionais (incluindo taxa de comissão da tabela team_members)
             const [transRes, profsRes] = await Promise.all([
                 supabase
                     .from('financial_transactions')
                     .select('*')
                     .order('date', { ascending: false }),
                 supabase
-                    .from('professionals')
-                    .select('id, name, photo_url, role')
+                    .from('team_members') // Usando team_members para pegar commission_rate real
+                    .select('id, name, photo_url, role, commission_rate')
                     .eq('active', true)
             ]);
 
@@ -105,6 +106,33 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
         return { income, expense, balance };
     }, [filteredTransactions]);
 
+    // --- Motor de Cálculo de Comissões Reais ---
+    const commissionStats = useMemo(() => {
+        return professionals.map(prof => {
+            // Filtra receitas confirmadas deste profissional no período selecionado
+            const profSales = filteredTransactions.filter(t => 
+                (t.type === 'income' || t.type === 'receita') && 
+                String(t.professional_id) === String(prof.id) &&
+                t.status === 'paid'
+            );
+
+            // Soma do bruto (valor nominal dos serviços)
+            const grossProduction = profSales.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+            
+            // Cálculo da comissão (Líquido para o profissional)
+            const rate = Number(prof.commission_rate || 0);
+            const netCommission = grossProduction * (rate / 100);
+
+            return {
+                ...prof,
+                grossProduction,
+                netCommission,
+                salesCount: profSales.length,
+                rate
+            };
+        }).sort((a, b) => b.grossProduction - a.grossProduction);
+    }, [professionals, filteredTransactions]);
+
     const chartData = useMemo(() => {
         const expenseByCategory: Record<string, number> = {};
         filteredTransactions
@@ -119,9 +147,8 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
 
     // --- Handlers ---
     const handleAddTransaction = async (transaction: any) => {
-        // Recarrega os dados após um novo lançamento via modal
         await fetchData();
-        onAddTransaction(transaction); // Mantém sincronia com o pai se necessário
+        onAddTransaction(transaction); 
         setShowModal(null);
     };
 
@@ -252,7 +279,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Entradas</span>
                                 </div>
                                 <div className="flex flex-col items-center gap-4 w-full max-w-[120px]">
-                                    <div className="w-full bg-rose-500 rounded-2xl transition-all duration-700 shadow-lg shadow-rose-50 relative group" style={{ height: `${Math.max(10, Math.min(100, (metrics.expense / Math.max(metrics.income, metrics.expense, 1)) * 100))}%` }}>
+                                    <div className="w-full bg-rose-500 rounded-2xl transition-all duration-700 shadow-lg shadow-rose relative group" style={{ height: `${Math.max(10, Math.min(100, (metrics.expense / Math.max(metrics.income, metrics.expense, 1)) * 100))}%` }}>
                                         <div className="absolute -top-8 w-full text-center font-black text-rose-600 text-xs">{formatBRL(metrics.expense)}</div>
                                     </div>
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Saídas</span>
@@ -360,41 +387,63 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
 
                 {activeTab === 'comissoes' && (
                     <div className="space-y-6 animate-in fade-in duration-500">
-                        <div className="bg-amber-50 border border-amber-100 rounded-3xl p-6 flex items-center gap-4">
-                            <div className="p-3 bg-white rounded-2xl text-amber-500 shadow-sm">
-                                <RefreshCw className="animate-spin-slow" size={24} />
-                            </div>
-                            <div>
-                                <h4 className="text-sm font-black text-amber-900 uppercase">Módulo de Repasses em Sincronização</h4>
-                                <p className="text-xs text-amber-700 font-medium">As comissões reais estão sendo calculadas individualmente. Abaixo listamos a equipe ativa para verificação manual enquanto o processador automático é atualizado.</p>
-                            </div>
-                        </div>
-
+                        {/* Summary Header for Commissions */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {professionals.map(prof => (
-                                <div key={prof.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-4 group hover:shadow-xl transition-all">
-                                    <div className="w-16 h-16 rounded-[20px] bg-slate-100 overflow-hidden border-2 border-white shadow-md flex-shrink-0 group-hover:scale-105 transition-transform">
-                                        {prof.photo_url ? (
-                                            <img src={prof.photo_url} alt={prof.name} className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center text-slate-300 font-black text-xl">
-                                                {prof.name.charAt(0)}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <h3 className="font-black text-slate-800 truncate">{prof.name}</h3>
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{prof.role || 'Profissional'}</p>
-                                        <div className="flex items-center justify-between mt-3">
-                                            <span className="text-[10px] font-black text-slate-300 uppercase italic">Aguardando fechamento...</span>
-                                            <button className="p-2 text-slate-300 hover:text-orange-500 transition-colors">
-                                                <ChevronRight size={18} />
-                                            </button>
+                            {commissionStats.map(prof => (
+                                <div key={prof.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex flex-col group hover:shadow-xl transition-all relative overflow-hidden">
+                                    <div className="flex items-center gap-4 mb-6">
+                                        <div className="w-14 h-14 rounded-[20px] bg-slate-100 overflow-hidden border-2 border-white shadow-md flex-shrink-0">
+                                            {prof.photo_url ? (
+                                                <img src={prof.photo_url} alt={prof.name} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-slate-300 font-black text-xl">
+                                                    {prof.name.charAt(0)}
+                                                </div>
+                                            )}
                                         </div>
+                                        <div className="flex-1 min-w-0">
+                                            <h3 className="font-black text-slate-800 truncate leading-tight">{prof.name}</h3>
+                                            <div className="flex items-center gap-1.5 mt-1">
+                                                <span className="text-[9px] font-black bg-orange-50 text-orange-600 px-2 py-0.5 rounded border border-orange-100 uppercase tracking-widest">
+                                                    {prof.rate}% Comissão
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-50">
+                                        <div>
+                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Produção Bruta</p>
+                                            <p className="text-sm font-bold text-slate-600">{formatBRL(prof.grossProduction)}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-[9px] font-black text-orange-500 uppercase tracking-widest">Repasse Líquido</p>
+                                            <p className="text-lg font-black text-slate-800">{formatBRL(prof.netCommission)}</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-4 flex items-center justify-between">
+                                        <span className="text-[9px] font-black text-slate-300 uppercase italic">
+                                            {prof.salesCount} serviços no período
+                                        </span>
+                                        <button className="p-2 bg-slate-50 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all">
+                                            <ChevronRight size={18} />
+                                        </button>
+                                    </div>
+                                    
+                                    <div className="absolute -right-4 -bottom-4 opacity-5 pointer-events-none group-hover:scale-110 transition-transform">
+                                        <Percent size={120} />
                                     </div>
                                 </div>
                             ))}
                         </div>
+
+                        {commissionStats.length === 0 && (
+                            <div className="p-20 text-center flex flex-col items-center bg-white rounded-[40px] border-2 border-dashed border-slate-100">
+                                <User size={48} className="text-slate-100 mb-4" />
+                                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Nenhum profissional com vendas no período selecionado.</p>
+                            </div>
+                        )}
                     </div>
                 )}
 
