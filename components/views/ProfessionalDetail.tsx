@@ -1,9 +1,11 @@
 
 import React, { useState, useRef, useEffect } from 'react';
+/* FIX: Added Settings2 to the lucide-react imports to resolve the "Cannot find name 'Settings2'" error. */
 import { 
     ChevronLeft, User, Save, Trash2, Camera, Scissors, 
     Loader2, Shield, Clock, DollarSign, CheckCircle, AlertCircle, Coffee,
-    Phone, Mail, Smartphone, CreditCard
+    Phone, Mail, Smartphone, CreditCard, LayoutDashboard, Calendar,
+    Settings2
 } from 'lucide-react';
 import { LegacyProfessional, LegacyService } from '../../types';
 import Card from '../shared/Card';
@@ -64,7 +66,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
             const { data: svcs } = await supabase.from('services').select('*').order('nome');
             if (svcs) setAllServices(svcs as any);
 
-            // Normalização: Inclui pix_key para persistência correta
+            // Normalização: Inclui show_in_calendar e pix_key
             const normalized = {
                 ...initialProf,
                 cpf: (initialProf as any).cpf || '',
@@ -79,6 +81,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 work_schedule: (initialProf as any).work_schedule || {},
                 photo_url: (initialProf as any).photo_url || initialProf.avatarUrl || null,
                 online_booking: (initialProf as any).online_booking ?? true,
+                show_in_calendar: (initialProf as any).show_in_calendar ?? true, // <-- NOVO CAMPO
                 active: (initialProf as any).active ?? true
             };
             setProf(normalized);
@@ -131,14 +134,13 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         setIsLoading(true);
         
         try {
-            // Garantia de tipos para o banco (Decimal e String)
             const payload = {
                 name: prof.name || 'Sem nome',
                 role: prof.role || 'Profissional',
                 phone: prof.phone || null,
                 email: prof.email || null,
                 cpf: prof.cpf || null,
-                pix_key: prof.pix_key || null, // Persistência da Chave PIX
+                pix_key: prof.pix_key || null,
                 bio: prof.bio || null,
                 active: !!prof.active,
                 birth_date: prof.birth_date === "" ? null : prof.birth_date,
@@ -147,7 +149,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 services_enabled: prof.services_enabled,
                 work_schedule: prof.work_schedule,
                 photo_url: prof.photo_url,
-                online_booking: !!prof.online_booking
+                online_booking: !!prof.online_booking,
+                show_in_calendar: !!prof.show_in_calendar // <-- PERSISTÊNCIA DO CAMPO
             };
 
             const { error } = await supabase
@@ -251,28 +254,55 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 <div className="max-w-5xl mx-auto">
                     {activeTab === 'perfil' && (
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-300">
-                            <Card className="lg:col-span-1 h-fit">
-                                <div className="flex flex-col items-center py-6 text-center">
-                                    <div 
-                                        className="w-40 h-40 rounded-[32px] border-4 border-white shadow-2xl overflow-hidden bg-slate-100 mb-6 relative group cursor-pointer"
-                                        onClick={() => fileInputRef.current?.click()}
-                                    >
-                                        {prof.photo_url ? (
-                                            <img src={prof.photo_url} className="w-full h-full object-cover" alt="Avatar" />
-                                        ) : (
-                                            <User size={64} className="m-12 text-slate-300" />
-                                        )}
-                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                            {isUploading ? <Loader2 className="animate-spin text-white" /> : <Camera className="text-white" />}
-                                            <span className="text-[10px] text-white font-black uppercase mt-2">Trocar Foto</span>
+                            <div className="lg:col-span-1 space-y-6">
+                                <Card>
+                                    <div className="flex flex-col items-center py-6 text-center">
+                                        <div 
+                                            className="w-40 h-40 rounded-[32px] border-4 border-white shadow-2xl overflow-hidden bg-slate-100 mb-6 relative group cursor-pointer"
+                                            onClick={() => fileInputRef.current?.click()}
+                                        >
+                                            {prof.photo_url ? (
+                                                <img src={prof.photo_url} className="w-full h-full object-cover" alt="Avatar" />
+                                            ) : (
+                                                <User size={64} className="m-12 text-slate-300" />
+                                            )}
+                                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                {isUploading ? <Loader2 className="animate-spin text-white" /> : <Camera className="text-white" />}
+                                                <span className="text-[10px] text-white font-black uppercase mt-2">Trocar Foto</span>
+                                            </div>
+                                        </div>
+                                        <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*" />
+                                        <h3 className="font-black text-slate-800 text-lg">{prof.name}</h3>
+                                        <p className="text-xs font-bold text-slate-400 uppercase mt-1 tracking-widest">{prof.role}</p>
+                                    </div>
+                                </Card>
+
+                                {/* NOVO: CONFIGURAÇÕES DE VISIBILIDADE */}
+                                <Card title="Visibilidade" icon={<Settings2 size={18} className="text-orange-500" />}>
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 transition-all hover:border-orange-200">
+                                            <div>
+                                                <p className="font-black text-slate-800 text-xs">Exibir na Agenda?</p>
+                                                <p className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Se desmarcado, não terá coluna na agenda.</p>
+                                            </div>
+                                            <ToggleSwitch 
+                                                on={!!prof.show_in_calendar} 
+                                                onClick={() => setProf({...prof, show_in_calendar: !prof.show_in_calendar})} 
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 transition-all hover:border-orange-200">
+                                            <div>
+                                                <p className="font-black text-slate-800 text-xs">Agenda Online</p>
+                                                <p className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Disponível para agendamento via link.</p>
+                                            </div>
+                                            <ToggleSwitch 
+                                                on={!!prof.online_booking} 
+                                                onClick={() => setProf({...prof, online_booking: !prof.online_booking})} 
+                                            />
                                         </div>
                                     </div>
-                                    <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*" />
-                                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-tight px-4">
-                                        As fotos aparecem nos cards de equipe e extratos de comissão.
-                                    </p>
-                                </div>
-                            </Card>
+                                </Card>
+                            </div>
                             
                             <div className="lg:col-span-2 space-y-6">
                                 <Card title="Informações Pessoais">
@@ -283,7 +313,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                         <EditField label="WhatsApp" name="phone" value={prof.phone} onChange={handleInputChange} icon={Phone} placeholder="(00) 00000-0000" />
                                         <EditField label="E-mail" name="email" value={prof.email} onChange={handleInputChange} icon={Mail} placeholder="email@exemplo.com" />
                                         
-                                        {/* Campos Financeiros e Documentação */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:col-span-2">
                                             <EditField label="CPF" name="cpf" value={prof.cpf} onChange={handleInputChange} placeholder="000.000.000-00" icon={CreditCard} />
                                             <EditField label="Chave PIX" name="pix_key" value={prof.pix_key} onChange={handleInputChange} icon={Smartphone} placeholder="CPF, E-mail, Celular ou Aleatória" />
@@ -331,7 +360,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                             {config.active && (
                                                 <div className="flex items-center gap-2">
                                                     <input type="time" value={config.start} onChange={e => updateSchedule(day.key, 'start', e.target.value)} className="bg-slate-100 px-3 py-2 rounded-xl text-sm font-bold text-slate-700 border-none outline-none focus:ring-2 focus:ring-orange-200" />
-                                                    <span className="text-slate-300 font-bold">às</span>
+                                                    <span className="text-slate-300 font-bold text-xs">até</span>
                                                     <input type="time" value={config.end} onChange={e => updateSchedule(day.key, 'end', e.target.value)} className="bg-slate-100 px-3 py-2 rounded-xl text-sm font-bold text-slate-700 border-none outline-none focus:ring-2 focus:ring-orange-200" />
                                                 </div>
                                             )}

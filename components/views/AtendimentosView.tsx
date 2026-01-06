@@ -219,7 +219,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
                 if (isMounted.current) fetchAppointments();
             })
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'professionals' }, () => {
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, () => {
                 if (isMounted.current) fetchResources();
             })
             .subscribe();
@@ -237,11 +237,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     }, [resources]);
 
+    // --- FIX: Fetch de Recursos com Filtro de Visibilidade na Agenda ---
     const fetchResources = async () => {
         try {
             const { data, error } = await supabase
-                .from('professionals')
-                .select('id, name, photo_url, role, order_index, services_enabled') 
+                .from('team_members')
+                .select('id, name, photo_url, role, order_index, services_enabled, show_in_calendar') 
+                .eq('active', true)
+                .eq('show_in_calendar', true) // <-- NOVO FILTRO: Apenas quem realiza atendimentos
                 .order('order_index', { ascending: true });
 
             if (error) throw error;
