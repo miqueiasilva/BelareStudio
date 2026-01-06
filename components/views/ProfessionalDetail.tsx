@@ -1,6 +1,5 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-/* FIX: Added Settings2 to the lucide-react imports to resolve the "Cannot find name 'Settings2'" error. */
 import { 
     ChevronLeft, User, Save, Trash2, Camera, Scissors, 
     Loader2, Shield, Clock, DollarSign, CheckCircle, AlertCircle, Coffee,
@@ -66,7 +65,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
             const { data: svcs } = await supabase.from('services').select('*').order('nome');
             if (svcs) setAllServices(svcs as any);
 
-            // Normalização: Inclui show_in_calendar e pix_key
             const normalized = {
                 ...initialProf,
                 cpf: (initialProf as any).cpf || '',
@@ -80,8 +78,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 services_enabled: (initialProf as any).services_enabled || [],
                 work_schedule: (initialProf as any).work_schedule || {},
                 photo_url: (initialProf as any).photo_url || initialProf.avatarUrl || null,
-                online_booking: (initialProf as any).online_booking ?? true,
-                show_in_calendar: (initialProf as any).show_in_calendar ?? true, // <-- NOVO CAMPO
+                online_booking_enabled: (initialProf as any).online_booking_enabled ?? (initialProf as any).online_booking ?? true,
+                show_in_calendar: (initialProf as any).show_in_calendar ?? true, 
                 active: (initialProf as any).active ?? true
             };
             setProf(normalized);
@@ -149,8 +147,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 services_enabled: prof.services_enabled,
                 work_schedule: prof.work_schedule,
                 photo_url: prof.photo_url,
-                online_booking: !!prof.online_booking,
-                show_in_calendar: !!prof.show_in_calendar // <-- PERSISTÊNCIA DO CAMPO
+                online_booking_enabled: !!prof.online_booking_enabled, // Coluna correta conforme Persona
+                show_in_calendar: !!prof.show_in_calendar // Coluna correta conforme Persona
             };
 
             const { error } = await supabase
@@ -277,7 +275,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                     </div>
                                 </Card>
 
-                                {/* NOVO: CONFIGURAÇÕES DE VISIBILIDADE */}
                                 <Card title="Visibilidade" icon={<Settings2 size={18} className="text-orange-500" />}>
                                     <div className="space-y-4">
                                         <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 transition-all hover:border-orange-200">
@@ -296,8 +293,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                                 <p className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Disponível para agendamento via link.</p>
                                             </div>
                                             <ToggleSwitch 
-                                                on={!!prof.online_booking} 
-                                                onClick={() => setProf({...prof, online_booking: !prof.online_booking})} 
+                                                on={!!prof.online_booking_enabled} 
+                                                onClick={() => setProf({...prof, online_booking_enabled: !prof.online_booking_enabled})} 
                                             />
                                         </div>
                                     </div>

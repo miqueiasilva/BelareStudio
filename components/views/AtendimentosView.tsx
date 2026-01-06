@@ -211,7 +211,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastRequestId = useRef(0);
 
-    // --- FIX: useEffect de sincronização com logs de debug ---
+    // --- Sincronização em Tempo Real ---
     useEffect(() => {
         isMounted.current = true;
         fetchResources();
@@ -238,18 +238,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     }, [resources]);
 
-    // --- CRITICAL FIX: Modo Seguro Máximo para evitar Erro 400 ---
+    // --- FEATURE: Busca de Equipe com Filtro de Visibilidade ---
     const fetchResources = async () => {
         try {
-            console.log('Iniciando busca de equipe (Modo Seguro Máximo)...');
+            console.log('Sincronizando equipe (Respeitando Visibilidade)...');
             
-            // REMOVIDOS: order_index, services_enabled, show_in_calendar
-            // MANTIDOS APENAS: id, name, photo_url, role, active
+            // 1. SELECT SEGURO: Adicionado show_in_calendar
             const { data, error } = await supabase
                 .from('team_members')
-                .select('id, name, photo_url, role, active') 
+                .select('id, name, photo_url, role, order_index, services_enabled, active, show_in_calendar') 
                 .eq('active', true)
-                .order('name'); // Ordenação segura por nome
+                .order('name'); 
 
             if (error) {
                 console.error('Erro Supabase:', error);
@@ -257,23 +256,23 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             }
             
             if (data && isMounted.current) {
-                console.log('Equipe recuperada com sucesso:', data);
-                const mapped = data.map((p: any) => ({
+                // 2. FILTRAGEM CLIENT-SIDE: Mostra se não for falso (trata nulos como visíveis por padrão)
+                const visibleMembers = data.filter((p: any) => p.show_in_calendar !== false);
+
+                const mapped = visibleMembers.map((p: any) => ({
                     id: p.id,
                     name: p.name,
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
                     role: p.role,
-                    // Fallbacks seguros para as colunas removidas
-                    order_index: 0,
-                    services_enabled: [] 
+                    order_index: p.order_index || 0,
+                    services_enabled: p.services_enabled || [] 
                 }));
                 setResources(mapped);
             }
         } catch (e: any) { 
-            console.error('Erro fatal ao buscar equipe:', e);
+            console.error('Erro ao buscar equipe:', e);
             if (isMounted.current) {
-                setResources([]); // Fallback para não travar a tela
-                setToast({ message: 'Erro ao carregar equipe. Verifique a conexão.', type: 'error' });
+                setToast({ message: 'Erro ao carregar colunas da agenda.', type: 'error' });
             }
         }
     };
@@ -695,7 +694,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 </div>
             </div>
 
-            {/* Restante dos modais mantido igual */}
+            {/* Config Modal */}
             {isConfigModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsConfigModalOpen(false)}></div>
@@ -793,7 +792,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         if (!window.confirm("Deseja realmente excluir este agendamento? Todos os registros financeiros vinculados também serão removidos.")) return;
                         
                         try {
-                            // 1. Limpeza Cascata Manual: Remove transações vinculadas
+                            // 1. Limpeza Cascata Manual
                             const { error: finError } = await supabase
                                 .from('financial_transactions')
                                 .delete()
