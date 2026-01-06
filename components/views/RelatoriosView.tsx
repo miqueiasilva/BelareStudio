@@ -5,7 +5,7 @@ import {
     ChevronLeft, ChevronRight, FileSpreadsheet, FileText,
     Users, Scissors, Wallet, ArrowRight, Loader2, 
     AlertTriangle, FilePieChart, Table, CheckCircle2,
-    BarChart, PieChart as PieChartIcon, Search, Printer
+    BarChart, PieChart as PieChartIcon, Search, Printer, Download
 } from 'lucide-react';
 import { format, addMonths, isSameMonth, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -112,7 +112,7 @@ const reportsRegistry: ReportDefinition[] = [
 ];
 
 const RelatoriosView: React.FC = () => {
-    // --- Safe Hydration Check ---
+    // --- Hydration Fix: Client-Side Only Mounting ---
     const [isMounted, setIsMounted] = useState(false);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -125,11 +125,11 @@ const RelatoriosView: React.FC = () => {
         setIsMounted(true);
     }, []);
 
-    // Navegação Mensal
+    // Monthly Navigation
     const handlePrevMonth = () => setCurrentDate(prev => addMonths(prev, -1));
     const handleNextMonth = () => setCurrentDate(prev => addMonths(prev, 1));
 
-    // Dashboard Stats (Mocks do período)
+    // Dashboard Stats calculation (safe mock fallback)
     const stats = useMemo(() => {
         const income = mockTransactions
             .filter(t => t.type === 'receita' && isSameMonth(new Date(t.date), currentDate))
@@ -140,7 +140,7 @@ const RelatoriosView: React.FC = () => {
         return { income, expense, profit: income - expense };
     }, [currentDate]);
 
-    // Busca de dados com prévia
+    // Data Engine for Export Central
     const handleSelectReport = async (report: ReportDefinition) => {
         setIsLoading(true);
         setSelectedReport(report);
@@ -161,7 +161,7 @@ const RelatoriosView: React.FC = () => {
             if (error) throw error;
             setPreviewData(data || []);
         } catch (e: any) {
-            console.error("Erro ao carregar relatório:", e.message);
+            console.error("Report Engine Error:", e.message);
             setPreviewData([]);
         } finally {
             setIsLoading(false);
@@ -179,6 +179,8 @@ const RelatoriosView: React.FC = () => {
         }, {} as any);
     }, [previewData, selectedReport]);
 
+    // EXPORT MOTORS
+
     const exportToExcel = () => {
         if (!previewData.length || !selectedReport) return;
         setIsExporting(true);
@@ -193,8 +195,8 @@ const RelatoriosView: React.FC = () => {
             });
             const ws = XLSX.utils.json_to_sheet(exportRows);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Relatório");
-            XLSX.writeFile(wb, `BelareStudio_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.xlsx`);
+            XLSX.utils.book_append_sheet(wb, ws, "Dados");
+            XLSX.writeFile(wb, `Belare_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.xlsx`);
         } finally {
             setIsExporting(false);
         }
@@ -238,13 +240,13 @@ const RelatoriosView: React.FC = () => {
                 styles: { fontSize: 8, cellPadding: 2.5 },
                 alternateRowStyles: { fillColor: [250, 250, 250] }
             });
-            doc.save(`Relatorio_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.pdf`);
+            doc.save(`Belare_${selectedReport.id}_${format(currentDate, 'MM_yyyy')}.pdf`);
         } finally {
             setIsExporting(false);
         }
     };
 
-    // --- Hydration Safety Check ---
+    // --- GUARD FOR HYDRATION ---
     if (!isMounted) return null;
 
     return (
@@ -253,17 +255,25 @@ const RelatoriosView: React.FC = () => {
                 <div className="flex flex-col md:flex-row items-center gap-6">
                     <h1 className="text-xl md:text-2xl font-black text-slate-800 flex items-center gap-2">
                         <BarChart3 className="text-orange-500" size={28} />
-                        Inteligência de Negócio
+                        BI & Relatórios
                     </h1>
                     
                     <div className="flex items-center bg-slate-100 rounded-xl border border-slate-200 p-1">
-                        <button onClick={handlePrevMonth} className="p-1.5 hover:bg-white rounded-lg text-slate-400 transition-all">
+                        <button 
+                            type="button"
+                            onClick={handlePrevMonth} 
+                            className="p-1.5 hover:bg-white rounded-lg text-slate-400 transition-all"
+                        >
                             <ChevronLeft size={18}/>
                         </button>
                         <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest min-w-[140px] text-center px-4">
                             {format(currentDate, 'MMMM yyyy', { locale: pt })}
                         </div>
-                        <button onClick={handleNextMonth} className="p-1.5 hover:bg-white rounded-lg text-slate-400 transition-all">
+                        <button 
+                            type="button"
+                            onClick={handleNextMonth} 
+                            className="p-1.5 hover:bg-white rounded-lg text-slate-400 transition-all"
+                        >
                             <ChevronRight size={18}/>
                         </button>
                     </div>
@@ -271,16 +281,18 @@ const RelatoriosView: React.FC = () => {
 
                 <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200">
                     <button 
+                        type="button"
                         onClick={() => { setActiveTab('overview'); setSelectedReport(null); }}
                         className={`flex items-center gap-2 px-6 py-2 text-[10px] font-black uppercase tracking-tighter rounded-xl transition-all ${activeTab === 'overview' ? 'bg-white shadow-md text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}
                     >
-                        <FilePieChart size={14} /> Visão Geral
+                        <FilePieChart size={14} /> Dashboard
                     </button>
                     <button 
+                        type="button"
                         onClick={() => setActiveTab('export')}
                         className={`flex items-center gap-2 px-6 py-2 text-[10px] font-black uppercase tracking-tighter rounded-xl transition-all ${activeTab === 'export' ? 'bg-white shadow-md text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}
                     >
-                        <Table size={14} /> Exportação & Listas
+                        <Table size={14} /> Central de Exportação
                     </button>
                 </div>
             </header>
@@ -288,48 +300,50 @@ const RelatoriosView: React.FC = () => {
             <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-7xl mx-auto space-y-8 pb-20">
                     
+                    {/* TAB: VISÃO GERAL */}
                     {activeTab === 'overview' && (
                         <div className="space-y-8 animate-in fade-in duration-500">
+                            {/* KPI Grid - Replaced <p> with <div> to prevent nesting errors */}
                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                 <div className="bg-white p-5 border-l-4 border-l-emerald-500 rounded-2xl shadow-sm">
                                     <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Receita Líquida</div>
                                     <div className="text-xl font-black text-slate-800">R$ {stats.income.toLocaleString('pt-BR')}</div>
                                 </div>
                                 <div className="bg-white p-5 border-l-4 border-l-rose-500 rounded-2xl shadow-sm">
-                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Custos Fixos/Var.</div>
+                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Despesas Operacionais</div>
                                     <div className="text-xl font-black text-slate-800">R$ {stats.expense.toLocaleString('pt-BR')}</div>
                                 </div>
                                 <div className="bg-white p-5 border-l-4 border-l-blue-500 rounded-2xl shadow-sm">
-                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Lucro Real</div>
+                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Resultado Líquido</div>
                                     <div className="text-xl font-black text-slate-800">R$ {stats.profit.toLocaleString('pt-BR')}</div>
                                 </div>
                                 <div className="bg-white p-5 border-l-4 border-l-orange-500 rounded-2xl shadow-sm">
-                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Margem Líquida</div>
+                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Margem Real</div>
                                     <div className="text-xl font-black text-slate-800">{stats.income > 0 ? ((stats.profit / stats.income) * 100).toFixed(1) : 0}%</div>
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                <Card title="Faturamento por Categoria" className="lg:col-span-1 rounded-[32px] shadow-sm">
+                                <Card title="Faturamento por Segmento" className="lg:col-span-1 rounded-[32px] shadow-sm">
                                     <div className="h-64 mt-4">
                                         <SafePie 
                                             data={[
-                                                { name: 'Cílios', receita: 4500 },
                                                 { name: 'Sobrancelhas', receita: 3200 },
+                                                { name: 'Cílios', receita: 4500 },
                                                 { name: 'Estética', receita: 1800 },
-                                                { name: 'Produtos', receita: 950 }
+                                                { name: 'Venda de Produtos', receita: 950 }
                                             ]}
                                             colors={['#f97316', '#3b82f6', '#8b5cf6', '#10b981']}
                                         />
                                     </div>
                                 </Card>
-                                <Card title="Desempenho Semanal" className="lg:col-span-2 rounded-[32px] shadow-sm">
+                                <Card title="Ocupação Profissional" className="lg:col-span-2 rounded-[32px] shadow-sm">
                                     <div className="h-64 mt-4">
                                         <SafeBar 
                                             data={professionals.map(p => ({
                                                 name: p.name.split(' ')[0],
                                                 minutosOcupados: 480,
-                                                ocupacao: Math.floor(Math.random() * 40) + 50
+                                                ocupacao: Math.floor(Math.random() * 40) + 55
                                             }))}
                                             color="#f97316"
                                         />
@@ -339,15 +353,17 @@ const RelatoriosView: React.FC = () => {
                         </div>
                     )}
 
+                    {/* TAB: CENTRAL DE EXPORTAÇÃO */}
                     {activeTab === 'export' && !selectedReport && (
                         <div className="space-y-6 animate-in slide-in-from-bottom-6 duration-500">
-                            <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">Selecione um relatório contábil</h2>
+                            <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">Escolha o detalhamento contábil para baixar</h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                                 {reportsRegistry.map((report) => (
                                     <div
                                         key={report.id}
                                         onClick={() => handleSelectReport(report)}
-                                        className="bg-white p-6 rounded-[32px] border-2 border-slate-100 hover:border-orange-500 hover:shadow-2xl transition-all text-left group flex flex-col h-full cursor-pointer active:scale-95"
+                                        onKeyDown={(e) => e.key === 'Enter' && handleSelectReport(report)}
+                                        className="bg-white p-6 rounded-[32px] border-2 border-slate-100 hover:border-orange-500 hover:shadow-2xl transition-all text-left group flex flex-col h-full cursor-pointer active:scale-95 outline-none focus:ring-2 focus:ring-orange-200"
                                         role="button"
                                         tabIndex={0}
                                     >
@@ -361,7 +377,7 @@ const RelatoriosView: React.FC = () => {
                                             {report.description}
                                         </div>
                                         <div className="mt-auto flex items-center justify-between text-orange-500 font-black text-[10px] uppercase tracking-widest">
-                                            <span>Visualizar Dados</span>
+                                            <span>Visualizar Tabela</span>
                                             <ArrowRight size={16} />
                                         </div>
                                     </div>
@@ -370,13 +386,16 @@ const RelatoriosView: React.FC = () => {
                         </div>
                     )}
 
+                    {/* VIEW: PRÉVIA DE DADOS E EXPORTAÇÃO */}
                     {selectedReport && (
                         <div className="space-y-6 animate-in zoom-in-95 duration-300">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
                                 <div className="flex items-center gap-4">
                                     <button 
+                                        type="button"
                                         onClick={() => setSelectedReport(null)}
-                                        className="p-3 bg-slate-100 text-slate-500 rounded-2xl hover:bg-slate-200 transition-all"
+                                        className="p-3 bg-slate-100 text-slate-500 rounded-2xl hover:bg-slate-200 transition-all shadow-inner"
+                                        aria-label="Voltar"
                                     >
                                         <ChevronLeft size={20} />
                                     </button>
@@ -388,32 +407,35 @@ const RelatoriosView: React.FC = () => {
                                 
                                 <div className="flex gap-2 w-full sm:w-auto">
                                     <button 
+                                        type="button"
                                         onClick={exportToExcel}
-                                        disabled={isExporting}
+                                        disabled={isExporting || previewData.length === 0}
                                         className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 bg-emerald-600 text-white font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-emerald-700 shadow-lg shadow-emerald-100 transition-all active:scale-95 disabled:opacity-50"
                                     >
                                         <FileSpreadsheet size={18} /> Excel
                                     </button>
                                     <button 
+                                        type="button"
                                         onClick={exportToPDF}
-                                        disabled={isExporting}
+                                        disabled={isExporting || previewData.length === 0}
                                         className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 bg-slate-800 text-white font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-slate-900 shadow-lg shadow-slate-200 transition-all active:scale-95 disabled:opacity-50"
                                     >
-                                        <FileText size={18} /> Gerar PDF
+                                        <FileText size={18} /> Baixar PDF
                                     </button>
                                 </div>
                             </div>
 
+                            {/* Data Grid Preview */}
                             <div className="bg-white rounded-[40px] border border-slate-200 shadow-xl overflow-hidden min-h-[400px] flex flex-col">
                                 {isLoading ? (
                                     <div className="py-32 flex flex-col items-center justify-center text-slate-400">
                                         <Loader2 className="animate-spin text-orange-500 mb-4" size={48} strokeWidth={3} />
-                                        <div className="font-black uppercase tracking-widest text-[10px]">Lendo base de dados...</div>
+                                        <div className="font-black uppercase tracking-widest text-[10px]">Lendo base de dados contábil...</div>
                                     </div>
                                 ) : previewData.length === 0 ? (
                                     <div className="py-32 text-center">
                                         <AlertTriangle size={64} className="text-slate-100 mx-auto mb-4" />
-                                        <div className="text-slate-400 font-black uppercase tracking-widest text-xs">Sem dados para este período.</div>
+                                        <div className="text-slate-400 font-black uppercase tracking-widest text-xs">Sem movimentação registrada neste período.</div>
                                     </div>
                                 ) : (
                                     <>
@@ -431,27 +453,31 @@ const RelatoriosView: React.FC = () => {
                                                 <tbody className="divide-y divide-slate-100">
                                                     {previewData.map((row, i) => (
                                                         <tr key={i} className="hover:bg-orange-50/20 transition-colors">
-                                                            {selectedReport.columns.map(col => (
-                                                                <td key={col.key} className="px-6 py-4 text-xs font-bold text-slate-600 whitespace-nowrap">
-                                                                    {col.format ? col.format(row[col.key]) : String(row[col.key] ?? '---')}
-                                                                </td>
-                                                            ))}
+                                                            {selectedReport.columns.map(col => {
+                                                                const rawVal = row[col.key];
+                                                                return (
+                                                                    <td key={col.key} className="px-6 py-4 text-xs font-bold text-slate-600 whitespace-nowrap">
+                                                                        {col.format ? col.format(row[col.key]) : String(row[col.key] ?? '---')}
+                                                                    </td>
+                                                                );
+                                                            })}
                                                         </tr>
                                                     ))}
                                                 </tbody>
                                             </table>
                                         </div>
                                         
+                                        {/* Financial Summary Footer */}
                                         {previewTotals && (
-                                            <div className="bg-slate-50 border-t-2 border-slate-100 px-6 py-5 flex justify-end gap-12 items-center">
-                                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Totais do Período:</span>
+                                            <div className="bg-slate-50 border-t-2 border-slate-100 px-6 py-5 flex flex-wrap justify-end gap-12 items-center">
+                                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Sumário da Exportação:</span>
                                                 {selectedReport.columns.map(col => {
                                                     if (previewTotals[col.key] !== undefined) {
                                                         return (
                                                             <div key={col.key} className="flex flex-col items-end">
-                                                                <span className="text-[9px] font-black text-slate-400 uppercase">{col.header}</span>
+                                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">{col.header}</span>
                                                                 <span className="text-lg font-black text-orange-600">
-                                                                    {col.type === 'currency' ? `R$ ${previewTotals[col.key].toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : previewTotals[col.key]}
+                                                                    {col.type === 'currency' ? `R$ ${previewTotals[col.key].toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : previewTotals[col.key]}
                                                                 </span>
                                                             </div>
                                                         );
