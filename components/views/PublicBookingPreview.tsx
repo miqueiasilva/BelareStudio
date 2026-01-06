@@ -1,4 +1,3 @@
-
 import { 
     format, addDays, isSameDay, startOfDay, addMinutes, 
     isAfter, isBefore, getDay, parseISO, subDays,
@@ -161,7 +160,15 @@ const PublicBookingPreview: React.FC = () => {
                 const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true);
                 if (servicesData) setServices(servicesData);
 
-                const { data: profsData } = await supabase.from('professionals').select('*').eq('active', true).order('order_index');
+                // FIX: Sincronizada tabela para 'team_members' e adicionado filtro 'online_booking_enabled'
+                // para garantir que a configuração do administrador seja respeitada na página pública.
+                const { data: profsData } = await supabase
+                    .from('team_members')
+                    .select('*')
+                    .eq('active', true)
+                    .eq('online_booking_enabled', true)
+                    .order('order_index');
+                
                 if (profsData) setProfessionals(profsData);
 
                 const sixtyDaysAgo = subDays(new Date(), 60).toISOString();
@@ -477,7 +484,7 @@ const PublicBookingPreview: React.FC = () => {
                                             <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Passo {bookingStep} de 3</p>
                                         </div>
                                     </div>
-                                    <button onClick={() => setIsBookingOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"><X size={24}/></button>
+                                    <button onClick={() => setIsBookingOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors text-slate-400"><X size={24}/></button>
                                 </header>
 
                                 <main className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-slate-50/30 text-left">
