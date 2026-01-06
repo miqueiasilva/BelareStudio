@@ -247,8 +247,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 .from('team_members')
                 .select('id, name, photo_url, role, active, show_in_calendar, order_index') 
                 .eq('active', true)
-                .order('order_index', { ascending: true }) // 1º Critério
-                .order('name', { ascending: true }); // 2º Critério (Desempate)
+                .order('order_index', { ascending: true }) // 1º Critério: Ordem Manual
+                .order('name', { ascending: true }); // 2º Critério: Nome (Desempate)
 
             if (error) {
                 console.error('Erro Supabase:', error);
@@ -744,7 +744,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             {isPeriodModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPeriodModalOpen(false)}></div>
-                    <div className="relative w-full max-xs bg-white rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                    <div className="relative w-full max-w-xs bg-white rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-4 border-b bg-slate-50 font-extrabold text-slate-800 text-center">Visualizar por:</div>
                         <div className="p-4 space-y-2">
                             {['Dia', 'Semana', 'Mês', 'Lista'].map((item) => (

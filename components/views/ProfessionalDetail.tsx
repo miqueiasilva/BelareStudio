@@ -39,7 +39,7 @@ const EditField = ({ label, name, value, onChange, type = "text", placeholder, s
             <input 
                 type={type}
                 name={name}
-                value={value || ''}
+                value={value !== undefined && value !== null ? value : ''}
                 onChange={onChange}
                 disabled={disabled}
                 placeholder={placeholder}
@@ -268,7 +268,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                                 <User size={64} className="m-12 text-slate-300" />
                                             )}
                                             <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                {isUploading ? <Loader2 className="animate-spin text-white" /> : <Camera className="text-white" />}
+                                                {isUploading ? <Loader2 className="text-white animate-spin" size={20} /> : <Camera className="text-white" />}
                                                 <span className="text-[10px] text-white font-black uppercase mt-2">Trocar Foto</span>
                                             </div>
                                         </div>
@@ -309,7 +309,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <EditField label="Nome Completo" name="name" value={prof.name} onChange={handleInputChange} icon={User} span="md:col-span-2" />
                                         <EditField label="Cargo / Especialidade" name="role" value={prof.role} onChange={handleInputChange} />
-                                        <EditField label="Ordem na Agenda (1 = Primeiro)" name="order_index" type="number" min="0" value={prof.order_index} onChange={handleInputChange} icon={Hash} />
+                                        <EditField label="Ordem na Agenda (1, 2, 3...)" name="order_index" type="number" min="0" value={prof.order_index} onChange={handleInputChange} icon={Hash} />
                                         <EditField label="Data de Nascimento" name="birth_date" type="date" value={prof.birth_date} onChange={handleInputChange} />
                                         <EditField label="WhatsApp" name="phone" value={prof.phone} onChange={handleInputChange} icon={Phone} placeholder="(00) 00000-0000" />
                                         <EditField label="E-mail" name="email" value={prof.email} onChange={handleInputChange} icon={Mail} placeholder="email@exemplo.com" />
