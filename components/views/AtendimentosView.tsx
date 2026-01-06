@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
@@ -25,12 +26,13 @@ const END_HOUR = 20;
 const SLOT_PX_HEIGHT = 80; 
 const CARD_TOP_OFFSET = 10; 
 
-const STATUS_PRIORITY: Record<AppointmentStatus, number> = {
+const STATUS_PRIORITY: Record<string, number> = {
     'em_atendimento': 1,
     'chegou': 2,
     'confirmado_whatsapp': 3,
     'confirmado': 4,
     'agendado': 5,
+    'pendente': 5, // Status pendente tem a mesma prioridade de agendado
     'em_espera': 6,
     'concluido': 7,
     'faltou': 8,
@@ -48,13 +50,13 @@ const StatusIndicator = ({ status }: { status: AppointmentStatus }) => {
         case 'concluido': return <CheckCircle2 size={12} className="text-emerald-600" />;
         case 'faltou':
         case 'cancelado': return <Ban size={12} className="text-rose-500" />;
-        default: return null;
+        default: return <Clock size={12} className="text-amber-500" />; // Fallback para Pendente
     }
 };
 
 const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) => {
     return (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[10000] flex items-center justify-center p-4 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-300">
             <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-orange-100">
                 <div className="bg-orange-50 p-8 text-center border-b border-orange-100">
                     <div className="w-20 h-20 bg-orange-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-200 animate-bounce">
@@ -156,25 +158,13 @@ interface AtendimentosViewProps {
     onAddTransaction: (t: FinancialTransaction) => void;
 }
 
-type PeriodType = 'Dia' | 'Semana' | 'Mês' | 'Lista';
-type ViewMode = 'profissional' | 'andamento' | 'pagamento';
-
-interface DynamicColumn {
-    id: string | number;
-    title: string;
-    subtitle?: string;
-    photo?: string;
-    type: 'date' | 'professional';
-    data: Date | LegacyProfessional;
-}
-
 const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction }) => {
-    const { user } = useAuth();
+    const { user, loading: authLoading } = useAuth(); // Importado authLoading para sincronização
     const [currentDate, setCurrentDate] = useState(new Date());
     const [appointments, setAppointments] = useState<LegacyAppointment[]>([]);
     const [resources, setResources] = useState<LegacyProfessional[]>([]);
     const [isLoadingData, setIsLoadingData] = useState(false);
-    const [periodType, setPeriodType] = useState<PeriodType>('Dia');
+    const [periodType, setPeriodType] = useState<'Dia' | 'Semana' | 'Mês' | 'Lista'>('Dia');
     const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
     const [modalState, setModalState] = useState<{ type: 'appointment' | 'block' | 'sale'; data: any } | null>(null);
     const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
@@ -183,7 +173,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
 
     const [pendingConflict, setPendingConflict] = useState<{ newApp: LegacyAppointment, conflictWith: any } | null>(null);
-    const [viewMode, setViewMode] = useState<ViewMode>('profissional');
+    const [viewMode, setViewMode] = useState<'profissional' | 'andamento' | 'pagamento'>('profissional');
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [colWidth, setColWidth] = useState(220);
     const [isAutoWidth, setIsAutoWidth] = useState(false);
@@ -195,18 +185,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastRequestId = useRef(0);
 
-    // --- MOTOR DE BUSCA DE DADOS (QUERY OPTIMIZED) ---
+    // --- MOTOR DE BUSCA DE DADOS (SYNCED WITH AUTH) ---
     const fetchAppointments = async () => {
-        if (!isMounted.current) return;
+        // SEGURANÇA: Não tenta buscar dados se a sessão não estiver pronta
+        if (!isMounted.current || authLoading || !user) return;
+        
         const requestId = ++lastRequestId.current;
         if (abortControllerRef.current) abortControllerRef.current.abort();
         abortControllerRef.current = new AbortController();
         setIsLoadingData(true);
 
         try {
-            // CÁLCULO DE RANGE: Define o início e fim da busca no banco conforme a UI
             let rangeStart: Date, rangeEnd: Date;
-
             if (periodType === 'Semana') {
                 rangeStart = startOfWeek(currentDate, { weekStartsOn: 1 });
                 rangeEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
@@ -214,24 +204,23 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 rangeStart = startOfMonth(currentDate);
                 rangeEnd = endOfMonth(currentDate);
             } else {
-                // Dia ou Lista
                 rangeStart = startOfDay(currentDate);
                 rangeEnd = endOfDay(currentDate);
             }
 
-            // QUERY SQL: Busca todos os agendamentos ativos no intervalo (Histórico + Externos)
-            // IMPORTANTE: Não filtramos por created_by para garantir visibilidade total da clínica.
+            // QUERY SQL: Mais inclusiva (qualquer coisa que não seja cancelado)
             const { data, error } = await supabase
                 .from('appointments')
                 .select('*')
                 .gte('date', rangeStart.toISOString())
                 .lte('date', rangeEnd.toISOString())
-                .neq('status', 'cancelado') // Opcional: mostrar cancelados? Aqui filtramos os ativos
+                .neq('status', 'cancelado') 
                 .abortSignal(abortControllerRef.current.signal);
 
             if (error) throw error;
 
             if (data && isMounted.current && requestId === lastRequestId.current) {
+                // Passamos resources para o mapeamento
                 const mapped = data.map(row => mapRowToAppointment(row, resources));
                 setAppointments(mapped);
             }
@@ -242,10 +231,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     };
 
-    // Re-fetch automático quando a data ou tipo de período mudar (Navegação Ativa)
+    // Re-fetch quando Auth, Data ou Profissionais mudarem
     useEffect(() => {
-        if (resources.length > 0) fetchAppointments();
-    }, [currentDate, periodType, resources]);
+        if (!authLoading && user && resources.length > 0) {
+            fetchAppointments();
+        }
+    }, [currentDate, periodType, resources, user, authLoading]);
 
     useEffect(() => {
         isMounted.current = true;
@@ -264,6 +255,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     }, []);
 
     const fetchResources = async () => {
+        if (authLoading || !user) return;
         try {
             const { data, error } = await supabase
                 .from('team_members')
@@ -285,44 +277,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const mapRowToAppointment = (row: any, professionalsList: LegacyProfessional[]): LegacyAppointment => {
         const start = new Date(row.date);
         const dur = row.duration || 30;
+        
+        // CORREÇÃO: Busca profissional por ID ou Nome (Fallback para Online Bookings)
+        let prof = professionalsList.find(p => String(p.id) === String(row.resource_id));
+        if (!prof && row.professional_name) {
+            prof = professionalsList.find(p => p.name.toLowerCase() === row.professional_name.toLowerCase());
+        }
+
         return {
             id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
             notas: row.notes || '', origem: row.origem || 'interno',
             client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
-            professional: professionalsList.find(p => String(p.id) === String(row.resource_id)) || { id: 0, name: row.professional_name, avatarUrl: '' },
+            professional: prof || professionalsList[0] || { id: 0, name: row.professional_name, avatarUrl: '' },
             service: { id: 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : '#3b82f6' }
         } as LegacyAppointment;
-    };
-
-    // --- LOGICA DE REORDENAÇÃO (FIX) ---
-    const handleReorderProfessional = async (currentIndex: number, direction: 'left' | 'right') => {
-        const targetIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
-        
-        // Proteção de limites
-        if (targetIndex < 0 || targetIndex >= resources.length) return;
-
-        const newResources = [...resources];
-        const temp = newResources[currentIndex];
-        newResources[currentIndex] = newResources[targetIndex];
-        newResources[targetIndex] = temp;
-
-        // Atualização Otimista da UI
-        setResources(newResources);
-
-        try {
-            // Persistência no Banco
-            const updates = [
-                { id: newResources[currentIndex].id, order_index: currentIndex },
-                { id: newResources[targetIndex].id, order_index: targetIndex }
-            ];
-
-            for (const up of updates) {
-                await supabase.from('team_members').update({ order_index: up.order_index }).eq('id', up.id);
-            }
-        } catch (e) {
-            console.error("Falha ao salvar nova ordem:", e);
-            fetchResources(); // Reverte se falhar
-        }
     };
 
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
@@ -391,12 +359,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     };
 
-    const columns = useMemo<DynamicColumn[]>(() => {
+    const columns = useMemo(() => {
         if (periodType === 'Semana') {
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
-            return eachDayOfInterval({ start, end: endOfWeek(currentDate, { weekStartsOn: 1 }) }).map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date', data: day }));
+            return eachDayOfInterval({ start, end: endOfWeek(currentDate, { weekStartsOn: 1 }) }).map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date' as const, data: day }));
         }
-        return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional', data: p }));
+        return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional' as const, data: p }));
     }, [periodType, currentDate, resources]);
 
     const filteredAppointments = useMemo(() => {
@@ -462,25 +430,25 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 <div className="min-w-fit">
                     <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         <div className="sticky left-0 z-50 bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-[4px_0_24px_rgba(0,0,0,0.05)]"><Maximize2 size={16} className="text-slate-300" /></div>
-                        {columns.map((col, idx) => (
+                        {columns.map((col) => (
                             <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-100 h-24 bg-slate-50/10 relative group transition-colors hover:bg-slate-50">
                                 <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-slate-200 shadow-sm w-full max-w-[200px] overflow-hidden">
-                                    {col.photo && <img src={col.photo} alt={col.title} className="w-8 h-8 rounded-full object-cover border border-orange-100 flex-shrink-0" />}
+                                    {(col as any).photo && <img src={(col as any).photo} alt={col.title} className="w-8 h-8 rounded-full object-cover border border-orange-100 flex-shrink-0" />}
                                     <div className="flex flex-col overflow-hidden">
                                         <span className="text-[11px] font-black text-slate-800 leading-tight truncate">{col.title}</span>
-                                        {col.subtitle && <span className="text-[9px] text-slate-400 font-bold uppercase">{col.subtitle}</span>}
+                                        {(col as any).subtitle && <span className="text-[9px] text-slate-400 font-bold uppercase">{ (col as any).subtitle}</span>}
                                     </div>
                                 </div>
                                 {periodType === 'Dia' && col.type === 'professional' && (
                                     <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-50">
                                         <button 
-                                            onClick={(e) => { e.stopPropagation(); handleReorderProfessional(idx, 'left'); }}
+                                            onClick={(e) => { e.stopPropagation(); scrollHorizontal('left'); }}
                                             className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500 active:scale-95 transition-all"
                                         >
                                             <ChevronLeft size={14} />
                                         </button>
                                         <button 
-                                            onClick={(e) => { e.stopPropagation(); handleReorderProfessional(idx, 'right'); }}
+                                            onClick={(e) => { e.stopPropagation(); scrollHorizontal('right'); }}
                                             className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500 active:scale-95 transition-all"
                                         >
                                             <ChevronRight size={14} />
@@ -552,7 +520,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     <div className="relative w-full max-w-xs bg-white rounded-[32px] shadow-2xl overflow-hidden p-4 animate-in zoom-in-95 duration-200">
                         <div className="space-y-2">
                             {['Dia', 'Semana', 'Mês', 'Lista'].map((item) => (
-                                <button key={item} onClick={() => { setPeriodType(item as PeriodType); setIsPeriodModalOpen(false); }} className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl text-sm font-bold ${periodType === item ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-slate-50'}`}>{item}{periodType === item && <Check size={18} />}</button>
+                                <button key={item} onClick={() => { setPeriodType(item as any); setIsPeriodModalOpen(false); }} className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl text-sm font-bold ${periodType === item ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-slate-50'}`}>{item}{periodType === item && <Check size={18} />}</button>
                             ))}
                         </div>
                     </div>
