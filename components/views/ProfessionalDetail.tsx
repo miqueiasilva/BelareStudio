@@ -4,7 +4,7 @@ import {
     ChevronLeft, User, Save, Trash2, Camera, Scissors, 
     Loader2, Shield, Clock, DollarSign, CheckCircle, AlertCircle, Coffee,
     Phone, Mail, Smartphone, CreditCard, LayoutDashboard, Calendar,
-    Settings2
+    Settings2, Hash
 } from 'lucide-react';
 import { LegacyProfessional, LegacyService } from '../../types';
 import Card from '../shared/Card';
@@ -27,7 +27,7 @@ const DAYS_ORDER = [
     { key: 'sunday', label: 'Domingo' }
 ];
 
-const EditField = ({ label, name, value, onChange, type = "text", placeholder, span = "col-span-1", icon: Icon, disabled }: any) => (
+const EditField = ({ label, name, value, onChange, type = "text", placeholder, span = "col-span-1", icon: Icon, disabled, min }: any) => (
     <div className={`space-y-1.5 ${span}`}>
         <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-wider">{label}</label>
         <div className="relative group">
@@ -43,6 +43,7 @@ const EditField = ({ label, name, value, onChange, type = "text", placeholder, s
                 onChange={onChange}
                 disabled={disabled}
                 placeholder={placeholder}
+                min={min}
                 className={`w-full bg-white border border-slate-200 rounded-xl py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all shadow-sm ${Icon ? 'pl-11 pr-4' : 'px-4'} disabled:opacity-60 disabled:bg-slate-50`}
             />
         </div>
@@ -73,6 +74,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 email: (initialProf as any).email || '',
                 phone: (initialProf as any).phone || '',
                 birth_date: (initialProf as any).birth_date || '',
+                order_index: (initialProf as any).order_index ?? 0,
                 commission_rate: (initialProf as any).commission_rate ?? 30,
                 permissions: (initialProf as any).permissions || { view_calendar: true, edit_calendar: true },
                 services_enabled: (initialProf as any).services_enabled || [],
@@ -142,13 +144,14 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 bio: prof.bio || null,
                 active: !!prof.active,
                 birth_date: prof.birth_date === "" ? null : prof.birth_date,
+                order_index: parseInt(String(prof.order_index)) || 0,
                 commission_rate: isNaN(parseFloat(String(prof.commission_rate))) ? 0 : parseFloat(String(prof.commission_rate)),
                 permissions: prof.permissions,
                 services_enabled: prof.services_enabled,
                 work_schedule: prof.work_schedule,
                 photo_url: prof.photo_url,
-                online_booking_enabled: !!prof.online_booking_enabled, // Coluna correta conforme Persona
-                show_in_calendar: !!prof.show_in_calendar // Coluna correta conforme Persona
+                online_booking_enabled: !!prof.online_booking_enabled, 
+                show_in_calendar: !!prof.show_in_calendar 
             };
 
             const { error } = await supabase
@@ -306,6 +309,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <EditField label="Nome Completo" name="name" value={prof.name} onChange={handleInputChange} icon={User} span="md:col-span-2" />
                                         <EditField label="Cargo / Especialidade" name="role" value={prof.role} onChange={handleInputChange} />
+                                        <EditField label="Ordem na Agenda (1 = Primeiro)" name="order_index" type="number" min="0" value={prof.order_index} onChange={handleInputChange} icon={Hash} />
                                         <EditField label="Data de Nascimento" name="birth_date" type="date" value={prof.birth_date} onChange={handleInputChange} />
                                         <EditField label="WhatsApp" name="phone" value={prof.phone} onChange={handleInputChange} icon={Phone} placeholder="(00) 00000-0000" />
                                         <EditField label="E-mail" name="email" value={prof.email} onChange={handleInputChange} icon={Mail} placeholder="email@exemplo.com" />

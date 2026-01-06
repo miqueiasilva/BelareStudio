@@ -238,17 +238,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     }, [resources]);
 
-    // --- FEATURE UPGRADE: Busca de Equipe com Ordenação Personalizada ---
+    // --- Busca de Equipe com Ordenação Personalizada ---
     const fetchResources = async () => {
         try {
-            console.log('Sincronizando equipe (Ordenação Personalizada)...');
+            console.log('Sincronizando equipe (Ordenação Customizada)...');
             
-            // 1. SELECT: Incluído order_index para garantir a lógica de ordenação
             const { data, error } = await supabase
                 .from('team_members')
                 .select('id, name, photo_url, role, active, show_in_calendar, order_index') 
                 .eq('active', true)
-                .order('order_index', { ascending: true }); // 2. ORDENAÇÃO: Respeita o index administrativo
+                .order('order_index', { ascending: true }) // 1º Critério
+                .order('name', { ascending: true }); // 2º Critério (Desempate)
 
             if (error) {
                 console.error('Erro Supabase:', error);
@@ -256,7 +256,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             }
             
             if (data && isMounted.current) {
-                // 3. FILTRAGEM: Mantém a regra de visibilidade (nulos ou true = visível)
+                // FILTRAGEM CLIENT-SIDE: Mostra se não for falso (trata null como visível)
                 const visibleMembers = data.filter((m: any) => m.show_in_calendar !== false);
 
                 const mapped = visibleMembers.map((p: any) => ({
@@ -265,15 +265,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
                     role: p.role,
                     order_index: p.order_index || 0,
-                    services_enabled: [] 
+                    services_enabled: p.services_enabled || [] 
                 }));
                 setResources(mapped);
-                console.log('Equipe carregada na ordem personalizada:', mapped.length, 'profissionais.');
             }
         } catch (e: any) { 
             console.error('Erro fatal ao buscar equipe:', e);
             if (isMounted.current) {
-                setToast({ message: 'Erro ao organizar colunas da agenda.', type: 'error' });
+                setToast({ message: 'Falha na conexão com a equipe.', type: 'error' });
             }
         }
     };
@@ -745,7 +744,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             {isPeriodModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPeriodModalOpen(false)}></div>
-                    <div className="relative w-full max-w-xs bg-white rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                    <div className="relative w-full max-xs bg-white rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-4 border-b bg-slate-50 font-extrabold text-slate-800 text-center">Visualizar por:</div>
                         <div className="p-4 space-y-2">
                             {['Dia', 'Semana', 'Mês', 'Lista'].map((item) => (
