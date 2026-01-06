@@ -89,29 +89,30 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
     );
 };
 
-// --- MOTOR DE CÁLCULO PIXEL-PERFECT (POSICIONAMENTO ABSOLUTO FULL BLEED) ---
+// --- MOTOR DE CÁLCULO PIXEL-PERFECT (TÉCNICA INSET FILL) ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number, serviceColor: string) => {
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot; 
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
     
-    // Posição base sem margens
-    const rawTop = (startMinutesSinceDayStart * pixelsPerMinute) + CARD_TOP_OFFSET;
+    const rawTop = (startMinutesSinceDayStart * pixelsPerMinute);
     const rawHeight = (durationMinutes * pixelsPerMinute); 
 
     return { 
         position: 'absolute' as const,
-        top: `${rawTop - 1}px`,     // Sobe exatamente 1px para cobrir a borda superior
-        left: '0px',                // Alinhamento lateral total
-        width: '100%',              // Preenchimento total da coluna
-        height: `${rawHeight + 1}px`, // Cresce 1px para cobrir a borda inferior
-        zIndex: 10,                 // Camada acima da grid, abaixo dos headers (50)
-        borderTop: `1px solid ${serviceColor}` // Fusão visual com a borda
+        top: `${rawTop - 1}px`,       // Snapping 1px acima para cobrir a borda superior
+        left: '0px',                  // Esticamento total lateral (Inset-X-0)
+        right: '0px',
+        height: `${rawHeight + 2}px`, // Esticamento vertical para cobrir borda inferior
+        zIndex: 10,                   
+        margin: '0px',                // Neutralização de margens fantasmas
+        borderTop: `1px solid ${serviceColor}`
     };
 };
 
 const getCardStyle = (app: LegacyAppointment, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
-    const baseClasses = "rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card";
+    // Removidas margens automáticas (mx-1) para permitir preenchimento total solicitado
+    const baseClasses = "rounded-none shadow-sm border-l-[6px] p-2 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card !m-0";
     
     if (viewMode === 'pagamento') {
         const isPaid = app.status === 'concluido'; 
@@ -561,7 +562,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             ))}
                         </div>
                         {columns.map((col, idx) => (
-                            <div key={col.id} className={`relative border-r border-slate-200 min-h-[1000px] cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`} onClick={(e) => { if (e.target === e.currentTarget) handleGridClick(e, col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0], col.type === 'date' ? (col.data as Date) : currentDate); }}>
+                            <div key={col.id} className={`relative !p-0 !m-0 border-r border-slate-200 min-h-[1000px] cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`} onClick={(e) => { if (e.target === e.currentTarget) handleGridClick(e, col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0], col.type === 'date' ? (col.data as Date) : currentDate); }}>
                                 {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
                                 {filteredAppointments.filter(app => (periodType === 'Semana' ? isSameDay(app.start, col.data as Date) : (String(app.professional.id) === String(col.id)))).map(app => (
                                     <div key={app.id} ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }} onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }} className={getCardStyle(app, viewMode)} style={{ ...getAppointmentPosition(app.start, app.end, timeSlot, app.service.color) }}>
