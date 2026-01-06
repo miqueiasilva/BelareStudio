@@ -8,7 +8,8 @@ import {
     BarChart, PieChart as PieChartIcon, Search, Printer, 
     Download, Filter, CalendarDays, Clock, CreditCard, Banknote, Smartphone,
     RefreshCw, Info, UserCheck, Zap, RotateCcw, MessageCircle, 
-    Package, AlertOctagon, Layers, Coins, CheckSquare, Square
+    Package, AlertOctagon, Layers, Coins, CheckSquare, Square,
+    BarChart4, Tags, ShoppingBag, Sparkles, ArrowUpRight
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, parseISO, differenceInDays } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -22,7 +23,7 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-type TabType = 'overview' | 'financeiro' | 'comissoes' | 'clientes' | 'recuperacao' | 'estoque' | 'export';
+type TabType = 'overview' | 'financeiro' | 'performance' | 'comissoes' | 'clientes' | 'recuperacao' | 'estoque' | 'export';
 
 interface ProductData {
     id: number;
@@ -56,6 +57,7 @@ const RelatoriosView: React.FC = () => {
     // Filtros
     const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
     const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
+    const [sortBy, setSortBy] = useState<string>('date');
     
     // Dados
     const [transactions, setTransactions] = useState<any[]>([]);
@@ -76,7 +78,7 @@ const RelatoriosView: React.FC = () => {
     const refreshData = async () => {
         setIsLoading(true);
         try {
-            if (activeTab === 'financeiro' || activeTab === 'overview') await fetchFinancialData();
+            if (activeTab === 'financeiro' || activeTab === 'overview' || activeTab === 'performance') await fetchFinancialData();
             if (activeTab === 'estoque') await fetchStockData();
             if (activeTab === 'comissoes') await fetchCommissionData();
         } finally {
@@ -89,7 +91,19 @@ const RelatoriosView: React.FC = () => {
         const prev = (oldTrans || []).reduce((acc, t) => t.type === 'income' ? acc + Number(t.amount) : acc - Number(t.amount), 0);
         setPrevBalance(prev);
 
-        let query = supabase.from('financial_transactions').select('*').gte('date', startDate).lte('date', `${endDate}T23:59:59`).neq('status', 'cancelado').order('date', { ascending: false });
+        // Busca com join de profissional para o relatório de performance
+        let query = supabase
+            .from('financial_transactions')
+            .select(`
+                *,
+                team_members (name),
+                clients (nome)
+            `)
+            .gte('date', startDate)
+            .lte('date', `${endDate}T23:59:59`)
+            .neq('status', 'cancelado')
+            .order('date', { ascending: false });
+
         const { data } = await query;
         setTransactions(data || []);
     };
@@ -100,7 +114,6 @@ const RelatoriosView: React.FC = () => {
     };
 
     const fetchCommissionData = async () => {
-        // Busca Transações e Membros da Equipe simultaneamente
         const [transRes, teamRes] = await Promise.all([
             supabase.from('financial_transactions').select('*').gte('date', startDate).lte('date', `${endDate}T23:59:59`).eq('type', 'income').neq('status', 'cancelado'),
             supabase.from('team_members').select('id, name, commission_rate')
@@ -113,10 +126,8 @@ const RelatoriosView: React.FC = () => {
             const prof = team.find(p => p.id === t.professional_id);
             const grossValue = Number(t.amount);
             const taxValue = grossValue - Number(t.net_value || grossValue);
-            // Simulação de custo de produto (em um ERP real viria de uma tabela de consumo vinculada)
             const productCost = t.category === 'produto' ? grossValue * 0.3 : 0; 
             const rate = prof?.commission_rate || 30;
-            
             const netBase = grossValue - taxValue - productCost;
             const finalCommission = netBase * (rate / 100);
 
@@ -138,6 +149,40 @@ const RelatoriosView: React.FC = () => {
         setCommissions(rows);
     };
 
+    // --- CÁLCULOS DE PERFORMANCE (NEW) ---
+    const performanceMetrics = useMemo(() => {
+        const incomeTrans = transactions.filter(t => t.type === 'income');
+        
+        const serviceTrans = incomeTrans.filter(t => t.category === 'servico');
+        const productTrans = incomeTrans.filter(t => t.category === 'produto');
+
+        const totalServiceRevenue = serviceTrans.reduce((acc, t) => acc + Number(t.amount), 0);
+        const totalProductRevenue = productTrans.reduce((acc, t) => acc + Number(t.amount), 0);
+        const totalOverallRevenue = incomeTrans.reduce((acc, t) => acc + Number(t.amount), 0);
+
+        return {
+            totalService: totalServiceRevenue,
+            serviceCount: serviceTrans.length,
+            avgServiceTicket: serviceTrans.length > 0 ? totalServiceRevenue / serviceTrans.length : 0,
+            
+            totalProduct: totalProductRevenue,
+            productCount: productTrans.length,
+            avgProductTicket: productTrans.length > 0 ? totalProductRevenue / productTrans.length : 0,
+
+            totalOverall: totalOverallRevenue,
+            saleCount: incomeTrans.length,
+            avgGeneralTicket: incomeTrans.length > 0 ? totalOverallRevenue / incomeTrans.length : 0
+        };
+    }, [transactions]);
+
+    const sortedPerformanceData = useMemo(() => {
+        const data = [...transactions].filter(t => t.type === 'income');
+        if (sortBy === 'category') return data.sort((a, b) => (a.category || '').localeCompare(b.category || ''));
+        if (sortBy === 'professional') return data.sort((a, b) => (a.team_members?.name || '').localeCompare(b.team_members?.name || ''));
+        if (sortBy === 'value') return data.sort((a, b) => Number(b.amount) - Number(a.amount));
+        return data; // Default date order from fetch
+    }, [transactions, sortBy]);
+
     const handleTogglePayout = async (id: string, current: string) => {
         const next = current === 'pago' ? 'pendente' : 'pago';
         const { error } = await supabase.from('financial_transactions').update({ payout_status: next }).eq('id', id);
@@ -145,29 +190,6 @@ const RelatoriosView: React.FC = () => {
             setCommissions(prev => prev.map(c => c.id === id ? { ...c, status: next } : c));
         }
     };
-
-    // --- Exportação ---
-    const exportStockExcel = () => {
-        const data = products.map(p => ({
-            Produto: p.name,
-            Custo: p.cost_price,
-            Venda: p.price,
-            Estoque: p.stock_quantity,
-            'Patrimônio Imobilizado': p.cost_price * p.stock_quantity,
-            Status: p.stock_quantity <= p.min_stock ? 'REPOR' : 'OK'
-        }));
-        const ws = XLSX.utils.json_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Estoque");
-        XLSX.writeFile(wb, `Inventario_Patrimonial_${format(new Date(), 'dd_MM_yyyy')}.xlsx`);
-    };
-
-    // --- Resumos e KPIs ---
-    const stockSummary = useMemo(() => {
-        const totalInvestment = products.reduce((acc, p) => acc + (p.cost_price * p.stock_quantity), 0);
-        const lowItems = products.filter(p => p.stock_quantity <= p.min_stock).length;
-        return { totalInvestment, lowItems };
-    }, [products]);
 
     const summary = useMemo(() => {
         const income = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + Number(t.amount), 0);
@@ -184,12 +206,13 @@ const RelatoriosView: React.FC = () => {
                     <div className="p-2 bg-orange-50 text-orange-600 rounded-xl">
                         <BarChart3 size={24} />
                     </div>
-                    <h1 className="text-xl font-black text-slate-800 tracking-tight">BI & BACKOFFICE</h1>
+                    <h1 className="text-xl font-black text-slate-800 tracking-tight">CENTRAL DE INTELIGÊNCIA</h1>
                 </div>
 
                 <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 overflow-x-auto scrollbar-hide max-w-full">
                     <button onClick={() => setActiveTab('overview')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${activeTab === 'overview' ? 'bg-white shadow-md text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}>Dashboard</button>
                     <button onClick={() => setActiveTab('financeiro')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${activeTab === 'financeiro' ? 'bg-white shadow-md text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}>Financeiro</button>
+                    <button onClick={() => setActiveTab('performance')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${activeTab === 'performance' ? 'bg-white shadow-md text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}>Ticket Médio</button>
                     <button onClick={() => setActiveTab('comissoes')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${activeTab === 'comissoes' ? 'bg-white shadow-md text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}>Comissões</button>
                     <button onClick={() => setActiveTab('estoque')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${activeTab === 'estoque' ? 'bg-white shadow-md text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}>Estoque</button>
                     <button onClick={() => setActiveTab('export')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${activeTab === 'export' ? 'bg-white shadow-md text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}>Exportar</button>
@@ -208,6 +231,17 @@ const RelatoriosView: React.FC = () => {
                             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Fim</label>
                             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none" />
                         </div>
+                        {activeTab === 'performance' && (
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Agrupar por</label>
+                                <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none">
+                                    <option value="date">Data (Padrão)</option>
+                                    <option value="category">Categoria</option>
+                                    <option value="professional">Profissional</option>
+                                    <option value="value">Maior Valor</option>
+                                </select>
+                            </div>
+                        )}
                         <button onClick={refreshData} className="p-2.5 bg-slate-800 text-white rounded-xl shadow-md active:scale-95"><RefreshCw size={16} className={isLoading ? 'animate-spin' : ''}/></button>
                     </div>
                 </div>
@@ -216,133 +250,93 @@ const RelatoriosView: React.FC = () => {
             <main className="flex-1 overflow-y-auto p-6 custom-scrollbar">
                 <div className="max-w-7xl mx-auto space-y-8 pb-20">
                     
-                    {/* VIEW: ESTOQUE & PATRIMÔNIO */}
-                    {activeTab === 'estoque' && (
-                        <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center"><Package size={24}/></div>
-                                    <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Patrimônio Imobilizado</p><h3 className="text-2xl font-black text-slate-800">R$ {stockSummary.totalInvestment.toLocaleString('pt-BR')}</h3></div>
+                    {/* VIEW: PERFORMANCE & TICKET MÉDIO */}
+                    {activeTab === 'performance' && (
+                        <div className="space-y-8 animate-in fade-in duration-500">
+                            {/* KPI CARDS DE PERFORMANCE */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm relative overflow-hidden group">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Serviços</p>
+                                    <h3 className="text-2xl font-black text-slate-800">R$ {performanceMetrics.totalService.toLocaleString('pt-BR')}</h3>
+                                    <p className="text-[10px] text-indigo-500 font-bold mt-2 uppercase">{performanceMetrics.serviceCount} agendamentos</p>
+                                    <div className="absolute -right-2 -bottom-2 opacity-5 text-indigo-600 group-hover:scale-110 transition-transform"><Scissors size={64}/></div>
                                 </div>
-                                <div className={`p-6 rounded-[32px] flex items-center gap-4 border ${stockSummary.lowItems > 0 ? 'bg-rose-50 border-rose-100 text-rose-700' : 'bg-white border-slate-100 text-slate-400'}`}>
-                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${stockSummary.lowItems > 0 ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-300'}`}><AlertOctagon size={24}/></div>
-                                    <div><p className="text-[10px] font-black uppercase tracking-widest">Alertas de Reposição</p><h3 className="text-2xl font-black">{stockSummary.lowItems} Itens Críticos</h3></div>
-                                </div>
-                                <button onClick={exportStockExcel} className="bg-slate-900 p-6 rounded-[32px] text-white shadow-xl flex items-center justify-between group hover:bg-black transition-all">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-12 h-12 bg-white/10 text-orange-400 rounded-2xl flex items-center justify-center"><FileSpreadsheet size={24}/></div>
-                                        <div className="text-left"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Inventário</p><h3 className="text-lg font-black">Exportar Planilha</h3></div>
+
+                                <div className="bg-white p-6 rounded-[32px] border-l-4 border-l-indigo-500 shadow-md">
+                                    <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">Ticket Médio / Serviço</p>
+                                    <h3 className="text-2xl font-black text-slate-800">R$ {performanceMetrics.avgServiceTicket.toFixed(2)}</h3>
+                                    <div className="mt-2 flex items-center gap-1 text-[9px] font-black text-emerald-600 bg-emerald-50 w-fit px-1.5 py-0.5 rounded-md">
+                                        <TrendingUp size={10}/> Qualidade Alta
                                     </div>
-                                    <ArrowRight className="group-hover:translate-x-2 transition-transform" />
-                                </button>
+                                </div>
+
+                                <div className="bg-white p-6 rounded-[32px] border-l-4 border-l-violet-500 shadow-md">
+                                    <p className="text-[10px] font-black text-violet-600 uppercase tracking-widest mb-1">Ticket Médio / Produto</p>
+                                    <h3 className="text-2xl font-black text-slate-800">R$ {performanceMetrics.avgProductTicket.toFixed(2)}</h3>
+                                    <p className="text-[10px] text-slate-400 font-bold mt-2 uppercase">{performanceMetrics.productCount} vendas extras</p>
+                                </div>
+
+                                <div className="bg-slate-900 p-6 rounded-[32px] text-white shadow-2xl relative overflow-hidden group">
+                                    <div className="absolute -right-4 -top-4 opacity-10 group-hover:rotate-12 transition-transform"><Sparkles size={80}/></div>
+                                    <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest mb-1">Ticket Médio Geral (Comanda)</p>
+                                    <h3 className="text-3xl font-black">R$ {performanceMetrics.avgGeneralTicket.toFixed(2)}</h3>
+                                    <p className="text-[9px] text-slate-400 font-bold mt-3 uppercase flex items-center gap-1"><Info size={10}/> Faturamento total por cliente atendido</p>
+                                </div>
                             </div>
 
+                            {/* TABELA DE AUDITORIA DETALHADA */}
                             <div className="bg-white rounded-[32px] border border-slate-200 shadow-xl overflow-hidden">
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left border-collapse">
-                                        <thead className="bg-slate-900 text-white">
-                                            <tr>
-                                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest">Produto</th>
-                                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-right">Custo Unit.</th>
-                                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-right">Preço Venda</th>
-                                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-center">Qtd Atual</th>
-                                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-center">Status</th>
-                                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-right">Subtotal Custo</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100">
-                                            {products.map(p => (
-                                                <tr key={p.id} className={`hover:bg-slate-50 transition-colors ${p.stock_quantity <= p.min_stock ? 'bg-rose-50/30' : ''}`}>
-                                                    <td className="px-6 py-4 font-black text-slate-700">{p.name}</td>
-                                                    <td className="px-6 py-4 text-right text-slate-400 font-bold">R$ {p.cost_price.toFixed(2)}</td>
-                                                    <td className="px-6 py-4 text-right text-slate-600 font-bold">R$ {p.price.toFixed(2)}</td>
-                                                    <td className="px-6 py-4 text-center">
-                                                        <span className={`px-3 py-1 rounded-lg font-black text-xs ${p.stock_quantity <= p.min_stock ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-600'}`}>
-                                                            {p.stock_quantity} un
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-6 py-4 text-center">
-                                                        {p.stock_quantity <= p.min_stock ? (
-                                                            <span className="flex items-center justify-center gap-1 text-[9px] font-black text-rose-500 uppercase">
-                                                                <AlertTriangle size={12}/> Repor Urgente
-                                                            </span>
-                                                        ) : (
-                                                            <span className="flex items-center justify-center gap-1 text-[9px] font-black text-emerald-500 uppercase">
-                                                                <CheckCircle2 size={12}/> Normal
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-6 py-4 text-right font-black text-slate-800">
-                                                        R$ {(p.cost_price * p.stock_quantity).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                                <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                                    <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
+                                        <Table size={18} className="text-orange-500"/> Auditoria de Vendas e Performance
+                                    </h3>
+                                    <span className="text-[10px] font-black bg-white border border-slate-200 px-3 py-1 rounded-full text-slate-400">
+                                        FILTRADOS: {sortedPerformanceData.length} ITENS
+                                    </span>
                                 </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* VIEW: MAPA DE COMISSÕES LÍQUIDAS */}
-                    {activeTab === 'comissoes' && (
-                        <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="bg-slate-900 p-8 rounded-[40px] text-white shadow-2xl relative overflow-hidden group">
-                                    <div className="absolute -right-4 -top-4 opacity-10 group-hover:rotate-12 transition-transform"><Coins size={120}/></div>
-                                    <div className="relative z-10">
-                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Repasse Total Provisionado</p>
-                                        <h3 className="text-4xl font-black text-orange-400">R$ {commissions.reduce((acc, c) => acc + c.final_commission, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h3>
-                                        <p className="text-[9px] text-slate-500 font-bold uppercase mt-4 flex items-center gap-2">
-                                            <Info size={12}/> Cálculo baseado no valor líquido de impostos e insumos.
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm flex flex-col justify-center">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Resumo por Status</p>
-                                    <div className="space-y-3">
-                                        <div className="flex justify-between items-center"><span className="text-xs font-bold text-slate-500">Aguardando Pagamento</span><span className="font-black text-amber-600">R$ {commissions.filter(c => c.status !== 'pago').reduce((acc, c) => acc + c.final_commission, 0).toFixed(2)}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-xs font-bold text-slate-500">Já Liquidados</span><span className="font-black text-emerald-600">R$ {commissions.filter(c => c.status === 'pago').reduce((acc, c) => acc + c.final_commission, 0).toFixed(2)}</span></div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="bg-white rounded-[32px] border border-slate-200 shadow-xl overflow-hidden">
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left border-collapse">
                                         <thead className="bg-slate-900 text-white">
                                             <tr>
                                                 <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest">Data</th>
+                                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest">Cliente</th>
+                                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-center">Categoria</th>
+                                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest">Item / Serviço</th>
                                                 <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest">Profissional</th>
-                                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-right">Bruto</th>
-                                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-right">Custos/Taxas</th>
-                                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-right">Base Líquida</th>
-                                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-right">Comissão ({commissions[0]?.commission_rate}%)</th>
-                                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-center">Pago?</th>
+                                                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-right">Valor</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
-                                            {commissions.map(c => (
-                                                <tr key={c.id} className="hover:bg-slate-50 transition-colors group">
-                                                    <td className="px-6 py-4 text-[11px] font-bold text-slate-400">{format(parseISO(c.date), 'dd/MM')}</td>
-                                                    <td className="px-6 py-4">
-                                                        <div className="text-xs font-black text-slate-700">{c.professional_name}</div>
-                                                        <div className="text-[9px] text-slate-400 font-bold uppercase truncate max-w-[120px]">{c.description}</div>
-                                                    </td>
-                                                    <td className="px-6 py-4 text-right font-bold text-slate-400">R$ {c.gross_value.toFixed(2)}</td>
-                                                    <td className="px-6 py-4 text-right font-bold text-rose-400">- R$ {(c.tax_value + c.product_cost).toFixed(2)}</td>
-                                                    <td className="px-6 py-4 text-right font-black text-slate-600 bg-slate-50/50">R$ {c.net_base.toFixed(2)}</td>
-                                                    <td className="px-6 py-4 text-right font-black text-orange-600 text-sm">R$ {c.final_commission.toFixed(2)}</td>
+                                            {sortedPerformanceData.map((t, i) => (
+                                                <tr key={t.id || i} className="hover:bg-slate-50 transition-colors group">
+                                                    <td className="px-6 py-4 text-[11px] font-bold text-slate-400">{format(parseISO(t.date), 'dd/MM/yy HH:mm')}</td>
+                                                    <td className="px-6 py-4 font-bold text-slate-700">{t.clients?.nome || 'Cliente PDV'}</td>
                                                     <td className="px-6 py-4 text-center">
-                                                        <button 
-                                                            onClick={() => handleTogglePayout(c.id, c.status)}
-                                                            className={`p-2 rounded-xl transition-all ${c.status === 'pago' ? 'text-emerald-500 bg-emerald-50' : 'text-slate-300 bg-slate-50 hover:text-orange-500'}`}
-                                                        >
-                                                            {c.status === 'pago' ? <CheckSquare size={20}/> : <Square size={20}/>}
-                                                        </button>
+                                                        <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-tighter border ${t.category === 'servico' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-purple-50 text-purple-600 border-purple-100'}`}>
+                                                            {t.category || 'Geral'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="text-xs font-black text-slate-600 truncate max-w-[200px]">{t.description.replace('Venda PDV: ', '')}</div>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[9px] font-black text-slate-400 border border-slate-200">
+                                                                {t.team_members?.name?.charAt(0)}
+                                                            </div>
+                                                            <span className="text-xs font-bold text-slate-500">{t.team_members?.name || '---'}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-right">
+                                                        <span className="font-black text-slate-800">R$ {Number(t.amount).toFixed(2)}</span>
                                                     </td>
                                                 </tr>
                                             ))}
+                                            {sortedPerformanceData.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={6} className="py-20 text-center text-slate-300 italic">Nenhum dado de performance no período selecionado.</td>
+                                                </tr>
+                                            )}
                                         </tbody>
                                     </table>
                                 </div>
