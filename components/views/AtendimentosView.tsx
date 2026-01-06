@@ -6,7 +6,7 @@ import {
     ShoppingBag, Ban, Settings as SettingsIcon, Maximize2, 
     LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock,
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
-    CheckCircle2, Scissors
+    CheckCircle2, Scissors, ShieldAlert
 } from 'lucide-react';
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, parseISO, addMinutes, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -351,7 +351,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         const appointment = appointments.find(a => a.id === id);
         if (!appointment) return;
         
-        // SEGURANÇA: Bloqueio de mudança de status se for 'concluido' por não-admins (proteção financeira)
+        // RBAC: Bloqueio de mudança de status se for 'concluido' por não-admins
         const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
         if (!isAdmin && appointment.status === 'concluido') {
             setToast({ message: "Permissão Negada: Apenas o Gestor pode alterar registros concluídos.", type: 'error' });
@@ -372,7 +372,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         setActiveAppointmentDetail(null);
     };
 
-    // --- SEGURANÇA E INTEGRIDADE: Exclusão Inteligente (RBAC + CASCADE) ---
+    // --- AUDITORIA E COMPLIANCE: Exclusão com Snapshot Forense (Audit Trail) ---
     const handleDeleteAppointmentFull = async (id: number) => {
         const appointment = appointments.find(a => a.id === id);
         if (!appointment) return;
@@ -380,7 +380,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
         const isFinished = appointment.status === 'concluido';
 
-        // REGRA 1: Bloqueio para Staff em registros liquidados
+        // REGRA 1: Bloqueio RBAC
         if (!isAdmin && isFinished) {
             setToast({ 
                 message: "Permissão Negada: Apenas o Gestor pode excluir registros com financeiro lançado.", 
@@ -389,35 +389,44 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             return;
         }
 
-        // REGRA 2: Confirmação Diferenciada para Gestor (Aviso de Cascade)
         const confirmMsg = isFinished 
-            ? "⚠️ ATENÇÃO GESTOR: Este registro possui financeiro vinculado. A exclusão removerá o recebimento do Fluxo de Caixa. Deseja prosseguir?"
+            ? "⚠️ AÇÃO AUDITADA: Este registro possui financeiro vinculado. A exclusão removerá o recebimento e gerará um Log de Segurança. Prosseguir?"
             : "Deseja realmente apagar este agendamento?";
 
         if (!window.confirm(confirmMsg)) return;
         
         setIsLoadingData(true);
         try {
-            // PASSO A: Limpeza Profunda (Prevenção de Erro 409 Conflict)
-            // Remove as dependências primeiro
-            const { error: finError } = await supabase
-                .from('financial_transactions')
-                .delete()
-                .eq('appointment_id', id);
+            // PASSO 0: Snapshot para Auditoria (Old Value)
+            // Registramos quem está apagando o quê, incluindo o valor financeiro perdido
+            if (isFinished) {
+                await supabase.from('audit_logs').insert([{
+                    actor_id: user?.id,
+                    actor_name: user?.nome,
+                    action_type: 'DELETE',
+                    entity: 'appointments',
+                    entity_id: String(id),
+                    old_value: {
+                        client: appointment.client?.nome,
+                        service: appointment.service.name,
+                        value: appointment.service.price,
+                        date: appointment.start.toISOString(),
+                        professional: appointment.professional.name,
+                        status: appointment.status
+                    }
+                }]);
+            }
 
-            if (finError) throw finError;
+            // PASSO A: Limpeza Profunda (Prevenção de Erro 409 Conflict)
+            await supabase.from('financial_transactions').delete().eq('appointment_id', id);
 
             // PASSO B: Remoção do Registro Principal
-            const { error: apptError } = await supabase
-                .from('appointments')
-                .delete()
-                .eq('id', id);
+            const { error: apptError } = await supabase.from('appointments').delete().eq('id', id);
 
             if (apptError) throw apptError;
 
-            // Atualização da UI
             setAppointments(prev => prev.filter(p => p.id !== id));
-            setToast({ message: 'Agendamento e financeiro removidos com sucesso.', type: 'info' });
+            setToast({ message: 'Registro removido e ação auditada.', type: 'info' });
             setActiveAppointmentDetail(null);
         } catch (e: any) {
             console.error("Falha na exclusão atômica:", e);
