@@ -354,12 +354,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         // SEGURANÇA: Bloqueio de mudança de status se for 'concluido' por não-admins (proteção financeira)
         const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
         if (!isAdmin && appointment.status === 'concluido') {
-            setToast({ message: "Segurança: Registros financeiros só podem ser alterados pelo Gestor.", type: 'error' });
+            setToast({ message: "Permissão Negada: Apenas o Gestor pode alterar registros concluídos.", type: 'error' });
             return;
         }
 
         if (appointment.status === 'concluido' && newStatus !== 'concluido') {
-            if (!window.confirm("Atenção: O lançamento financeiro será ESTORNADO. Continuar?")) return;
+            if (!window.confirm("Atenção: O lançamento financeiro será ESTORNADO do caixa. Continuar?")) return;
             await supabase.from('financial_transactions').delete().eq('appointment_id', id);
         }
         
@@ -372,43 +372,56 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         setActiveAppointmentDetail(null);
     };
 
-    // --- SEGURANÇA RBAC: Exclusão Segura baseada em Perfil e Status Financeiro ---
+    // --- SEGURANÇA E INTEGRIDADE: Exclusão Inteligente (RBAC + CASCADE) ---
     const handleDeleteAppointmentFull = async (id: number) => {
         const appointment = appointments.find(a => a.id === id);
         if (!appointment) return;
 
         const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
-        const isFinancial = appointment.status === 'concluido';
+        const isFinished = appointment.status === 'concluido';
 
-        // REGRA: Staff não pode apagar agendamentos já liquidados (concluídos)
-        if (!isAdmin && isFinancial) {
+        // REGRA 1: Bloqueio para Staff em registros liquidados
+        if (!isAdmin && isFinished) {
             setToast({ 
-                message: "Segurança: Somente o Gestor pode excluir registros com recebimento confirmado.", 
+                message: "Permissão Negada: Apenas o Gestor pode excluir registros com financeiro lançado.", 
                 type: 'error' 
             });
             return;
         }
 
-        const confirmMsg = isFinancial 
-            ? "⚠️ ATENÇÃO GESTOR: Este agendamento possui recebimento financeiro. A exclusão removerá o valor do fluxo de caixa. Continuar?"
-            : "Deseja realmente excluir este agendamento?";
+        // REGRA 2: Confirmação Diferenciada para Gestor (Aviso de Cascade)
+        const confirmMsg = isFinished 
+            ? "⚠️ ATENÇÃO GESTOR: Este registro possui financeiro vinculado. A exclusão removerá o recebimento do Fluxo de Caixa. Deseja prosseguir?"
+            : "Deseja realmente apagar este agendamento?";
 
         if (!window.confirm(confirmMsg)) return;
         
         setIsLoadingData(true);
         try {
-            // 1. Remove transação vinculada se houver (Prevenção de Erro 409)
-            await supabase.from('financial_transactions').delete().eq('appointment_id', id);
+            // PASSO A: Limpeza Profunda (Prevenção de Erro 409 Conflict)
+            // Remove as dependências primeiro
+            const { error: finError } = await supabase
+                .from('financial_transactions')
+                .delete()
+                .eq('appointment_id', id);
 
-            // 2. Remove o agendamento
-            const { error: apptError } = await supabase.from('appointments').delete().eq('id', id);
+            if (finError) throw finError;
+
+            // PASSO B: Remoção do Registro Principal
+            const { error: apptError } = await supabase
+                .from('appointments')
+                .delete()
+                .eq('id', id);
+
             if (apptError) throw apptError;
 
+            // Atualização da UI
             setAppointments(prev => prev.filter(p => p.id !== id));
-            setToast({ message: 'Registro removido do sistema.', type: 'info' });
+            setToast({ message: 'Agendamento e financeiro removidos com sucesso.', type: 'info' });
             setActiveAppointmentDetail(null);
         } catch (e: any) {
-            setToast({ message: "Falha ao processar exclusão.", type: 'error' });
+            console.error("Falha na exclusão atômica:", e);
+            setToast({ message: "Falha técnica ao excluir registro vinculado.", type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
