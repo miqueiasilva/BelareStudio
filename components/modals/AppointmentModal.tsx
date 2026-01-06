@@ -1,11 +1,9 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { LegacyAppointment, Client, LegacyProfessional, LegacyService } from '../../types';
-import { professionals } from '../../data/mockData';
 import { ChevronLeft, User, Calendar, Tag, Clock, DollarSign, Info, PlusCircle, Repeat, X, Loader2, AlertCircle, Briefcase, CheckSquare, Mail, Trash2, Edit2 } from 'lucide-react';
 import { format, addMinutes } from 'date-fns';
 import SelectionModal from './SelectionModal';
-import ClientSearchModal from './ClientSearchModal'; // Importado Novo Modal
+import ClientSearchModal from './ClientSearchModal'; 
 import ClientModal from './ClientModal';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
@@ -21,6 +19,9 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   
   const [dbServices, setDbServices] = useState<LegacyService[]>([]);
   const [loadingServices, setLoadingServices] = useState(false);
+  // FIX: Added state to store professionals list and loading state to resolve 'resources' not found error.
+  const [dbProfessionals, setDbProfessionals] = useState<LegacyProfessional[]>([]);
+  const [loadingProfessionals, setLoadingProfessionals] = useState(false);
 
   const [formData, setFormData] = useState<Partial<LegacyAppointment>>({
     status: 'agendado',
@@ -41,7 +42,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clientEmail, setClientEmail] = useState('');
-  const [emailError, setEmailError] = useState('');
 
   const fetchServices = async () => {
     setLoadingServices(true);
@@ -72,17 +72,55 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     }
   };
 
+  // FIX: Added function to fetch professionals from the team_members table to populate the selection list.
+  const fetchProfessionals = async () => {
+    setLoadingProfessionals(true);
+    try {
+      const { data, error: sbError } = await supabase
+        .from('team_members')
+        .select('id, name, photo_url, role, active, services_enabled')
+        .eq('active', true)
+        .order('name');
+
+      if (sbError) throw sbError;
+
+      if (data) {
+        const mapped: LegacyProfessional[] = data.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
+          role: p.role,
+          services_enabled: p.services_enabled || []
+        }));
+        setDbProfessionals(mapped);
+      }
+    } catch (e: any) {
+      console.error("Erro ao carregar profissionais:", e.message);
+    } finally {
+      setLoadingProfessionals(false);
+    }
+  };
+
   useEffect(() => {
     fetchServices();
+    // FIX: Trigger fetching professionals on component mount.
+    fetchProfessionals();
   }, []);
 
-  // REGRA: Serviços filtrados pelas competências do profissional
+  // --- CORREÇÃO: Filtro de Escopo de Serviços por Profissional ---
   const filteredServicesToSelect = useMemo(() => {
-    const profSkills = (formData.professional as any)?.services_enabled;
-    if (!formData.professional || !profSkills || profSkills.length === 0) {
-      return dbServices; // Se não tem profissional, mostra todos (ou poderia bloquear)
+    if (!formData.professional) return []; // Se não tem profissional, não mostra serviços para evitar erro de escopo
+
+    const profSkills = formData.professional.services_enabled;
+    
+    // Se o profissional tem lista de serviços habilitados, filtra estritamente
+    if (profSkills && Array.isArray(profSkills) && profSkills.length > 0) {
+      return dbServices.filter(s => profSkills.includes(s.id));
     }
-    return dbServices.filter(s => profSkills.includes(s.id));
+    
+    // Se a lista do profissional está vazia ou nula, exibe todos (fallback de clínica pequena)
+    // ou poderia retornar [] para forçar o cadastro de habilidades.
+    return dbServices;
   }, [dbServices, formData.professional]);
 
   useEffect(() => {
@@ -105,7 +143,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
       setClientEmail(appointment?.client?.email || '');
       setError(null);
-      setEmailError('');
   }, [appointment]);
 
   useEffect(() => {
@@ -162,7 +199,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
   const handleSave = async () => {
     setError(null);
-    setEmailError('');
     
     if (!formData.client) {
       setError('Por favor, selecione um cliente.');
@@ -226,7 +262,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
 
   const handleSelectProfessional = (professional: LegacyProfessional) => {
-    // REGRA: Se o profissional mudar, resetamos os serviços selecionados para evitar inconsistência
     if (formData.professional?.id !== professional.id) {
         setSelectedServices([]);
         setManualPrice(0);
@@ -255,7 +290,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             </div>
           )}
 
-          {/* Client Selection */}
           <div className="space-y-1">
             <label className="text-xs font-bold text-slate-500 uppercase">Cliente <span className="text-red-500">*</span></label>
             <div className="flex items-center gap-3 group cursor-pointer" onClick={() => setSelectionModal('client')}>
@@ -285,7 +319,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
              </div>
           </div>
 
-          {/* Professional Selection */}
           <div className="space-y-1">
             <label className="text-xs font-bold text-slate-500 uppercase">Profissional <span className="text-red-500">*</span></label>
             <div className="flex items-center gap-3 group cursor-pointer" onClick={() => setSelectionModal('professional')}>
@@ -308,7 +341,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             </div>
           </div>
 
-          {/* Service Selection */}
           <div className="space-y-2">
              <label className="text-xs font-bold text-slate-500 uppercase">Serviços <span className="text-red-500">*</span></label>
              {selectedServices.map((service, index) => (
@@ -329,16 +361,15 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
              ))}
              <button 
                 onClick={() => setSelectionModal('service')}
-                disabled={loadingServices}
+                disabled={loadingServices || !formData.professional}
                 className="w-full py-2 border border-dashed border-blue-300 rounded-lg text-blue-600 text-sm font-semibold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
              >
                 {loadingServices ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlusCircle size={16} />}
-                {loadingServices ? 'Carregando...' : 'Adicionar Serviço'}
+                {!formData.professional ? 'Selecione um profissional primeiro' : (loadingServices ? 'Carregando...' : 'Adicionar Serviço')}
              </button>
           </div>
 
           <div className="flex items-center gap-4">
-              {/* Preço Manual */}
               <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 shadow-sm h-[64px]">
                   <div className="p-1.5 bg-green-50 rounded text-green-600"><DollarSign className="w-4 h-4" /></div>
                   <div className="flex flex-col w-full">
@@ -347,7 +378,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
                   </div>
               </div>
 
-              {/* Duração Composta (H:M) - Padronizado com ServicosView */}
               <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 shadow-sm h-[64px]">
                   <div className="p-1.5 bg-blue-50 rounded text-blue-600"><Clock className="w-4 h-4" /></div>
                   <div className="flex flex-col w-full">
@@ -419,7 +449,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             </button>
         </footer>
 
-        {/* MODAIS DE SELEÇÃO */}
         {selectionModal === 'client' && (
           <ClientSearchModal 
             onClose={() => setSelectionModal(null)} 
@@ -442,9 +471,11 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
         {selectionModal === 'professional' && (
           <SelectionModal
             title="Selecione o Profissional"
-            items={professionals}
+            // FIX: Changed 'resources' to 'dbProfessionals' as 'resources' was undefined in this scope.
+            items={dbProfessionals}
             onClose={() => setSelectionModal(null)}
-            onSelect={(item) => handleSelectProfessional(professionals.find(p => p.id === item.id)!)}
+            // FIX: Changed 'resources' to 'dbProfessionals'.
+            onSelect={(item) => handleSelectProfessional(dbProfessionals.find(p => p.id === item.id)!)}
             searchPlaceholder="Buscar Profissional..."
             renderItemIcon={() => <Briefcase size={20}/>}
           />

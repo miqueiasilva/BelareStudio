@@ -192,7 +192,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
     const isMounted = useRef(true);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
-    const gridScrollRef = useRef<HTMLDivElement>(null); // FIX: Referência para controle de scroll horizontal
+    const gridScrollRef = useRef<HTMLDivElement>(null); 
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastRequestId = useRef(0);
 
@@ -214,7 +214,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         try {
             const { data, error } = await supabase
                 .from('team_members')
-                .select('id, name, photo_url, role, active, show_in_calendar, order_index') 
+                .select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled') 
                 .eq('active', true)
                 .order('order_index', { ascending: true }) 
                 .order('name', { ascending: true });
@@ -229,6 +229,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         } catch (e) { console.error(e); }
     };
 
+    const mapRowToAppointment = (row: any, professionalsList: LegacyProfessional[]): LegacyAppointment => {
+        const start = new Date(row.date);
+        const dur = row.duration || 30;
+        return {
+            id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
+            notas: row.notes || '', origem: row.origem || 'interno',
+            client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
+            professional: professionalsList.find(p => String(p.id) === String(row.resource_id)) || { id: 0, name: row.professional_name, avatarUrl: '' },
+            service: { id: 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : '#3b82f6' }
+        } as LegacyAppointment;
+    };
+
     const fetchAppointments = async () => {
         if (!isMounted.current) return;
         const requestId = ++lastRequestId.current;
@@ -239,17 +251,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             const { data, error } = await supabase.from('appointments').select('*').abortSignal(abortControllerRef.current.signal);
             if (error) throw error;
             if (data && isMounted.current && requestId === lastRequestId.current) {
-                const mapped = data.map(row => {
-                    const start = new Date(row.date);
-                    const dur = row.duration || 30;
-                    return {
-                        id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
-                        notas: row.notes || '', origem: row.origem || 'interno',
-                        client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
-                        professional: resources.find(p => p.id === Number(row.resource_id)) || { id: 0, name: row.professional_name, avatarUrl: '' },
-                        service: { id: 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : '#3b82f6' }
-                    } as LegacyAppointment;
-                });
+                const mapped = data.map(row => mapRowToAppointment(row, resources));
                 setAppointments(mapped);
             }
         } catch (e) { console.error(e); } finally { if (isMounted.current) setIsLoadingData(false); }
@@ -267,11 +269,26 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
             }
             const payload = { client_name: app.client?.nome, resource_id: app.professional.id, professional_name: app.professional.name, service_name: app.service.name, value: app.service.price, duration: app.service.duration, date: app.start.toISOString(), status: app.status, notes: app.notas, origem: app.origem || 'interno' };
-            if (app.id && appointments.some(a => a.id === app.id)) await supabase.from('appointments').update(payload).eq('id', app.id);
-            else await supabase.from('appointments').insert([payload]);
+            
+            let finalApp: LegacyAppointment;
+            if (app.id && appointments.some(a => a.id === app.id)) {
+                const { data, error } = await supabase.from('appointments').update(payload).eq('id', app.id).select().single();
+                if (error) throw error;
+                finalApp = mapRowToAppointment(data, resources);
+                setAppointments(prev => prev.map(a => a.id === finalApp.id ? finalApp : a));
+            } else {
+                const { data, error } = await supabase.from('appointments').insert([payload]).select().single();
+                if (error) throw error;
+                finalApp = mapRowToAppointment(data, resources);
+                setAppointments(prev => [...prev, finalApp]);
+            }
+
             setToast({ message: 'Agendamento salvo!', type: 'success' });
-            setModalState(null); setPendingConflict(null); fetchAppointments();
-        } catch (e) { setToast({ message: 'Erro ao salvar.', type: 'error' }); } finally { setIsLoadingData(false); }
+            setModalState(null); setPendingConflict(null);
+        } catch (e) { 
+            setToast({ message: 'Erro ao salvar.', type: 'error' }); 
+            fetchAppointments(); // Fallback se a sincronia manual falhar
+        } finally { setIsLoadingData(false); }
     };
 
     const handleUpdateStatus = async (id: number, newStatus: AppointmentStatus) => {
@@ -281,8 +298,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             if (!window.confirm("Lançamento financeiro será ESTORNADO. Continuar?")) return;
             await supabase.from('financial_transactions').delete().eq('appointment_id', id);
         }
-        await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
-        fetchAppointments(); setActiveAppointmentDetail(null);
+        const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
+        if (!error) {
+            setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
+        } else {
+            fetchAppointments();
+        }
+        setActiveAppointmentDetail(null);
     };
 
     const handleDateChange = (direction: number) => {
@@ -291,10 +313,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         else if (periodType === 'Mês') setCurrentDate(prev => addMonths(prev, direction));
     };
 
-    // FIX: Lógica de rolagem horizontal vinculada ao container de scroll
     const scrollHorizontal = (direction: 'left' | 'right') => {
         if (gridScrollRef.current) {
-            const amount = colWidth + 20; // largura da coluna + margem estimada
+            const amount = colWidth + 20; 
             gridScrollRef.current.scrollBy({
                 left: direction === 'left' ? -amount : amount,
                 behavior: 'smooth'
@@ -382,7 +403,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                         {col.subtitle && <span className="text-[9px] text-slate-400 font-bold uppercase">{col.subtitle}</span>}
                                     </div>
                                 </div>
-                                {/* FIX: Handlers de scroll vinculados às setas horizontais */}
                                 {periodType === 'Dia' && col.type === 'professional' && (
                                     <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-50">
                                         <button 
@@ -412,7 +432,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         {columns.map((col, idx) => (
                             <div key={col.id} className={`relative border-r border-slate-200 min-h-[1000px] cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`} onClick={(e) => { if (e.target === e.currentTarget) handleGridClick(e, col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0], col.type === 'date' ? (col.data as Date) : currentDate); }}>
                                 {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
-                                {filteredAppointments.filter(app => (periodType === 'Semana' ? isSameDay(app.start, col.data as Date) : (app.professional.id === col.id))).map(app => (
+                                {filteredAppointments.filter(app => (periodType === 'Semana' ? isSameDay(app.start, col.data as Date) : (String(app.professional.id) === String(col.id)))).map(app => (
                                     <div key={app.id} ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }} onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }} className={getCardStyle(app, viewMode)} style={{ ...getAppointmentPosition(app.start, app.end, timeSlot), borderLeftColor: app.service.color }}>
                                         <div className="absolute top-1.5 right-1.5 opacity-40 group-hover/card:opacity-100 transition-opacity">{app.origem === 'link' ? <Globe size={10} className="text-orange-500" /> : <User size={10} className="text-slate-400" />}</div>
                                         <div className="flex items-center gap-1 overflow-hidden">
@@ -428,7 +448,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 </div>
             </div>
 
-            {/* Context Menu Completo */}
             {selectionMenu && (
                 <>
                     <div className="fixed inset-0 z-50" onClick={() => setSelectionMenu(null)} />
@@ -472,7 +491,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 </div>
             )}
 
-            {activeAppointmentDetail && <AppointmentDetailPopover appointment={activeAppointmentDetail} targetElement={appointmentRefs.current.get(activeAppointmentDetail.id) || null} onClose={() => setActiveAppointmentDetail(null)} onEdit={(app) => setModalState({ type: 'appointment', data: app })} onDelete={async (id) => { if (window.confirm("Excluir agendamento?")) { await supabase.from('appointments').delete().eq('id', id); fetchAppointments(); setActiveAppointmentDetail(null); } }} onUpdateStatus={handleUpdateStatus} />}
+            {activeAppointmentDetail && <AppointmentDetailPopover appointment={activeAppointmentDetail} targetElement={appointmentRefs.current.get(activeAppointmentDetail.id) || null} onClose={() => setActiveAppointmentDetail(null)} onEdit={(app) => setModalState({ type: 'appointment', data: app })} onDelete={async (id) => { if (window.confirm("Excluir agendamento?")) { await supabase.from('appointments').delete().eq('id', id); setAppointments(prev => prev.filter(p => p.id !== id)); setActiveAppointmentDetail(null); } }} onUpdateStatus={handleUpdateStatus} />}
             {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />}
             {modalState?.type === 'block' && <BlockTimeModal professional={modalState.data.professional} startTime={modalState.data.start} onClose={() => setModalState(null)} onSave={handleSaveAppointment as any} />}
             {modalState?.type === 'sale' && <NewTransactionModal type="receita" onClose={() => setModalState(null)} onSave={(t) => { onAddTransaction(t); setModalState(null); setToast({ message: 'Venda registrada!', type: 'success' }); }} />}
