@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
     BarChart3, TrendingUp, TrendingDown, DollarSign, Calendar, 
     ChevronLeft, ChevronRight, FileSpreadsheet, FileText,
@@ -25,6 +25,11 @@ import {
 } from 'recharts';
 import Card from '../shared/Card';
 import { supabase } from '../../services/supabaseClient';
+
+// Bibliotecas de Exportação
+import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // --- COMPONENTES AUXILIARES ---
 
@@ -68,36 +73,34 @@ const RelatoriosView: React.FC = () => {
     const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
     const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     
-    // Dados Brutos
+    // Dados Brutos Reais
     const [transactions, setTransactions] = useState<any[]>([]);
     const [prevTransactions, setPrevTransactions] = useState<any[]>([]);
     const [appointments, setAppointments] = useState<any[]>([]);
     const [products, setProducts] = useState<any[]>([]);
     const [clients, setClients] = useState<any[]>([]);
+    const [team, setTeam] = useState<any[]>([]);
 
     useEffect(() => { setIsMounted(true); }, []);
 
-    useEffect(() => {
-        if (isMounted) refreshAllData();
-    }, [isMounted, startDate, endDate, isComparing]);
-
-    const refreshAllData = async () => {
+    const refreshAllData = useCallback(async () => {
         setIsLoading(true);
         try {
             const currentStart = startOfDay(parseISO(startDate));
             const currentEnd = endOfDay(parseISO(endDate));
             
-            // Cálculo do Período Anterior para Comparação
+            // Período Anterior equivalente
             const diffDays = differenceInDays(currentEnd, currentStart) + 1;
             const prevStart = subDays(currentStart, diffDays);
             const prevEnd = subDays(currentEnd, diffDays);
 
-            const [transRes, prevTransRes, apptsRes, prodsRes, clientsRes] = await Promise.all([
+            const [transRes, prevTransRes, apptsRes, prodsRes, clientsRes, teamRes] = await Promise.all([
                 supabase.from('financial_transactions').select('*').gte('date', currentStart.toISOString()).lte('date', currentEnd.toISOString()).neq('status', 'cancelado'),
                 supabase.from('financial_transactions').select('*').gte('date', prevStart.toISOString()).lte('date', prevEnd.toISOString()).neq('status', 'cancelado'),
                 supabase.from('appointments').select('*').gte('date', currentStart.toISOString()).lte('date', currentEnd.toISOString()),
                 supabase.from('products').select('*'),
-                supabase.from('clients').select('*')
+                supabase.from('clients').select('*'),
+                supabase.from('team_members').select('*')
             ]);
 
             setTransactions(transRes.data || []);
@@ -105,43 +108,113 @@ const RelatoriosView: React.FC = () => {
             setAppointments(apptsRes.data || []);
             setProducts(prodsRes.data || []);
             setClients(clientsRes.data || []);
+            setTeam(teamRes.data || []);
+        } catch (e) {
+            console.error("Erro no motor de dados:", e);
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [startDate, endDate]);
 
-    // --- MOTORES DE BI (PROCESSAMENTO ON-THE-FLY) ---
+    useEffect(() => {
+        if (isMounted) refreshAllData();
+    }, [isMounted, refreshAllData]);
+
+    // --- MOTORES DE BI (CÁLCULOS ANALÍTICOS) ---
 
     const bi = useMemo(() => {
+        // Financeiro
         const income = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + Number(t.amount), 0);
         const prevIncome = prevTransactions.filter(t => t.type === 'income').reduce((acc, t) => acc + Number(t.amount), 0);
-        
         const expense = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + Number(t.amount), 0);
-        const concludedAppts = appointments.filter(a => a.status === 'concluido');
+        const prevExpense = prevTransactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + Number(t.amount), 0);
         
-        // RFM Analytics
-        const vipClients = [...clients].map(c => {
-            const totalSpent = transactions.filter(t => t.client_id === c.id && t.type === 'income').reduce((acc, t) => acc + Number(t.amount), 0);
+        // Atendimentos e Ticket
+        const concludedCount = appointments.filter(a => a.status === 'concluido').length;
+        const avgTicket = concludedCount > 0 ? income / concludedCount : 0;
+        const occupancy = appointments.length > 0 ? (concludedCount / appointments.length) * 100 : 0;
+
+        // RFM Analytics (LTV)
+        const vipClients = clients.map(c => {
+            const totalSpent = transactions
+                .filter(t => t.client_id === c.id && t.type === 'income')
+                .reduce((acc, t) => acc + Number(t.amount), 0);
             return { ...c, totalSpent };
-        }).sort((a, b) => b.totalSpent - a.totalSpent).slice(0, 10);
+        }).sort((a, b) => b.totalSpent - a.totalSpent).filter(c => c.totalSpent > 0).slice(0, 10);
 
         const atRiskClients = clients.filter(c => {
-            const lastAppt = appointments.filter(a => a.client_id === c.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+            const clientAppts = appointments.filter(a => a.client_id === c.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            const lastAppt = clientAppts[0];
             if (!lastAppt) return false;
             return differenceInDays(new Date(), parseISO(lastAppt.date)) > 45;
         }).slice(0, 10);
 
-        // Stock BI
-        const capitalImobilizado = products.reduce((acc, p) => acc + (Number(p.cost_price) * p.stock_quantity), 0);
+        // Estoque BI
+        const capitalImobilizado = products.reduce((acc, p) => acc + (Number(p.cost_price || 0) * p.stock_quantity), 0);
         const criticalStock = products.filter(p => p.stock_quantity <= (p.min_stock || 5));
 
+        // Gráfico Diário
+        const days = eachDayOfInterval({ start: parseISO(startDate), end: parseISO(endDate) });
+        const evolutionData = days.map(day => {
+            const dStr = format(day, 'yyyy-MM-dd');
+            const dayTrans = transactions.filter(t => format(parseISO(t.date), 'yyyy-MM-dd') === dStr);
+            return {
+                day: format(day, 'dd/MM'),
+                receita: dayTrans.filter(t => t.type === 'income').reduce((acc, t) => acc + Number(t.amount), 0),
+                despesa: dayTrans.filter(t => t.type === 'expense').reduce((acc, t) => acc + Number(t.amount), 0)
+            };
+        });
+
         return {
-            income, prevIncome, expense, 
-            avgTicket: concludedAppts.length > 0 ? income / concludedAppts.length : 0,
-            occupancy: appointments.length > 0 ? (concludedAppts.length / appointments.length) * 100 : 0,
-            vipClients, atRiskClients, capitalImobilizado, criticalStock
+            income, prevIncome, expense, prevExpense, avgTicket, occupancy,
+            vipClients, atRiskClients, capitalImobilizado, criticalStock, evolutionData
         };
-    }, [transactions, prevTransactions, appointments, products, clients]);
+    }, [transactions, prevTransactions, appointments, products, clients, startDate, endDate]);
+
+    // --- FUNCIONALIDADES DE EXPORTAÇÃO ---
+
+    const exportToExcel = () => {
+        const data = transactions.map(t => ({
+            Data: format(parseISO(t.date), 'dd/MM/yyyy HH:mm'),
+            Descricao: t.description,
+            Tipo: t.type === 'income' ? 'Receita' : 'Despesa',
+            Valor: Number(t.amount),
+            Metodo: t.payment_method || 'N/A',
+            Status: t.status
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Fluxo_de_Caixa");
+        XLSX.writeFile(wb, `Relatorio_Financeiro_${startDate}_${endDate}.xlsx`);
+    };
+
+    const exportToPDF = () => {
+        const doc = new jsPDF();
+        doc.setFont("helvetica", "bold");
+        doc.text("BelaFlow - Relatório Executivo", 14, 15);
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        doc.text(`Período: ${format(parseISO(startDate), 'dd/MM/yyyy')} até ${format(parseISO(endDate), 'dd/MM/yyyy')}`, 14, 22);
+
+        const tableData = transactions.map(t => [
+            format(parseISO(t.date), 'dd/MM/yy'),
+            t.description,
+            t.type === 'income' ? 'Rec' : 'Des',
+            `R$ ${Number(t.amount).toFixed(2)}`,
+            t.status
+        ]);
+
+        autoTable(doc, {
+            startY: 30,
+            head: [['Data', 'Descrição', 'Tipo', 'Valor', 'Status']],
+            body: tableData,
+            theme: 'striped',
+            headStyles: { fillStyle: 'F97316' }
+        });
+
+        doc.save(`BelaFlow_Relatorio_${startDate}.pdf`);
+    };
 
     const applyPreset = (preset: string) => {
         const today = new Date();
@@ -164,7 +237,7 @@ const RelatoriosView: React.FC = () => {
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4 z-30 shadow-sm">
                 <div className="flex items-center gap-4">
                     <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl"><BarChart3 size={24} /></div>
-                    <h1 className="text-xl font-black text-slate-800 tracking-tight uppercase">Inteligência de Negócio</h1>
+                    <h1 className="text-xl font-black text-slate-800 tracking-tight uppercase">Inteligência Estratégica</h1>
                 </div>
 
                 <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 overflow-x-auto scrollbar-hide max-w-full">
@@ -174,7 +247,7 @@ const RelatoriosView: React.FC = () => {
                         { id: 'performance', label: 'Ticket Médio', icon: Target },
                         { id: 'comissoes', label: 'Comissões', icon: Coins },
                         { id: 'estoque', label: 'Estoque', icon: Package },
-                        { id: 'clientes', label: 'Clientes', icon: Users },
+                        { id: 'clientes', label: 'VIPs & Churn', icon: Users },
                         { id: 'export', label: 'Exportar', icon: Download },
                     ].map(tab => (
                         <button 
@@ -209,7 +282,7 @@ const RelatoriosView: React.FC = () => {
 
                         <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
                             <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent border-none text-[10px] font-bold text-slate-600 outline-none px-2" />
-                            <span className="text-slate-300 text-xs font-bold">atê</span>
+                            <span className="text-slate-300 text-xs font-bold">até</span>
                             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-transparent border-none text-[10px] font-bold text-slate-600 outline-none px-2" />
                         </div>
                         
@@ -224,40 +297,25 @@ const RelatoriosView: React.FC = () => {
                     {isLoading ? (
                         <div className="py-32 flex flex-col items-center justify-center text-slate-400">
                             <Loader2 className="animate-spin text-indigo-500 mb-4" size={48} />
-                            <p className="text-xs font-black uppercase tracking-[0.3em] animate-pulse">Sincronizando BI...</p>
+                            <p className="text-xs font-black uppercase tracking-[0.3em] animate-pulse">Processando BI em tempo real...</p>
                         </div>
                     ) : (
                         <>
-                            {/* VIEW: DASHBOARD EXECUTIVO */}
+                            {/* CASE 1: DASHBOARD EXECUTIVO */}
                             {activeTab === 'dashboard' && (
                                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-500">
-                                    
-                                    {/* COLUNA 1: OPERACIONAL */}
                                     <div className="space-y-6">
                                         <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-2"><Calendar size={14}/> Agenda & Ocupação</h2>
                                         <MetricCard 
-                                            title="Faturamento Previsto (Hoje)" 
+                                            title="Receita Realizada" 
                                             value={`R$ ${bi.income.toLocaleString('pt-BR')}`}
-                                            subtext={`${appointments.length} agendamentos totais`}
-                                            color="bg-indigo-500"
-                                            icon={Target}
+                                            subtext={`${appointments.length} atendimentos no período`}
+                                            color="bg-emerald-500"
+                                            icon={DollarSign}
                                             trend={isComparing && <TrendBadge current={bi.income} previous={bi.prevIncome} />}
                                         />
-                                        <Card title="Próximos Atendimentos" icon={<Clock size={16} className="text-indigo-500"/>}>
-                                            <div className="space-y-4">
-                                                {appointments.filter(a => a.status === 'agendado').slice(0, 5).map((a, i) => (
-                                                    <div key={i} className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                                                        <div>
-                                                            <p className="text-xs font-black text-slate-700">{a.client_name || 'Bloqueado'}</p>
-                                                            <p className="text-[9px] font-bold text-slate-400 uppercase">{format(parseISO(a.date), 'HH:mm')} • {a.service_name}</p>
-                                                        </div>
-                                                        <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">Pendente</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </Card>
                                         <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex flex-col items-center">
-                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Taxa de Ocupação</p>
+                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Taxa de Conversão/Ocupação</p>
                                             <div className="relative w-32 h-16 overflow-hidden">
                                                 <div className="absolute top-0 w-32 h-32 rounded-full border-[12px] border-slate-100"></div>
                                                 <div className="absolute top-0 w-32 h-32 rounded-full border-[12px] border-indigo-500 transition-all duration-1000" style={{ clipPath: `polygon(0 0, 100% 0, 100% 50%, 0 50%)`, transform: `rotate(${(bi.occupancy * 1.8) - 180}deg)` }}></div>
@@ -266,132 +324,219 @@ const RelatoriosView: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    {/* COLUNA 2: FINANCEIRO RÁPIDO */}
                                     <div className="space-y-6">
-                                        <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-2"><Wallet size={14}/> Gestão de Caixa</h2>
+                                        <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-2"><Wallet size={14}/> Gestão de Lucratividade</h2>
                                         <MetricCard 
-                                            title="Ticket Médio Geral" 
+                                            title="Ticket Médio" 
                                             value={`R$ ${bi.avgTicket.toFixed(2)}`}
-                                            color="bg-emerald-500"
+                                            color="bg-orange-500"
                                             icon={TrendingUp}
                                         />
-                                        <Card title="Entradas por Canal" icon={<PieChartIcon size={16} className="text-emerald-500"/>}>
-                                            <div className="h-48">
-                                                <ResponsiveContainer width="100%" height="100%">
-                                                    <RechartsPieChart>
-                                                        <Pie data={[{name: 'Serviços', value: bi.income}, {name: 'Produtos', value: bi.income * 0.2}]} innerRadius={40} outerRadius={60} paddingAngle={5} dataKey="value">
-                                                            <Cell fill="#6366f1" /><Cell fill="#fb923c" />
-                                                        </Pie>
-                                                        <Tooltip />
-                                                    </RechartsPieChart>
-                                                </ResponsiveContainer>
-                                            </div>
-                                        </Card>
                                         <div className="p-6 bg-slate-900 rounded-[32px] text-white shadow-xl flex items-center justify-between">
                                             <div>
-                                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Saldo em Caixa (Líquido)</p>
+                                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Saldo Líquido Período</p>
                                                 <h3 className="text-2xl font-black mt-1">R$ {(bi.income - bi.expense).toLocaleString('pt-BR')}</h3>
                                             </div>
-                                            <div className="p-3 bg-white/10 rounded-2xl"><Banknote size={24} className="text-orange-400" /></div>
+                                            <div className="p-3 bg-white/10 rounded-2xl"><Banknote size={24} className="text-emerald-400" /></div>
                                         </div>
                                     </div>
 
-                                    {/* COLUNA 3: ALERTAS & AÇÕES */}
                                     <div className="space-y-6">
-                                        <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-2"><AlertTriangle size={14}/> Alertas Críticos</h2>
+                                        <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-2"><AlertTriangle size={14}/> Alertas de Operação</h2>
                                         <Card title="Estoque Crítico" icon={<Package size={16} className="text-rose-500"/>}>
                                             <div className="space-y-3">
                                                 {bi.criticalStock.slice(0, 4).map((p, i) => (
                                                     <div key={i} className="flex justify-between items-center p-3 bg-rose-50/30 rounded-2xl border border-rose-100">
                                                         <span className="text-xs font-bold text-slate-700">{p.name}</span>
-                                                        <span className="text-[10px] font-black text-rose-600 uppercase">{p.stock_quantity} unidades</span>
+                                                        <span className="text-[10px] font-black text-rose-600 uppercase">{p.stock_quantity} un.</span>
                                                     </div>
                                                 ))}
                                                 {bi.criticalStock.length === 0 && <p className="text-center py-4 text-xs text-slate-300 italic">Tudo em dia!</p>}
                                             </div>
                                         </Card>
-                                        <Card title="Aniversariantes" icon={<Cake size={16} className="text-orange-500"/>}>
-                                            <div className="flex flex-col gap-3">
-                                                <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-2xl border border-orange-100">
-                                                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-orange-500 shadow-sm font-black">M</div>
-                                                    <div className="flex-1">
-                                                        <p className="text-xs font-black text-slate-700">Maria Silva</p>
-                                                        <p className="text-[9px] font-bold text-orange-600 uppercase">Hoje! 🎂</p>
-                                                    </div>
-                                                    <button className="p-2 bg-orange-500 text-white rounded-lg shadow-sm"><Smartphone size={14}/></button>
-                                                </div>
-                                            </div>
-                                        </Card>
                                         <div className="grid grid-cols-2 gap-3">
-                                            <button className="flex flex-col items-center justify-center p-4 bg-white border border-slate-100 rounded-[32px] hover:border-indigo-300 transition-all shadow-sm">
-                                                <Receipt size={24} className="text-indigo-500 mb-2"/>
-                                                <span className="text-[9px] font-black uppercase text-slate-500">Lançar Despesa</span>
+                                            <button onClick={exportToExcel} className="flex flex-col items-center justify-center p-4 bg-white border border-slate-100 rounded-[32px] hover:border-emerald-300 transition-all shadow-sm active:scale-95">
+                                                <FileSpreadsheet size={24} className="text-emerald-500 mb-2"/>
+                                                <span className="text-[9px] font-black uppercase text-slate-500">Excel</span>
                                             </button>
-                                            <button className="flex flex-col items-center justify-center p-4 bg-white border border-slate-100 rounded-[32px] hover:border-orange-300 transition-all shadow-sm">
-                                                <Target size={24} className="text-orange-500 mb-2"/>
-                                                <span className="text-[9px] font-black uppercase text-slate-500">Criar Encaixe</span>
+                                            <button onClick={exportToPDF} className="flex flex-col items-center justify-center p-4 bg-white border border-slate-100 rounded-[32px] hover:border-rose-300 transition-all shadow-sm active:scale-95">
+                                                <FileText size={24} className="text-rose-500 mb-2"/>
+                                                <span className="text-[9px] font-black uppercase text-slate-500">PDF</span>
                                             </button>
                                         </div>
                                     </div>
                                 </div>
                             )}
 
-                            {/* VIEW: INTELIGÊNCIA DE ESTOQUE */}
-                            {activeTab === 'estoque' && (
+                            {/* CASE 2: SAÚDE FINANCEIRA */}
+                            {activeTab === 'financeiro' && (
                                 <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <MetricCard title="Capital Imobilizado" value={`R$ ${bi.capitalImobilizado.toLocaleString('pt-BR')}`} subtext="Custo total em estoque" color="bg-slate-800" icon={Archive} />
-                                        <MetricCard title="Saídas (30d)" value="R$ 1.250,00" color="bg-orange-500" icon={TrendingDown} />
-                                        <MetricCard title="Itens para Reposição" value={`${bi.criticalStock.length} alertas`} color="bg-rose-500" icon={AlertTriangle} />
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <MetricCard title="Total Receitas" value={`R$ ${bi.income.toLocaleString('pt-BR')}`} color="bg-emerald-500" icon={TrendingUp} trend={isComparing && <TrendBadge current={bi.income} previous={bi.prevIncome} />} />
+                                        <MetricCard title="Total Despesas" value={`R$ ${bi.expense.toLocaleString('pt-BR')}`} color="bg-rose-500" icon={TrendingDown} trend={isComparing && <TrendBadge current={bi.expense} previous={bi.prevExpense} />} />
+                                        <MetricCard title="Margem Bruta" value={`${((bi.income - bi.expense) / (bi.income || 1) * 100).toFixed(1)}%`} color="bg-indigo-500" icon={BarChart} />
                                     </div>
-                                    <Card title="Curva ABC de Venda de Produtos" icon={<BarChart size={18} className="text-indigo-500"/>}>
-                                        <table className="w-full text-left">
-                                            <thead><tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b"><th className="pb-4">Produto</th><th className="pb-4">Giro</th><th className="pb-4 text-right">Faturamento</th><th className="pb-4 text-center">Curva</th></tr></thead>
-                                            <tbody className="divide-y divide-slate-50">
-                                                {products.sort((a, b) => (b.stock_quantity || 0) - (a.stock_quantity || 0)).slice(0, 8).map((p, i) => (
-                                                    <tr key={i} className="hover:bg-slate-50 transition-colors"><td className="py-4 font-bold text-xs text-slate-700">{p.name}</td><td className="py-4 text-xs font-medium text-slate-500">Alta</td><td className="py-4 text-right font-black text-slate-800">R$ 450,00</td><td className="py-4 text-center"><span className={`px-2 py-0.5 rounded text-[9px] font-black ${i < 2 ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{i < 2 ? 'A' : 'B'}</span></td></tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                    <Card title="Evolução de Fluxo Diário" icon={<BarChart size={18} className="text-orange-500" />}>
+                                        <div className="h-80 mt-4">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <RechartsBarChart data={bi.evolutionData}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                                    <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} />
+                                                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} />
+                                                    <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
+                                                    <Bar dataKey="receita" fill="#10b981" radius={[4, 4, 0, 0]} />
+                                                    <Bar dataKey="despesa" fill="#f43f5e" radius={[4, 4, 0, 0]} />
+                                                </RechartsBarChart>
+                                            </ResponsiveContainer>
+                                        </div>
                                     </Card>
                                 </div>
                             )}
 
-                            {/* VIEW: INTELIGÊNCIA DE CLIENTES */}
-                            {activeTab === 'clientes' && (
+                            {/* CASE 3: ESTOQUE BI */}
+                            {activeTab === 'estoque' && (
                                 <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <Card title="🏆 Top 10 Clientes (VIP)" icon={<CheckCircle2 size={18} className="text-emerald-500"/>}>
-                                            <div className="space-y-3">
-                                                {bi.vipClients.map((c, i) => (
-                                                    <div key={i} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100 group hover:border-emerald-200 transition-all">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center font-black text-[10px]">{i+1}</div>
-                                                            <span className="text-xs font-bold text-slate-700">{c.nome}</span>
-                                                        </div>
-                                                        <span className="font-black text-emerald-600 text-sm">R$ {c.totalSpent.toLocaleString('pt-BR')}</span>
-                                                    </div>
+                                        <MetricCard title="Capital Imobilizado" value={`R$ ${bi.capitalImobilizado.toLocaleString('pt-BR')}`} subtext="Custo total de produtos em prateleira" color="bg-slate-800" icon={Archive} />
+                                        <MetricCard title="Itens para Reposição" value={`${bi.criticalStock.length} alertas`} subtext="Abaixo do estoque mínimo" color="bg-rose-500" icon={AlertTriangle} />
+                                    </div>
+                                    <div className="bg-white rounded-[32px] border border-slate-200 overflow-hidden shadow-sm">
+                                        <table className="w-full text-left">
+                                            <thead className="bg-slate-900 text-white"><tr className="text-[10px] font-black uppercase tracking-widest"><th className="px-6 py-5">Produto</th><th className="px-6 py-5 text-center">Status</th><th className="px-6 py-5 text-right">Qtd</th><th className="px-6 py-5 text-right">Valor Custo</th></tr></thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {products.slice(0, 10).map(p => (
+                                                    <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                                                        <td className="px-6 py-4 font-bold text-slate-700">{p.name}</td>
+                                                        <td className="px-6 py-4 text-center">
+                                                            <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase ${p.stock_quantity <= p.min_stock ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                                                                {p.stock_quantity <= p.min_stock ? 'Baixo' : 'Ok'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-6 py-4 text-right font-black text-slate-800">{p.stock_quantity} un.</td>
+                                                        <td className="px-6 py-4 text-right text-slate-400 font-mono">R$ {(p.cost_price || 0).toFixed(2)}</td>
+                                                    </tr>
                                                 ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* CASE 4: CLIENTES VIP & CHURN */}
+                            {activeTab === 'clientes' && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in slide-in-from-bottom-4 duration-500">
+                                    <Card title="🏆 Top 10 Clientes (VIP por LTV)" icon={<CheckCircle2 size={18} className="text-emerald-500"/>}>
+                                        <div className="space-y-3">
+                                            {bi.vipClients.map((c, i) => (
+                                                <div key={i} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100 group hover:border-emerald-200 transition-all">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center font-black text-[10px]">{i+1}</div>
+                                                        <span className="text-xs font-bold text-slate-700">{c.nome}</span>
+                                                    </div>
+                                                    <span className="font-black text-emerald-600 text-sm">R$ {c.totalSpent.toLocaleString('pt-BR')}</span>
+                                                </div>
+                                            ))}
+                                            {bi.vipClients.length === 0 && <p className="text-center py-20 text-slate-300 italic">Sem vendas vinculadas no período.</p>}
+                                        </div>
+                                    </Card>
+
+                                    <Card title="⚠️ Clientes em Risco (Churn)" icon={<AlertOctagon size={18} className="text-rose-500"/>}>
+                                        <div className="space-y-3">
+                                            {bi.atRiskClients.map((c, i) => (
+                                                <div key={i} className="flex justify-between items-center p-4 bg-rose-50/20 rounded-2xl border border-rose-50 hover:bg-rose-50 transition-all">
+                                                    <div>
+                                                        <p className="text-xs font-bold text-slate-700">{c.nome}</p>
+                                                        <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest mt-0.5">Sem visita há mais de 45 dias</p>
+                                                    </div>
+                                                    <button className="p-2 bg-emerald-500 text-white rounded-xl shadow-md active:scale-90"><MessageCircle size={14}/></button>
+                                                </div>
+                                            ))}
+                                            {bi.atRiskClients.length === 0 && <p className="text-center py-20 text-slate-300 italic">Base ativa e saudável!</p>}
+                                        </div>
+                                    </Card>
+                                </div>
+                            )}
+
+                            {/* CASE 5: COMISSÕES */}
+                            {activeTab === 'comissoes' && (
+                                <div className="bg-white rounded-[32px] border border-slate-200 shadow-xl overflow-hidden animate-in fade-in duration-500">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-sm">
+                                            <thead className="bg-slate-900 text-white">
+                                                <tr className="text-[10px] font-black uppercase tracking-widest">
+                                                    <th className="px-8 py-5">Profissional</th>
+                                                    <th className="px-8 py-5 text-right">Base Faturamento</th>
+                                                    <th className="px-8 py-5 text-right">Comissão Padrão</th>
+                                                    <th className="px-8 py-5 text-right">Total Repasse</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {team.map(member => {
+                                                    const faturamento = transactions.filter(t => t.professional_id === member.id && t.type === 'income').reduce((acc, t) => acc + Number(t.amount), 0);
+                                                    const comissao = faturamento * (Number(member.commission_rate || 30) / 100);
+                                                    return (
+                                                        <tr key={member.id} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="px-8 py-4">
+                                                                <div className="flex items-center gap-3">
+                                                                    <img src={member.photo_url || `https://ui-avatars.com/api/?name=${member.name}`} className="w-8 h-8 rounded-full" alt="" />
+                                                                    <span className="font-bold text-slate-700">{member.name}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-8 py-4 text-right font-bold text-slate-400">R$ {faturamento.toLocaleString('pt-BR')}</td>
+                                                            <td className="px-8 py-4 text-right text-slate-400 font-bold">{member.commission_rate || 30}%</td>
+                                                            <td className="px-8 py-4 text-right font-black text-orange-600">R$ {comissao.toLocaleString('pt-BR')}</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* CASE 6: TICKET MÉDIO */}
+                            {activeTab === 'performance' && (
+                                <div className="space-y-8 animate-in fade-in duration-500">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <Card title="Performance de Atendimento" icon={<Target size={18} className="text-orange-500" />}>
+                                            <div className="p-8 text-center bg-slate-50 rounded-3xl border border-slate-100">
+                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Ticket Médio Geral</p>
+                                                <h3 className="text-5xl font-black text-slate-800 tracking-tighter">R$ {bi.avgTicket.toFixed(2)}</h3>
+                                                <p className="text-xs text-slate-400 mt-4 font-bold uppercase">{appointments.filter(a => a.status === 'concluido').length} atendimentos finalizados</p>
                                             </div>
                                         </Card>
-                                        <Card title="⚠️ Clientes em Risco (Churn)" icon={<AlertOctagon size={18} className="text-rose-500"/>}>
-                                            <div className="space-y-3">
-                                                {bi.atRiskClients.map((c, i) => (
-                                                    <div key={i} className="flex justify-between items-center p-4 bg-rose-50/20 rounded-2xl border border-rose-50 hover:bg-rose-50 transition-all">
-                                                        <div>
-                                                            <p className="text-xs font-bold text-slate-700">{c.nome}</p>
-                                                            <p className="text-[9px] font-black text-rose-500 uppercase">Última visita: há +45 dias</p>
-                                                        </div>
-                                                        <button className="p-2 bg-emerald-500 text-white rounded-xl shadow-md"><MessageCircle size={14}/></button>
-                                                    </div>
-                                                ))}
+                                        <Card title="Distribuição por Categoria" icon={<PieChartIcon size={18} className="text-indigo-500" />}>
+                                            <div className="h-64 flex items-center justify-center">
+                                                <p className="text-xs text-slate-300 italic font-bold">Processando dados por categoria...</p>
                                             </div>
                                         </Card>
                                     </div>
                                 </div>
                             )}
 
-                            {/* MANTÉM OS OUTROS RELATÓRIOS JÁ EXISTENTES ABAIXO... */}
+                            {/* CASE 7: EXPORTAÇÃO MANUAL */}
+                            {activeTab === 'export' && (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in zoom-in-95 duration-500">
+                                    <button onClick={exportToExcel} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm hover:shadow-xl transition-all text-center group active:scale-95">
+                                        <div className="p-6 rounded-[28px] bg-emerald-50 text-emerald-600 mb-6 mx-auto w-fit transition-transform group-hover:scale-110"><FileSpreadsheet size={48} /></div>
+                                        <h3 className="font-black text-slate-800 text-lg">Fluxo de Caixa</h3>
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase mt-2">Exportar para Excel (XLSX)</p>
+                                        <div className="mt-8 p-3 bg-emerald-600 text-white rounded-2xl shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"><Download size={20}/></div>
+                                    </button>
+                                    <button onClick={exportToPDF} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm hover:shadow-xl transition-all text-center group active:scale-95">
+                                        <div className="p-6 rounded-[28px] bg-rose-50 text-rose-600 mb-6 mx-auto w-fit transition-transform group-hover:scale-110"><FileText size={48} /></div>
+                                        <h3 className="font-black text-slate-800 text-lg">Relatório Executivo</h3>
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase mt-2">Baixar PDF de Apresentação</p>
+                                        <div className="mt-8 p-3 bg-rose-600 text-white rounded-2xl shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"><Download size={20}/></div>
+                                    </button>
+                                    <button onClick={exportToPDF} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm hover:shadow-xl transition-all text-center group active:scale-95 opacity-50 cursor-not-allowed">
+                                        <div className="p-6 rounded-[28px] bg-orange-50 text-orange-600 mb-6 mx-auto w-fit transition-transform group-hover:scale-110"><Archive size={48} /></div>
+                                        <h3 className="font-black text-slate-800 text-lg">Inventário Patrimonial</h3>
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase mt-2">Relatório de Custo de Estoque</p>
+                                        <span className="mt-4 block text-[9px] font-black text-orange-400 uppercase tracking-widest">Em breve</span>
+                                    </button>
+                                </div>
+                            )}
                         </>
                     )}
                 </div>
