@@ -89,7 +89,7 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
     );
 };
 
-// --- MOTOR DE CÁLCULO PIXEL-PERFECT (REVISADO) ---
+// --- MOTOR DE CÁLCULO PIXEL-PERFECT (OVERLAP AGRESSIVO) ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot; // ex: 80px / 30min = 2.66px/min
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
@@ -100,9 +100,9 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
 
     return { 
         top: `${top}px`, 
-        height: `${height + 2}px`, // +2px para cobrir as bordas superior e inferior (Técnica de Compensação)
-        marginTop: '-1px',         // Puxa o card para cima da linha de divisão inicial
-        zIndex: 10,
+        height: `${height + 3}px`, // Overlap agressivo (+3px) para anular a linha divisória da grade
+        marginTop: '-2px',         // Puxa o card 2px para cima, cobrindo a borda superior do slot
+        zIndex: 20,                // Eleva a camada para garantir prioridade sobre a grid
         position: 'absolute' as const
     };
 };
