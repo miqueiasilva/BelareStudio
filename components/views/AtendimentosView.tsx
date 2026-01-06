@@ -238,17 +238,23 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         }
     }, [resources]);
 
-    // --- CRITICAL FIX: Remoção da coluna problemática para evitar erro 400 ---
+    // --- CRITICAL FIX: Modo Seguro Máximo para evitar Erro 400 ---
     const fetchResources = async () => {
         try {
-            // REMOVEMOS 'show_in_calendar' do select para parar o Erro 400 de Bad Request
+            console.log('Iniciando busca de equipe (Modo Seguro Máximo)...');
+            
+            // REMOVIDOS: order_index, services_enabled, show_in_calendar
+            // MANTIDOS APENAS: id, name, photo_url, role, active
             const { data, error } = await supabase
                 .from('team_members')
-                .select('id, name, photo_url, role, order_index, services_enabled, active') 
-                .eq('active', true) 
-                .order('order_index', { ascending: true });
+                .select('id, name, photo_url, role, active') 
+                .eq('active', true)
+                .order('name'); // Ordenação segura por nome
 
-            if (error) throw error;
+            if (error) {
+                console.error('Erro Supabase:', error);
+                throw error;
+            }
             
             if (data && isMounted.current) {
                 console.log('Equipe recuperada com sucesso:', data);
@@ -257,15 +263,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     name: p.name,
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
                     role: p.role,
-                    order_index: p.order_index,
-                    services_enabled: p.services_enabled || [] 
+                    // Fallbacks seguros para as colunas removidas
+                    order_index: 0,
+                    services_enabled: [] 
                 }));
                 setResources(mapped);
             }
         } catch (e: any) { 
-            console.error('Erro ao buscar equipe:', e);
+            console.error('Erro fatal ao buscar equipe:', e);
             if (isMounted.current) {
-                setToast({ message: 'Erro de sincronização de equipe. Recarregando...', type: 'error' });
+                setResources([]); // Fallback para não travar a tela
+                setToast({ message: 'Erro ao carregar equipe. Verifique a conexão.', type: 'error' });
             }
         }
     };
