@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
     ChevronLeft, User, Save, Trash2, Camera, Scissors, 
     Loader2, Shield, Clock, DollarSign, CheckCircle, AlertCircle, Coffee,
-    Phone, Mail, Smartphone
+    Phone, Mail, Smartphone, CreditCard
 } from 'lucide-react';
 import { LegacyProfessional, LegacyService } from '../../types';
 import Card from '../shared/Card';
@@ -64,8 +64,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
             const { data: svcs } = await supabase.from('services').select('*').order('nome');
             if (svcs) setAllServices(svcs as any);
 
-            // Normalização: Prioriza photo_url (DB) sobre avatarUrl (Legacy/Mock)
-            // Inclui pix_key para persistência correta
+            // Normalização: Inclui pix_key para persistência correta
             const normalized = {
                 ...initialProf,
                 cpf: (initialProf as any).cpf || '',
@@ -78,14 +77,16 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 permissions: (initialProf as any).permissions || { view_calendar: true, edit_calendar: true },
                 services_enabled: (initialProf as any).services_enabled || [],
                 work_schedule: (initialProf as any).work_schedule || {},
-                photo_url: (initialProf as any).photo_url || initialProf.avatarUrl || null
+                photo_url: (initialProf as any).photo_url || initialProf.avatarUrl || null,
+                online_booking: (initialProf as any).online_booking ?? true,
+                active: (initialProf as any).active ?? true
             };
             setProf(normalized);
         };
         init();
     }, [initialProf]);
 
-    // --- LOGICA DE UPLOAD ---
+    // --- Lógica de Upload ---
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !prof?.id) return;
@@ -124,12 +125,13 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         }
     };
 
-    // --- Save Logic ---
+    // --- Lógica de Salvamento ---
     const handleSave = async () => {
         if (!prof) return;
         setIsLoading(true);
         
         try {
+            // Garantia de tipos para o banco (Decimal e String)
             const payload = {
                 name: prof.name || 'Sem nome',
                 role: prof.role || 'Profissional',
@@ -140,7 +142,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 bio: prof.bio || null,
                 active: !!prof.active,
                 birth_date: prof.birth_date === "" ? null : prof.birth_date,
-                commission_rate: parseFloat(String(prof.commission_rate || 0)),
+                // Regra de negócio: Salvar 60 como 60.00
+                commission_rate: isNaN(parseFloat(String(prof.commission_rate))) ? 0 : parseFloat(String(prof.commission_rate)),
                 permissions: prof.permissions,
                 services_enabled: prof.services_enabled,
                 work_schedule: prof.work_schedule,
@@ -210,7 +213,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans text-left">
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between z-20 shadow-sm">
                 <div className="flex items-center gap-4">
-                    <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"><ChevronLeft size={24} /></button>
+                    <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"><ChevronLeft size={24} /></button>
                     <div>
                         <h2 className="text-xl font-bold text-slate-800">{prof.name}</h2>
                         <p className="text-xs text-slate-500 font-medium uppercase tracking-widest">{prof.role}</p>
@@ -220,7 +223,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                     <button onClick={handleDelete} className="p-3 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"><Trash2 size={20} /></button>
                     <button onClick={handleSave} disabled={isLoading} className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-orange-100 flex items-center gap-2 disabled:opacity-50">
                         {isLoading ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                        Salvar Alterações
+                        {isLoading ? 'Salvando...' : 'Salvar Alterações'}
                     </button>
                 </div>
             </header>
@@ -280,8 +283,12 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                         <EditField label="Data de Nascimento" name="birth_date" type="date" value={prof.birth_date} onChange={handleInputChange} />
                                         <EditField label="WhatsApp" name="phone" value={prof.phone} onChange={handleInputChange} icon={Phone} placeholder="(00) 00000-0000" />
                                         <EditField label="E-mail" name="email" value={prof.email} onChange={handleInputChange} icon={Mail} placeholder="email@exemplo.com" />
-                                        <EditField label="CPF" name="cpf" value={prof.cpf} onChange={handleInputChange} placeholder="000.000.000-00" />
-                                        <EditField label="Chave PIX" name="pix_key" value={prof.pix_key} onChange={handleInputChange} icon={Smartphone} placeholder="CPF, E-mail ou Aleatória" />
+                                        
+                                        {/* Campos Financeiros e Documentação */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:col-span-2">
+                                            <EditField label="CPF" name="cpf" value={prof.cpf} onChange={handleInputChange} placeholder="000.000.000-00" icon={CreditCard} />
+                                            <EditField label="Chave PIX" name="pix_key" value={prof.pix_key} onChange={handleInputChange} icon={Smartphone} placeholder="CPF, E-mail, Celular ou Aleatória" />
+                                        </div>
                                     </div>
                                     <div className="mt-6 space-y-1.5">
                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Biografia e Notas</label>
