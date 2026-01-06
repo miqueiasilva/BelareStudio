@@ -8,7 +8,8 @@ import {
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
     CheckCircle2, Scissors
 } from 'lucide-react';
-import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, parseISO, addMinutes, startOfDay, endOfDay } from 'date-fns';
+// FIX: Added missing startOfMonth and endOfMonth imports from date-fns to resolve "Cannot find name" errors.
+import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, parseISO, addMinutes, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
@@ -196,13 +197,67 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastRequestId = useRef(0);
 
+    // --- MOTOR DE BUSCA DE DADOS (QUERY OPTIMIZED) ---
+    const fetchAppointments = async () => {
+        if (!isMounted.current) return;
+        const requestId = ++lastRequestId.current;
+        if (abortControllerRef.current) abortControllerRef.current.abort();
+        abortControllerRef.current = new AbortController();
+        setIsLoadingData(true);
+
+        try {
+            // CÁLCULO DE RANGE: Define o início e fim da busca no banco conforme a UI
+            let rangeStart: Date, rangeEnd: Date;
+
+            if (periodType === 'Semana') {
+                rangeStart = startOfWeek(currentDate, { weekStartsOn: 1 });
+                rangeEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
+            } else if (periodType === 'Mês') {
+                rangeStart = startOfMonth(currentDate);
+                rangeEnd = endOfMonth(currentDate);
+            } else {
+                // Dia ou Lista
+                rangeStart = startOfDay(currentDate);
+                rangeEnd = endOfDay(currentDate);
+            }
+
+            // QUERY SQL: Busca todos os agendamentos ativos no intervalo (Histórico + Externos)
+            // IMPORTANTE: Não filtramos por created_by para garantir visibilidade total da clínica.
+            const { data, error } = await supabase
+                .from('appointments')
+                .select('*')
+                .gte('date', rangeStart.toISOString())
+                .lte('date', rangeEnd.toISOString())
+                .neq('status', 'cancelado') // Opcional: mostrar cancelados? Aqui filtramos os ativos
+                .abortSignal(abortControllerRef.current.signal);
+
+            if (error) throw error;
+
+            if (data && isMounted.current && requestId === lastRequestId.current) {
+                const mapped = data.map(row => mapRowToAppointment(row, resources));
+                setAppointments(mapped);
+            }
+        } catch (e: any) { 
+            if (e.name !== 'AbortError') console.error("Fetch Appointments Error:", e); 
+        } finally { 
+            if (isMounted.current) setIsLoadingData(false); 
+        }
+    };
+
+    // Re-fetch automático quando a data ou tipo de período mudar (Navegação Ativa)
+    useEffect(() => {
+        if (resources.length > 0) fetchAppointments();
+    }, [currentDate, periodType, resources]);
+
     useEffect(() => {
         isMounted.current = true;
         fetchResources();
+        
         const channel = supabase.channel('agenda-live')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => { if (isMounted.current) fetchAppointments(); })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, () => { if (isMounted.current) fetchResources(); })
             .subscribe();
+
         return () => {
             isMounted.current = false;
             if (abortControllerRef.current) abortControllerRef.current.abort();
@@ -241,22 +296,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         } as LegacyAppointment;
     };
 
-    const fetchAppointments = async () => {
-        if (!isMounted.current) return;
-        const requestId = ++lastRequestId.current;
-        if (abortControllerRef.current) abortControllerRef.current.abort();
-        abortControllerRef.current = new AbortController();
-        setIsLoadingData(true);
-        try {
-            const { data, error } = await supabase.from('appointments').select('*').abortSignal(abortControllerRef.current.signal);
-            if (error) throw error;
-            if (data && isMounted.current && requestId === lastRequestId.current) {
-                const mapped = data.map(row => mapRowToAppointment(row, resources));
-                setAppointments(mapped);
-            }
-        } catch (e) { console.error(e); } finally { if (isMounted.current) setIsLoadingData(false); }
-    };
-
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
         setIsLoadingData(true);
         try {
@@ -287,7 +326,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             setModalState(null); setPendingConflict(null);
         } catch (e) { 
             setToast({ message: 'Erro ao salvar.', type: 'error' }); 
-            fetchAppointments(); // Fallback se a sincronia manual falhar
+            fetchAppointments(); 
         } finally { setIsLoadingData(false); }
     };
 
@@ -459,7 +498,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             <div className="p-1.5 bg-green-100 rounded-lg text-green-600"><ShoppingBag size={16} /></div> Nova Venda
                         </button>
                         <button onClick={() => { setModalState({ type: 'block', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition-colors">
-                            <div className="p-1.5 bg-rose-100 rounded-lg text-rose-600"><Ban size={16} /></div> Bloqueio
+                            <div className="p-1.5 bg-rose-100 rounded-lg text-orange-600"><Ban size={16} /></div> Bloqueio
                         </button>
                     </div>
                 </>
