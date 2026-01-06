@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
@@ -8,7 +7,6 @@ import {
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
     CheckCircle2, Scissors
 } from 'lucide-react';
-// FIX: Added missing startOfMonth and endOfMonth imports from date-fns to resolve "Cannot find name" errors.
 import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, parseISO, addMinutes, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
@@ -56,7 +54,7 @@ const StatusIndicator = ({ status }: { status: AppointmentStatus }) => {
 
 const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) => {
     return (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-300">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[10000] flex items-center justify-center p-4 animate-in fade-in duration-300">
             <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-orange-100">
                 <div className="bg-orange-50 p-8 text-center border-b border-orange-100">
                     <div className="w-20 h-20 bg-orange-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-200 animate-bounce">
@@ -296,6 +294,37 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         } as LegacyAppointment;
     };
 
+    // --- LOGICA DE REORDENAÇÃO (FIX) ---
+    const handleReorderProfessional = async (currentIndex: number, direction: 'left' | 'right') => {
+        const targetIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
+        
+        // Proteção de limites
+        if (targetIndex < 0 || targetIndex >= resources.length) return;
+
+        const newResources = [...resources];
+        const temp = newResources[currentIndex];
+        newResources[currentIndex] = newResources[targetIndex];
+        newResources[targetIndex] = temp;
+
+        // Atualização Otimista da UI
+        setResources(newResources);
+
+        try {
+            // Persistência no Banco
+            const updates = [
+                { id: newResources[currentIndex].id, order_index: currentIndex },
+                { id: newResources[targetIndex].id, order_index: targetIndex }
+            ];
+
+            for (const up of updates) {
+                await supabase.from('team_members').update({ order_index: up.order_index }).eq('id', up.id);
+            }
+        } catch (e) {
+            console.error("Falha ao salvar nova ordem:", e);
+            fetchResources(); // Reverte se falhar
+        }
+    };
+
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
         setIsLoadingData(true);
         try {
@@ -433,7 +462,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 <div className="min-w-fit">
                     <div className="grid sticky top-0 z-40 border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         <div className="sticky left-0 z-50 bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-[4px_0_24px_rgba(0,0,0,0.05)]"><Maximize2 size={16} className="text-slate-300" /></div>
-                        {columns.map((col) => (
+                        {columns.map((col, idx) => (
                             <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-100 h-24 bg-slate-50/10 relative group transition-colors hover:bg-slate-50">
                                 <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-slate-200 shadow-sm w-full max-w-[200px] overflow-hidden">
                                     {col.photo && <img src={col.photo} alt={col.title} className="w-8 h-8 rounded-full object-cover border border-orange-100 flex-shrink-0" />}
@@ -445,13 +474,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                 {periodType === 'Dia' && col.type === 'professional' && (
                                     <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-50">
                                         <button 
-                                            onClick={(e) => { e.stopPropagation(); scrollHorizontal('left'); }}
+                                            onClick={(e) => { e.stopPropagation(); handleReorderProfessional(idx, 'left'); }}
                                             className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500 active:scale-95 transition-all"
                                         >
                                             <ChevronLeft size={14} />
                                         </button>
                                         <button 
-                                            onClick={(e) => { e.stopPropagation(); scrollHorizontal('right'); }}
+                                            onClick={(e) => { e.stopPropagation(); handleReorderProfessional(idx, 'right'); }}
                                             className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500 active:scale-95 transition-all"
                                         >
                                             <ChevronRight size={14} />

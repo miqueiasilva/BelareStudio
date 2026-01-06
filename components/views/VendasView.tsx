@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
     Search, ShoppingCart, Plus, Minus, Trash2, CreditCard, 
@@ -91,7 +90,8 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
 
             const [servicesRes, productsRes, appointmentsRes] = await Promise.all([
                 supabase.from('services').select('*').eq('ativo', true).order('nome'),
-                supabase.from('products').select('*').eq('ativo', true).order('nome'),
+                // FIX: Mudado de 'nome' para 'name' para evitar erro 400
+                supabase.from('products').select('*').eq('ativo', true).order('name'),
                 supabase.from('appointments').select('*').gte('date', startOfToday).lte('date', endOfToday).neq('status', 'cancelado').order('date')
             ]);
 
