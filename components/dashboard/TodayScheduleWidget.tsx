@@ -33,9 +33,10 @@ const STATUS_PRIORITY: Record<string, number> = {
 interface TodayScheduleWidgetProps {
     onNavigate: (view: any) => void;
     appointments: any[];
+    dateLabel?: string;
 }
 
-const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, appointments }) => {
+const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, appointments, dateLabel = 'Hoje' }) => {
     
     // Aplicação da Ordenação Hierárquica por Status e então Tempo
     const activeApps = [...appointments]
@@ -46,13 +47,13 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
             if (prioA !== prioB) return prioA - prioB;
             return new Date(a.date).getTime() - new Date(b.date).getTime();
         })
-        .slice(0, 8); 
+        .slice(0, 10); // Aumentado levemente o limite para suportar períodos maiores
 
     return (
         <div className="bg-white rounded-[24px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-full min-h-[400px]">
             <header className="p-5 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
                 <div>
-                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Timeline de Hoje</h3>
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Timeline {dateLabel === 'Hoje' ? 'de Hoje' : 'do Período'}</h3>
                     <p className="text-[10px] text-slate-400 font-bold uppercase">{appointments.filter(a => a.status !== 'cancelado').length} Atendimentos</p>
                 </div>
                 <button 
@@ -81,6 +82,7 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
                                     <div className="flex items-center justify-between mb-0.5">
                                         <span className="text-xs font-black text-slate-800">
                                             {format(parseISO(app.date), 'HH:mm')}
+                                            {dateLabel !== 'Hoje' && <span className="ml-1 opacity-40 text-[9px]">({format(parseISO(app.date), 'dd/MM')})</span>}
                                         </span>
                                         <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter ${statusMap[app.status as AppointmentStatus]?.bg} ${statusMap[app.status as AppointmentStatus]?.color}`}>
                                             {statusMap[app.status as AppointmentStatus]?.label}
@@ -113,7 +115,7 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
                             <CalendarX className="text-slate-200" size={32} />
                         </div>
                         <h4 className="text-sm font-bold text-slate-800 uppercase tracking-tighter">Agenda Livre</h4>
-                        <p className="text-xs text-slate-400 mt-1 mb-6">Nenhum agendamento para hoje.</p>
+                        <p className="text-xs text-slate-400 mt-1 mb-6">Nenhum agendamento para este período.</p>
                         <button 
                             onClick={() => onNavigate('agenda')}
                             className="flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-orange-100 transition-all shadow-sm"

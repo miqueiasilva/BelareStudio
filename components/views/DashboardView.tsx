@@ -349,7 +349,8 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 <div className="lg:col-span-1">
                     <TodayScheduleWidget 
                         onNavigate={onNavigate} 
-                        appointments={appointments.filter(a => isSameDay(new Date(a.date), new Date()))} 
+                        appointments={appointments} 
+                        dateLabel={dateRange.label}
                     />
                 </div>
             </div>
