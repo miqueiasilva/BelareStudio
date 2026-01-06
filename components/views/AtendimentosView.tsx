@@ -89,27 +89,29 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
     );
 };
 
-// --- MOTOR DE CÁLCULO PIXEL-PERFECT (HIERARQUIA Z AJUSTADA) ---
+// --- MOTOR DE CÁLCULO PIXEL-PERFECT (POSICIONAMENTO ABSOLUTO FULL BLEED) ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number, serviceColor: string) => {
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot; 
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
     
-    const top = (startMinutesSinceDayStart * pixelsPerMinute) + CARD_TOP_OFFSET;
-    const height = (durationMinutes * pixelsPerMinute); 
+    // Posição base sem margens
+    const rawTop = (startMinutesSinceDayStart * pixelsPerMinute) + CARD_TOP_OFFSET;
+    const rawHeight = (durationMinutes * pixelsPerMinute); 
 
     return { 
-        top: `${top}px`, 
-        height: `${height + 3}px`, 
-        marginTop: '-2px',         
-        zIndex: 10,                // Menor que os headers (50) para passar por baixo no scroll
         position: 'absolute' as const,
-        borderTop: `1px solid ${serviceColor}` // Refino: Borda superior funde-se ao card
+        top: `${rawTop - 1}px`,     // Sobe exatamente 1px para cobrir a borda superior
+        left: '0px',                // Alinhamento lateral total
+        width: '100%',              // Preenchimento total da coluna
+        height: `${rawHeight + 1}px`, // Cresce 1px para cobrir a borda inferior
+        zIndex: 10,                 // Camada acima da grid, abaixo dos headers (50)
+        borderTop: `1px solid ${serviceColor}` // Fusão visual com a borda
     };
 };
 
 const getCardStyle = (app: LegacyAppointment, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
-    const baseClasses = "left-0 right-0 rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card mx-1";
+    const baseClasses = "rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card";
     
     if (viewMode === 'pagamento') {
         const isPaid = app.status === 'concluido'; 
@@ -562,7 +564,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             <div key={col.id} className={`relative border-r border-slate-200 min-h-[1000px] cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`} onClick={(e) => { if (e.target === e.currentTarget) handleGridClick(e, col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0], col.type === 'date' ? (col.data as Date) : currentDate); }}>
                                 {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
                                 {filteredAppointments.filter(app => (periodType === 'Semana' ? isSameDay(app.start, col.data as Date) : (String(app.professional.id) === String(col.id)))).map(app => (
-                                    <div key={app.id} ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }} onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }} className={getCardStyle(app, viewMode)} style={{ ...getAppointmentPosition(app.start, app.end, timeSlot, app.service.color), borderLeftColor: app.service.color }}>
+                                    <div key={app.id} ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }} onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }} className={getCardStyle(app, viewMode)} style={{ ...getAppointmentPosition(app.start, app.end, timeSlot, app.service.color) }}>
                                         <div className="absolute top-1.5 right-1.5 opacity-40 group-hover/card:opacity-100 transition-opacity">{app.origem === 'link' ? <Globe size={10} className="text-orange-500" /> : <User size={10} className="text-slate-400" />}</div>
                                         <div className="flex items-center gap-1 overflow-hidden">
                                             <span className="text-[9px] font-bold opacity-70 leading-none flex-shrink-0">{format(app.start, 'HH:mm')}</span>
