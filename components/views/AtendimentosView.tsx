@@ -89,7 +89,7 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
     );
 };
 
-// --- MOTOR DE CÁLCULO PIXEL-PERFECT ---
+// --- MOTOR DE CÁLCULO PIXEL-PERFECT (REVISADO) ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot; // ex: 80px / 30min = 2.66px/min
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
@@ -100,16 +100,15 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
 
     return { 
         top: `${top}px`, 
-        height: `${height + 1}px`, // +1px para cobrir a borda inferior da linha
-        marginTop: '-1px',         // Deslocamento para cobrir a borda superior da linha
+        height: `${height + 2}px`, // +2px para cobrir as bordas superior e inferior (Técnica de Compensação)
+        marginTop: '-1px',         // Puxa o card para cima da linha de divisão inicial
         zIndex: 10,
         position: 'absolute' as const
     };
 };
 
 const getCardStyle = (app: LegacyAppointment, viewMode: 'profissional' | 'andamento' | 'pagamento') => {
-    // Nota: Removido mx-1 para garantir preenchimento total lateral também, caso desejado. Mantido p-1.5 para respiro interno do texto.
-    const baseClasses = "left-0 right-0 rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card";
+    const baseClasses = "left-0 right-0 rounded-md shadow-sm border border-l-4 p-1.5 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card mx-1";
     
     if (viewMode === 'pagamento') {
         const isPaid = app.status === 'concluido'; 
@@ -597,7 +596,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             {isConfigModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsConfigModalOpen(false)}></div>
-                    <div className="relative w-full max-sm bg-white rounded-[32px] shadow-2xl overflow-hidden p-8 animate-in zoom-in-95 duration-200">
+                    <div className="relative w-full max-w-sm bg-white rounded-[32px] shadow-2xl overflow-hidden p-8 animate-in zoom-in-95 duration-200">
                         <header className="flex justify-between items-center mb-8"><h3 className="font-extrabold text-slate-800">Grade</h3><button onClick={() => setIsConfigModalOpen(false)}><X size={20} /></button></header>
                         <div className="space-y-4">
                             <label className="text-sm font-black text-slate-700 uppercase">Largura: {colWidth}px</label>
