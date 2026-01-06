@@ -25,6 +25,20 @@ const END_HOUR = 20;
 const SLOT_PX_HEIGHT = 80; 
 const CARD_TOP_OFFSET = 10; 
 
+// --- MAPA DE PRIORIDADE (CASE WHEN LOGIC) ---
+const STATUS_PRIORITY: Record<AppointmentStatus, number> = {
+    'em_atendimento': 1,
+    'chegou': 2,
+    'confirmado_whatsapp': 3,
+    'confirmado': 4,
+    'agendado': 5,
+    'em_espera': 6,
+    'concluido': 7,
+    'faltou': 8,
+    'cancelado': 9,
+    'bloqueado': 10
+};
+
 // --- HELPER: ICONE DE STATUS ---
 const StatusIndicator = ({ status }: { status: AppointmentStatus }) => {
     switch (status) {
@@ -484,15 +498,25 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         return orderedProfessionals.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional', data: p }));
     }, [periodType, currentDate, orderedProfessionals]);
 
+    // --- FILTRAGEM COM ORDENAÇÃO POR STATUS (HIERARQUIA CASE WHEN) ---
     const filteredAppointments = useMemo(() => {
-        if (periodType === 'Dia' || periodType === 'Lista') return appointments.filter(a => isSameDay(a.start, currentDate));
-        if (periodType === 'Semana') {
+        let baseList: LegacyAppointment[] = [];
+        if (periodType === 'Dia' || periodType === 'Lista') baseList = appointments.filter(a => isSameDay(a.start, currentDate));
+        else if (periodType === 'Semana') {
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
             const end = endOfWeek(currentDate, { weekStartsOn: 1 });
-            return appointments.filter(a => isWithinInterval(a.start, { start, end }));
+            baseList = appointments.filter(a => isWithinInterval(a.start, { start, end }));
         }
-        if (periodType === 'Mês') return appointments.filter(a => isSameMonth(a.start, currentDate));
-        return appointments;
+        else if (periodType === 'Mês') baseList = appointments.filter(a => isSameMonth(a.start, currentDate));
+        else baseList = appointments;
+
+        // Ordenação por Status (Prioridade) e Tempo
+        return [...baseList].sort((a, b) => {
+            const priorityA = STATUS_PRIORITY[a.status] || 99;
+            const priorityB = STATUS_PRIORITY[b.status] || 99;
+            if (priorityA !== priorityB) return priorityA - priorityB;
+            return a.start.getTime() - b.start.getTime();
+        });
     }, [appointments, periodType, currentDate]);
 
     const timeSlotsLabels = useMemo(() => {
@@ -819,7 +843,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             setToast({ message: 'Falha na comunicação com o banco.', type: 'error' });
                         }
                     }} 
-                    /* FIX: Replaced non-existent onUpdateStatus name with handleUpdateStatus */
                     onUpdateStatus={handleUpdateStatus} 
                 />
             )}

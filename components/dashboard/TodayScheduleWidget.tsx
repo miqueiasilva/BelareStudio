@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Clock, MessageCircle, ChevronRight, CalendarX, Plus } from 'lucide-react';
+import { Clock, MessageCircle, ChevronRight, CalendarX, Plus, Scissors } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { AppointmentStatus } from '../../types';
 
@@ -17,6 +17,19 @@ const statusMap: Record<AppointmentStatus, { label: string; color: string; bg: s
     em_espera: { label: 'Em Espera', color: 'text-slate-600', bg: 'bg-slate-100' }
 };
 
+// Hierarquia Visual (CASE WHEN Logic)
+const STATUS_PRIORITY: Record<string, number> = {
+    'em_atendimento': 1,
+    'chegou': 2,
+    'confirmado_whatsapp': 3,
+    'confirmado': 4,
+    'agendado': 5,
+    'em_espera': 6,
+    'concluido': 7,
+    'faltou': 8,
+    'cancelado': 9
+};
+
 interface TodayScheduleWidgetProps {
     onNavigate: (view: any) => void;
     appointments: any[];
@@ -24,16 +37,23 @@ interface TodayScheduleWidgetProps {
 
 const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, appointments }) => {
     
-    const activeApps = appointments
-        .filter(app => app.status !== 'cancelado')
-        .slice(0, 8); // Mostra os top 8 do dia
+    // Aplicação da Ordenação Hierárquica por Status e então Tempo
+    const activeApps = [...appointments]
+        .filter(app => app.status !== 'cancelado' && app.status !== 'bloqueado')
+        .sort((a, b) => {
+            const prioA = STATUS_PRIORITY[a.status] || 99;
+            const prioB = STATUS_PRIORITY[b.status] || 99;
+            if (prioA !== prioB) return prioA - prioB;
+            return new Date(a.date).getTime() - new Date(b.date).getTime();
+        })
+        .slice(0, 8); 
 
     return (
         <div className="bg-white rounded-[24px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-full min-h-[400px]">
             <header className="p-5 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
                 <div>
                     <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Timeline de Hoje</h3>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">{activeApps.length} Atendimentos</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">{appointments.filter(a => a.status !== 'cancelado').length} Atendimentos</p>
                 </div>
                 <button 
                     onClick={() => onNavigate('agenda')}
@@ -43,14 +63,18 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
                 </button>
             </header>
 
-            <div className="flex-1 p-5 overflow-y-auto custom-scrollbar">
+            <div className="flex-1 p-5 overflow-y-auto custom-scrollbar text-left">
                 {activeApps.length > 0 ? (
                     <div className="space-y-6 relative before:absolute before:left-[15px] before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-100">
                         {activeApps.map((app) => (
-                            <div key={app.id} className="relative flex items-start gap-4 group">
+                            <div key={app.id} className="relative flex items-start gap-4 group animate-in fade-in slide-in-from-left-2 duration-300">
                                 {/* Dot Indicator */}
                                 <div className="z-10 mt-1.5 w-8 h-8 rounded-full bg-white border-2 border-slate-100 flex items-center justify-center flex-shrink-0 group-hover:border-orange-200 transition-colors">
-                                    <div className={`w-2 h-2 rounded-full ${app.status === 'concluido' ? 'bg-slate-300' : 'bg-orange-500 animate-pulse'}`}></div>
+                                    <div className={`w-2.5 h-2.5 rounded-full ${
+                                        app.status === 'em_atendimento' ? 'bg-indigo-500 animate-pulse' : 
+                                        app.status === 'concluido' ? 'bg-slate-300' : 
+                                        'bg-orange-500'
+                                    }`}></div>
                                 </div>
 
                                 <div className="flex-1 min-w-0">
@@ -63,8 +87,9 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
                                         </span>
                                     </div>
                                     
-                                    <h4 className="text-sm font-bold text-slate-700 truncate">
+                                    <h4 className="text-sm font-bold text-slate-700 truncate flex items-center gap-2">
                                         {app.client_name || 'Bloqueado'}
+                                        {app.status === 'em_atendimento' && <Scissors size={10} className="text-indigo-600 animate-bounce" />}
                                     </h4>
                                     
                                     <p className="text-[11px] text-slate-400 font-medium truncate">
