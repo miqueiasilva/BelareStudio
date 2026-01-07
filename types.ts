@@ -37,6 +37,16 @@ export type TransactionCategory = string;
 
 export type PaymentMethod = 'pix' | 'cartao_credito' | 'cartao_debito' | 'dinheiro' | 'transferencia' | 'boleto';
 
+export interface ScheduleBlock {
+  id: string;
+  resource_id: string | null; // null significa "Loja Inteira"
+  start_date: string;
+  start_time: string;
+  end_time: string;
+  reason: string;
+  created_at?: string;
+}
+
 export interface Client {
   id?: number;
   nome: string;
