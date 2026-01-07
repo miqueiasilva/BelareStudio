@@ -92,6 +92,7 @@ const AppointmentCard: React.FC<{ app: Appointment }> = ({ app }) => {
                 margin: '0px',
                 zIndex: 20
             }}
+            title={`${format(app.start, 'HH:mm')} - ${app.client?.nome || 'Bloqueado'} (${app.service.name})`}
         >
             <p className="font-bold truncate">{format(app.start, 'HH:mm')} - {format(app.end, 'HH:mm')}</p>
             {app.client && <p className="font-semibold truncate">{app.client.nome}</p>}

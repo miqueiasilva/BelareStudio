@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
@@ -88,7 +89,7 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
     );
 };
 
-// --- MOTOR DE CÁLCULO PIXEL-PERFECT (MATEMÁTICA PURA) ---
+// --- MOTOR DE CÁLCULO DE PRECISÃO ABSOLUTA ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     // 1. Pixels por minuto exatos
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
@@ -99,17 +100,18 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     // 3. Duração exata em minutos
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
 
-    // 4. Matemática Pura (Sem offsets mágicos)
-    const top = Math.floor(startMinutesSinceDayStart * pixelsPerMinute);
+    // 4. Matemática Pura (Sem offsets mágicos, usando Math.floor para nitidez de pixels)
+    const top = Math.floor(startMinutesSinceDayStart * pixelsPerMinute) + CARD_TOP_OFFSET;
     const height = Math.floor(durationMinutes * pixelsPerMinute);
     
     return { 
         position: 'absolute' as const,
         top: `${top}px`, 
         height: `${height}px`,
-        width: '100%', // Garante largura total
-        zIndex: 20,    // Garante ficar acima das linhas
-        left: '0px'
+        width: '100%', 
+        zIndex: 20,
+        left: '0px',
+        margin: '0px'
     };
 };
 
@@ -582,38 +584,32 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                         if (periodType === 'Semana') return isSameDay(app.start, col.data as Date);
                                         return String(app.professional.id) === String(col.id); 
                                     })
-                                    .map(app => {
-                                        const durationInMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
-                                        const isVeryShort = durationInMinutes <= 20;
-
-                                        return (
-                                            <div 
-                                                key={app.id} 
-                                                ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }} 
-                                                onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }} 
-                                                className={getCardStyle(app, viewMode)} 
-                                                style={{ 
-                                                    ...getAppointmentPosition(app.start, app.end, timeSlot),
-                                                    borderLeftColor: app.service.color
-                                                }}
-                                            >
-                                                <div className="absolute top-1.5 right-1.5 opacity-40 group-hover/card:opacity-100 transition-opacity">
-                                                    {app.origem === 'link' ? <Globe size={10} className="text-orange-500" /> : <User size={10} className="text-slate-400" />}
-                                                </div>
-                                                <div className="flex items-center gap-1 overflow-hidden">
-                                                    <span className="text-[9px] font-bold opacity-70 leading-none flex-shrink-0">{format(app.start, 'HH:mm')}</span>
-                                                    {!isVeryShort && (
-                                                        <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
-                                                            <StatusIndicator status={app.status} />
-                                                            <p className="font-bold text-slate-900 text-[11px] truncate leading-tight flex-1">
-                                                                {app.client?.nome || 'Bloqueado'}
-                                                            </p>
-                                                        </div>
-                                                    )}
+                                    .map(app => (
+                                        <div 
+                                            key={app.id} 
+                                            ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }} 
+                                            onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }} 
+                                            title={`${format(app.start, 'HH:mm')} - ${app.client?.nome || 'Bloqueado'} (${app.service.name})`}
+                                            className={getCardStyle(app, viewMode)} 
+                                            style={{ 
+                                                ...getAppointmentPosition(app.start, app.end, timeSlot),
+                                                borderLeftColor: app.service.color
+                                            }}
+                                        >
+                                            <div className="absolute top-1.5 right-1.5 opacity-40 group-hover/card:opacity-100 transition-opacity">
+                                                {app.origem === 'link' ? <Globe size={10} className="text-orange-500" /> : <User size={10} className="text-slate-400" />}
+                                            </div>
+                                            <div className="flex items-center gap-1 overflow-hidden">
+                                                <span className="text-[9px] font-bold opacity-70 leading-none flex-shrink-0">{format(app.start, 'HH:mm')}</span>
+                                                <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+                                                    <StatusIndicator status={app.status} />
+                                                    <p className="font-bold text-slate-900 text-[11px] truncate leading-tight flex-1">
+                                                        {app.client?.nome || 'Bloqueado'}
+                                                    </p>
                                                 </div>
                                             </div>
-                                        );
-                                    })}
+                                        </div>
+                                    ))}
                             </div>
                         ))}
                         <TimelineIndicator timeSlot={timeSlot} />
