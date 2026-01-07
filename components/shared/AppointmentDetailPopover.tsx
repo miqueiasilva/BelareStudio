@@ -17,6 +17,7 @@ interface AppointmentDetailPopoverProps {
   onEdit: (appointment: LegacyAppointment) => void;
   onDelete: (id: number) => void;
   onUpdateStatus: (appointmentId: number, newStatus: AppointmentStatus) => void;
+  onConvertToCommand?: (appointment: LegacyAppointment) => void;
 }
 
 const statusLabels: { [key in AppointmentStatus]: string } = {
@@ -39,6 +40,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   onEdit,
   onDelete,
   onUpdateStatus,
+  onConvertToCommand
 }) => {
   const popoverRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLButtonElement>(null);
@@ -61,35 +63,28 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
         
-        // Cabeçalho da Agenda tem h-24 (96px). 
-        // Definimos uma zona de segurança de 112px (96px + 16px de margem)
         const SAFE_ZONE_TOP = 112; 
         
         let top = targetRect.top + (targetRect.height / 2) - (popoverRect.height / 2);
         let left = targetRect.right + 12;
 
-        // Se estourar a direita, inverte para a esquerda do card
         if (left + popoverRect.width > viewportWidth) {
             left = targetRect.left - popoverRect.width - 12;
         }
         
-        // CORREÇÃO UX: Impede que o card suba demais e cubra os nomes dos profissionais
         if (top < SAFE_ZONE_TOP) {
             top = SAFE_ZONE_TOP;
         }
 
-        // Impede que o card suma no rodapé
         if (top + popoverRect.height > viewportHeight - 16) {
             top = viewportHeight - popoverRect.height - 16;
         }
 
-        // Impede que o card suma na lateral esquerda (mobile fix)
         if (left < 16) left = 16;
 
         setPosition({ top, left, opacity: 1 });
     };
     
-    // Pequeno delay para garantir que o DOM renderizou e as medidas estão prontas
     const timer = setTimeout(handlePositioning, 0);
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
@@ -108,6 +103,16 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const canCheckout = !isFinished;
   
   const isLockedForDelete = ['concluido', 'bloqueado'].includes(appointment.status?.toLowerCase());
+
+  // --- NOVO HANDLER DE FINALIZAÇÃO ---
+  const handleFinalize = () => {
+      if (onConvertToCommand) {
+          onConvertToCommand(appointment);
+      } else {
+          // Fallback para o modal antigo caso a função não seja passada
+          setIsCheckoutOpen(true);
+      }
+  };
 
   return (
     <>
@@ -180,7 +185,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
 
                     {canCheckout && (
                         <button
-                            onClick={() => setIsCheckoutOpen(true)}
+                            onClick={handleFinalize}
                             className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-[0.1em] py-5 rounded-[24px] shadow-xl shadow-emerald-100 transition-all active:scale-95 flex items-center justify-center gap-2"
                         >
                             <Receipt size={18} />

@@ -112,7 +112,6 @@ const getCardStyle = (app: any, viewMode: 'profissional' | 'andamento' | 'pagame
     const baseClasses = "rounded-none shadow-sm border-l-[6px] p-2 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card !m-0";
     
     if (app.type === 'block') {
-        // FIX: cursor-not-allowed e pointer-events-auto para capturar clique e parar propagação
         return "absolute rounded-none border-l-4 border-rose-400 bg-[repeating-linear-gradient(45deg,#fcfcfc,#fcfcfc_10px,#f8fafc_10px,#f8fafc_20px)] text-slate-500 p-2 overflow-hidden flex flex-col cursor-not-allowed opacity-95 z-[25] pointer-events-auto";
     }
 
@@ -383,10 +382,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         } catch (e) { 
             setToast({ message: 'Erro ao salvar.', type: 'error' }); 
             fetchAppointments(); 
-        } finally { setIsLoadingData(false); }
+        } finally { setIsLoadingData(true); }
     };
 
-    // --- NOVA FUNÇÃO: DELETAR BLOQUEIO ---
     const handleDeleteBlock = async (e: React.MouseEvent, blockId: string | number) => {
         e.stopPropagation();
         if (!window.confirm("Remover este bloqueio de horário?")) return;
@@ -423,6 +421,55 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
             fetchAppointments();
         }
         setActiveAppointmentDetail(null);
+    };
+
+    // --- NOVA FUNÇÃO: CONVERTER EM COMANDA ---
+    const handleConvertToCommand = async (appointment: LegacyAppointment) => {
+        setIsLoadingData(true);
+        try {
+            // 1. Criar Comanda Cabeçalho
+            const { data: command, error: cmdError } = await supabase
+                .from('commands')
+                .insert([{
+                    client_id: appointment.client?.id,
+                    status: 'open',
+                    total_amount: appointment.service.price
+                }])
+                .select()
+                .single();
+
+            if (cmdError) throw cmdError;
+
+            // 2. Criar Item da Comanda
+            const { error: itemError } = await supabase
+                .from('command_items')
+                .insert([{
+                    command_id: command.id,
+                    appointment_id: appointment.id,
+                    title: appointment.service.name,
+                    price: appointment.service.price,
+                    quantity: 1
+                }]);
+
+            if (itemError) throw itemError;
+
+            // 3. Concluir Agendamento
+            const { error: apptUpdateError } = await supabase
+                .from('appointments')
+                .update({ status: 'concluido' })
+                .eq('id', appointment.id);
+
+            if (apptUpdateError) throw apptUpdateError;
+
+            setToast({ message: `Comanda para ${appointment.client?.nome} gerada com sucesso! 💳`, type: 'success' });
+            setActiveAppointmentDetail(null);
+            fetchAppointments();
+        } catch (e: any) {
+            console.error("Falha ao gerar comanda:", e);
+            setToast({ message: "Erro ao converter agendamento em comanda.", type: 'error' });
+        } finally {
+            setIsLoadingData(false);
+        }
     };
 
     const handleDeleteAppointmentFull = async (id: number) => {
@@ -625,7 +672,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                             key={app.id} 
                                             ref={(el) => { if (el && app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} 
                                             onClick={(e) => { 
-                                                // FIX: Stop propagation para impedir abertura do menu de agendamento por baixo
                                                 e.stopPropagation(); 
                                                 if (app.type === 'appointment') {
                                                     setActiveAppointmentDetail(app); 
@@ -638,7 +684,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                                                 borderLeftColor: app.type === 'block' ? '#f87171' : app.service.color
                                             }}
                                         >
-                                            {/* BOTÃO EXCLUIR PARA BLOQUEIOS */}
                                             {app.type === 'block' && (
                                                 <button 
                                                     onClick={(e) => handleDeleteBlock(e, app.id)}
@@ -727,7 +772,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     onClose={() => setActiveAppointmentDetail(null)} 
                     onEdit={(app) => setModalState({ type: 'appointment', data: app })} 
                     onDelete={handleDeleteAppointmentFull} 
-                    onUpdateStatus={handleUpdateStatus} 
+                    onUpdateStatus={handleUpdateStatus}
+                    onConvertToCommand={handleConvertToCommand}
                 />
             )}
             {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />}
