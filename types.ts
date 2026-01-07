@@ -86,7 +86,7 @@ export interface LegacyProfessional {
   online_booking?: boolean;
   permissions?: any;
   work_schedule?: any;
-  pix_key?: string; // Campo para pagamentos de comissão
+  pix_key?: string; 
 }
 
 export interface LegacyService {
@@ -133,6 +133,31 @@ export interface FinancialTransaction {
   professionalId?: number;
   appointment_id?: number;
   client_id?: number;
+}
+
+// --- NOVAS INTERFACES DE COMANDA ---
+
+export interface CommandItem {
+    id: string;
+    command_id: string;
+    service_id?: number;
+    product_id?: number;
+    appointment_id?: number;
+    title: string;
+    price: number;
+    quantity: number;
+    created_at: string;
+}
+
+export interface Command {
+    id: string;
+    client_id: number;
+    status: 'open' | 'paid' | 'canceled';
+    total_amount: number;
+    created_at: string;
+    closed_at?: string;
+    clients?: { nome: string }; // Join relation
+    command_items: CommandItem[];
 }
 
 export interface ChatMessage {

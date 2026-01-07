@@ -7,29 +7,11 @@ import {
     Receipt
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
-import { FinancialTransaction, PaymentMethod, Client } from '../../types';
+import { FinancialTransaction, PaymentMethod, Client, Command, CommandItem } from '../../types';
 import Toast, { ToastType } from '../shared/Toast';
 import SelectionModal from '../modals/SelectionModal';
 import ClientSearchModal from '../modals/ClientSearchModal';
 import { differenceInMinutes, parseISO, format } from 'date-fns';
-
-interface CommandItem {
-    id: number;
-    command_id: number;
-    name: string;
-    price: number;
-    type: 'servico' | 'produto' | 'cortesia';
-    created_at: string;
-}
-
-interface Command {
-    id: number;
-    client_id: number;
-    clients: { nome: string };
-    status: 'open' | 'closed';
-    created_at: string;
-    command_items: CommandItem[];
-}
 
 interface ComandasViewProps {
     onAddTransaction: (t: FinancialTransaction) => void;
@@ -44,7 +26,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     // Modals State
     const [isSelectionOpen, setIsSelectionOpen] = useState(false);
     const [isClientSearchOpen, setIsClientSearchOpen] = useState(false);
-    const [activeTabId, setActiveTabId] = useState<number | null>(null);
+    const [activeTabId, setActiveTabId] = useState<string | null>(null);
     
     // Close Tab Modal State
     const [closingTab, setClosingTab] = useState<Command | null>(null);
@@ -115,9 +97,9 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         try {
             const payload = {
                 command_id: activeTabId,
-                name: item.name.replace(/\[.*?\]\s/g, ''),
+                title: item.name.replace(/\[.*?\]\s/g, ''),
                 price: item.price,
-                type: item.type,
+                quantity: 1,
                 product_id: item.type === 'produto' ? item.id : null,
                 service_id: item.type === 'servico' ? item.id : null
             };
@@ -132,7 +114,11 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
 
             setTabs(prev => prev.map(tab => {
                 if (tab.id === activeTabId) {
-                    return { ...tab, command_items: [...tab.command_items, data] };
+                    return { 
+                        ...tab, 
+                        command_items: [...tab.command_items, data],
+                        total_amount: Number(tab.total_amount) + Number(data.price)
+                    };
                 }
                 return tab;
             }));
@@ -144,14 +130,20 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         }
     };
 
-    const handleRemoveItem = async (commandId: number, itemId: number) => {
+    const handleRemoveItem = async (commandId: string, itemId: string) => {
         try {
             const { error } = await supabase.from('command_items').delete().eq('id', itemId);
             if (error) throw error;
 
             setTabs(prev => prev.map(tab => {
                 if (tab.id === commandId) {
-                    return { ...tab, command_items: tab.command_items.filter(i => i.id !== itemId) };
+                    const removedItem = tab.command_items.find(i => i.id === itemId);
+                    const newTotal = removedItem ? Number(tab.total_amount) - (Number(removedItem.price) * removedItem.quantity) : tab.total_amount;
+                    return { 
+                        ...tab, 
+                        command_items: tab.command_items.filter(i => i.id !== itemId),
+                        total_amount: newTotal
+                    };
                 }
                 return tab;
             }));
@@ -161,8 +153,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         }
     };
 
-    // FIX: Added missing handleOpenCloseTab function to open the closure modal for a specific tab.
-    const handleOpenCloseTab = (id: number) => {
+    const handleOpenCloseTab = (id: string) => {
         const tab = tabs.find(t => t.id === id);
         if (tab) setClosingTab(tab);
     };
@@ -171,17 +162,18 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         if (!closingTab || isFinishing) return;
         setIsFinishing(true);
 
-        const total = closingTab.command_items.reduce((acc, i) => acc + i.price, 0);
+        const total = closingTab.command_items.reduce((acc, i) => acc + (i.price * i.quantity), 0);
 
         try {
             // 1. Criar Transação Financeira
             const { error: finError } = await supabase.from('financial_transactions').insert([{
-                description: `Fechamento Comanda #${closingTab.id} - ${closingTab.clients.nome}`,
+                description: `Fechamento Comanda - ${closingTab.clients?.nome}`,
                 amount: total,
                 type: 'income',
                 category: 'servico',
                 payment_method: paymentMethod,
-                client_id: closingTab.client_id
+                client_id: closingTab.client_id,
+                date: new Date().toISOString()
             }]);
 
             if (finError) throw finError;
@@ -189,7 +181,10 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
             // 2. Fechar Comanda
             const { error: cmdError } = await supabase
                 .from('commands')
-                .update({ status: 'closed' })
+                .update({ 
+                    status: 'paid',
+                    closed_at: new Date().toISOString()
+                })
                 .eq('id', closingTab.id);
 
             if (cmdError) throw cmdError;
@@ -266,7 +261,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         {filteredTabs.map(tab => {
-                            const total = tab.command_items.reduce((acc, i) => acc + i.price, 0);
+                            const total = tab.command_items.reduce((acc, i) => acc + (i.price * i.quantity), 0);
                             const duration = differenceInMinutes(new Date(), parseISO(tab.created_at));
 
                             return (
@@ -297,13 +292,15 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                                                 <div key={item.id} className="flex justify-between items-center group/item bg-slate-50 p-3 rounded-2xl border border-transparent hover:border-slate-200 transition-all">
                                                     <div className="flex items-center gap-3 overflow-hidden">
                                                         <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                                                            item.type === 'produto' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'
+                                                            item.product_id ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'
                                                         }`}>
-                                                            {item.type === 'produto' ? <ShoppingBag size={14}/> : <Scissors size={14}/>}
+                                                            {item.product_id ? <ShoppingBag size={14}/> : <Scissors size={14}/>}
                                                         </div>
                                                         <div className="min-w-0">
-                                                            <p className="text-xs font-bold text-slate-700 truncate">{item.name}</p>
-                                                            <p className="text-[10px] font-black text-slate-400">R$ {item.price.toFixed(2)}</p>
+                                                            <p className="text-xs font-bold text-slate-700 truncate">{item.title}</p>
+                                                            <p className="text-[10px] font-black text-slate-400">
+                                                                {item.quantity}x R$ {Number(item.price).toFixed(2)}
+                                                            </p>
                                                         </div>
                                                     </div>
                                                     <button 
@@ -328,7 +325,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                                         <div className="flex justify-between items-end px-1">
                                             <div>
                                                 <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-0.5">Total Aberto</p>
-                                                <p className="text-2xl font-black text-slate-800 tracking-tighter">R$ {total.toFixed(2)}</p>
+                                                <p className="text-2xl font-black text-slate-800 tracking-tighter">R$ {Number(total).toFixed(2)}</p>
                                             </div>
                                             <button 
                                                 onClick={() => handleOpenCloseTab(tab.id)}
@@ -386,10 +383,10 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                         <div className="p-10 space-y-8">
                             <div className="text-center">
                                 <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-[28px] flex items-center justify-center mx-auto mb-4 font-black text-3xl border-4 border-white shadow-xl">
-                                    {closingTab.clients.nome.charAt(0).toUpperCase()}
+                                    {closingTab.clients?.nome?.charAt(0).toUpperCase() || 'C'}
                                 </div>
-                                <h2 className="text-xl font-black text-slate-800">{closingTab.clients.nome}</h2>
-                                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Conta #{closingTab.id}</p>
+                                <h2 className="text-xl font-black text-slate-800">{closingTab.clients?.nome || 'Cliente'}</h2>
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Check-out de Consumo</p>
                             </div>
 
                             <div className="bg-slate-900 rounded-[32px] p-8 text-white shadow-2xl relative overflow-hidden group">
@@ -399,7 +396,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                                 <div className="relative z-10">
                                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Total a Receber</p>
                                     <h3 className="text-4xl font-black tracking-tighter">
-                                        R$ {closingTab.command_items.reduce((acc, i) => acc + i.price, 0).toFixed(2)}
+                                        R$ {closingTab.command_items.reduce((acc, i) => acc + (i.price * i.quantity), 0).toFixed(2)}
                                     </h3>
                                 </div>
                             </div>
@@ -418,7 +415,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                                             }`}
                                         >
                                             <pm.icon size={22} className={`mb-1.5 ${paymentMethod === pm.id ? 'text-orange-500' : 'text-slate-300'}`} />
-                                            <span className="text-[9px) font-black uppercase tracking-tighter">{pm.label}</span>
+                                            <span className="text-[9px] font-black uppercase tracking-tighter">{pm.label}</span>
                                         </button>
                                     ))}
                                 </div>
