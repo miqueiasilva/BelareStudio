@@ -91,10 +91,16 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
 
 // --- MOTOR DE CÁLCULO DE PRECISÃO ABSOLUTA ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
+    // Pixels por minuto exatos
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
+
+    // Minutos desde o início do dia (08:00)
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
+
+    // Duração exata em minutos
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
 
+    // Matemática Pura (Sem offsets mágicos)
     const top = Math.floor(startMinutesSinceDayStart * pixelsPerMinute);
     const height = Math.floor(durationMinutes * pixelsPerMinute);
     
@@ -553,8 +559,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         <div className="sticky left-0 z-[50] bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
                             {timeSlotsLabels.map(time => (
                                 <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black relative border-b border-slate-100/50 border-dashed bg-white">
-                                    {/* CLASSE Tailwind mt-0.5 para alinhar o topo do texto com o topo do card */}
-                                    <span className="absolute top-0 right-3 mt-0.5 z-10">{time}</span>
+                                    {/* mt-1.5 para alinhar o topo do número com a linha divisória/topo do card */}
+                                    <span className="absolute top-0 right-3 mt-1.5 z-10">{time}</span>
                                 </div>
                             ))}
                         </div>
