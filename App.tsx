@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ViewState, FinancialTransaction, UserRole } from './types';
@@ -19,6 +20,7 @@ import ConfiguracoesView from './components/views/ConfiguracoesView';
 import RemuneracoesView from './components/views/RemuneracoesView';
 import VendasView from './components/views/VendasView';
 import ComandasView from './components/views/ComandasView';
+import CommandDetailView from './components/views/CommandDetailView';
 import CaixaView from './components/views/CaixaView';
 import ProdutosView from './components/views/ProdutosView';
 import ServicosView from './components/views/ServicosView';
@@ -30,6 +32,7 @@ import { mockTransactions } from './data/mockData';
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
+  const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
   const [hash, setHash] = useState(window.location.hash);
   const [pathname, setPathname] = useState(window.location.pathname);
@@ -61,15 +64,19 @@ const AppContent: React.FC = () => {
 
   const handleAddTransaction = (t: FinancialTransaction) => setTransactions(prev => [t, ...prev]);
 
+  const navigateToCommand = (id: string) => {
+      setActiveCommandId(id);
+      setCurrentView('comanda_detalhe');
+  };
+
   const renderView = () => {
-    // SEGURANÇA: Verificação de Permissão antes de Renderizar
     if (!hasAccess(user.papel as UserRole, currentView)) {
         return <DashboardView onNavigate={setCurrentView} />;
     }
 
     switch (currentView) {
       case 'dashboard': return <DashboardView onNavigate={setCurrentView} />;
-      case 'agenda': return <AtendimentosView onAddTransaction={handleAddTransaction} />;
+      case 'agenda': return <AtendimentosView onAddTransaction={handleAddTransaction} onNavigateToCommand={navigateToCommand} />;
       case 'agenda_online': return <AgendaOnlineView />;
       case 'whatsapp': return <WhatsAppView />;
       case 'financeiro': return <FinanceiroView transactions={transactions} onAddTransaction={handleAddTransaction} />;
@@ -79,6 +86,7 @@ const AppContent: React.FC = () => {
       case 'remuneracoes': return <RemuneracoesView />;
       case 'vendas': return <VendasView onAddTransaction={handleAddTransaction} />;
       case 'comandas': return <ComandasView onAddTransaction={handleAddTransaction} />;
+      case 'comanda_detalhe': return <CommandDetailView commandId={activeCommandId!} onBack={() => setCurrentView('comandas')} />;
       case 'caixa': return <CaixaView />;
       case 'produtos': return <ProdutosView />;
       case 'servicos': return <ServicosView />;

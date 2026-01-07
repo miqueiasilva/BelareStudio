@@ -11,6 +11,7 @@ export type ViewState =
   | 'remuneracoes' 
   | 'vendas' 
   | 'comandas' 
+  | 'comanda_detalhe'
   | 'caixa' 
   | 'produtos' 
   | 'servicos' 
@@ -156,7 +157,7 @@ export interface Command {
     total_amount: number;
     created_at: string;
     closed_at?: string;
-    clients?: { nome: string }; // Join relation
+    clients?: { nome: string; whatsapp: string }; // Join relation
     command_items: CommandItem[];
 }
 

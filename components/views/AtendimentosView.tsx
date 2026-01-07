@@ -171,9 +171,10 @@ const TimelineIndicator = ({ timeSlot }: { timeSlot: number }) => {
 
 interface AtendimentosViewProps {
     onAddTransaction: (t: FinancialTransaction) => void;
+    onNavigateToCommand?: (id: string) => void;
 }
 
-const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction }) => {
+const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, onNavigateToCommand }) => {
     const { user, loading: authLoading } = useAuth(); 
     const [currentDate, setCurrentDate] = useState(new Date());
     const [appointments, setAppointments] = useState<any[]>([]);
@@ -423,11 +424,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         setActiveAppointmentDetail(null);
     };
 
-    // --- NOVA FUNÇÃO: CONVERTER EM COMANDA ---
     const handleConvertToCommand = async (appointment: LegacyAppointment) => {
         setIsLoadingData(true);
         try {
-            // 1. Criar Comanda Cabeçalho
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
@@ -440,7 +439,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
             if (cmdError) throw cmdError;
 
-            // 2. Criar Item da Comanda
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
@@ -453,7 +451,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
             if (itemError) throw itemError;
 
-            // 3. Concluir Agendamento
             const { error: apptUpdateError } = await supabase
                 .from('appointments')
                 .update({ status: 'concluido' })
@@ -461,9 +458,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
 
             if (apptUpdateError) throw apptUpdateError;
 
-            setToast({ message: `Comanda para ${appointment.client?.nome} gerada com sucesso! 💳`, type: 'success' });
+            setToast({ message: `Comanda gerada com sucesso! Redirecionando... 💳`, type: 'success' });
             setActiveAppointmentDetail(null);
-            fetchAppointments();
+            
+            // REDIRECIONAMENTO AUTOMÁTICO
+            if (onNavigateToCommand) {
+                onNavigateToCommand(command.id);
+            }
         } catch (e: any) {
             console.error("Falha ao gerar comanda:", e);
             setToast({ message: "Erro ao converter agendamento em comanda.", type: 'error' });
