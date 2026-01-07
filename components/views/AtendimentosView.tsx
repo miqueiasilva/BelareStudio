@@ -91,16 +91,10 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
 
 // --- MOTOR DE CÁLCULO DE PRECISÃO ABSOLUTA ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
-    // Pixels por minuto exatos
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
-
-    // Minutos desde o início do dia (08:00)
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
-
-    // Duração exata em minutos
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
 
-    // Matemática Pura (Sem offsets mágicos)
     const top = Math.floor(startMinutesSinceDayStart * pixelsPerMinute);
     const height = Math.floor(durationMinutes * pixelsPerMinute);
     
@@ -368,7 +362,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         const appointment = appointments.find(a => a.id === id);
         if (!appointment) return;
         
-        // RBAC: Bloqueio de mudança de status se for 'concluido' por não-admins
         const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
         if (!isAdmin && appointment.status === 'concluido') {
             setToast({ message: "Permissão Negada: Apenas o Gestor pode alterar registros concluídos.", type: 'error' });
@@ -389,7 +382,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         setActiveAppointmentDetail(null);
     };
 
-    // --- AUDITORIA E COMPLIANCE: Exclusão com Snapshot Forense (Audit Trail) ---
     const handleDeleteAppointmentFull = async (id: number) => {
         const appointment = appointments.find(a => a.id === id);
         if (!appointment) return;
@@ -397,7 +389,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
         const isFinished = appointment.status === 'concluido';
 
-        // REGRA 1: Bloqueio RBAC
         if (!isAdmin && isFinished) {
             setToast({ 
                 message: "Permissão Negada: Apenas o Gestor pode excluir registros com financeiro lançado.", 
@@ -414,7 +405,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
         
         setIsLoadingData(true);
         try {
-            // PASSO 0: Snapshot para Auditoria (Old Value)
             if (isFinished) {
                 await supabase.from('audit_logs').insert([{
                     actor_id: user?.id,
@@ -433,10 +423,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 }]);
             }
 
-            // PASSO A: Limpeza Profunda (Prevenção de Erro 409 Conflict)
             await supabase.from('financial_transactions').delete().eq('appointment_id', id);
-
-            // PASSO B: Remoção do Registro Principal
             const { error: apptError } = await supabase.from('appointments').delete().eq('id', id);
 
             if (apptError) throw apptError;
@@ -527,7 +514,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                 className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar"
             >
                 <div className="min-w-fit">
-                    {/* CABEÇALHO PROFISSIONAIS - ALTURA FIXA h-24 (96px) */}
+                    {/* CABEÇALHO PROFISSIONAIS */}
                     <div className="grid sticky top-0 z-[50] border-b border-slate-200 bg-white shadow-sm" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         <div className="sticky left-0 z-[60] bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-[4px_0_24px_rgba(0,0,0,0.05)]"><Maximize2 size={16} className="text-slate-300" /></div>
                         {columns.map((col, idx) => (
@@ -562,11 +549,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                     {/* CORPO DA GRADE */}
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         
-                        {/* COLUNA DE HORÁRIOS - PRECISÃO ZERO OFFSET */}
+                        {/* COLUNA DE HORÁRIOS - SINTONIA FINA DE ALINHAMENTO */}
                         <div className="sticky left-0 z-[50] bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
                             {timeSlotsLabels.map(time => (
                                 <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black relative border-b border-slate-100/50 border-dashed bg-white">
-                                    <span className="absolute top-0 right-3 -translate-y-1/2 bg-white px-1 z-10">{time}</span>
+                                    {/* CLASSE Tailwind mt-0.5 para alinhar o topo do texto com o topo do card */}
+                                    <span className="absolute top-0 right-3 mt-0.5 z-10">{time}</span>
                                 </div>
                             ))}
                         </div>
