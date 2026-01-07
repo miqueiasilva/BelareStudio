@@ -25,7 +25,6 @@ const clients: Client[] = [
 // FIX: Use LegacyService type which matches the mock data structure (name, duration, price, color).
 const services: { [key: string]: Service } = {
     designSimples: { id: 1, name: 'Design Simples', duration: 30, price: 50, color: 'blue' },
-    // FIX: Corrected key name to 'designComTintura' (removed space) to fix shorthand property syntax error and match usage.
     designComTintura: { id: 2, name: 'Design Com Tintura', duration: 40, price: 70, color: 'blue' },
     limpezaMicro: { id: 3, name: 'Limpeza Micro', duration: 30, price: 60, color: 'blue' },
     designComHenna: { id: 4, name: 'Design Com Henna', duration: 40, price: 75, color: 'blue' },
@@ -223,7 +222,7 @@ const AdminDashboard: React.FC = () => {
                             <div className="border-r border-slate-200">
                                 {timeSlots.map(time => (
                                     <div key={time} className="h-10 text-right pr-2 text-xs text-slate-500 relative">
-                                        <span className="absolute top-0 right-2">{time}</span>
+                                        <span className="absolute -top-[7px] right-2">{time}</span>
                                     </div>
                                 ))}
                             </div>
