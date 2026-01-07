@@ -89,24 +89,26 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
     );
 };
 
-// --- MOTOR DE CÁLCULO PIXEL-PERFECT (TÉCNICA SANGRIA / BLEED) ---
+// --- MOTOR DE CÁLCULO PIXEL-PERFECT (TÉCNICA SANGRIA GEOMÉTRICA) ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number, serviceColor: string) => {
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot; 
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
     
-    const rawTop = (startMinutesSinceDayStart * pixelsPerMinute);
-    const rawHeight = (durationMinutes * pixelsPerMinute); 
+    const topBase = startMinutesSinceDayStart * pixelsPerMinute;
+    const heightBase = durationMinutes * pixelsPerMinute;
 
     return { 
         position: 'absolute' as const,
-        top: `${rawTop - 1}px`,       // Sangria superior (tapa a borda)
-        left: '-1px',                 // Sangria esquerda
-        width: 'calc(100% + 2px)',    // Expansão lateral para cobrir border-right do pai
-        height: `${rawHeight + 2}px`, // Expansão vertical para cobrir bordas superior e inferior
-        zIndex: 20,                   // Z-index elevado para garantir sobreposição da grade
+        // Sangria Negativa: Força a sobreposição das bordas (top e left)
+        top: `${topBase - 1}px`,       
+        left: '-1px',                  
+        // Compensação Matemática: Expande o card para cobrir as bordas opostas
+        width: 'calc(100% + 2px)',    
+        height: `${heightBase + 2}px`, 
+        zIndex: 20,                   
         margin: '0px',
-        borderTop: `1px solid ${serviceColor}`
+        borderTop: `2px solid ${serviceColor}`
     };
 };
 
