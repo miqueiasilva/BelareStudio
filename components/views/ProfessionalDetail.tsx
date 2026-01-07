@@ -6,7 +6,8 @@ import {
     Phone, Mail, Smartphone, CreditCard, LayoutDashboard, Calendar,
     Settings2, Hash
 } from 'lucide-react';
-import { LegacyProfessional, LegacyService } from '../../types';
+// FIX: Added 'Service' type import to resolve missing properties on 'allServices' state.
+import { LegacyProfessional, LegacyService, Service } from '../../types';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import { supabase } from '../../services/supabaseClient';
@@ -53,7 +54,8 @@ const EditField = ({ label, name, value, onChange, type = "text", placeholder, s
 const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: initialProf, onBack, onSave }) => {
     // --- State ---
     const [prof, setProf] = useState<any>(null);
-    const [allServices, setAllServices] = useState<LegacyService[]>([]);
+    // FIX: Updated allServices state type to 'Service[]' from 'LegacyService[]' because the database columns are 'nome' and 'duracao_min'.
+    const [allServices, setAllServices] = useState<Service[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [activeTab, setActiveTab] = useState<'perfil' | 'servicos' | 'horarios' | 'comissoes' | 'permissoes'>('perfil');

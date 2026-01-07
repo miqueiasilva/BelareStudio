@@ -96,7 +96,9 @@ const EquipeView: React.FC = () => {
     };
 
     const handleToggleActive = async (e: React.MouseEvent, id: number | string, currentStatus: boolean) => {
-        e.stopPropagation();
+        if (e && typeof e.stopPropagation === 'function') {
+            e.stopPropagation();
+        }
         try {
             const { error } = await supabase
                 .from('team_members')
@@ -213,7 +215,8 @@ const EquipeView: React.FC = () => {
                             {filteredProfessionals.map(prof => (
                                 <div key={prof.id} className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:border-orange-100 transition-all group relative overflow-hidden cursor-pointer" onClick={() => setSelectedProf(prof)}>
                                     <div className="absolute top-6 right-6">
-                                        <ToggleSwitch on={!!prof.active} onClick={(e) => handleToggleActive(e as any, prof.id, !!prof.active)} />
+                                        {/* FIX: Wrapped async handleToggleActive call in non-returning arrow function to fix Type 'Promise<void>' is not assignable to type 'void' error. */}
+                                        <ToggleSwitch on={!!prof.active} onClick={(e: any) => { handleToggleActive(e, prof.id, !!prof.active); }} />
                                     </div>
                                     <div className="flex flex-col items-center text-center">
                                         <div className="relative mb-6">
@@ -266,7 +269,8 @@ const EquipeView: React.FC = () => {
                                                 </td>
                                                 <td className="px-6 py-4 text-center">
                                                     <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
-                                                        <ToggleSwitch on={!!prof.active} onClick={(e) => handleToggleActive(e as any, prof.id, !!prof.active)} />
+                                                        {/* FIX: Wrapped async handleToggleActive call in non-returning arrow function to fix Type 'Promise<void>' is not assignable to type 'void' error. */}
+                                                        <ToggleSwitch on={!!prof.active} onClick={(e: any) => { handleToggleActive(e, prof.id, !!prof.active); }} />
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
