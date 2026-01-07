@@ -26,6 +26,8 @@ const ClientesView: React.FC = () => {
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
   // --- Função Principal de Busca (Server-side) ---
+  // Esta função gerencia tanto o carregamento inicial/busca (reset=true)
+  // quanto o carregamento de páginas adicionais (reset=false)
   const fetchClients = useCallback(async (reset = false, searchVal = searchTerm) => {
     if (reset) {
         setLoading(true);
@@ -45,7 +47,7 @@ const ClientesView: React.FC = () => {
             .select('*', { count: 'exact' });
 
         if (searchVal.trim()) {
-            // Busca por nome ou whatsapp direto no Postgres
+            // Busca por nome ou whatsapp direto no Postgres (Server-side)
             query = query.or(`nome.ilike.%${searchVal}%,whatsapp.ilike.%${searchVal}%`);
         }
 
@@ -61,8 +63,12 @@ const ClientesView: React.FC = () => {
             setClients(prev => [...prev, ...(data || [])]);
         }
         
+        // count: 'exact' garante o total real da tabela, ex: 2154
         if (count !== null) setTotalCount(count);
+        
+        // Avança o índice da página apenas se não for um reset
         if (!reset) setPage(currentPage + 1);
+        else setPage(1); // Próxima página após o reset será a 1
 
     } catch (e: any) {
         console.error("Erro ao carregar clientes:", e);
@@ -73,11 +79,11 @@ const ClientesView: React.FC = () => {
     }
   }, [page, searchTerm]);
 
-  // Efeito para busca com Debounce
+  // Efeito para busca com Debounce (Evita spam de requisições ao banco)
   useEffect(() => {
     const timer = setTimeout(() => {
         fetchClients(true);
-    }, 500); // 500ms de atraso para evitar spam de query
+    }, 500);
 
     return () => clearTimeout(timer);
   }, [searchTerm]);
@@ -264,10 +270,10 @@ const ClientesView: React.FC = () => {
                     <button 
                         onClick={handleLoadMore}
                         disabled={loadingMore}
-                        className="flex items-center gap-2 px-8 py-3 bg-white border border-slate-200 rounded-2xl font-black text-slate-600 hover:bg-slate-50 hover:border-orange-200 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                        className="flex items-center gap-2 px-8 py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-2xl font-black shadow-lg shadow-orange-100 transition-all active:scale-95 disabled:opacity-50"
                     >
                         {loadingMore ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
-                        {loadingMore ? 'Carregando...' : 'Carregar Mais Clientes'}
+                        {loadingMore ? 'Sincronizando...' : 'Carregar Mais Clientes'}
                     </button>
                 </div>
             )}
@@ -278,7 +284,7 @@ const ClientesView: React.FC = () => {
                     <Users size={48} />
                   </div>
                   <h3 className="font-black text-slate-700">Nenhum cliente encontrado</h3>
-                  <p className="text-slate-400 text-sm mt-1 uppercase tracking-tighter font-bold">Refine sua pesquisa para encontrar registros específicos</p>
+                  <p className="text-slate-400 text-sm mt-1 uppercase tracking-tighter font-bold">Refine sua pesquisa para encontrar registros específicos na base total</p>
                </div>
             )}
           </div>

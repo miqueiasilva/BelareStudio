@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
     Plus, Users, Loader2, Search, ArrowRight, User as UserIcon, 
@@ -215,8 +214,8 @@ const EquipeView: React.FC = () => {
                             {filteredProfessionals.map(prof => (
                                 <div key={prof.id} className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:border-orange-100 transition-all group relative overflow-hidden cursor-pointer" onClick={() => setSelectedProf(prof)}>
                                     <div className="absolute top-6 right-6">
-                                        {/* FIX: Wrapped async handleToggleActive call in non-returning arrow function to fix Type 'Promise<void>' is not assignable to type 'void' error. */}
-                                        <ToggleSwitch on={!!prof.active} onClick={(e: any) => { handleToggleActive(e, prof.id, !!prof.active); }} />
+                                        {/* FIX: Explicitly handle the MouseEvent in the onClick handler to ensure compatibility with ToggleSwitch interface and call handleToggleActive correctly. */}
+                                        <ToggleSwitch on={!!prof.active} onClick={(e: React.MouseEvent<HTMLButtonElement>) => { handleToggleActive(e, prof.id, !!prof.active); }} />
                                     </div>
                                     <div className="flex flex-col items-center text-center">
                                         <div className="relative mb-6">
@@ -269,8 +268,8 @@ const EquipeView: React.FC = () => {
                                                 </td>
                                                 <td className="px-6 py-4 text-center">
                                                     <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
-                                                        {/* FIX: Wrapped async handleToggleActive call in non-returning arrow function to fix Type 'Promise<void>' is not assignable to type 'void' error. */}
-                                                        <ToggleSwitch on={!!prof.active} onClick={(e: any) => { handleToggleActive(e, prof.id, !!prof.active); }} />
+                                                        {/* FIX: Updated onClick to handle the click event correctly according to the ToggleSwitch signature, preventing event bubbling. */}
+                                                        <ToggleSwitch on={!!prof.active} onClick={(e: React.MouseEvent<HTMLButtonElement>) => { handleToggleActive(e, prof.id, !!prof.active); }} />
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
