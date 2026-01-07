@@ -89,30 +89,32 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
     );
 };
 
-// --- MOTOR DE CÁLCULO PIXEL-PERFECT (FOCO NA PRECISÃO) ---
+// --- MOTOR DE CÁLCULO PIXEL-PERFECT (TÉCNICA DE PRECISÃO ABSOLUTA) ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number, serviceColor: string) => {
-    // 1. Calcula quantos pixels vale cada minuto (Ex: 80px / 30min = 2.66px por minuto)
+    // 1. Calcula quantos pixels vale cada minuto (Ex: 80px / 30min = 2.66px)
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
 
-    // 2. Converte horário de início para minutos desde o horário de início da agenda (08:00)
+    // 2. Minutos exatos desde o início do dia (08:00)
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
-
-    // 3. Calcula duração total em minutos
+    
+    // 3. Duração exata
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
 
-    // 4. Cálculos absolutos com Math.floor para evitar sub-pixel rendering (borrado)
+    // 4. Cálculo Puro (Sem offsets mágicos)
+    // Math.floor garante que o pixel seja inteiro para máxima nitidez (evita sub-pixel rendering borrado)
     const top = Math.floor(startMinutesSinceDayStart * pixelsPerMinute);
     const height = Math.floor(durationMinutes * pixelsPerMinute);
-
-    return {
+    
+    return { 
         position: 'absolute' as const,
-        top: `${top}px`,      // Posição exata no eixo Y
-        left: '0px',          // Alinhado exatamente à borda esquerda
-        width: '100%',        // Ocupa 100% da largura da coluna pai
-        height: `${height}px`, // Altura exata da duração
-        zIndex: 20,           // Mantém acima das linhas pontilhadas
+        top: `${top}px`, 
+        height: `${height}px`,
+        // Z-index e width garantem a sobreposição correta na grade
+        zIndex: 20,
+        width: '100%',
+        left: '0px',
         margin: '0px',
-        borderTop: `2px solid ${serviceColor}` // Destaque visual de início de serviço
+        borderTop: `2px solid ${serviceColor}`
     };
 };
 
