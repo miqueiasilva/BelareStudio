@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
@@ -89,19 +88,18 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
     );
 };
 
-// --- MOTOR DE CÁLCULO PIXEL-PERFECT (TÉCNICA DE PRECISÃO ABSOLUTA) ---
-const getAppointmentPosition = (start: Date, end: Date, timeSlot: number, serviceColor: string) => {
-    // 1. Calcula quantos pixels vale cada minuto (Ex: 80px / 30min = 2.66px)
+// --- MOTOR DE CÁLCULO PIXEL-PERFECT (MATEMÁTICA PURA) ---
+const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
+    // 1. Pixels por minuto exatos
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
 
-    // 2. Minutos exatos desde o início do dia (08:00)
+    // 2. Minutos desde o início do dia (08:00)
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
-    
-    // 3. Duração exata
+
+    // 3. Duração exata em minutos
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
 
-    // 4. Cálculo Puro (Sem offsets mágicos)
-    // Math.floor garante que o pixel seja inteiro para máxima nitidez (evita sub-pixel rendering borrado)
+    // 4. Matemática Pura (Sem offsets mágicos)
     const top = Math.floor(startMinutesSinceDayStart * pixelsPerMinute);
     const height = Math.floor(durationMinutes * pixelsPerMinute);
     
@@ -109,12 +107,9 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number, servic
         position: 'absolute' as const,
         top: `${top}px`, 
         height: `${height}px`,
-        // Z-index e width garantem a sobreposição correta na grade
-        zIndex: 20,
-        width: '100%',
-        left: '0px',
-        margin: '0px',
-        borderTop: `2px solid ${serviceColor}`
+        width: '100%', // Garante largura total
+        zIndex: 20,    // Garante ficar acima das linhas
+        left: '0px'
     };
 };
 
@@ -571,20 +566,54 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                         {columns.map((col, idx) => (
                             <div 
                                 key={col.id} 
-                                className={`relative border-r border-slate-200 cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`} 
+                                className={`relative border-r border-slate-200 cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`}
                                 style={{ minHeight: `${timeSlotsLabels.length * SLOT_PX_HEIGHT}px` }}
-                                onClick={(e) => { if (e.target === e.currentTarget) handleGridClick(e, col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0], col.type === 'date' ? (col.data as Date) : currentDate); }}
+                                onClick={(e) => {
+                                    if (e.target === e.currentTarget) {
+                                        const prof = col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0];
+                                        const date = col.type === 'date' ? (col.data as Date) : currentDate;
+                                        handleGridClick(e, prof, date);
+                                    }
+                                }}
                             >
                                 {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
-                                {filteredAppointments.filter(app => (periodType === 'Semana' ? isSameDay(app.start, col.data as Date) : (String(app.professional.id) === String(col.id)))).map(app => (
-                                    <div key={app.id} ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }} onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }} className={getCardStyle(app, viewMode)} style={{ ...getAppointmentPosition(app.start, app.end, timeSlot, app.service.color) }}>
-                                        <div className="absolute top-1.5 right-1.5 opacity-40 group-hover/card:opacity-100 transition-opacity">{app.origem === 'link' ? <Globe size={10} className="text-orange-500" /> : <User size={10} className="text-slate-400" />}</div>
-                                        <div className="flex items-center gap-1 overflow-hidden">
-                                            <span className="text-[9px] font-bold opacity-70 leading-none flex-shrink-0">{format(app.start, 'HH:mm')}</span>
-                                            <div className="flex items-center gap-1.5 mt-0.5 min-w-0"><StatusIndicator status={app.status} /><p className="font-bold text-slate-900 text-[11px] truncate leading-tight flex-1">{app.client?.nome || 'Bloqueado'}</p></div>
-                                        </div>
-                                    </div>
-                                ))}
+                                {filteredAppointments
+                                    .filter(app => {
+                                        if (periodType === 'Semana') return isSameDay(app.start, col.data as Date);
+                                        return String(app.professional.id) === String(col.id); 
+                                    })
+                                    .map(app => {
+                                        const durationInMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
+                                        const isVeryShort = durationInMinutes <= 20;
+
+                                        return (
+                                            <div 
+                                                key={app.id} 
+                                                ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }} 
+                                                onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }} 
+                                                className={getCardStyle(app, viewMode)} 
+                                                style={{ 
+                                                    ...getAppointmentPosition(app.start, app.end, timeSlot),
+                                                    borderLeftColor: app.service.color
+                                                }}
+                                            >
+                                                <div className="absolute top-1.5 right-1.5 opacity-40 group-hover/card:opacity-100 transition-opacity">
+                                                    {app.origem === 'link' ? <Globe size={10} className="text-orange-500" /> : <User size={10} className="text-slate-400" />}
+                                                </div>
+                                                <div className="flex items-center gap-1 overflow-hidden">
+                                                    <span className="text-[9px] font-bold opacity-70 leading-none flex-shrink-0">{format(app.start, 'HH:mm')}</span>
+                                                    {!isVeryShort && (
+                                                        <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+                                                            <StatusIndicator status={app.status} />
+                                                            <p className="font-bold text-slate-900 text-[11px] truncate leading-tight flex-1">
+                                                                {app.client?.nome || 'Bloqueado'}
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                             </div>
                         ))}
                         <TimelineIndicator timeSlot={timeSlot} />
