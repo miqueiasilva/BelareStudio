@@ -89,26 +89,31 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
     );
 };
 
-// --- MOTOR DE CÁLCULO PIXEL-PERFECT (TÉCNICA SANGRIA GEOMÉTRICA) ---
+// --- MOTOR DE CÁLCULO PIXEL-PERFECT (VERSÃO CORRIGIDA: FOCO NA PRECISÃO) ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number, serviceColor: string) => {
-    const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot; 
-    const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
-    const durationMinutes = (end.getTime() - start.getTime()) / 60000;
-    
-    const topBase = startMinutesSinceDayStart * pixelsPerMinute;
-    const heightBase = durationMinutes * pixelsPerMinute;
+    // 1. Calcula quantos pixels vale cada minuto (Ex: 80px / 30min = 2.66px por minuto)
+    const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
 
-    return { 
+    // 2. Converte horário de início para minutos desde as 08:00
+    const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
+
+    // 3. Calcula duração em minutos
+    const durationMinutes = (end.getTime() - start.getTime()) / 60000;
+
+    // 4. Cálculos absolutos (arredondados para evitar sub-pixel rendering borrado)
+    const top = Math.floor(startMinutesSinceDayStart * pixelsPerMinute);
+    const height = Math.floor(durationMinutes * pixelsPerMinute);
+
+    return {
         position: 'absolute' as const,
-        // Sangria Negativa: Força a sobreposição das bordas (top e left)
-        top: `${topBase - 1}px`,       
-        left: '-1px',                  
-        // Compensação Matemática: Expande o card para cobrir as bordas opostas
-        width: 'calc(100% + 2px)',    
-        height: `${heightBase + 2}px`, 
-        zIndex: 20,                   
+        top: `${top}px`,      // Posição exata
+        left: '0px',          // Alinhado à esquerda
+        width: '100%',        // Ocupa toda a largura da coluna
+        height: `${height}px`, // Altura exata da duração
+        zIndex: 20,           // Garante que fique acima das linhas
         margin: '0px',
-        borderTop: `2px solid ${serviceColor}`
+        // Mantemos a borda colorida visualmente sem afetar o layout
+        borderTop: `2px solid ${serviceColor}` 
     };
 };
 
@@ -563,7 +568,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction })
                             ))}
                         </div>
                         {columns.map((col, idx) => (
-                            <div key={col.id} className={`relative !p-0 !m-0 border-r border-slate-200 min-h-[1000px] cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`} onClick={(e) => { if (e.target === e.currentTarget) handleGridClick(e, col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0], col.type === 'date' ? (col.data as Date) : currentDate); }}>
+                            <div 
+                                key={col.id} 
+                                className={`relative !p-0 !m-0 border-r border-slate-200 cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`} 
+                                style={{ minHeight: `${timeSlotsLabels.length * SLOT_PX_HEIGHT}px` }}
+                                onClick={(e) => { if (e.target === e.currentTarget) handleGridClick(e, col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0], col.type === 'date' ? (col.data as Date) : currentDate); }}
+                            >
                                 {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
                                 {filteredAppointments.filter(app => (periodType === 'Semana' ? isSameDay(app.start, col.data as Date) : (String(app.professional.id) === String(col.id)))).map(app => (
                                     <div key={app.id} ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }} onClick={(e) => { e.stopPropagation(); setActiveAppointmentDetail(app); }} className={getCardStyle(app, viewMode)} style={{ ...getAppointmentPosition(app.start, app.end, timeSlot, app.service.color) }}>
