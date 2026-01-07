@@ -29,7 +29,7 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
     Papa.parse(file, {
       header: true,
       skipEmptyLines: 'greedy',
-      encoding: "UTF-8", // Tentativa inicial com UTF-8
+      encoding: "UTF-8",
       complete: (results) => {
         // Função auxiliar para busca de coluna case-insensitive
         const getVal = (row: any, ...keys: string[]) => {
@@ -42,8 +42,9 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
         };
 
         const mapped = results.data.map((row: any) => {
+           // Mapeamento flexível incluindo 'telefone 1' solicitado pelo usuário
            const nome = getVal(row, 'Nome', 'NOME', 'Client', 'Cliente', 'nome');
-           const rawTel = getVal(row, 'Telefone 1', 'Telefone', 'WhatsApp', 'Celular', 'tel', 'phone');
+           const rawTel = getVal(row, 'Telefone 1', 'telefone 1', 'Telefone', 'WhatsApp', 'Celular', 'tel', 'phone');
            const email = getVal(row, 'E-mail', 'Email', 'email');
            const genero = getVal(row, 'Sexo', 'Gênero', 'Genero', 'Gender', 'sexo');
            const nascimento = getVal(row, 'Nascimento', 'Data', 'Birth', 'nascimento');
@@ -89,20 +90,30 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
     setStatus('importing');
     setErrorMsg('');
 
-    const total = parsedData.length;
+    // --- CORREÇÃO CRÍTICA: DEDUPLICAÇÃO NO FRONTEND ---
+    // O erro 21000 ocorre quando o mesmo WhatsApp aparece duas vezes no mesmo comando UPSERT.
+    // Usamos um Map para garantir unicidade, mantendo o último registro encontrado.
+    const deduplicatedData = Array.from(
+        parsedData.reduce((map, item) => {
+            map.set(item.whatsapp, item);
+            return map;
+        }, new Map<string, any>()).values()
+    );
+
+    const total = deduplicatedData.length;
     let processed = 0;
 
-    // Split em Chunks
+    // Split em Chunks (Lotes)
     const chunks = [];
-    for (let i = 0; i < parsedData.length; i += BATCH_SIZE) {
-        chunks.push(parsedData.slice(i, i + BATCH_SIZE));
+    for (let i = 0; i < deduplicatedData.length; i += BATCH_SIZE) {
+        chunks.push(deduplicatedData.slice(i, i + BATCH_SIZE));
     }
 
     try {
-        console.log(`🚀 Iniciando importação de ${total} registros em ${chunks.length} lotes.`);
+        console.log(`🚀 Iniciando importação de ${total} registros únicos em ${chunks.length} lotes.`);
         
         for (const [index, batch] of chunks.entries()) {
-            // OPERAÇÃO NO BANCO: Target 'clients' (conforme diagnóstico técnico)
+            // OPERAÇÃO NO BANCO: Upsert por WhatsApp para evitar duplicidade de PK/Unique
             const { error } = await supabase
                 .from('clients')
                 .upsert(batch, { 
@@ -111,7 +122,7 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
                 });
 
             if (error) {
-                // ERRO REAL DO SUPABASE: Interrompe o processo imediatamente
+                // ERRO REAL DO SUPABASE (Ex: erro 21000 ou falha de RLS)
                 console.error(`❌ Erro no Lote ${index + 1}:`, error);
                 throw new Error(`Falha no banco (Lote ${index + 1}): ${error.message} [Cód: ${error.code}]`);
             }
@@ -127,7 +138,7 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
             });
 
             // Delay para evitar overload e permitir atualização da UI
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 50));
         }
 
         console.log("✅ Importação finalizada com sucesso real.");
@@ -153,7 +164,7 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
               <Database className="text-orange-500" size={24} />
               Importar Clientes
             </h2>
-            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Processamento em Lote Ativo</p>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Lógica de Deduplicação Ativa (Erro 21000 fix)</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-400"><X size={24} /></button>
         </header>
@@ -226,7 +237,7 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
                 <Check size={48} strokeWidth={3} />
               </div>
               <h3 className="text-2xl font-black text-slate-800">Concluído com Sucesso!</h3>
-              <p className="text-slate-500 font-medium mt-2">Todos os {progress.total} registros estão no banco.</p>
+              <p className="text-slate-500 font-medium mt-2">Todos os {progress.total} registros únicos estão no banco.</p>
             </div>
           )}
 
@@ -238,7 +249,7 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
                 <div className="mt-4 bg-white p-4 rounded-2xl border border-rose-200 text-left">
                     <p className="text-xs font-mono text-rose-600 break-words leading-relaxed">{errorMsg}</p>
                 </div>
-                <p className="text-[10px] text-rose-400 font-bold uppercase mt-4">Nota: O processo foi interrompido para preservar a integridade dos dados.</p>
+                <p className="text-[10px] text-rose-400 font-bold uppercase mt-4">Nota: Se o erro for '21000', verifique duplicatas na mesma linha da planilha.</p>
               </div>
               <button 
                 onClick={() => { setStatus('idle'); setErrorMsg(''); }} 
