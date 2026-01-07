@@ -5,10 +5,8 @@ import {
     Trash2, Plus, ArrowRight, Loader2, CheckCircle,
     User, Phone, Scissors, ShoppingBag, Receipt,
     FileText, Tag, DollarSign, Percent, AlertCircle,
-    // Added missing icon imports
     Calendar, ShoppingCart, Info
 } from 'lucide-react';
-// Added missing date-fns imports
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
@@ -33,7 +31,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         try {
             const { data, error } = await supabase
                 .from('commands')
-                .select('*, clients(nome, whatsapp), command_items(*)')
+                // CORREÇÃO: Usando curingas (*) para evitar erro 400
+                .select('*, clients(*), command_items(*)')
                 .eq('id', commandId)
                 .single();
 
@@ -81,9 +80,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setIsFinishing(true);
 
         try {
+            // CORREÇÃO: Nome resiliente
+            const clientName = command.clients?.nome || command.clients?.name || command.clients?.full_name || 'Cliente';
+
             // 1. Registrar no Financeiro
             const { error: finError } = await supabase.from('financial_transactions').insert([{
-                description: `Recebimento Comanda #${command.id.split('-')[0].toUpperCase()} - ${command.clients?.nome}`,
+                description: `Recebimento Comanda #${command.id.split('-')[0].toUpperCase()} - ${clientName}`,
                 amount: totals.total,
                 type: 'income',
                 category: 'servico',
@@ -127,6 +129,10 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     if (!command) return null;
 
+    // RESOUÇÃO RESILIENTE DE DADOS DO CLIENTE
+    const clientName = command.clients?.nome || command.clients?.name || command.clients?.full_name || 'Cliente sem nome';
+    const clientPhone = command.clients?.whatsapp || command.clients?.telefone || command.clients?.phone || 'Sem telefone';
+
     const paymentMethods = [
         { id: 'pix', label: 'Pix', icon: Smartphone, color: 'text-teal-600', bg: 'bg-teal-50' },
         { id: 'dinheiro', label: 'Dinheiro', icon: Banknote, color: 'text-green-600', bg: 'bg-green-50' },
@@ -163,14 +169,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         {/* CARD CLIENTE */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
                             <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl shadow-inner border-4 border-white">
-                                {command.clients?.nome?.charAt(0).toUpperCase()}
+                                {clientName.charAt(0).toUpperCase()}
                             </div>
                             <div className="flex-1 text-center md:text-left">
-                                <h3 className="text-2xl font-black text-slate-800">{command.clients?.nome}</h3>
+                                <h3 className="text-2xl font-black text-slate-800">{clientName}</h3>
                                 <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
                                     <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter">
                                         <Phone size={14} className="text-orange-500" />
-                                        {command.clients?.whatsapp || 'Sem telefone'}
+                                        {clientPhone}
                                     </div>
                                     <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter">
                                         <Calendar size={14} className="text-orange-500" />

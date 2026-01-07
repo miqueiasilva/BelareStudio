@@ -41,7 +41,8 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         try {
             const { data, error } = await supabase
                 .from('commands')
-                .select('*, clients(nome), command_items(*)')
+                // CORREÇÃO: Usando curingas (*) nas relações para evitar erro 400 por colunas ausentes
+                .select('*, clients(*), command_items(*)')
                 .eq('status', 'open')
                 .order('created_at', { ascending: false });
 
@@ -80,12 +81,12 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
             const { data, error } = await supabase
                 .from('commands')
                 .insert([{ client_id: client.id, status: 'open' }])
-                .select('*, clients(nome), command_items(*)')
+                .select('*, clients(*), command_items(*)')
                 .single();
 
             if (error) throw error;
             setTabs(prev => [data, ...prev]);
-            setToast({ message: `Comanda de ${client.nome} aberta!`, type: 'success' });
+            setToast({ message: `Comanda aberta!`, type: 'success' });
         } catch (e: any) {
             setToast({ message: "Erro ao abrir comanda.", type: 'error' });
         }
@@ -165,9 +166,12 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         const total = closingTab.command_items.reduce((acc, i) => acc + (i.price * i.quantity), 0);
 
         try {
+            // CORREÇÃO: Resolução resiliente do nome
+            const clientName = closingTab.clients?.nome || closingTab.clients?.name || closingTab.clients?.full_name || 'Cliente';
+
             // 1. Criar Transação Financeira
             const { error: finError } = await supabase.from('financial_transactions').insert([{
-                description: `Fechamento Comanda - ${closingTab.clients?.nome}`,
+                description: `Fechamento Comanda - ${clientName}`,
                 amount: total,
                 type: 'income',
                 category: 'servico',
@@ -200,7 +204,10 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     };
 
     const filteredTabs = useMemo(() => {
-        return tabs.filter(t => t.clients?.nome.toLowerCase().includes(searchTerm.toLowerCase()));
+        return tabs.filter(t => {
+            const name = (t.clients?.nome || t.clients?.name || t.clients?.full_name || '').toLowerCase();
+            return name.includes(searchTerm.toLowerCase());
+        });
     }, [tabs, searchTerm]);
 
     const paymentMethodsConfig = [
@@ -263,16 +270,18 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                         {filteredTabs.map(tab => {
                             const total = tab.command_items.reduce((acc, i) => acc + (i.price * i.quantity), 0);
                             const duration = differenceInMinutes(new Date(), parseISO(tab.created_at));
+                            // CORREÇÃO: Nome resiliente no card
+                            const clientName = tab.clients?.nome || tab.clients?.name || tab.clients?.full_name || 'Cliente';
 
                             return (
                                 <div key={tab.id} className="bg-white rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl hover:border-orange-100 transition-all flex flex-col overflow-hidden group h-[480px]">
                                     <div className="p-5 border-b border-slate-50 flex justify-between items-start bg-slate-50/50">
                                         <div className="flex items-center gap-3">
                                             <div className="w-12 h-12 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center font-black text-lg border-2 border-white shadow-sm">
-                                                {tab.clients?.nome.charAt(0).toUpperCase()}
+                                                {clientName.charAt(0).toUpperCase()}
                                             </div>
                                             <div>
-                                                <h3 className="font-black text-slate-800 text-sm truncate max-w-[140px]">{tab.clients?.nome}</h3>
+                                                <h3 className="font-black text-slate-800 text-sm truncate max-w-[140px]">{clientName}</h3>
                                                 <div className="flex items-center gap-1 text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
                                                     <Clock size={10} />
                                                     <span>Iniciado há {duration} min</span>
@@ -382,10 +391,11 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                         </header>
                         <div className="p-10 space-y-8">
                             <div className="text-center">
+                                {/* CORREÇÃO: Nome resiliente no modal de fechamento */}
                                 <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-[28px] flex items-center justify-center mx-auto mb-4 font-black text-3xl border-4 border-white shadow-xl">
-                                    {closingTab.clients?.nome?.charAt(0).toUpperCase() || 'C'}
+                                    {(closingTab.clients?.nome || closingTab.clients?.name || closingTab.clients?.full_name || 'C').charAt(0).toUpperCase()}
                                 </div>
-                                <h2 className="text-xl font-black text-slate-800">{closingTab.clients?.nome || 'Cliente'}</h2>
+                                <h2 className="text-xl font-black text-slate-800">{closingTab.clients?.nome || closingTab.clients?.name || closingTab.clients?.full_name || 'Cliente'}</h2>
                                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Check-out de Consumo</p>
                             </div>
 
