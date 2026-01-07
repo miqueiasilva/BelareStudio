@@ -89,31 +89,30 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
     );
 };
 
-// --- MOTOR DE CÁLCULO PIXEL-PERFECT (VERSÃO CORRIGIDA: FOCO NA PRECISÃO) ---
+// --- MOTOR DE CÁLCULO PIXEL-PERFECT (FOCO NA PRECISÃO) ---
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number, serviceColor: string) => {
     // 1. Calcula quantos pixels vale cada minuto (Ex: 80px / 30min = 2.66px por minuto)
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
 
-    // 2. Converte horário de início para minutos desde as 08:00
+    // 2. Converte horário de início para minutos desde o horário de início da agenda (08:00)
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
 
-    // 3. Calcula duração em minutos
+    // 3. Calcula duração total em minutos
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
 
-    // 4. Cálculos absolutos (arredondados para evitar sub-pixel rendering borrado)
+    // 4. Cálculos absolutos com Math.floor para evitar sub-pixel rendering (borrado)
     const top = Math.floor(startMinutesSinceDayStart * pixelsPerMinute);
     const height = Math.floor(durationMinutes * pixelsPerMinute);
 
     return {
         position: 'absolute' as const,
-        top: `${top}px`,      // Posição exata
-        left: '0px',          // Alinhado à esquerda
-        width: '100%',        // Ocupa toda a largura da coluna
+        top: `${top}px`,      // Posição exata no eixo Y
+        left: '0px',          // Alinhado exatamente à borda esquerda
+        width: '100%',        // Ocupa 100% da largura da coluna pai
         height: `${height}px`, // Altura exata da duração
-        zIndex: 20,           // Garante que fique acima das linhas
+        zIndex: 20,           // Mantém acima das linhas pontilhadas
         margin: '0px',
-        // Mantemos a borda colorida visualmente sem afetar o layout
-        borderTop: `2px solid ${serviceColor}` 
+        borderTop: `2px solid ${serviceColor}` // Destaque visual de início de serviço
     };
 };
 

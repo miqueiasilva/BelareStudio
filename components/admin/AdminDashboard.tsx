@@ -55,10 +55,6 @@ const appointments: Appointment[] = [
 ];
 // --- END MOCK DATA ---
 
-// FIX: Added missing 'faltou' and 'em_atendimento' properties to satisfy the AppointmentStatus type.
-// FIX: Added missing 'chegou' property to satisfy the AppointmentStatus type.
-// FIX: Added missing 'confirmado_whatsapp' property to satisfy the AppointmentStatus type.
-// FIX: Added missing 'em_espera' property.
 const statusClasses: { [key in AppointmentStatus]: string } = {
     confirmado: 'bg-cyan-100 border-cyan-300 text-cyan-800',
     confirmado_whatsapp: 'bg-teal-100 border-teal-300 text-teal-800',
@@ -72,33 +68,32 @@ const statusClasses: { [key in AppointmentStatus]: string } = {
     em_espera: 'bg-stone-100 border-stone-300 text-stone-700',
 };
 
-// FIX: Changed component definition to use React.FC to resolve potential 'key' prop type errors.
 const AppointmentCard: React.FC<{ app: Appointment }> = ({ app }) => {
     const START_HOUR = 9;
-    const ROW_HEIGHT_PX = 40; // Corresponds to 30 minutes
+    const ROW_HEIGHT_PX = 40; // Corresponde a 30 minutos
     const MINUTES_IN_ROW = 30;
 
     const startMinutes = app.start.getHours() * 60 + app.start.getMinutes();
     const endMinutes = app.end.getHours() * 60 + app.end.getMinutes();
 
-    const rawTop = ((startMinutes - START_HOUR * 60) / MINUTES_IN_ROW) * ROW_HEIGHT_PX;
-    const rawHeight = ((endMinutes - startMinutes) / MINUTES_IN_ROW) * ROW_HEIGHT_PX;
+    const pixelsPerMinute = ROW_HEIGHT_PX / MINUTES_IN_ROW;
+    const top = Math.floor((startMinutes - START_HOUR * 60) * pixelsPerMinute);
+    const height = Math.floor((endMinutes - startMinutes) * pixelsPerMinute);
     
     return (
         <div
             className={`absolute p-2 rounded-none border text-[11px] leading-tight cursor-pointer hover:ring-2 hover:ring-[#705336] transition-all duration-200 ${statusClasses[app.status]}`}
             style={{ 
                 position: 'absolute',
-                top: `${rawTop - 1}px`, 
-                left: '-1px',
-                width: 'calc(100% + 2px)',
-                height: `${rawHeight + 2}px`,
+                top: `${top}px`, 
+                left: '0px',
+                width: '100%',
+                height: `${height}px`,
                 margin: '0px',
                 zIndex: 20
             }}
         >
             <p className="font-bold truncate">{format(app.start, 'HH:mm')} - {format(app.end, 'HH:mm')}</p>
-            {/* FIX: Use 'nome' property from Client type instead of 'name'. */}
             {app.client && <p className="font-semibold truncate">{app.client.nome}</p>}
             <p className="truncate">{app.service.name}</p>
         </div>
@@ -112,13 +107,13 @@ const TimelineIndicator = () => {
         const calculatePosition = () => {
             const now = new Date();
             const START_HOUR = 9;
-            const ROW_HEIGHT_PX = 40; // Corresponds to 30 minutes
+            const ROW_HEIGHT_PX = 40; 
             const MINUTES_IN_ROW = 30;
             const startOfDayMinutes = START_HOUR * 60;
             const nowMinutes = now.getHours() * 60 + now.getMinutes();
             
             if (nowMinutes < startOfDayMinutes) {
-                setTopPosition(-1); // Hide if before working hours
+                setTopPosition(-1); 
                 return;
             }
 
@@ -127,7 +122,7 @@ const TimelineIndicator = () => {
         };
 
         calculatePosition();
-        const intervalId = setInterval(calculatePosition, 60000); // Update every minute
+        const intervalId = setInterval(calculatePosition, 60000); 
 
         return () => clearInterval(intervalId);
     }, []);
@@ -166,7 +161,6 @@ const AdminDashboard: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-white">
-            {/* Header */}
             <header className="flex-shrink-0 h-16 border-b border-slate-200 flex items-center justify-between px-6">
                 <div className="flex items-center gap-4">
                     <h2 className="text-xl font-bold text-slate-800">Atendimentos</h2>
@@ -189,7 +183,6 @@ const AdminDashboard: React.FC = () => {
             </header>
 
             <div className="flex-1 flex overflow-hidden">
-                {/* Settings Panel */}
                 <aside className="w-64 border-r border-slate-200 p-4 space-y-4 overflow-y-auto">
                     <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider">Configurações</h3>
                     <div>
@@ -211,7 +204,6 @@ const AdminDashboard: React.FC = () => {
                     </div>
                 </aside>
 
-                {/* Calendar Grid */}
                 <div className="flex-1 overflow-auto">
                     <div className="sticky top-0 bg-white z-10">
                         <div className="grid" style={{ gridTemplateColumns: `60px repeat(${filteredProfessionals.length}, minmax(120px, 1fr))` }}>
@@ -226,7 +218,6 @@ const AdminDashboard: React.FC = () => {
                     </div>
                      <div className="relative">
                         <div className="grid" style={{ gridTemplateColumns: `60px repeat(${filteredProfessionals.length}, minmax(120px, 1fr))` }}>
-                            {/* Time Column */}
                             <div className="border-r border-slate-200">
                                 {timeSlots.map(time => (
                                     <div key={time} className="h-10 text-right pr-2 text-xs text-slate-500 relative">
@@ -235,9 +226,12 @@ const AdminDashboard: React.FC = () => {
                                 ))}
                             </div>
 
-                            {/* Professional Columns */}
                             {filteredProfessionals.map(prof => (
-                                <div key={prof.id} className="relative !p-0 !m-0 border-r border-slate-200">
+                                <div 
+                                    key={prof.id} 
+                                    className="relative !p-0 !m-0 border-r border-slate-200"
+                                    style={{ minHeight: `${timeSlots.length * 40}px` }}
+                                >
                                     {timeSlots.map((_, index) => (
                                         <div key={index} className="h-10 border-b border-dashed border-slate-200"></div>
                                     ))}
@@ -253,7 +247,6 @@ const AdminDashboard: React.FC = () => {
                     </div>
                 </div>
             </div>
-            {/* JaciBot Floating Action Button */}
             <div className="absolute bottom-6 right-6 z-20">
               <button className="w-14 h-14 bg-[#705336] rounded-full shadow-lg flex items-center justify-center text-white hover:bg-[#5a442a] transition ring-2 ring-white">
                 <MessageSquare className="w-7 h-7" />
