@@ -4,9 +4,8 @@ import {
     ChevronLeft, User, Save, Trash2, Camera, Scissors, 
     Loader2, Shield, Clock, DollarSign, CheckCircle, AlertCircle, Coffee,
     Phone, Mail, Smartphone, CreditCard, LayoutDashboard, Calendar,
-    Settings2, Hash
+    Settings2, Hash, Armchair
 } from 'lucide-react';
-// FIX: Added 'Service' type import to resolve missing properties on 'allServices' state.
 import { LegacyProfessional, LegacyService, Service } from '../../types';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
@@ -54,8 +53,8 @@ const EditField = ({ label, name, value, onChange, type = "text", placeholder, s
 const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: initialProf, onBack, onSave }) => {
     // --- State ---
     const [prof, setProf] = useState<any>(null);
-    // FIX: Updated allServices state type to 'Service[]' from 'LegacyService[]' because the database columns are 'nome' and 'duracao_min'.
     const [allServices, setAllServices] = useState<Service[]>([]);
+    const [allRooms, setAllRooms] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [activeTab, setActiveTab] = useState<'perfil' | 'servicos' | 'horarios' | 'comissoes' | 'permissoes'>('perfil');
@@ -65,8 +64,13 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
     // --- Initialization ---
     useEffect(() => {
         const init = async () => {
+            // Fetch Services
             const { data: svcs } = await supabase.from('services').select('*').order('nome');
             if (svcs) setAllServices(svcs as any);
+
+            // Fetch Rooms (Resources)
+            const { data: rooms } = await supabase.from('resources').select('id, name').eq('active', true).order('name');
+            if (rooms) setAllRooms(rooms);
 
             const normalized = {
                 ...initialProf,
@@ -84,7 +88,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 photo_url: (initialProf as any).photo_url || initialProf.avatarUrl || null,
                 online_booking_enabled: (initialProf as any).online_booking_enabled ?? (initialProf as any).online_booking ?? true,
                 show_in_calendar: (initialProf as any).show_in_calendar ?? true, 
-                active: (initialProf as any).active ?? true
+                active: (initialProf as any).active ?? true,
+                resource_id: (initialProf as any).resource_id || ''
             };
             setProf(normalized);
         };
@@ -153,7 +158,8 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 work_schedule: prof.work_schedule,
                 photo_url: prof.photo_url,
                 online_booking_enabled: !!prof.online_booking_enabled, 
-                show_in_calendar: !!prof.show_in_calendar 
+                show_in_calendar: !!prof.show_in_calendar,
+                resource_id: prof.resource_id ? prof.resource_id : null
             };
 
             const { error } = await supabase
@@ -311,6 +317,31 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <EditField label="Nome Completo" name="name" value={prof.name} onChange={handleInputChange} icon={User} span="md:col-span-2" />
                                         <EditField label="Cargo / Especialidade" name="role" value={prof.role} onChange={handleInputChange} />
+                                        
+                                        {/* NOVO CAMPO: Sala de Atendimento */}
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-wider">Sala de Atendimento</label>
+                                            <div className="relative group">
+                                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors">
+                                                    <Armchair size={16} />
+                                                </div>
+                                                <select 
+                                                    name="resource_id"
+                                                    value={prof.resource_id}
+                                                    onChange={handleInputChange}
+                                                    className="w-full bg-white border border-slate-200 rounded-xl py-2.5 pl-11 pr-10 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all shadow-sm appearance-none"
+                                                >
+                                                    <option value="">Selecione uma sala...</option>
+                                                    {allRooms.map(room => (
+                                                        <option key={room.id} value={room.id}>{room.name}</option>
+                                                    ))}
+                                                </select>
+                                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                                    <ChevronDown size={16} />
+                                                </div>
+                                            </div>
+                                        </div>
+
                                         <EditField label="Ordem na Agenda (1, 2, 3...)" name="order_index" type="number" min="0" value={prof.order_index} onChange={handleInputChange} icon={Hash} />
                                         <EditField label="Data de Nascimento" name="birth_date" type="date" value={prof.birth_date} onChange={handleInputChange} />
                                         <EditField label="WhatsApp" name="phone" value={prof.phone} onChange={handleInputChange} icon={Phone} placeholder="(00) 00000-0000" />
@@ -409,5 +440,11 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         </div>
     );
 };
+
+const ChevronDown = ({ size }: { size: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+        <path d="m6 9 6 6 6-6"/>
+    </svg>
+);
 
 export default ProfessionalDetail;
