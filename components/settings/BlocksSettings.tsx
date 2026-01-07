@@ -12,14 +12,14 @@ import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import Toast, { ToastType } from '../shared/Toast';
 
 const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
-    const [blocks, setBlocks] = useState<any[]>([]);
+    const [blocks, setBlocks] = useState<ScheduleBlock[]>([]);
     const [professionals, setProfessionals] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // Form State
+    // Form State (Internal storage remains string-based for inputs)
     const [formData, setFormData] = useState({
         resource_id: 'all',
         start_date: format(new Date(), 'yyyy-MM-dd'),
@@ -32,7 +32,7 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         setLoading(true);
         try {
             const [blocksRes, profsRes] = await Promise.all([
-                supabase.from('schedule_blocks').select('*').order('start_date', { ascending: true }),
+                supabase.from('schedule_blocks').select('*').order('start_time', { ascending: true }),
                 supabase.from('team_members').select('id, name').eq('active', true)
             ]);
 
@@ -54,30 +54,37 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         
-        // Validação básica de horário
-        if (formData.end_time <= formData.start_time) {
+        // --- LOGICA DE CORREÇÃO (TIMESTAMPS ISO) ---
+        // Combinamos a data do input com as horas para gerar objetos Date válidos
+        const startIso = new Date(`${formData.start_date}T${formData.start_time}`).toISOString();
+        const endIso = new Date(`${formData.start_date}T${formData.end_time}`).toISOString();
+        
+        // Validação cronológica
+        if (new Date(endIso) <= new Date(startIso)) {
             alert("O horário de término deve ser posterior ao de início.");
             return;
         }
 
         setIsSaving(true);
         try {
+            // --- MAPEAMENTO DE PAYLOAD (ERRO 400 FIX) ---
             const payload = {
-                resource_id: formData.resource_id === 'all' ? null : formData.resource_id,
-                start_date: formData.start_date,
-                start_time: formData.start_time,
-                end_time: formData.end_time,
+                professional_id: formData.resource_id === 'all' ? null : formData.resource_id,
+                start_time: startIso,
+                end_time: endIso,
                 reason: formData.reason || 'Bloqueio administrativo'
             };
 
             const { error } = await supabase.from('schedule_blocks').insert([payload]);
             if (error) throw error;
 
-            setToast({ message: "Bloqueio registrado with sucesso!", type: 'success' });
+            setToast({ message: "Bloqueio registrado com sucesso!", type: 'success' });
             setIsModalOpen(false);
+            setFormData({ ...formData, reason: '' }); // Reset reason field
             fetchData();
         } catch (err: any) {
-            setToast({ message: err.message, type: 'error' });
+            console.error("Payload error:", err);
+            setToast({ message: `Erro no banco: ${err.message}`, type: 'error' });
         } finally {
             setIsSaving(false);
         }
@@ -98,7 +105,7 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
     const getProfessionalName = (id: string | null) => {
         if (!id) return "Loja Inteira";
-        return professionals.find(p => p.id === id)?.name || "Profissional (ID: " + id.substring(0,4) + ")";
+        return professionals.find(p => p.id === id)?.name || "Profissional (" + id.substring(0,4) + ")";
     };
 
     return (
@@ -141,12 +148,12 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         <div key={block.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-md transition-all group flex flex-col justify-between">
                             <div className="flex justify-between items-start mb-6">
                                 <div className="flex items-center gap-3">
-                                    <div className={`p-3 rounded-2xl ${!block.resource_id ? 'bg-indigo-50 text-indigo-600' : 'bg-orange-50 text-orange-600'}`}>
-                                        {!block.resource_id ? <Store size={20}/> : <User size={20} />}
+                                    <div className={`p-3 rounded-2xl ${!block.professional_id ? 'bg-indigo-50 text-indigo-600' : 'bg-orange-50 text-orange-600'}`}>
+                                        {!block.professional_id ? <Store size={20}/> : <User size={20} />}
                                     </div>
                                     <div>
                                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Escopo</p>
-                                        <h4 className="font-black text-slate-800 text-sm">{getProfessionalName(block.resource_id)}</h4>
+                                        <h4 className="font-black text-slate-800 text-sm">{getProfessionalName(block.professional_id)}</h4>
                                     </div>
                                 </div>
                                 <button onClick={() => handleDelete(block.id)} className="p-2 text-slate-300 hover:text-rose-500 transition-colors">
@@ -157,11 +164,11 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="p-3 bg-slate-50 rounded-2xl flex items-center gap-3">
                                     <Calendar size={16} className="text-slate-400" />
-                                    <span className="text-xs font-bold text-slate-600">{format(parseISO(block.start_date), 'dd/MM/yyyy')}</span>
+                                    <span className="text-xs font-bold text-slate-600">{format(parseISO(block.start_time), 'dd/MM/yyyy')}</span>
                                 </div>
                                 <div className="p-3 bg-slate-50 rounded-2xl flex items-center gap-3">
                                     <Clock size={16} className="text-slate-400" />
-                                    <span className="text-xs font-bold text-slate-600">{block.start_time} - {block.end_time}</span>
+                                    <span className="text-xs font-bold text-slate-600">{format(parseISO(block.start_time), 'HH:mm')} - {format(parseISO(block.end_time), 'HH:mm')}</span>
                                 </div>
                             </div>
 

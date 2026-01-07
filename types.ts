@@ -39,10 +39,9 @@ export type PaymentMethod = 'pix' | 'cartao_credito' | 'cartao_debito' | 'dinhei
 
 export interface ScheduleBlock {
   id: string;
-  resource_id: string | null; // null significa "Loja Inteira"
-  start_date: string;
-  start_time: string;
-  end_time: string;
+  professional_id: string | null; // null significa "Loja Inteira"
+  start_time: string; // ISO Timestamp
+  end_time: string;   // ISO Timestamp
   reason: string;
   created_at?: string;
 }
