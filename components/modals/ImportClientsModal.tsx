@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { X, Upload, Database, Table, Check, AlertTriangle, Loader2, FileText, ArrowRight } from 'lucide-react';
+import { X, Upload, Database, Table, Check, AlertTriangle, Loader2, ArrowRight } from 'lucide-react';
 import Papa from 'papaparse';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
@@ -10,7 +10,7 @@ interface ImportClientsModalProps {
   onSuccess: () => void;
 }
 
-const BATCH_SIZE = 100; // Tamanho ideal para evitar estouro de payload e timeout
+const BATCH_SIZE = 100;
 
 const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSuccess }) => {
   const { user } = useAuth();
@@ -29,62 +29,80 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
     Papa.parse(file, {
       header: true,
       skipEmptyLines: 'greedy',
-      encoding: "ISO-8859-1",
+      encoding: "UTF-8", // Tentativa inicial com UTF-8
       complete: (results) => {
+        // Função auxiliar para busca de coluna case-insensitive
+        const getVal = (row: any, ...keys: string[]) => {
+            const rowKeys = Object.keys(row);
+            for (const k of keys) {
+                const found = rowKeys.find(rk => rk.toLowerCase().trim() === k.toLowerCase());
+                if (found) return row[found];
+            }
+            return null;
+        };
+
         const mapped = results.data.map((row: any) => {
-           // Mapeamento das colunas (Suporta Nome, Telefone 1, Sexo, Apelido)
-           const nome = row['Nome'] || row['nome'];
-           const rawTel = row['Telefone 1'] || row['telefone 1'] || row['whatsapp'] || row['Telefone'];
-           
+           const nome = getVal(row, 'Nome', 'NOME', 'Client', 'Cliente', 'nome');
+           const rawTel = getVal(row, 'Telefone 1', 'Telefone', 'WhatsApp', 'Celular', 'tel', 'phone');
+           const email = getVal(row, 'E-mail', 'Email', 'email');
+           const genero = getVal(row, 'Sexo', 'Gênero', 'Genero', 'Gender', 'sexo');
+           const nascimento = getVal(row, 'Nascimento', 'Data', 'Birth', 'nascimento');
+
            const cleanedTel = rawTel ? rawTel.toString().replace(/\D/g, '') : '';
 
            return {
              nome: nome?.toString().trim(),
-             apelido: (row['Apelido'] || row['apelido'])?.toString().trim() || null,
              whatsapp: cleanedTel,
-             gender: (row['Sexo'] || row['sexo'])?.toString().trim() || null,
+             email: email?.toString().trim() || null,
+             gender: genero?.toString().trim() || null,
+             birth_date: nascimento || null,
              user_id: user?.id,
              consent: true,
-             origem: 'Importação Planilha',
-             // Garante que campos vazios sejam nulos para o Postgres
-             email: row['E-mail'] || row['email'] || null,
-             birth_date: row['Nascimento'] || row['nascimento'] || null
+             origem: 'Importação Excel'
            };
         }).filter(item => item.nome && item.whatsapp && item.whatsapp.length >= 8);
 
         if (mapped.length === 0) {
-            setErrorMsg("Nenhum registro válido encontrado. Verifique se as colunas 'Nome' e 'Telefone' existem.");
+            setErrorMsg("O arquivo foi lido, mas nenhum registro válido foi encontrado. Certifique-se de que as colunas 'Nome' e 'Telefone' estão presentes.");
             setStatus('error');
             return;
         }
 
         setParsedData(mapped);
-        setProgress({ current: 0, total: mapped.length, percentage: 0, debugText: 'Pronto para importar' });
+        setProgress({ current: 0, total: mapped.length, percentage: 0, debugText: 'Arquivo validado' });
         setStatus('ready');
       },
       error: (err) => {
-        setErrorMsg("Falha ao ler o arquivo: " + err.message);
+        setErrorMsg("Erro na leitura do arquivo CSV: " + err.message);
         setStatus('error');
       }
     });
   };
 
   const startImport = async () => {
-    if (!user || parsedData.length === 0) return;
+    if (!user || parsedData.length === 0) {
+        setErrorMsg("Não há dados carregados para importar.");
+        setStatus('error');
+        return;
+    }
+
     setStatus('importing');
+    setErrorMsg('');
 
     const total = parsedData.length;
     let processed = 0;
 
-    // Divide os dados em lotes (Chunks)
+    // Split em Chunks
     const chunks = [];
     for (let i = 0; i < parsedData.length; i += BATCH_SIZE) {
         chunks.push(parsedData.slice(i, i + BATCH_SIZE));
     }
 
     try {
-        for (const batch of chunks) {
-            // Verificação de RLS e Batch Insert (Upsert por WhatsApp para evitar duplicidade)
+        console.log(`🚀 Iniciando importação de ${total} registros em ${chunks.length} lotes.`);
+        
+        for (const [index, batch] of chunks.entries()) {
+            // OPERAÇÃO NO BANCO: Target 'clients' (conforme diagnóstico técnico)
             const { error } = await supabase
                 .from('clients')
                 .upsert(batch, { 
@@ -93,9 +111,9 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
                 });
 
             if (error) {
-                // Se o Supabase retornar erro, capturamos e interrompemos
-                console.error("Erro no lote do Supabase:", error);
-                throw new Error(`Erro no Banco de Dados: ${error.message} (Código: ${error.code})`);
+                // ERRO REAL DO SUPABASE: Interrompe o processo imediatamente
+                console.error(`❌ Erro no Lote ${index + 1}:`, error);
+                throw new Error(`Falha no banco (Lote ${index + 1}): ${error.message} [Cód: ${error.code}]`);
             }
 
             processed += batch.length;
@@ -105,21 +123,23 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
                 current: processed, 
                 total, 
                 percentage, 
-                debugText: `Sincronizando lote... ${percentage}%` 
+                debugText: `Sincronizando lote ${index + 1} de ${chunks.length}...` 
             });
 
-            // Pequeno delay para liberar a UI thread
-            await new Promise(resolve => setTimeout(resolve, 50));
+            // Delay para evitar overload e permitir atualização da UI
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
 
+        console.log("✅ Importação finalizada com sucesso real.");
         setStatus('done');
         setTimeout(() => {
             onSuccess();
             onClose();
-        }, 1500);
+        }, 2000);
 
     } catch (e: any) {
-        setErrorMsg(e.message || "Erro desconhecido durante a importação.");
+        console.error("🔥 Abortando importação devido a erro crítico:", e);
+        setErrorMsg(e.message || "Erro desconhecido durante o salvamento no banco.");
         setStatus('error');
     }
   };
@@ -131,9 +151,9 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
           <div>
             <h2 className="text-xl font-black text-slate-800 flex items-center gap-3">
               <Database className="text-orange-500" size={24} />
-              Importação em Lote
+              Importar Clientes
             </h2>
-            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Sincronização Segura via Supabase Engine</p>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Processamento em Lote Ativo</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-400"><X size={24} /></button>
         </header>
@@ -147,16 +167,16 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
               <div className="w-20 h-20 bg-orange-100 rounded-3xl flex items-center justify-center text-orange-600 mb-6 group-hover:scale-110 transition-transform shadow-lg">
                 <Upload size={40} strokeWidth={3} />
               </div>
-              <h3 className="text-lg font-black text-slate-700">Selecionar Planilha</h3>
-              <p className="text-xs text-slate-400 mt-2 font-bold uppercase text-center">Formatos suportados: .CSV (Separado por vírgula ou ponto e vírgula)</p>
-              <input type="file" ref={fileInputRef} className="hidden" accept=".csv,.txt" onChange={handleFileSelection} />
+              <h3 className="text-lg font-black text-slate-700">Escolher Planilha</h3>
+              <p className="text-xs text-slate-400 mt-2 font-bold uppercase text-center">Arraste seu arquivo .CSV aqui</p>
+              <input type="file" ref={fileInputRef} className="hidden" accept=".csv" onChange={handleFileSelection} />
             </div>
           )}
 
           {status === 'parsing' && (
             <div className="py-12 flex flex-col items-center justify-center space-y-4">
               <Loader2 className="animate-spin text-orange-500" size={48} />
-              <p className="text-sm font-black text-slate-600 uppercase tracking-widest">Processando arquivo...</p>
+              <p className="text-sm font-black text-slate-600 uppercase tracking-widest">Validando estrutura...</p>
             </div>
           )}
 
@@ -164,15 +184,15 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
             <div className="py-12 flex flex-col items-center justify-center space-y-6">
               <Loader2 className="animate-spin text-orange-500" size={56} strokeWidth={3} />
               <div className="text-center w-full max-w-xs">
-                <h3 className="text-lg font-black text-slate-800">Enviando para o Banco</h3>
-                <div className="mt-4 w-full h-4 bg-slate-100 rounded-full overflow-hidden border border-slate-200 shadow-inner">
+                <h3 className="text-lg font-black text-slate-800">Importação em Curso</h3>
+                <div className="mt-4 w-full h-4 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
                     <div 
                         className="h-full bg-orange-500 transition-all duration-300 shadow-[0_0_10px_rgba(249,115,22,0.5)]" 
                         style={{ width: `${progress.percentage}%` }}
                     />
                 </div>
                 <p className="text-[10px] text-slate-400 font-bold mt-4 uppercase tracking-widest">
-                   {progress.current} de {progress.total} registros processados
+                   {progress.current} de {progress.total} processados
                 </p>
                 <p className="text-[9px] text-orange-500 font-black mt-1 uppercase italic">{progress.debugText}</p>
               </div>
@@ -186,8 +206,8 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
                   <Table size={24} />
                 </div>
                 <div>
-                  <p className="text-lg font-black text-emerald-900 leading-none">{progress.total} Registros Identificados</p>
-                  <p className="text-xs text-emerald-700 font-bold uppercase tracking-wider mt-1">Estrutura validada com sucesso.</p>
+                  <p className="text-lg font-black text-emerald-900 leading-none">{progress.total} Clientes Identificados</p>
+                  <p className="text-xs text-emerald-700 font-bold uppercase tracking-wider mt-1">Pronto para processar lotes.</p>
                 </div>
               </div>
 
@@ -195,7 +215,7 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
                 onClick={startImport}
                 className="w-full bg-orange-500 hover:bg-orange-600 text-white py-5 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 text-lg transition-all active:scale-95"
               >
-                Iniciar Importação <ArrowRight size={22} />
+                Confirmar e Gravar <ArrowRight size={22} />
               </button>
             </div>
           )}
@@ -205,8 +225,8 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
               <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-emerald-50">
                 <Check size={48} strokeWidth={3} />
               </div>
-              <h3 className="text-2xl font-black text-slate-800">Sucesso Absoluto!</h3>
-              <p className="text-slate-500 font-medium mt-2">Todos os registros foram confirmados pelo banco.</p>
+              <h3 className="text-2xl font-black text-slate-800">Concluído com Sucesso!</h3>
+              <p className="text-slate-500 font-medium mt-2">Todos os {progress.total} registros estão no banco.</p>
             </div>
           )}
 
@@ -214,17 +234,17 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
             <div className="space-y-6 animate-in shake duration-300">
               <div className="bg-rose-50 border-2 border-rose-100 rounded-[32px] p-8 text-center">
                 <AlertTriangle size={48} className="text-rose-500 mx-auto mb-4" />
-                <h3 className="text-lg font-black text-rose-900 uppercase">Falha na Sincronização</h3>
+                <h3 className="text-lg font-black text-rose-900 uppercase">Falha Técnica na Importação</h3>
                 <div className="mt-4 bg-white p-4 rounded-2xl border border-rose-200 text-left">
-                    <p className="text-xs font-mono text-rose-600 break-words">{errorMsg}</p>
+                    <p className="text-xs font-mono text-rose-600 break-words leading-relaxed">{errorMsg}</p>
                 </div>
-                <p className="text-[10px] text-rose-400 font-bold uppercase mt-4">Dica: Verifique se sua conexão está estável ou se há campos obrigatórios vazios.</p>
+                <p className="text-[10px] text-rose-400 font-bold uppercase mt-4">Nota: O processo foi interrompido para preservar a integridade dos dados.</p>
               </div>
               <button 
                 onClick={() => { setStatus('idle'); setErrorMsg(''); }} 
                 className="w-full bg-slate-800 text-white py-4 rounded-2xl font-black hover:bg-slate-900 transition-all"
               >
-                Tentar Novamente
+                Tentar com Novo Arquivo
               </button>
             </div>
           )}
