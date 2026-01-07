@@ -6,20 +6,20 @@ import {
     ShieldAlert, Info, Store
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
-import { ScheduleBlock } from '../../types';
-import { format, parseISO, isAfter } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import Toast, { ToastType } from '../shared/Toast';
 
 const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
-    const [blocks, setBlocks] = useState<ScheduleBlock[]>([]);
+    // Estado do bloco adaptado para a UI
+    const [blocks, setBlocks] = useState<any[]>([]);
     const [professionals, setProfessionals] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // Form State (Internal storage remains string-based for inputs)
+    // Form State (Mantido para compatibilidade com inputs)
     const [formData, setFormData] = useState({
         resource_id: 'all',
         start_date: format(new Date(), 'yyyy-MM-dd'),
@@ -31,15 +31,28 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const fetchData = async () => {
         setLoading(true);
         try {
+            // FIX: Query explícita para evitar Erro 400 (Bad Request) por colunas inexistentes
             const [blocksRes, profsRes] = await Promise.all([
-                supabase.from('schedule_blocks').select('*').order('start_time', { ascending: true }),
+                supabase
+                    .from('schedule_blocks')
+                    .select('id, professional_id, start_time, end_time, reason')
+                    .order('start_time', { ascending: true }),
                 supabase.from('team_members').select('id, name').eq('active', true)
             ]);
 
             if (blocksRes.error) throw blocksRes.error;
             if (profsRes.error) throw profsRes.error;
 
-            setBlocks(blocksRes.data || []);
+            // --- ADAPTER PATTERN: Mapeamento de Banco -> UI ---
+            const formattedData = (blocksRes.data || []).map(block => ({
+                id: block.id,
+                resourceId: block.professional_id, // Mapeia professional_id para resourceId
+                start: new Date(block.start_time),  // Converte string ISO para Date JS
+                end: new Date(block.end_time),
+                title: block.reason                // Mapeia reason para title
+            }));
+
+            setBlocks(formattedData);
             setProfessionals(profsRes.data || []);
         } catch (err: any) {
             console.error("Erro ao carregar bloqueios:", err);
@@ -54,12 +67,10 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         
-        // --- LOGICA DE CORREÇÃO (TIMESTAMPS ISO) ---
-        // Combinamos a data do input com as horas para gerar objetos Date válidos
+        // Combinação de Data + Hora para ISO String
         const startIso = new Date(`${formData.start_date}T${formData.start_time}`).toISOString();
         const endIso = new Date(`${formData.start_date}T${formData.end_time}`).toISOString();
         
-        // Validação cronológica
         if (new Date(endIso) <= new Date(startIso)) {
             alert("O horário de término deve ser posterior ao de início.");
             return;
@@ -67,7 +78,7 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
         setIsSaving(true);
         try {
-            // --- MAPEAMENTO DE PAYLOAD (ERRO 400 FIX) ---
+            // Payload respeitando estritamente o esquema do banco
             const payload = {
                 professional_id: formData.resource_id === 'all' ? null : formData.resource_id,
                 start_time: startIso,
@@ -80,18 +91,17 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             setToast({ message: "Bloqueio registrado com sucesso!", type: 'success' });
             setIsModalOpen(false);
-            setFormData({ ...formData, reason: '' }); // Reset reason field
-            fetchData();
+            setFormData({ ...formData, reason: '' }); 
+            fetchData(); // Recarrega aplicando o adaptador
         } catch (err: any) {
-            console.error("Payload error:", err);
-            setToast({ message: `Erro no banco: ${err.message}`, type: 'error' });
+            setToast({ message: `Erro ao salvar: ${err.message}`, type: 'error' });
         } finally {
             setIsSaving(false);
         }
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm("Deseja remover este bloqueio? A agenda voltará a ficar disponível.")) return;
+        if (!confirm("Deseja remover este bloqueio?")) return;
 
         try {
             const { error } = await supabase.from('schedule_blocks').delete().eq('id', id);
@@ -105,7 +115,7 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
     const getProfessionalName = (id: string | null) => {
         if (!id) return "Loja Inteira";
-        return professionals.find(p => p.id === id)?.name || "Profissional (" + id.substring(0,4) + ")";
+        return professionals.find(p => p.id === id)?.name || "Profissional";
     };
 
     return (
@@ -119,12 +129,12 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     </button>
                     <div>
                         <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter leading-tight">Bloqueios de Agenda</h2>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Controle de folgas e indisponibilidades</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Gestão de indisponibilidades</p>
                     </div>
                 </div>
                 <button 
                     onClick={() => setIsModalOpen(true)}
-                    className="w-full sm:w-auto bg-slate-800 hover:bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95"
+                    className="bg-slate-800 hover:bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95"
                 >
                     <Plus size={18} /> Novo Bloqueio
                 </button>
@@ -133,14 +143,13 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             {loading ? (
                 <div className="py-24 flex flex-col items-center justify-center text-slate-400">
                     <Loader2 className="animate-spin mb-4 text-orange-500" size={32} />
-                    <p className="text-[10px] font-black uppercase animate-pulse tracking-widest">Consultando horários...</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest">Consultando banco de dados...</p>
                 </div>
             ) : blocks.length === 0 ? (
                 <div className="bg-white rounded-[40px] p-20 text-center border-2 border-slate-100 border-dashed max-w-2xl mx-auto">
                     <CalendarX size={64} className="mx-auto text-slate-100 mb-6" />
-                    <h3 className="text-xl font-black text-slate-800">Tudo disponível!</h3>
-                    <p className="text-slate-400 text-sm mt-2 mb-8">Não há bloqueios futuros registrados na sua agenda.</p>
-                    <button onClick={() => setIsModalOpen(true)} className="bg-orange-500 text-white px-8 py-3 rounded-2xl font-black shadow-lg shadow-orange-100">Registrar Indisponibilidade</button>
+                    <h3 className="text-xl font-black text-slate-800">Agenda Livre</h3>
+                    <p className="text-slate-400 text-sm mt-2">Não há bloqueios futuros registrados.</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -148,12 +157,12 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         <div key={block.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-md transition-all group flex flex-col justify-between">
                             <div className="flex justify-between items-start mb-6">
                                 <div className="flex items-center gap-3">
-                                    <div className={`p-3 rounded-2xl ${!block.professional_id ? 'bg-indigo-50 text-indigo-600' : 'bg-orange-50 text-orange-600'}`}>
-                                        {!block.professional_id ? <Store size={20}/> : <User size={20} />}
+                                    <div className={`p-3 rounded-2xl ${!block.resourceId ? 'bg-indigo-50 text-indigo-600' : 'bg-orange-50 text-orange-600'}`}>
+                                        {!block.resourceId ? <Store size={20}/> : <User size={20} />}
                                     </div>
                                     <div>
                                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Escopo</p>
-                                        <h4 className="font-black text-slate-800 text-sm">{getProfessionalName(block.professional_id)}</h4>
+                                        <h4 className="font-black text-slate-800 text-sm">{getProfessionalName(block.resourceId)}</h4>
                                     </div>
                                 </div>
                                 <button onClick={() => handleDelete(block.id)} className="p-2 text-slate-300 hover:text-rose-500 transition-colors">
@@ -164,17 +173,17 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="p-3 bg-slate-50 rounded-2xl flex items-center gap-3">
                                     <Calendar size={16} className="text-slate-400" />
-                                    <span className="text-xs font-bold text-slate-600">{format(parseISO(block.start_time), 'dd/MM/yyyy')}</span>
+                                    <span className="text-xs font-bold text-slate-600">{format(block.start, 'dd/MM/yyyy')}</span>
                                 </div>
                                 <div className="p-3 bg-slate-50 rounded-2xl flex items-center gap-3">
                                     <Clock size={16} className="text-slate-400" />
-                                    <span className="text-xs font-bold text-slate-600">{format(parseISO(block.start_time), 'HH:mm')} - {format(parseISO(block.end_time), 'HH:mm')}</span>
+                                    <span className="text-xs font-bold text-slate-600">{format(block.start, 'HH:mm')} - {format(block.end, 'HH:mm')}</span>
                                 </div>
                             </div>
 
                             <div className="mt-4 pt-4 border-t border-slate-50 flex items-center gap-2">
                                 <ShieldAlert size={14} className="text-orange-400" />
-                                <p className="text-[11px] font-medium text-slate-500 italic">"{block.reason}"</p>
+                                <p className="text-[11px] font-medium text-slate-500 italic">"{block.title}"</p>
                             </div>
                         </div>
                     ))}
@@ -188,22 +197,20 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         <header className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
                             <div>
                                 <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Novo Bloqueio</h2>
-                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Indisponibilidade de agenda</p>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Definir indisponibilidade</p>
                             </div>
                             <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white rounded-full text-slate-400 transition-all"><X size={24} /></button>
                         </header>
 
                         <form onSubmit={handleSave} className="p-8 space-y-6">
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Profissional Responsável</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Responsável</label>
                                 <div className="relative group">
-                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors pointer-events-none">
-                                        <User size={18} />
-                                    </div>
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"><User size={18} /></div>
                                     <select 
                                         value={formData.resource_id}
                                         onChange={e => setFormData({...formData, resource_id: e.target.value})}
-                                        className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl appearance-none outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-200 transition-all font-bold text-slate-700 cursor-pointer"
+                                        className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-orange-200"
                                     >
                                         <option value="all">⚠️ Toda a Loja / Estúdio</option>
                                         {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -212,12 +219,12 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             </div>
 
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Data do Bloqueio</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Data</label>
                                 <input 
                                     type="date"
                                     value={formData.start_date}
                                     onChange={e => setFormData({...formData, start_date: e.target.value})}
-                                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-100"
+                                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-orange-200"
                                 />
                             </div>
 
@@ -228,7 +235,7 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                         type="time"
                                         value={formData.start_time}
                                         onChange={e => setFormData({...formData, start_time: e.target.value})}
-                                        className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-100"
+                                        className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-orange-200"
                                     />
                                 </div>
                                 <div className="space-y-1.5">
@@ -237,26 +244,26 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                         type="time"
                                         value={formData.end_time}
                                         onChange={e => setFormData({...formData, end_time: e.target.value})}
-                                        className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-100"
+                                        className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-orange-200"
                                     />
                                 </div>
                             </div>
 
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Motivo do Bloqueio</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Motivo</label>
                                 <input 
                                     required
                                     value={formData.reason}
                                     onChange={e => setFormData({...formData, reason: e.target.value})}
-                                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-100"
-                                    placeholder="Ex: Treinamento, Almoço, Folga..."
+                                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-orange-200"
+                                    placeholder="Ex: Almoço, Reunião..."
                                 />
                             </div>
 
                             <button 
                                 type="submit"
                                 disabled={isSaving}
-                                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-5 rounded-[24px] shadow-xl shadow-orange-100 transition-all active:scale-95 flex items-center justify-center gap-3 text-lg uppercase tracking-widest disabled:opacity-50"
+                                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-5 rounded-[24px] shadow-xl flex items-center justify-center gap-3 text-lg uppercase disabled:opacity-50"
                             >
                                 {isSaving ? <Loader2 size={24} className="animate-spin" /> : <Save size={24} />}
                                 {isSaving ? 'Salvando...' : 'Confirmar Bloqueio'}
@@ -265,18 +272,6 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     </div>
                 </div>
             )}
-
-            <div className="bg-blue-50 border border-blue-100 p-6 rounded-[32px] flex gap-4 max-w-2xl mx-auto">
-                <div className="p-2 bg-blue-100 rounded-xl h-fit">
-                    <Info className="text-blue-600" size={20} />
-                </div>
-                <div className="space-y-1">
-                    <p className="text-xs text-blue-900 font-bold">Bloqueios de Agenda</p>
-                    <p className="text-xs text-blue-700 leading-relaxed font-medium">
-                        Os bloqueios impedem novos agendamentos manuais e online no período selecionado. Atendimentos já marcados NÃO são cancelados automaticamente, verifique sua agenda antes de bloquear.
-                    </p>
-                </div>
-            </div>
         </div>
     );
 };
