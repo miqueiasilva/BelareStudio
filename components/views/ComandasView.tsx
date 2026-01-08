@@ -92,46 +92,21 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
 
     // --- Handlers ---
 
-    // IMPLEMENTAÇÃO DE EXCLUSÃO SEGURA (CASCADE MANUAL + OPTIMISTIC UI)
     const handleDeleteCommand = async (e: React.MouseEvent, id: string) => {
-        e.stopPropagation(); // Evita navegar para os detalhes da comanda
-        
-        const confirmMsg = "⚠️ ATENÇÃO: Esta ação é definitiva.\n\nDeseja realmente excluir esta comanda e todos os itens lançados nela?";
-        if (!window.confirm(confirmMsg)) return;
-
-        setLoading(true);
+        e.stopPropagation();
+        if (!window.confirm("Deseja realmente excluir esta comanda?")) return;
         try {
-            // Passo 1: Limpar itens dependentes (Garante integridade se o banco não tiver cascade)
-            const { error: itemsError } = await supabase
-                .from('command_items')
-                .delete()
-                .eq('command_id', id);
-
-            if (itemsError) throw itemsError;
-
-            // Passo 2: Deletar a comanda pai
-            const { error: commandError } = await supabase
-                .from('commands')
-                .delete()
-                .eq('id', id);
-
-            if (commandError) throw commandError;
-
-            // Passo 3: Atualização Otimista (Remove da lista local sem precisar de refresh)
+            await supabase.from('command_items').delete().eq('command_id', id);
+            const { error } = await supabase.from('commands').delete().eq('id', id);
+            if (error) throw error;
             setTabs(prev => prev.filter(t => t.id !== id));
-            setToast({ message: "Comanda removida permanentemente.", type: 'success' });
-        } catch (error: any) {
-            console.error("[DELETE_COMMAND_ERROR]", error);
-            setToast({ 
-                message: `Falha na exclusão: ${error.message || "Tente novamente mais tarde."}`, 
-                type: 'error' 
-            });
-            fetchCommands(); // Re-sincroniza se falhar
-        } finally {
-            setLoading(false);
+            setToast({ message: "Comanda excluída.", type: 'info' });
+        } catch (e) {
+            setToast({ message: "Erro ao excluir.", type: 'error' });
         }
     };
 
+    // CORREÇÃO 1: Validação de client_id na criação da comanda
     const handleCreateCommand = async (client: Client) => {
         if (!client.id) {
             setToast({ message: "Erro: Cliente inválido ou sem ID registrado.", type: 'error' });
@@ -172,12 +147,15 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         }
     };
 
+    // CORREÇÃO 2: Garantir professional_id no payload
     const handleAddItemToDB = async (item: any, professionalId: string | null) => {
         if (!activeTabId) return;
 
+        // Lógica de Fallback Inteligente
         let finalProfId = professionalId;
         
         if (item.type === 'servico' && !finalProfId) {
+             // Tenta usar o usuário logado se ele for um profissional da equipe
              const loggedInAsMember = team.find(t => t.id === user?.id);
              if (loggedInAsMember) {
                  finalProfId = loggedInAsMember.id;
@@ -196,7 +174,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                 quantity: 1,
                 product_id: item.type === 'produto' ? item.id : null,
                 service_id: item.type === 'servico' ? item.id : null,
-                professional_id: finalProfId
+                professional_id: finalProfId // OBRIGATÓRIO PARA SERVIÇOS
             };
 
             const { data, error } = await supabase
@@ -318,14 +296,9 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                                                 </div>
                                             </div>
                                         </div>
-                                        {/* BOTÃO DE EXCLUSÃO LIBERADO PARA TODOS OS STATUS PARA LIMPEZA DE DADOS */}
-                                        <button 
-                                            onClick={(e) => handleDeleteCommand(e, tab.id)} 
-                                            className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
-                                            title="Excluir Comanda Permanentemente"
-                                        >
-                                            <Trash2 size={18} />
-                                        </button>
+                                        {!isPaid && (
+                                            <button onClick={(e) => handleDeleteCommand(e, tab.id)} className="p-2 text-slate-300 hover:text-rose-500"><Trash2 size={16} /></button>
+                                        )}
                                     </div>
 
                                     <div className="flex-1 p-5 bg-white space-y-3 overflow-y-auto custom-scrollbar">
