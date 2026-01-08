@@ -100,6 +100,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const rangeStart = startOfDay(currentDate);
             const rangeEnd = endOfDay(currentDate);
 
+            // Query otimizada conforme estrutura de Joins
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments') 
@@ -163,13 +164,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     // --- MAPEAMENTO SEGURO DE DADOS RELACIONAIS ---
     const mapRowToAppointment = (row: any): LegacyAppointment => {
         const start = new Date(row.date);
+        // Tenta ler a duração do serviço relacionado se não houver na tabela pai
         const dur = Number(row.duration) || Number(row.services?.duration) || 30;
         return {
             id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
             notas: row.notes || '', origem: row.origin || 'agenda',
             client: { id: row.client_id, nome: row.clients?.name || 'Cliente', consent: true, whatsapp: row.clients?.phone },
             professional: { id: row.professional_id, name: row.team_members?.name || 'Profissional', avatarUrl: '' },
-            service: { id: row.service_id, name: row.services?.name || 'Serviço', price: Number(row.value || row.services?.price || 0), duration: dur, color: row.services?.color || '#3b82f6' }
+            service: { id: row.service_id, name: row.services?.name || 'Serviço', price: Number(row.services?.price || 0), duration: dur, color: row.services?.color || '#3b82f6' }
         } as LegacyAppointment;
     };
 
@@ -196,8 +198,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 professional_id: String(app.professional.id),
                 date: new Date(app.start).toISOString(),
                 status: app.status || 'agendado',
-                value: Number(app.service.price),
-                duration: String(app.service.duration),
+                // Removido 'value' e 'duration' se não existirem na tabela appointments
                 notes: app.notas || '',
                 origin: 'agenda'
             };

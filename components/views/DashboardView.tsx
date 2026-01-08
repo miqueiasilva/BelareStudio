@@ -96,19 +96,19 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 if (apptsError) throw apptsError;
                 if (mounted) setAppointments(appts || []);
 
-                // Faturamento mensal consolidado
+                // Faturamento mensal consolidado via Joins (Soma serviços.price)
                 const now = new Date();
                 const startMonthStr = startOfMonth(now).toISOString();
                 const endMonthStr = endOfMonth(now).toISOString();
                 
                 const { data: monthData } = await supabase
                     .from('appointments')
-                    .select('value')
+                    .select('services!service_id(price)')
                     .eq('status', 'concluido')
                     .gte('date', startMonthStr)
                     .lte('date', endMonthStr);
                 
-                const totalMonthRev = monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0;
+                const totalMonthRev = monthData?.reduce((acc, curr: any) => acc + (Number(curr.services?.price) || 0), 0) || 0;
                 if (mounted) setMonthRevenueTotal(totalMonthRev);
 
                 const { data: settings } = await supabase.from('studio_settings').select('revenue_goal').maybeSingle();
@@ -126,10 +126,10 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     }, [dateRange]);
 
     const kpis = useMemo(() => {
-        // Usa o campo 'value' ou 'services.price' como fallback
+        // Cálculo baseado no Join de serviços
         const revenue = appointments
             .filter(a => a.status === 'concluido')
-            .reduce((acc, a) => acc + (Number(a.value) || Number(a.services?.price) || 0), 0);
+            .reduce((acc, a) => acc + (Number(a.services?.price) || 0), 0);
         
         const scheduled = appointments.filter(a => a.status !== 'cancelado').length;
         const completed = appointments.filter(a => a.status === 'concluido').length;
@@ -166,7 +166,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         <span className="capitalize">{format(new Date(), "EEEE, dd 'de' MMMM", { locale: pt })}</span>
                     </div>
                     <h1 className="text-xl sm:text-3xl font-black text-slate-800 leading-tight">
-                        Dashboard <span className="text-orange-500">Inteligente</span>
+                        Dashboard <span className="text-orange-500">Relacional</span>
                     </h1>
                 </div>
 
@@ -224,20 +224,20 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-4">
-                        <QuickAction icon={UserPlus} label="Cliente" color="bg-blue-500" onClick={() => onNavigate('clientes')} />
-                        <QuickAction icon={Globe} label="Link" color="bg-purple-500" onClick={() => onNavigate('agenda_online')} />
-                        <QuickAction icon={ShoppingBag} label="Venda" color="bg-green-500" onClick={() => onNavigate('vendas')} />
+                        <QuickAction icon={UserPlus} label="Cliente" color="bg-blue-50" onClick={() => onNavigate('clientes')} />
+                        <QuickAction icon={Globe} label="Link" color="bg-purple-50" onClick={() => onNavigate('agenda_online')} />
+                        <QuickAction icon={ShoppingBag} label="Venda" color="bg-green-50" onClick={() => onNavigate('vendas')} />
                         <QuickAction icon={TrendingUp} label="Caixa" color="bg-slate-700" onClick={() => onNavigate('financeiro')} />
-                        <QuickAction icon={Clock} label="Agenda" color="bg-orange-500" onClick={() => onNavigate('agenda')} />
+                        <QuickAction icon={Clock} label="Agenda" color="bg-orange-50" onClick={() => onNavigate('agenda')} />
                     </div>
 
                     <JaciBotAssistant fetchInsight={getDashboardInsight} />
                     
-                    <Card title="Fluxo de Dados" icon={<BarChart3 size={18} className="text-orange-500" />}>
+                    <Card title="Fluxo de Dados Ativo" icon={<BarChart3 size={18} className="text-orange-500" />}>
                         <div className="py-10 text-center text-slate-400 flex flex-col items-center">
                             <TrendingUp className="opacity-10 mb-2" size={48} />
                             <p className="text-sm font-bold uppercase tracking-widest">Sincronização Ativa</p>
-                            <p className="text-[10px] font-medium text-slate-300 mt-2">Dados processados via Relational Joins.</p>
+                            <p className="text-[10px] font-medium text-slate-300 mt-2">Dados processados via Joins Relacionais.</p>
                         </div>
                     </Card>
                 </div>

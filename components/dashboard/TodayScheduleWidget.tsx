@@ -27,7 +27,7 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
     
     const activeApps = [...appointments]
         .filter(app => app.status !== 'cancelado' && app.status !== 'bloqueado')
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
         .slice(0, 10);
 
     return (
