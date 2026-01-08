@@ -27,7 +27,7 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
     
     const activeApps = [...appointments]
         .filter(app => app.status !== 'cancelado' && app.status !== 'bloqueado')
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
         .slice(0, 10);
 
     return (
@@ -47,7 +47,7 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
                         {activeApps.map((app) => (
                             <div key={app.id} className="relative flex items-start gap-4 group animate-in fade-in slide-in-from-left-2 duration-300">
                                 <div className="z-10 mt-1.5 w-8 h-8 rounded-full bg-white border-2 border-slate-100 flex items-center justify-center flex-shrink-0 group-hover:border-orange-200 transition-colors">
-                                    <div className={`w-2.5 h-2.5 rounded-full ${app.status === 'em_atendimento' ? 'bg-indigo-500 animate-pulse' : app.status === 'concluido' ? 'bg-slate-300' : 'bg-orange-500'}`}></div>
+                                    <div className={`w-2.5 h-2.5 rounded-full ${app.status === 'em_atendimento' ? 'bg-indigo-50 animate-pulse' : app.status === 'concluido' ? 'bg-slate-300' : 'bg-orange-500'}`}></div>
                                 </div>
 
                                 <div className="flex-1 min-w-0">
@@ -59,11 +59,11 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
                                     </div>
                                     
                                     <h4 className="text-sm font-bold text-slate-700 truncate">
-                                        {app.clients?.name || 'Bloqueado'}
+                                        {app.clients?.name || 'Cliente'}
                                     </h4>
                                     
                                     <p className="text-[11px] text-slate-400 font-medium truncate">
-                                        {app.services?.name} • {app.team_members?.name}
+                                        {app.services?.name || 'Serviço'} • {app.team_members?.name || 'Profissional'}
                                     </p>
                                 </div>
                             </div>

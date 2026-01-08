@@ -20,7 +20,7 @@ const formatCurrency = (value: number) => {
 };
 
 const StatCard = ({ title, value, icon: Icon, colorClass, subtext }: any) => (
-    <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-100 shadow-sm flex items-start justify-between hover:shadow-md transition-shadow text-left h-full">
+    <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-100 shadow-sm flex items-start justify-between hover:shadow-md transition-all text-left h-full">
         <div className="min-w-0">
             <p className="text-slate-500 text-[10px] sm:text-xs font-black uppercase tracking-wider truncate">{title}</p>
             <h3 className="text-xl sm:text-2xl font-black text-slate-800 mt-1 truncate">{value}</h3>
@@ -80,12 +80,12 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
             try {
                 if (mounted) setIsLoading(true);
 
-                // FIX: Query Relacional Estrita baseada na estrutura Supabase
+                // CORREÇÃO OBRIGATÓRIA: Query Relacional para evitar Erro 400
                 const { data: appts, error: apptsError } = await supabase
                     .from('appointments')
                     .select(`
                         *,
-                        clients!client_id(name, phone),
+                        clients!client_id(name),
                         services!service_id(name, price, color),
                         team_members!professional_id(name)
                     `)
@@ -96,7 +96,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 if (apptsError) throw apptsError;
                 if (mounted) setAppointments(appts || []);
 
-                // Meta Mensal
+                // Faturamento mensal consolidado
                 const now = new Date();
                 const startMonthStr = startOfMonth(now).toISOString();
                 const endMonthStr = endOfMonth(now).toISOString();
@@ -126,9 +126,10 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     }, [dateRange]);
 
     const kpis = useMemo(() => {
+        // Usa o campo 'value' ou 'services.price' como fallback
         const revenue = appointments
             .filter(a => a.status === 'concluido')
-            .reduce((acc, a) => acc + (Number(a.value) || 0), 0);
+            .reduce((acc, a) => acc + (Number(a.value) || Number(a.services?.price) || 0), 0);
         
         const scheduled = appointments.filter(a => a.status !== 'cancelado').length;
         const completed = appointments.filter(a => a.status === 'concluido').length;
@@ -165,7 +166,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         <span className="capitalize">{format(new Date(), "EEEE, dd 'de' MMMM", { locale: pt })}</span>
                     </div>
                     <h1 className="text-xl sm:text-3xl font-black text-slate-800 leading-tight">
-                        Dashboard <span className="text-orange-500">Real-Time</span>
+                        Dashboard <span className="text-orange-500">Inteligente</span>
                     </h1>
                 </div>
 
@@ -217,9 +218,6 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                             <div className="h-full bg-orange-500 transition-all duration-1000 ease-out" style={{ width: `${goalMetrics.visual}%` }} />
                         </div>
                     </div>
-                    <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                        <TrendingUp size={100} />
-                    </div>
                 </div>
             </div>
 
@@ -235,11 +233,11 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
 
                     <JaciBotAssistant fetchInsight={getDashboardInsight} />
                     
-                    <Card title="Atividade Recente" icon={<BarChart3 size={18} className="text-orange-500" />}>
+                    <Card title="Fluxo de Dados" icon={<BarChart3 size={18} className="text-orange-500" />}>
                         <div className="py-10 text-center text-slate-400 flex flex-col items-center">
                             <TrendingUp className="opacity-10 mb-2" size={48} />
-                            <p className="text-sm font-bold uppercase tracking-widest">Fluxo de Dados Ativo</p>
-                            <p className="text-[10px] font-medium text-slate-300 mt-2">Sincronizado via Relational Queries.</p>
+                            <p className="text-sm font-bold uppercase tracking-widest">Sincronização Ativa</p>
+                            <p className="text-[10px] font-medium text-slate-300 mt-2">Dados processados via Relational Joins.</p>
                         </div>
                     </Card>
                 </div>

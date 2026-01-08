@@ -75,12 +75,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [resources, setResources] = useState<LegacyProfessional[]>([]);
     const [isLoadingData, setIsLoadingData] = useState(false);
     const [periodType, setPeriodType] = useState<'Dia' | 'Semana' | 'Mês' | 'Lista'>('Dia');
-    const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
     const [modalState, setModalState] = useState<{ type: 'appointment' | 'block' | 'sale'; data: any } | null>(null);
     const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-    
-    // Menu de Clique na Grade
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
 
     const [viewMode, setViewMode] = useState<'profissional' | 'andamento'>('profissional');
@@ -92,6 +89,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const gridScrollRef = useRef<HTMLDivElement>(null); 
     const abortControllerRef = useRef<AbortController | null>(null);
 
+    // --- BUSCA RELACIONAL EXPLÍCITA ---
     const fetchAppointments = async () => {
         if (!isMounted.current || authLoading || !user) return;
         if (abortControllerRef.current) abortControllerRef.current.abort();
@@ -139,7 +137,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 setAppointments([...mappedAppts, ...mappedBlocks]);
             }
         } catch (e: any) { 
-            if (e.name !== 'AbortError') console.error("Agenda Fetch Error:", e);
+            if (e.name !== 'AbortError') console.error("Agenda Sync Error:", e);
         } finally { 
             if (isMounted.current) setIsLoadingData(false); 
         }
@@ -159,9 +157,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         } catch (e) { console.error(e); }
     };
 
-    useEffect(() => { if (!authLoading && user && resources.length > 0) fetchAppointments(); }, [currentDate, resources, user, authLoading]);
+    useEffect(() => { if (!authLoading && user && resources.length > 0) fetchAppointments(); }, [currentDate, resources, user]);
     useEffect(() => { isMounted.current = true; fetchResources(); return () => { isMounted.current = false; if (abortControllerRef.current) abortControllerRef.current.abort(); }; }, []);
 
+    // --- MAPEAMENTO SEGURO DE DADOS RELACIONAIS ---
     const mapRowToAppointment = (row: any): LegacyAppointment => {
         const start = new Date(row.date);
         const dur = Number(row.duration) || Number(row.services?.duration) || 30;
@@ -170,34 +169,22 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             notas: row.notes || '', origem: row.origin || 'agenda',
             client: { id: row.client_id, nome: row.clients?.name || 'Cliente', consent: true, whatsapp: row.clients?.phone },
             professional: { id: row.professional_id, name: row.team_members?.name || 'Profissional', avatarUrl: '' },
-            service: { id: row.service_id, name: row.services?.name || 'Serviço', price: Number(row.value || 0), duration: dur, color: row.services?.color || '#3b82f6' }
+            service: { id: row.service_id, name: row.services?.name || 'Serviço', price: Number(row.value || row.services?.price || 0), duration: dur, color: row.services?.color || '#3b82f6' }
         } as LegacyAppointment;
     };
 
-    // --- MANIPULADOR DE CLIQUE NA GRADE ---
     const handleGridClick = (e: React.MouseEvent, professional: LegacyProfessional) => {
-        // Apenas abre se o clique for na grade vazia, não sobre um card
         if (e.target !== e.currentTarget) return;
-
         const rect = e.currentTarget.getBoundingClientRect();
         const y = e.clientY - rect.top;
-        
-        // Converte pixel Y em minutos
         const totalMinutesFromDayStart = (y / SLOT_PX_HEIGHT) * timeSlot;
         const roundedMinutes = Math.floor(totalMinutesFromDayStart / 15) * 15;
-        
         const clickedTime = new Date(currentDate);
         clickedTime.setHours(START_HOUR + Math.floor(roundedMinutes / 60));
         clickedTime.setMinutes(roundedMinutes % 60);
         clickedTime.setSeconds(0);
         clickedTime.setMilliseconds(0);
-
-        setSelectionMenu({
-            x: e.clientX,
-            y: e.clientY,
-            time: clickedTime,
-            professional
-        });
+        setSelectionMenu({ x: e.clientX, y: e.clientY, time: clickedTime, professional });
     };
 
     const handleSaveAppointment = async (app: LegacyAppointment) => {
@@ -223,7 +210,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             setToast({ message: 'Agendamento salvo!', type: 'success' });
             setModalState(null); fetchAppointments();
         } catch (e: any) { 
-            setToast({ message: `Erro ao salvar.`, type: 'error' }); 
+            setToast({ message: `Erro ao salvar. Verifique se preencheu todos os campos.`, type: 'error' }); 
         } finally { setIsLoadingData(false); }
     };
 
@@ -348,19 +335,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             )}
             
             {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />}
-            {modalState?.type === 'block' && (
-                <BlockTimeModal 
-                    professional={modalState.data.professional} 
-                    startTime={modalState.data.start} 
-                    onClose={() => setModalState(null)} 
-                    onSave={(block) => {
-                        // Lógica de salvamento de bloqueio no banco aqui
-                        setToast({ message: "Horário bloqueado!", type: 'info' });
-                        setModalState(null);
-                        fetchAppointments();
-                    }}
-                />
-            )}
         </div>
     );
 };
