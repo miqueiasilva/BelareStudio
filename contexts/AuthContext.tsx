@@ -26,9 +26,18 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
-  
   const lastProcessedId = useRef<string | null>(null);
-  const isMounted = useRef(true);
+
+  // Fix: Session issued in the future - Limpeza de Hash da URL
+  useEffect(() => {
+    if (window.location.hash.includes("access_token")) {
+      window.history.replaceState(
+        null,
+        document.title,
+        window.location.pathname + window.location.search
+      );
+    }
+  }, []);
 
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
@@ -37,8 +46,6 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         .select('role, photo_url, permissions, name')
         .eq('email', authUser.email)
         .maybeSingle();
-
-      if (profError) console.warn("Erro ao buscar perfil complementar:", profError.message);
 
       if (profData) {
         return {
@@ -49,7 +56,6 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
           permissions: profData.permissions
         };
       }
-
       return {
         ...authUser,
         papel: 'profissional',
@@ -62,48 +68,36 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   };
 
   useEffect(() => {
-    isMounted.current = true;
-
-    // Supabase Auth Listener com tratamento de erro de relógio (Future Session)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       try {
         const currentId = currentSession?.user?.id || null;
+        if (currentId === lastProcessedId.current && event !== 'SIGNED_OUT') {
+          setLoading(false);
+          return;
+        }
+        lastProcessedId.current = currentId;
 
-        if (currentId === lastProcessedId.current && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED') {
+        if (!currentSession?.user) {
+          setUser(null);
           setLoading(false);
           return;
         }
 
-        lastProcessedId.current = currentId;
-
-        if (!currentSession?.user) {
-          if (isMounted.current) {
-            setUser(null);
-            setLoading(false);
-          }
-          return;
-        }
-
         const appUser = await fetchProfile(currentSession.user);
-        if (isMounted.current) setUser(appUser);
-
+        setUser(appUser);
       } catch (err: any) {
-        // Se o erro for de clock skew ("issued in the future"), o SDK tentará revalidar depois.
-        // Liberamos a UI para não ficar em loop infinito.
-        console.error("Auth Exception:", err.message);
+        console.error("Auth Listener Error (Clock Skew?):", err.message);
       } finally {
-        if (isMounted.current) setLoading(false);
+        setLoading(false);
       }
     });
 
-    const safetyTimer = setTimeout(() => {
-      if (isMounted.current && loading) setLoading(false);
-    }, 4000);
+    // Safety Timeout para evitar UI travada caso o Supabase falhe em responder
+    const timer = setTimeout(() => setLoading(false), 5000);
 
     return () => {
-      isMounted.current = false;
       subscription.unsubscribe();
-      clearTimeout(safetyTimer);
+      clearTimeout(timer);
     };
   }, []);
 
@@ -112,13 +106,11 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const signInWithGoogle = async () => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${window.location.origin}/` } });
   const resetPassword = async (email: string) => supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
   const updatePassword = async (newPassword: string) => supabase.auth.updateUser({ password: newPassword });
-  
   const signOut = async () => {
     lastProcessedId.current = null;
     await supabase.auth.signOut();
-    localStorage.clear();
-    sessionStorage.clear();
-    window.location.href = '/login';
+    setUser(null);
+    window.location.href = '/';
   };
 
   const value = useMemo(() => ({ user, loading, signIn, signUp, signInWithGoogle, resetPassword, updatePassword, signOut }), [user, loading]);

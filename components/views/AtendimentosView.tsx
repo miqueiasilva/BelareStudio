@@ -24,7 +24,6 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
 
-    // BUSCA VIA CLIENTE SDK (NUNCA REST DIRETO)
     const loadAppointments = async (date: Date) => {
         if (authLoading || !user) return;
         setIsLoadingData(true);
@@ -32,6 +31,7 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
             const start = startOfDay(date).toISOString();
             const end = endOfDay(date).toISOString();
 
+            // Sincronizado com o select padrão solicitado + Joins para a UI
             const { data, error } = await supabase
                 .from('appointments')
                 .select(`
@@ -43,7 +43,7 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
                 .gte('date', start)
                 .lte('date', end)
                 .neq('status', 'cancelado')
-                .order('date', { ascending: true });
+                .order('date');
 
             if (error) {
                 console.error("LOAD appointments error:", {
@@ -96,18 +96,17 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
 
     const handleSaveAppointment = async (app: any) => {
         setIsLoadingData(true);
+        const payload = {
+            client_id: Number(app.client?.id),
+            service_id: Number(app.service.id),
+            professional_id: String(app.professional.id),
+            date: app.start.toISOString(),
+            status: app.status || 'agendado',
+            origin: 'agenda'
+        };
+
         try {
-            const payload = {
-                client_id: Number(app.client?.id),
-                service_id: Number(app.service.id),
-                professional_id: String(app.professional.id),
-                date: app.start.toISOString(),
-                status: app.status || 'agendado',
-                origin: 'agenda'
-            };
-
             console.log("INSERT appointments payload:", payload);
-
             const { error } = await supabase.from('appointments').insert([payload]);
             
             if (error) {
@@ -124,10 +123,10 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
             setToast({ message: 'Agendamento salvo!', type: 'success' });
             setModalState(null);
             
-            // REFRESH IMEDIATO DA LISTA
+            // Refetch imediato para atualizar a UI state conforme regra de AGENDA/CALENDAR
             await loadAppointments(currentDate);
         } catch (e: any) {
-            setToast({ message: 'Erro ao salvar agendamento.', type: 'error' });
+            setToast({ message: 'Erro ao salvar. Verifique o console para detalhes.', type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
@@ -135,7 +134,7 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
 
     const handleUpdateStatus = async (id: number, newStatus: AppointmentStatus) => {
         const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
-        if (!error) await loadAppointments(currentDate);
+        if (!error) loadAppointments(currentDate);
         setActiveAppointmentDetail(null);
     };
 
