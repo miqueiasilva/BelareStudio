@@ -32,7 +32,6 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
             const start = startOfDay(date).toISOString();
             const end = endOfDay(date).toISOString();
 
-            // FIX: Sincronização com o schema correto (nome para clients e services)
             const { data, error } = await supabase
                 .from('appointments')
                 .select(`
@@ -47,7 +46,14 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
                 .order('date', { ascending: true });
 
             if (error) {
-                console.error("LOAD appointments error:", error);
+                // Logging detalhado para diagnóstico de erros de busca (Ex: 400 Bad Request)
+                console.error("LOAD appointments error:", {
+                    message: error?.message,
+                    details: error?.details,
+                    hint: error?.hint,
+                    code: error?.code,
+                    full: error
+                });
                 throw error;
             }
 
@@ -101,8 +107,22 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
                 origin: 'agenda'
             };
 
+            // Log do payload para conferência de tipos e valores antes da ida ao banco
+            console.log("INSERT appointments payload:", payload);
+
             const { error } = await supabase.from('appointments').insert([payload]);
-            if (error) throw error;
+            
+            if (error) {
+                // Fix: Logging detalhado para capturar falhas de API key, RLS ou violação de restrições
+                console.error("INSERT appointments error:", {
+                    message: error?.message,
+                    details: error?.details,
+                    hint: error?.hint,
+                    code: error?.code,
+                    full: error
+                });
+                throw error;
+            }
 
             setToast({ message: 'Agendamento salvo!', type: 'success' });
             setModalState(null);

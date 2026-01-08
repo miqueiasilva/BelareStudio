@@ -55,7 +55,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const fetchDashboardData = async () => {
         try {
             setIsLoading(true);
-            // FIX: Sincronização com o schema real (coluna 'nome')
+            // Query Relacional Explícita
             const { data, error } = await supabase
                 .from('appointments')
                 .select(`
@@ -69,7 +69,17 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 .neq('status', 'cancelado')
                 .order('date', { ascending: true });
 
-            if (error) throw error;
+            if (error) {
+                // Fix: Logging detalhado para diagnosticar 400 Bad Request
+                console.error("LOAD appointments error:", {
+                    message: error?.message,
+                    details: error?.details,
+                    hint: error?.hint,
+                    code: error?.code,
+                    full: error
+                });
+                throw error;
+            }
             setAppointments(data || []);
 
             const now = new Date();
