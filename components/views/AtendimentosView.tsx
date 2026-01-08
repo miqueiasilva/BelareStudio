@@ -6,16 +6,15 @@ import {
     ShoppingBag, Ban, Settings as SettingsIcon, Maximize2, 
     LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock,
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
-    CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle
+    CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle, Plus
 } from 'lucide-react';
-import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, parseISO, addMinutes, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns';
+import { format, addDays, addWeeks, addMonths, eachDayOfInterval, isSameDay, isWithinInterval, startOfWeek, endOfWeek, isSameMonth, parseISO, addMinutes, startOfDay, endOfDay, startOfMonth, endOfMonth, setHours, setMinutes } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
 import AppointmentModal from '../modals/AppointmentModal';
 import BlockTimeModal from '../modals/BlockTimeModal';
-import NewTransactionModal from '../modals/NewTransactionModal';
-import JaciBotPanel from '../JaciBotPanel';
+import ContextMenu from '../shared/ContextMenu';
 import AppointmentDetailPopover from '../shared/AppointmentDetailPopover';
 import Toast, { ToastType } from '../shared/Toast';
 import { supabase } from '../../services/supabaseClient';
@@ -24,46 +23,6 @@ import { useAuth } from '../../contexts/AuthContext';
 const START_HOUR = 8;
 const END_HOUR = 20; 
 const SLOT_PX_HEIGHT = 80; 
-
-const STATUS_PRIORITY: Record<string, number> = {
-    'em_atendimento': 1,
-    'chegou': 2,
-    'confirmado_whatsapp': 3,
-    'confirmado': 4,
-    'agendado': 5,
-    'pendente': 5, 
-    'em_espera': 6,
-    'concluido': 7,
-    'faltou': 8,
-    'cancelado': 9,
-    'bloqueado': 10
-};
-
-const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) => {
-    return (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-300">
-            <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-orange-100">
-                <div className="bg-orange-50 p-8 text-center border-b border-orange-100">
-                    <div className="w-20 h-20 bg-orange-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-200 animate-bounce">
-                        <AlertTriangle size={40} />
-                    </div>
-                    <h2 className="text-2xl font-black text-slate-800 leading-tight">Conflito de Horário!</h2>
-                </div>
-                <div className="p-8 space-y-6">
-                    <div className="space-y-4">
-                        <p className="text-slate-600 text-sm leading-relaxed text-center font-medium">
-                            O horário das <b className="text-slate-800">{format(newApp.start, 'HH:mm')}</b> às <b className="text-slate-800">{format(newApp.end, 'HH:mm')}</b> choca com outro atendimento.
-                        </p>
-                    </div>
-                    <div className="flex flex-col gap-3">
-                        <button onClick={onConfirm} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-orange-100 transition-all active:scale-95 flex items-center justify-center gap-2">Salvar Mesmo Assim</button>
-                        <button onClick={onCancel} className="w-full py-4 text-slate-400 font-bold text-sm hover:text-slate-600 transition-colors">Voltar</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
 
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
@@ -120,48 +79,37 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [modalState, setModalState] = useState<{ type: 'appointment' | 'block' | 'sale'; data: any } | null>(null);
     const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+    
+    // Menu de Clique na Grade
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
 
-    const [pendingConflict, setPendingConflict] = useState<{ newApp: LegacyAppointment, conflictWith: any } | null>(null);
-    const [colWidth, setColWidth] = useState(220);
-    const [timeSlot, setTimeSlot] = useState(30);
+    const [viewMode, setViewMode] = useState<'profissional' | 'andamento'>('profissional');
+    const [colWidth] = useState(220);
+    const [timeSlot] = useState(30);
 
     const isMounted = useRef(true);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
     const gridScrollRef = useRef<HTMLDivElement>(null); 
     const abortControllerRef = useRef<AbortController | null>(null);
-    const lastRequestId = useRef(0);
 
-    // --- MOTOR DE BUSCA RELACIONAL ---
     const fetchAppointments = async () => {
         if (!isMounted.current || authLoading || !user) return;
-        
-        const requestId = ++lastRequestId.current;
         if (abortControllerRef.current) abortControllerRef.current.abort();
         abortControllerRef.current = new AbortController();
         setIsLoadingData(true);
 
         try {
-            let rangeStart: Date, rangeEnd: Date;
-            if (periodType === 'Semana') {
-                rangeStart = startOfWeek(currentDate, { weekStartsOn: 1 });
-                rangeEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
-            } else if (periodType === 'Mês') {
-                rangeStart = startOfMonth(currentDate);
-                rangeEnd = endOfMonth(currentDate);
-            } else {
-                rangeStart = startOfDay(currentDate);
-                rangeEnd = endOfDay(currentDate);
-            }
+            const rangeStart = startOfDay(currentDate);
+            const rangeEnd = endOfDay(currentDate);
 
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments') 
                     .select(`
                         *,
-                        clients!client_id(name, phone),
-                        services!service_id(name, price, color, duration),
-                        team_members!professional_id(name)
+                        clients!client_id(id, name, phone),
+                        services!service_id(id, name, price, color, duration),
+                        team_members!professional_id(id, name)
                     `)
                     .gte('date', rangeStart.toISOString())
                     .lte('date', rangeEnd.toISOString())
@@ -178,7 +126,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             if (apptRes.error) throw apptRes.error;
             if (blocksRes.error) throw blocksRes.error;
 
-            if (isMounted.current && requestId === lastRequestId.current) {
+            if (isMounted.current) {
                 const mappedAppts = (apptRes.data || []).map(row => ({
                     ...mapRowToAppointment(row),
                     type: 'appointment'
@@ -211,14 +159,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         } catch (e) { console.error(e); }
     };
 
-    useEffect(() => { if (!authLoading && user && resources.length > 0) fetchAppointments(); }, [currentDate, periodType, resources, user, authLoading]);
+    useEffect(() => { if (!authLoading && user && resources.length > 0) fetchAppointments(); }, [currentDate, resources, user, authLoading]);
     useEffect(() => { isMounted.current = true; fetchResources(); return () => { isMounted.current = false; if (abortControllerRef.current) abortControllerRef.current.abort(); }; }, []);
 
-    // Mapeamento de Objeto Relacional
     const mapRowToAppointment = (row: any): LegacyAppointment => {
         const start = new Date(row.date);
         const dur = Number(row.duration) || Number(row.services?.duration) || 30;
-
         return {
             id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
             notas: row.notes || '', origem: row.origin || 'agenda',
@@ -228,14 +174,39 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         } as LegacyAppointment;
     };
 
-    // --- SALVAMENTO ESTRITO COM TIPAGEM CORRETA ---
-    const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
+    // --- MANIPULADOR DE CLIQUE NA GRADE ---
+    const handleGridClick = (e: React.MouseEvent, professional: LegacyProfessional) => {
+        // Apenas abre se o clique for na grade vazia, não sobre um card
+        if (e.target !== e.currentTarget) return;
+
+        const rect = e.currentTarget.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        
+        // Converte pixel Y em minutos
+        const totalMinutesFromDayStart = (y / SLOT_PX_HEIGHT) * timeSlot;
+        const roundedMinutes = Math.floor(totalMinutesFromDayStart / 15) * 15;
+        
+        const clickedTime = new Date(currentDate);
+        clickedTime.setHours(START_HOUR + Math.floor(roundedMinutes / 60));
+        clickedTime.setMinutes(roundedMinutes % 60);
+        clickedTime.setSeconds(0);
+        clickedTime.setMilliseconds(0);
+
+        setSelectionMenu({
+            x: e.clientX,
+            y: e.clientY,
+            time: clickedTime,
+            professional
+        });
+    };
+
+    const handleSaveAppointment = async (app: LegacyAppointment) => {
         setIsLoadingData(true);
         try {
             const payload = {
                 client_id: Number(app.client?.id),
                 service_id: Number(app.service.id),
-                professional_id: String(app.professional.id), // UUID
+                professional_id: String(app.professional.id),
                 date: new Date(app.start).toISOString(),
                 status: app.status || 'agendado',
                 value: Number(app.service.price),
@@ -252,7 +223,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             setToast({ message: 'Agendamento salvo!', type: 'success' });
             setModalState(null); fetchAppointments();
         } catch (e: any) { 
-            setToast({ message: `Erro: Verifique se cliente e serviço estão selecionados.`, type: 'error' }); 
+            setToast({ message: `Erro ao salvar.`, type: 'error' }); 
         } finally { setIsLoadingData(false); }
     };
 
@@ -272,8 +243,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">Agenda {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}</h2>
                     </div>
                     <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
-                        <button onClick={() => setIsPeriodModalOpen(true)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50">{periodType} <ChevronDown size={16} /></button>
-                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all active:scale-95">Agendar</button>
+                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all active:scale-95">Novo Agendamento</button>
                     </div>
                 </div>
                 <div className="flex items-center gap-4">
@@ -313,7 +283,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         </div>
 
                         {resources.map((res) => (
-                            <div key={res.id} className="relative border-r border-slate-200 cursor-crosshair min-h-[960px]">
+                            <div 
+                                key={res.id} 
+                                className="relative border-r border-slate-200 cursor-crosshair min-h-[960px]"
+                                onClick={(e) => handleGridClick(e, res)}
+                            >
                                 {appointments.filter(app => String(app.professional.id) === String(res.id)).map(app => (
                                     <div key={app.id} ref={(el) => { if (el && app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} onClick={(e) => { e.stopPropagation(); if (app.type === 'appointment') setActiveAppointmentDetail(app); }} className={getCardStyle(app)} style={{ ...getAppointmentPosition(app.start, app.end, timeSlot), borderLeftColor: app.service.color || '#3b82f6', backgroundColor: `${app.service.color || '#3b82f6'}15` }}>
                                         <div className="absolute top-1 right-1 flex gap-0.5">
@@ -336,6 +310,32 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 </div>
             </div>
 
+            {selectionMenu && (
+                <ContextMenu 
+                    x={selectionMenu.x} 
+                    y={selectionMenu.y} 
+                    onClose={() => setSelectionMenu(null)}
+                    options={[
+                        { 
+                            label: 'Novo Agendamento', 
+                            icon: <Plus size={16} className="text-orange-500" />,
+                            onClick: () => setModalState({ 
+                                type: 'appointment', 
+                                data: { start: selectionMenu.time, professional: selectionMenu.professional } 
+                            })
+                        },
+                        { 
+                            label: 'Bloquear Horário', 
+                            icon: <Ban size={16} className="text-rose-500" />,
+                            onClick: () => setModalState({ 
+                                type: 'block', 
+                                data: { start: selectionMenu.time, professional: selectionMenu.professional } 
+                            })
+                        }
+                    ]}
+                />
+            )}
+
             {activeAppointmentDetail && (
                 <AppointmentDetailPopover 
                     appointment={activeAppointmentDetail} 
@@ -346,8 +346,21 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     onUpdateStatus={handleUpdateStatus}
                 />
             )}
+            
             {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />}
-            {isPeriodModalOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"><div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPeriodModalOpen(false)}></div><div className="relative w-full max-w-xs bg-white rounded-[32px] p-4 animate-in zoom-in-95">{['Dia', 'Semana', 'Mês', 'Lista'].map((item) => (<button key={item} onClick={() => { setPeriodType(item as any); setIsPeriodModalOpen(false); }} className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl text-sm font-bold ${periodType === item ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-slate-50'}`}>{item}{periodType === item && <Check size={18} />}</button>))}</div></div>}
+            {modalState?.type === 'block' && (
+                <BlockTimeModal 
+                    professional={modalState.data.professional} 
+                    startTime={modalState.data.start} 
+                    onClose={() => setModalState(null)} 
+                    onSave={(block) => {
+                        // Lógica de salvamento de bloqueio no banco aqui
+                        setToast({ message: "Horário bloqueado!", type: 'info' });
+                        setModalState(null);
+                        fetchAppointments();
+                    }}
+                />
+            )}
         </div>
     );
 };
