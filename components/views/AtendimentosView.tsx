@@ -180,34 +180,33 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfDay(currentDate);
             }
 
-            // --- QUERY OTIMIZADA PARA EVITAR ERRO 400 ---
-            // Removemos 'color' de team_members pois geralmente profissionais não tem cor no DB
-            const { data: apptData, error: apptError } = await supabase
-                .from('appointments')
-                .select('*, clients(id, name, phone), services(id, name, price, color, duration), team_members!professional_id(id, name)')
-                .gte('date', rangeStart.toISOString())
-                .lte('date', rangeEnd.toISOString())
-                .neq('status', 'cancelado') 
-                .abortSignal(abortControllerRef.current.signal);
+            // --- REESTRUTURAÇÃO: Uso da VIEW SQL para leitura simplificada ---
+            const [apptRes, blocksRes] = await Promise.all([
+                supabase
+                    .from('vw_agenda_completa') // Usando a View flat
+                    .select('*')
+                    .gte('date', rangeStart.toISOString())
+                    .lte('date', rangeEnd.toISOString())
+                    .neq('status', 'cancelado') 
+                    .abortSignal(abortControllerRef.current.signal),
+                supabase
+                    .from('schedule_blocks')
+                    .select('*')
+                    .gte('start_time', rangeStart.toISOString())
+                    .lte('start_time', rangeEnd.toISOString())
+                    .abortSignal(abortControllerRef.current.signal)
+            ]);
 
-            const { data: blockData, error: blockError } = await supabase
-                .from('schedule_blocks')
-                .select('*')
-                .gte('start_time', rangeStart.toISOString())
-                .lte('start_time', rangeEnd.toISOString())
-                .abortSignal(abortControllerRef.current.signal);
-
-            if (apptError) throw apptError;
-            if (blockError) throw blockError;
+            if (apptRes.error) throw apptRes.error;
+            if (blocksRes.error) throw blocksRes.error;
 
             if (isMounted.current && requestId === lastRequestId.current) {
-                const mappedAppts = (apptData || []).map(row => ({
+                const mappedAppts = (apptRes.data || []).map(row => ({
                     ...mapRowToAppointment(row),
-                    type: 'appointment',
-                    reminder_sent: row.reminder_sent || false 
+                    type: 'appointment'
                 }));
 
-                const mappedBlocks = (blockData || []).map(row => ({
+                const mappedBlocks = (blocksRes.data || []).map(row => ({
                     id: row.id,
                     start: new Date(row.start_time),
                     end: new Date(row.end_time),
@@ -221,8 +220,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             }
         } catch (e: any) { 
             if (e.name !== 'AbortError') {
-                console.error("Fetch Agenda Error:", e); 
-                setToast({ message: "Erro ao sincronizar agenda. Verifique a conexão.", type: 'error' });
+                console.error("Fetch Agenda Error:", e);
+                setToast({ message: "Erro ao sincronizar agenda.", type: 'error' });
             }
         } finally { 
             if (isMounted.current) setIsLoadingData(false); 
@@ -272,100 +271,74 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         };
     }, []);
 
-    // --- MAPPER COM FALLBACKS DE RELACIONAMENTO ---
+    // --- MAPPER ATUALIZADO: Consumindo colunas flat da View vw_agenda_completa ---
     const mapRowToAppointment = (row: any): LegacyAppointment => {
         const start = new Date(row.date);
         const dur = row.duration || 30;
-        
-        // Supabase pode retornar objetos ou arrays dependendo da configuração da FK
-        const joinedClient = Array.isArray(row.clients) ? row.clients[0] : row.clients;
-        const joinedService = Array.isArray(row.services) ? row.services[0] : row.services;
-        const joinedProf = Array.isArray(row.team_members) ? row.team_members[0] : row.team_members;
 
         return {
             id: row.id, 
             start, 
             end: new Date(start.getTime() + dur * 60000), 
             status: row.status as AppointmentStatus,
-            notas: row.note || row.notes || '', // Suporte a 'note' (inglês) ou 'notes'
-            origem: row.origin || row.origem || 'interno', // Suporte a 'origin' ou 'origem'
+            notas: row.notes || '', 
+            origem: row.origem || 'interno',
             client: { 
                 id: row.client_id, 
-                nome: joinedClient?.name || row.client_name || 'Cliente', 
+                nome: row.client_name || 'Cliente', // Da View
                 consent: true 
             },
             professional: { 
                 id: row.professional_id, 
-                name: joinedProf?.name || row.professional_name || 'Profissional', 
+                name: row.professional_name || 'Profissional', // Da View
                 avatarUrl: '' 
             },
             service: { 
                 id: row.service_id, 
-                name: joinedService?.name || row.service_name || 'Serviço', 
-                price: Number(row.price || row.value || joinedService?.price || 0), 
+                name: row.service_name || 'Serviço', // Da View
+                price: Number(row.service_price || row.value || 0), // Da View
                 duration: dur, 
-                color: joinedService?.color || '#3b82f6' 
+                color: row.service_color || '#3b82f6' // Da View
             }
         } as LegacyAppointment;
     };
 
+    // --- SALVAMENTO: Continua na tabela base 'appointments' com IDs ---
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
         setIsLoadingData(true);
         try {
             if (!force) {
-                const { data: existingOnDay } = await supabase
-                    .from('appointments')
-                    .select('id, date, duration')
-                    .eq('professional_id', app.professional.id)
-                    .neq('status', 'cancelado')
-                    .gte('date', startOfDay(app.start).toISOString())
-                    .lte('date', endOfDay(app.start).toISOString());
-
+                const { data: existingOnDay } = await supabase.from('appointments').select('id, date, duration').eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startOfDay(app.start).toISOString()).lte('date', endOfDay(app.start).toISOString());
                 const conflict = existingOnDay?.find(row => {
                     if (app.id && row.id === app.id) return false;
-                    const rowStart = new Date(row.date);
-                    const rowEnd = addMinutes(rowStart, row.duration || 30);
-                    return (app.start < rowEnd) && (app.end > rowStart);
+                    return (app.start < addMinutes(new Date(row.date), row.duration || 30)) && (app.end > new Date(row.date));
                 });
-
-                if (conflict) { 
-                    setPendingConflict({ newApp: app, conflictWith: conflict }); 
-                    setIsLoadingData(false); 
-                    return; 
-                }
+                if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
             }
 
-            // PAYLOAD EM INGLÊS CONFORME REQUISITADO
             const payload = { 
                 client_id: app.client?.id,
                 professional_id: app.professional.id, 
                 service_id: app.service.id,
-                price: app.service.price, // Traduzido: value -> price
+                value: app.service.price, 
                 duration: app.service.duration, 
                 date: app.start.toISOString(), 
                 status: app.status, 
-                note: app.notas, // Traduzido: notes -> note
-                origin: app.origem || 'interno' // Traduzido: origem -> origin
+                notes: app.notas, 
+                origem: app.origem || 'interno' 
             };
             
-            let error;
             if (app.id && appointments.some(a => a.id === app.id)) {
-                const { error: err } = await supabase.from('appointments').update(payload).eq('id', app.id);
-                error = err;
+                await supabase.from('appointments').update(payload).eq('id', app.id);
             } else {
-                const { error: err } = await supabase.from('appointments').insert([payload]);
-                error = err;
+                await supabase.from('appointments').insert([payload]);
             }
 
-            if (error) throw error;
-
             setToast({ message: 'Agendamento salvo!', type: 'success' });
-            setModalState(null); 
-            setPendingConflict(null);
+            setModalState(null); setPendingConflict(null);
             fetchAppointments();
-        } catch (e: any) { 
-            console.error("Save Error:", e);
-            setToast({ message: `Erro ao salvar: ${e.message}`, type: 'error' }); 
+        } catch (e) { 
+            setToast({ message: 'Erro ao salvar dados.', type: 'error' }); 
         } finally { setIsLoadingData(false); }
     };
 
@@ -520,6 +493,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         else if (periodType === 'Mês') setCurrentDate(prev => addMonths(prev, direction));
     };
 
+    const handleReorderProfessional = (e: React.MouseEvent, index: number, direction: 'left' | 'right') => {
+        e.stopPropagation();
+        const targetIndex = direction === 'left' ? index - 1 : index + 1;
+        if (targetIndex < 0 || targetIndex >= resources.length) return;
+        const newResources = [...resources];
+        const temp = newResources[index];
+        newResources[index] = newResources[targetIndex];
+        newResources[targetIndex] = temp;
+        setResources(newResources);
+    };
+
     const columns = useMemo(() => {
         if (periodType === 'Semana') {
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
@@ -552,21 +536,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         const targetDate = new Date(colDate || currentDate);
         targetDate.setHours(Math.floor((START_HOUR * 60 + minutes) / 60), Math.round((START_HOUR * 60 + minutes) % 60 / 15) * 15, 0, 0);
         setSelectionMenu({ x: e.clientX, y: e.clientY, time: targetDate, professional });
-    };
-
-    // --- FIX: Added missing handleReorderProfessional function ---
-    const handleReorderProfessional = (e: React.MouseEvent, index: number, direction: 'left' | 'right') => {
-        e.stopPropagation();
-        const targetIndex = direction === 'left' ? index - 1 : index + 1;
-        
-        if (targetIndex < 0 || targetIndex >= resources.length) return;
-
-        const newResources = [...resources];
-        const temp = newResources[index];
-        newResources[index] = newResources[targetIndex];
-        newResources[targetIndex] = temp;
-        
-        setResources(newResources);
     };
 
     return (
@@ -673,7 +642,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                         const isShort = durationMinutes <= 25;
                                         const cardColor = app.type === 'block' ? '#f87171' : (app.service.color || '#3b82f6');
                                         const isConfirmed = ['confirmado', 'confirmado_whatsapp'].includes(app.status);
-                                        const reminderSent = app.reminder_sent || false;
 
                                         return (
                                             <div 
@@ -693,14 +661,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                 }}
                                             >
                                                 <div className="absolute top-1 right-1 flex items-center gap-0.5 z-10 bg-white/40 backdrop-blur-[1px] p-0.5 rounded-lg">
-                                                    {reminderSent && (
-                                                        <Send 
-                                                            size={10} 
-                                                            className="text-blue-700" 
-                                                            strokeWidth={3} 
-                                                            title="Lembrete Enviado"
-                                                        />
-                                                    )}
                                                     {isConfirmed && (
                                                         <CheckCircle2 
                                                             size={11} 
