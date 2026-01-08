@@ -4,7 +4,7 @@ import {
     ArrowUpCircle, ArrowDownCircle, Wallet, TrendingUp, AlertTriangle, 
     CheckCircle, Plus, Loader2, Calendar, Search, Filter, Download,
     RefreshCw, ChevronLeft, ChevronRight, FileText, Clock, User,
-    Coins, Banknote, Percent
+    Coins, Banknote, Percent, Trash2
 } from 'lucide-react';
 import Card from '../shared/Card';
 import SafePie from '../charts/SafePie';
@@ -152,6 +152,25 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
         setShowModal(null);
     };
 
+    const handleDeleteTransaction = async (id: number) => {
+        if (!window.confirm("Deseja realmente excluir este lançamento financeiro? Esta ação afetará o seu saldo imediatamente.")) return;
+
+        try {
+            const { error } = await supabase
+                .from('financial_transactions')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+
+            setDbTransactions(prev => prev.filter(t => t.id !== id));
+            setToast({ message: "Lançamento removido com sucesso.", type: 'info' });
+        } catch (err: any) {
+            console.error("Erro ao excluir transação:", err);
+            setToast({ message: "Falha ao excluir o lançamento do banco de dados.", type: 'error' });
+        }
+    };
+
     const handleNavigateDate = (direction: number) => {
         const newDate = new Date(currentDate);
         if (viewMode === 'daily') newDate.setDate(newDate.getDate() + direction);
@@ -210,7 +229,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
                         <button onClick={() => setShowModal('receita')} className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-emerald-100 transition-all active:scale-95">
                             <Plus size={16} strokeWidth={3}/> Receita
                         </button>
-                        <button onClick={() => setShowModal('despesa')} className="bg-rose-500 hover:bg-rose-600 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-rose-100 transition-all active:scale-95">
+                        <button onClick={() => setShowModal('despesa')} className="bg-rose-50 hover:bg-rose-600 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-rose-100 transition-all active:scale-95">
                             <Plus size={16} strokeWidth={3}/> Despesa
                         </button>
                     </div>
@@ -334,6 +353,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
                                         <th className="px-8 py-5">Método</th>
                                         <th className="px-8 py-5 text-right">Valor Final</th>
                                         <th className="px-8 py-5 text-center">Status</th>
+                                        <th className="px-8 py-5 text-right">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-50">
@@ -366,11 +386,20 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
                                                     </div>
                                                 )}
                                             </td>
+                                            <td className="px-8 py-4 text-right">
+                                                <button 
+                                                    onClick={() => handleDeleteTransaction(t.id)}
+                                                    className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all active:scale-90"
+                                                    title="Excluir Lançamento"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </td>
                                         </tr>
                                     ))}
                                     {filteredTransactions.length === 0 && (
                                         <tr>
-                                            <td colSpan={5} className="px-8 py-20 text-center flex flex-col items-center">
+                                            <td colSpan={6} className="px-8 py-20 text-center flex flex-col items-center">
                                                 <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center mb-4 text-slate-300">
                                                     <FileText size={32} />
                                                 </div>

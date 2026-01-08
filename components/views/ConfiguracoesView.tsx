@@ -5,6 +5,7 @@ import SettingsHub from '../settings/SettingsHub';
 import PaymentSettings from '../settings/PaymentSettings';
 import BusinessSettings from '../settings/BusinessSettings';
 import BlocksSettings from '../settings/BlocksSettings';
+import ResourcesSettings from '../settings/ResourcesSettings';
 import UnderConstruction from '../settings/UnderConstruction';
 
 const ConfiguracoesView: React.FC = () => {
@@ -28,10 +29,12 @@ const ConfiguracoesView: React.FC = () => {
                 return <PaymentSettings onBack={() => setSubView('hub')} />;
             case 'blocks':
                 return <BlocksSettings onBack={() => setSubView('hub')} />;
+            case 'resources':
+                return <ResourcesSettings onBack={() => setSubView('hub')} />;
             case 'theme':
                 return <UnderConstruction title="Tema do Sistema" onBack={() => setSubView('hub')} />;
             case 'resources':
-                return <UnderConstruction title="Controle de Recursos" onBack={() => setSubView('hub')} />;
+                return <ResourcesSettings onBack={() => setSubView('hub')} />;
             case 'discounts':
                 return <UnderConstruction title="Cupons e Descontos" onBack={() => setSubView('hub')} />;
             default:

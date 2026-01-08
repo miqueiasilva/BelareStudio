@@ -4,7 +4,7 @@ import {
     Search, Plus, Clock, User, FileText, 
     DollarSign, Coffee, Scissors, Trash2, ShoppingBag, X,
     CreditCard, Banknote, Smartphone, CheckCircle, Loader2,
-    Receipt
+    Receipt, History, LayoutGrid, CheckCircle2, AlertCircle
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { FinancialTransaction, PaymentMethod, Client, Command, CommandItem } from '../../types';
@@ -17,10 +17,13 @@ interface ComandasViewProps {
     onAddTransaction: (t: FinancialTransaction) => void;
 }
 
+type CommandTab = 'open' | 'paid' | 'all';
+
 const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     const [tabs, setTabs] = useState<Command[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [currentTab, setCurrentTab] = useState<CommandTab>('open');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
     // Modals State
@@ -39,10 +42,18 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     const fetchCommands = async () => {
         setLoading(true);
         try {
-            const { data, error } = await supabase
+            let query = supabase
                 .from('commands')
-                .select('*, clients(nome), command_items(*)')
-                .eq('status', 'open')
+                .select('*, clients(*), command_items(*)');
+
+            // Filtro por Aba
+            if (currentTab === 'open') {
+                query = query.eq('status', 'open');
+            } else if (currentTab === 'paid') {
+                query = query.eq('status', 'paid');
+            }
+
+            const { data, error } = await query
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -70,9 +81,28 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     useEffect(() => {
         fetchCommands();
         fetchCatalog();
-    }, []);
+    }, [currentTab]); // Recarregar ao trocar de aba
 
     // --- Handlers ---
+
+    const handleDeleteCommand = async (e: React.MouseEvent, id: string) => {
+        e.stopPropagation();
+        if (!window.confirm("Deseja realmente excluir esta comanda? Todos os itens lançados serão perdidos.")) return;
+
+        try {
+            // Itens são deletados automaticamente se o banco tiver ON DELETE CASCADE, 
+            // caso contrário deletamos manualmente os itens primeiro
+            await supabase.from('command_items').delete().eq('command_id', id);
+            const { error } = await supabase.from('commands').delete().eq('id', id);
+            
+            if (error) throw error;
+
+            setTabs(prev => prev.filter(t => t.id !== id));
+            setToast({ message: "Comanda excluída.", type: 'info' });
+        } catch (e) {
+            setToast({ message: "Erro ao excluir comanda.", type: 'error' });
+        }
+    };
 
     const handleCreateCommand = async (client: Client) => {
         setIsClientSearchOpen(false);
@@ -80,12 +110,17 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
             const { data, error } = await supabase
                 .from('commands')
                 .insert([{ client_id: client.id, status: 'open' }])
-                .select('*, clients(nome), command_items(*)')
+                .select('*, clients(*), command_items(*)')
                 .single();
 
             if (error) throw error;
-            setTabs(prev => [data, ...prev]);
-            setToast({ message: `Comanda de ${client.nome} aberta!`, type: 'success' });
+            
+            // Se estiver na aba 'open' ou 'all', adiciona à lista
+            if (currentTab !== 'paid') {
+                setTabs(prev => [data, ...prev]);
+            }
+            
+            setToast({ message: `Comanda aberta!`, type: 'success' });
         } catch (e: any) {
             setToast({ message: "Erro ao abrir comanda.", type: 'error' });
         }
@@ -165,9 +200,11 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         const total = closingTab.command_items.reduce((acc, i) => acc + (i.price * i.quantity), 0);
 
         try {
+            const clientName = closingTab.clients?.nome || closingTab.clients?.name || closingTab.clients?.full_name || 'Cliente';
+
             // 1. Criar Transação Financeira
             const { error: finError } = await supabase.from('financial_transactions').insert([{
-                description: `Fechamento Comanda - ${closingTab.clients?.nome}`,
+                description: `Fechamento Comanda - ${clientName}`,
                 amount: total,
                 type: 'income',
                 category: 'servico',
@@ -189,7 +226,13 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
 
             if (cmdError) throw cmdError;
 
-            setTabs(prev => prev.filter(t => t.id !== closingTab.id));
+            // Se estiver na aba 'open', remove. Se estiver em 'all', atualiza status local
+            if (currentTab === 'open') {
+                setTabs(prev => prev.filter(t => t.id !== closingTab.id));
+            } else {
+                setTabs(prev => prev.map(t => t.id === closingTab.id ? { ...t, status: 'paid' } : t));
+            }
+
             setClosingTab(null);
             setToast({ message: "Comanda finalizada com sucesso! 💰", type: 'success' });
         } catch (e) {
@@ -200,7 +243,10 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     };
 
     const filteredTabs = useMemo(() => {
-        return tabs.filter(t => t.clients?.nome.toLowerCase().includes(searchTerm.toLowerCase()));
+        return tabs.filter(t => {
+            const name = (t.clients?.nome || t.clients?.name || t.clients?.full_name || '').toLowerCase();
+            return name.includes(searchTerm.toLowerCase());
+        });
     }, [tabs, searchTerm]);
 
     const paymentMethodsConfig = [
@@ -220,7 +266,28 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                         <FileText className="text-orange-500" />
                         Comandas Digitais
                     </h1>
-                    <p className="text-slate-500 text-xs font-medium">Controle de consumo em tempo real.</p>
+                    <div className="flex items-center gap-4 mt-2">
+                        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+                            <button 
+                                onClick={() => setCurrentTab('open')}
+                                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'open' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <LayoutGrid size={14} /> Em Aberto
+                            </button>
+                            <button 
+                                onClick={() => setCurrentTab('paid')}
+                                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'paid' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <History size={14} /> Histórico
+                            </button>
+                            <button 
+                                onClick={() => setCurrentTab('all')}
+                                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'all' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                Todas
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 
                 <div className="flex gap-3 w-full md:w-auto">
@@ -255,7 +322,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                         <div className="w-24 h-24 bg-white rounded-[40px] flex items-center justify-center shadow-inner border-2 border-dashed border-slate-200 mb-6">
                             <FileText size={40} className="text-slate-200" />
                         </div>
-                        <p className="text-sm font-black uppercase tracking-[0.2em]">Nenhuma comanda aberta</p>
+                        <p className="text-sm font-black uppercase tracking-[0.2em]">Nenhuma comanda encontrada</p>
                         <button onClick={() => setIsClientSearchOpen(true)} className="mt-4 text-orange-500 font-black text-xs uppercase hover:underline">Iniciar novo atendimento</button>
                     </div>
                 ) : (
@@ -263,22 +330,39 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                         {filteredTabs.map(tab => {
                             const total = tab.command_items.reduce((acc, i) => acc + (i.price * i.quantity), 0);
                             const duration = differenceInMinutes(new Date(), parseISO(tab.created_at));
+                            const clientName = tab.clients?.nome || tab.clients?.name || tab.clients?.full_name || 'Cliente';
+                            const isPaid = tab.status === 'paid';
 
                             return (
-                                <div key={tab.id} className="bg-white rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl hover:border-orange-100 transition-all flex flex-col overflow-hidden group h-[480px]">
+                                <div key={tab.id} className={`bg-white rounded-[32px] border transition-all flex flex-col overflow-hidden group h-[480px] ${isPaid ? 'border-slate-100 opacity-90' : 'border-slate-100 shadow-sm hover:shadow-xl hover:border-orange-100'}`}>
                                     <div className="p-5 border-b border-slate-50 flex justify-between items-start bg-slate-50/50">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-12 h-12 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center font-black text-lg border-2 border-white shadow-sm">
-                                                {tab.clients?.nome.charAt(0).toUpperCase()}
+                                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg border-2 border-white shadow-sm ${isPaid ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
+                                                {clientName.charAt(0).toUpperCase()}
                                             </div>
-                                            <div>
-                                                <h3 className="font-black text-slate-800 text-sm truncate max-w-[140px]">{tab.clients?.nome}</h3>
-                                                <div className="flex items-center gap-1 text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
-                                                    <Clock size={10} />
-                                                    <span>Iniciado há {duration} min</span>
-                                                </div>
+                                            <div className="min-w-0">
+                                                <h3 className="font-black text-slate-800 text-sm truncate max-w-[120px]">{clientName}</h3>
+                                                {isPaid ? (
+                                                    <span className="flex items-center gap-1 text-[9px] font-black text-emerald-600 uppercase tracking-tighter">
+                                                        <CheckCircle2 size={10} /> Pago em {format(parseISO(tab.closed_at || tab.created_at), 'dd/MM')}
+                                                    </span>
+                                                ) : (
+                                                    <div className="flex items-center gap-1 text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
+                                                        <Clock size={10} />
+                                                        <span>Há {duration} min</span>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
+                                        {!isPaid && (
+                                            <button 
+                                                onClick={(e) => handleDeleteCommand(e, tab.id)}
+                                                className="p-2 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"
+                                                title="Excluir Comanda"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        )}
                                     </div>
 
                                     <div className="flex-1 p-5 bg-white space-y-3 overflow-y-auto custom-scrollbar">
@@ -303,37 +387,47 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                                                             </p>
                                                         </div>
                                                     </div>
-                                                    <button 
-                                                        onClick={() => handleRemoveItem(tab.id, item.id)}
-                                                        className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover/item:opacity-100"
-                                                    >
-                                                        <X size={14} strokeWidth={3} />
-                                                    </button>
+                                                    {!isPaid && (
+                                                        <button 
+                                                            onClick={() => handleRemoveItem(tab.id, item.id)}
+                                                            className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover/item:opacity-100"
+                                                        >
+                                                            <X size={14} strokeWidth={3} />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             ))
                                         )}
                                     </div>
 
                                     <div className="p-5 bg-slate-50/50 border-t border-slate-50 space-y-4">
-                                        <button 
-                                            onClick={() => { setActiveTabId(tab.id); setIsSelectionOpen(true); }}
-                                            className="w-full py-3 bg-white border-2 border-slate-100 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:border-orange-400 hover:text-orange-600 transition-all flex items-center justify-center gap-2 shadow-sm"
-                                        >
-                                            <Plus size={14} strokeWidth={3} /> Adicionar Item
-                                        </button>
+                                        {!isPaid ? (
+                                            <button 
+                                                onClick={() => { setActiveTabId(tab.id); setIsSelectionOpen(true); }}
+                                                className="w-full py-3 bg-white border-2 border-slate-100 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:border-orange-400 hover:text-orange-600 transition-all flex items-center justify-center gap-2 shadow-sm"
+                                            >
+                                                <Plus size={14} strokeWidth={3} /> Adicionar Item
+                                            </button>
+                                        ) : (
+                                            <div className="flex items-center justify-center gap-2 py-3 bg-emerald-50 text-emerald-600 rounded-2xl text-[9px] font-black uppercase tracking-[0.2em] border border-emerald-100 shadow-inner">
+                                                <CheckCircle size={14} /> Atendimento Finalizado
+                                            </div>
+                                        )}
 
                                         <div className="flex justify-between items-end px-1">
                                             <div>
-                                                <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-0.5">Total Aberto</p>
-                                                <p className="text-2xl font-black text-slate-800 tracking-tighter">R$ {Number(total).toFixed(2)}</p>
+                                                <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-0.5">{isPaid ? 'Total Pago' : 'Total Aberto'}</p>
+                                                <p className={`text-2xl font-black tracking-tighter ${isPaid ? 'text-emerald-600' : 'text-slate-800'}`}>R$ {Number(total).toFixed(2)}</p>
                                             </div>
-                                            <button 
-                                                onClick={() => handleOpenCloseTab(tab.id)}
-                                                className="bg-emerald-600 hover:bg-emerald-700 text-white p-3 rounded-2xl shadow-lg shadow-emerald-100 transition-all active:scale-90"
-                                                title="Fechar Comanda"
-                                            >
-                                                <Receipt size={20} />
-                                            </button>
+                                            {!isPaid && (
+                                                <button 
+                                                    onClick={() => handleOpenCloseTab(tab.id)}
+                                                    className="bg-emerald-600 hover:bg-emerald-700 text-white p-3 rounded-2xl shadow-lg shadow-emerald-100 transition-all active:scale-90"
+                                                    title="Fechar Comanda"
+                                                >
+                                                    <Receipt size={20} />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -383,9 +477,9 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                         <div className="p-10 space-y-8">
                             <div className="text-center">
                                 <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-[28px] flex items-center justify-center mx-auto mb-4 font-black text-3xl border-4 border-white shadow-xl">
-                                    {closingTab.clients?.nome?.charAt(0).toUpperCase() || 'C'}
+                                    {(closingTab.clients?.nome || closingTab.clients?.name || closingTab.clients?.full_name || 'C').charAt(0).toUpperCase()}
                                 </div>
-                                <h2 className="text-xl font-black text-slate-800">{closingTab.clients?.nome || 'Cliente'}</h2>
+                                <h2 className="text-xl font-black text-slate-800">{closingTab.clients?.nome || closingTab.clients?.name || closingTab.clients?.full_name || 'Cliente'}</h2>
                                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Check-out de Consumo</p>
                             </div>
 
@@ -395,7 +489,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                                 </div>
                                 <div className="relative z-10">
                                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Total a Receber</p>
-                                    <h3 className="text-4xl font-black tracking-tighter">
+                                    <h3 className="text-4xl font-black tracking-tighter text-emerald-400">
                                         R$ {closingTab.command_items.reduce((acc, i) => acc + (i.price * i.quantity), 0).toFixed(2)}
                                     </h3>
                                 </div>
