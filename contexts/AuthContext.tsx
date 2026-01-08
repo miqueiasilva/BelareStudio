@@ -30,7 +30,6 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
 
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
-      // Busca unificada para evitar múltiplas viagens ao banco
       const { data: profData, error } = await supabase
         .from('team_members')
         .select('role, photo_url, name, permissions')
@@ -56,13 +55,14 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
 
     const initAuth = async () => {
       try {
+        // HARD-STOP: Aguarda a sessão real sem timeouts artificiais
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user && isMounted.current) {
           const detailedUser = await fetchProfile(session.user);
           setUser(detailedUser);
         }
       } catch (e) {
-        console.error("Auth Init Error:", e);
+        console.error("Erro crítico na inicialização de Auth:", e);
       } finally {
         if (isMounted.current) setLoading(false);
       }

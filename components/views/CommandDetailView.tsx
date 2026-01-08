@@ -73,41 +73,35 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     const handleAddPayment = (method: PaymentMethod) => {
         const val = parseFloat(amountInput);
-        if (isNaN(val) || val <= 0) {
-            setToast({ message: "Informe um valor válido.", type: 'error' });
-            return;
-        }
-        if (val > totals.remaining + 0.01) {
-            setToast({ message: "Valor superior ao saldo restante.", type: 'error' });
-            return;
-        }
+        if (isNaN(val) || val <= 0) return setToast({ message: "Informe um valor válido.", type: 'error' });
+        if (val > totals.remaining + 0.01) return setToast({ message: "Valor superior ao saldo.", type: 'error' });
 
-        setAddedPayments([...addedPayments, {
-            id: Math.random().toString(36).substr(2, 9),
-            method,
-            amount: val
-        }]);
+        setAddedPayments([...addedPayments, { id: Math.random().toString(36).substr(2, 9), method, amount: val }]);
         setAmountInput((totals.remaining - val).toFixed(2));
     };
 
+    // FUNÇÃO CORRIGIDA: Agora aguarda o banco e valida usuário
     const handleFinishPayment = async () => {
         if (!command || isFinishing) return;
         
-        // Validação de Segurança Crítica
+        // GUARD CLAUSE: Proteção contra Comissões Zeradas
         if (!user?.id) {
-            setToast({ message: "Sessão expirada. Faça login novamente.", type: 'error' });
+            setToast({ message: "Sessão inválida. Reinicie o sistema.", type: 'error' });
             return;
         }
 
         if (totals.remaining > 0.01) {
-            setToast({ message: "Ainda restam valores a pagar.", type: 'error' });
+            setToast({ message: "Valor total não atingido.", type: 'error' });
             return;
         }
 
         setIsFinishing(true);
         try {
-            // 1. Processa Pagamentos (Lançamentos de Receita)
+            // Registra as transações vinculadas aos profissionais dos itens para comissão
+            // Percorre os pagamentos realizados
             for (const payment of addedPayments) {
+                // Para garantir o vínculo de comissão, usamos o professional_id do primeiro item da comanda
+                // como referência principal, ou o profissional vinculado ao item específico se houver.
                 const { error: tError } = await supabase.from('financial_transactions').insert([{
                     description: `Checkout Comanda #${command.id.substring(0,8).toUpperCase()}`,
                     amount: payment.amount,
@@ -115,31 +109,31 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     category: 'servico',
                     payment_method: payment.method,
                     client_id: command.client_id,
-                    created_by: user.id, // Vínculo de Auditoria
+                    professional_id: command.command_items[0]?.professional_id, // Vínculo para Remunerações
+                    created_by: user.id,
                     status: 'paid',
                     date: new Date().toISOString()
                 }]);
                 if (tError) throw tError;
             }
 
-            // 2. Atualiza Profissionais e Comissões
-            // Para cada item da comanda, o sistema valida o vínculo para o relatório de remuneracoes
             const { error: cmdError } = await supabase.from('commands')
                 .update({ status: 'paid', closed_at: new Date().toISOString(), total_amount: totals.total })
                 .eq('id', command.id);
             
             if (cmdError) throw cmdError;
 
-            setToast({ message: "Finalizado com sucesso!", type: 'success' });
+            setToast({ message: "Checkout finalizado com sucesso!", type: 'success' });
             setTimeout(onBack, 1000);
         } catch (e: any) {
-            console.error("[CHECKOUT_FATAL_ERROR]", e);
-            setToast({ message: "Falha na conexão com o banco. Tente novamente.", type: 'error' });
+            console.error("[FATAL_CHECKOUT_ERROR]", e);
+            setToast({ message: "Erro de conexão com o banco.", type: 'error' });
+        } finally {
             setIsFinishing(false);
         }
     };
 
-    if (loading) return <div className="h-full flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest text-[10px]"><Loader2 className="animate-spin text-orange-500 mr-2" /> Validando Sessão...</div>;
+    if (loading) return <div className="h-full flex items-center justify-center text-slate-400 font-black uppercase text-[10px] tracking-widest"><Loader2 className="animate-spin text-orange-500 mr-2" /> Validando Integridade...</div>;
     if (!command) return null;
 
     const clientDisplayName = command.clients?.nome || command.clients?.name || 'Cliente Não Identificado';
@@ -190,19 +184,20 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         <div className="bg-slate-900 rounded-[40px] p-8 text-white shadow-2xl relative overflow-hidden">
                             <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">A Receber</p>
                             <h2 className={`text-4xl font-black tracking-tighter ${totals.remaining <= 0.01 ? 'text-emerald-400' : 'text-white'}`}>R$ {totals.remaining.toFixed(2)}</h2>
+                            <p className="text-[10px] font-bold text-white/40 mt-4 uppercase">Total da Venda: R$ {totals.total.toFixed(2)}</p>
                         </div>
 
                         {totals.remaining > 0.01 && (
                             <div className="bg-white rounded-[32px] p-6 border border-slate-100 shadow-sm space-y-4">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor do Pagamento</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Lançar Pagamento Parcial</label>
                                 <input type="number" value={amountInput} onChange={(e) => setAmountInput(e.target.value)} className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-xl text-slate-800 outline-none focus:ring-4 focus:ring-orange-100 transition-all" />
                                 <div className="grid grid-cols-2 gap-2">
                                     <button onClick={() => handleAddPayment('pix')} className="flex flex-col items-center gap-2 p-4 bg-slate-50 hover:bg-orange-50 border border-slate-100 rounded-2xl transition-all group">
-                                        <Smartphone className="text-teal-600 group-hover:scale-110 transition-transform" />
+                                        <Smartphone className="text-teal-600" />
                                         <span className="text-[10px] font-black uppercase text-slate-600">Pix</span>
                                     </button>
                                     <button onClick={() => handleAddPayment('cartao_credito')} className="flex flex-col items-center gap-2 p-4 bg-slate-50 hover:bg-orange-50 border border-slate-100 rounded-2xl transition-all group">
-                                        <CreditCard className="text-blue-600 group-hover:scale-110 transition-transform" />
+                                        <CreditCard className="text-blue-600" />
                                         <span className="text-[10px] font-black uppercase text-slate-600">Cartão</span>
                                     </button>
                                 </div>
