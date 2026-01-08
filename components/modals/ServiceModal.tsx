@@ -20,9 +20,9 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCategorie
         ativo: true
     });
 
-    // Estados para o Seletor de Tempo (HH:MM)
-    const [hours, setHours] = useState(0);
-    const [minutes, setMinutes] = useState(30);
+    // Estados para o Seletor de Tempo (Permitindo string para facilitar edição de UX)
+    const [hours, setHours] = useState<number | string>(0);
+    const [minutes, setMinutes] = useState<number | string>(30);
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
@@ -47,7 +47,7 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCategorie
         e.preventDefault();
         setIsSaving(true);
         
-        // Converte horas/minutos de volta para o total de minutos
+        // Converte horas/minutos de volta para o total de minutos (Number("") vira 0)
         const totalMinutes = (Number(hours) * 60) + Number(minutes);
         const payload = { ...formData, duracao_min: totalMinutes };
 
@@ -154,7 +154,11 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCategorie
                                         type="number"
                                         min="0"
                                         value={hours}
-                                        onChange={(e) => setHours(Math.max(0, parseInt(e.target.value) || 0))}
+                                        onChange={(e) => setHours(e.target.value)}
+                                        onBlur={() => {
+                                            if (hours === '' || isNaN(Number(hours))) setHours(0);
+                                            else setHours(Math.max(0, parseInt(String(hours))));
+                                        }}
                                         className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-mono text-center text-lg font-bold"
                                         placeholder="0"
                                     />
@@ -167,7 +171,11 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCategorie
                                         min="0"
                                         max="59"
                                         value={minutes}
-                                        onChange={(e) => setMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                                        onChange={(e) => setMinutes(e.target.value)}
+                                        onBlur={() => {
+                                            if (minutes === '' || isNaN(Number(minutes))) setMinutes(0);
+                                            else setMinutes(Math.max(0, Math.min(59, parseInt(String(minutes)))));
+                                        }}
                                         className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 transition-all font-mono text-center text-lg font-bold"
                                         placeholder="00"
                                     />
