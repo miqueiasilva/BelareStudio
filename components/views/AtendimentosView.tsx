@@ -180,10 +180,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfDay(currentDate);
             }
 
+            // --- QUERY ATUALIZADA COM JOINS ---
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments')
-                    .select('*')
+                    .select('*, clients(nome), team_members!resource_id(name), services!service_id(nome, cor_hex, preco)')
                     .gte('date', rangeStart.toISOString())
                     .lte('date', rangeEnd.toISOString())
                     .neq('status', 'cancelado') 
@@ -299,30 +300,43 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         }
     }, [resources]);
 
+    // --- MAPPER ATUALIZADO PARA USAR JOINS ---
     const mapRowToAppointment = (row: any, professionalsList: LegacyProfessional[]): LegacyAppointment => {
         const start = new Date(row.date);
         const dur = row.duration || 30;
         
-        let prof = professionalsList.find(p => String(p.id) === String(row.resource_id));
-        if (!prof && row.professional_name) {
-            prof = professionalsList.find(p => p.name.toLowerCase() === row.professional_name.toLowerCase());
-        }
+        const joinedClient = row.clients;
+        const joinedService = row.services;
+        const joinedProf = row.team_members;
 
         return {
-            id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
-            notas: row.notes || '', origem: row.origem || 'interno',
-            client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
-            professional: prof || professionalsList[0] || { id: 0, name: row.professional_name, avatarUrl: '' },
+            id: row.id, 
+            start, 
+            end: new Date(start.getTime() + dur * 60000), 
+            status: row.status as AppointmentStatus,
+            notas: row.notes || '', 
+            origem: row.origem || 'interno',
+            client: { 
+                id: row.client_id, 
+                nome: joinedClient?.nome || row.client_name || 'Cliente', 
+                consent: true 
+            },
+            professional: { 
+                id: row.resource_id, 
+                name: joinedProf?.name || row.professional_name || 'Profissional', 
+                avatarUrl: '' 
+            },
             service: { 
-                id: row.service_id, // CORREÇÃO: Pegando o ID real do serviço do banco
-                name: row.service_name, 
-                price: Number(row.value), 
+                id: row.service_id, 
+                name: joinedService?.nome || row.service_name || 'Serviço', 
+                price: Number(row.value || joinedService?.preco || 0), 
                 duration: dur, 
-                color: row.status === 'bloqueado' ? '#64748b' : (row.service_color || '#3b82f6') 
+                color: joinedService?.cor_hex || '#3b82f6' 
             }
         } as LegacyAppointment;
     };
 
+    // --- FUNÇÃO DE SALVAMENTO CORRIGIDA (PAYLOAD LIMPO) ---
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
         setIsLoadingData(true);
         try {
@@ -334,13 +348,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 });
                 if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
             }
+
+            // PAYLOAD LIMPO: Apenas IDs e dados estruturais
             const payload = { 
                 client_id: app.client?.id,
-                client_name: app.client?.nome, 
                 resource_id: app.professional.id, 
-                professional_name: app.professional.name, 
-                service_id: app.service.id, // CORREÇÃO: Persistindo o service_id
-                service_name: app.service.name, 
+                service_id: app.service.id,
                 value: app.service.price, 
                 duration: app.service.duration, 
                 date: app.start.toISOString(), 
@@ -359,9 +372,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             setModalState(null); setPendingConflict(null);
             fetchAppointments();
         } catch (e) { 
-            setToast({ message: 'Erro ao salvar.', type: 'error' }); 
-            fetchAppointments(); 
-        } finally { setIsLoadingData(true); }
+            setToast({ message: 'Erro ao salvar. Verifique os dados.', type: 'error' }); 
+        } finally { setIsLoadingData(false); }
     };
 
     const handleDeleteBlock = async (e: React.MouseEvent, blockId: string | number) => {
@@ -402,31 +414,28 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         setActiveAppointmentDetail(null);
     };
 
-    // --- FUNÇÃO CORRIGIDA: handleConvertToCommand ---
     const handleConvertToCommand = async (appointment: LegacyAppointment) => {
         setIsLoadingData(true);
         try {
-            // 1. CRIAR COMANDA (commands)
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
                     client_id: appointment.client?.id,
                     status: 'open',
-                    total_amount: appointment.service.price // Pode ser 0 se for deixar o banco calcular via trigger
+                    total_amount: appointment.service.price 
                 }])
                 .select()
                 .single();
 
             if (cmdError) throw cmdError;
 
-            // 2. CRIAR ITENS (command_items) - AGORA COM PAYLOAD CORRETO
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
                     command_id: command.id,
                     appointment_id: appointment.id,
-                    service_id: appointment.service.id, // OBRIGATÓRIO V2
-                    professional_id: appointment.professional.id, // OBRIGATÓRIO PARA COMISSÃO
+                    service_id: appointment.service.id, 
+                    professional_id: appointment.professional.id, 
                     title: appointment.service.name,
                     price: appointment.service.price,
                     quantity: 1,
@@ -435,10 +444,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             if (itemError) throw itemError;
 
-            // 3. ATUALIZAR AGENDAMENTO (appointments)
             const { error: apptUpdateError } = await supabase
                 .from('appointments')
-                .update({ status: 'concluido' }) // Ou 'billed' dependendo da regra de negócio
+                .update({ status: 'concluido' }) 
                 .eq('id', appointment.id);
 
             if (apptUpdateError) throw apptUpdateError;
