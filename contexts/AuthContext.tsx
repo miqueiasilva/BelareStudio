@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useState, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { User as SupabaseUser, Session } from '@supabase/supabase-js';
+import { User as SupabaseUser } from '@supabase/supabase-js';
 
 export type AppUser = SupabaseUser & {
   papel?: string;
@@ -27,18 +27,18 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
   
-  // Refs para controle de estabilidade (Protocolo de Estabilidade)
   const lastProcessedId = useRef<string | null>(null);
   const isMounted = useRef(true);
 
-  // Helper para buscar perfil detalhado
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
-      const { data: profData } = await supabase
-        .from('professionals')
+      const { data: profData, error: profError } = await supabase
+        .from('team_members')
         .select('role, photo_url, permissions, name')
         .eq('email', authUser.email)
         .maybeSingle();
+
+      if (profError) console.warn("Erro ao buscar perfil complementar:", profError.message);
 
       if (profData) {
         return {
@@ -50,71 +50,55 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         };
       }
 
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('full_name, papel, avatar_url')
-        .eq('id', authUser.id)
-        .maybeSingle();
-
       return {
         ...authUser,
-        papel: profileData?.papel || 'profissional',
-        nome: profileData?.full_name || authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
-        avatar_url: profileData?.avatar_url || authUser.user_metadata?.avatar_url
+        papel: 'profissional',
+        nome: authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
+        avatar_url: authUser.user_metadata?.avatar_url
       };
     } catch (e) {
-      return { 
-        ...authUser, 
-        papel: 'profissional', 
-        nome: authUser.user_metadata?.full_name || 'Usuário' 
-      };
+      return { ...authUser, papel: 'profissional' };
     }
   };
 
   useEffect(() => {
     isMounted.current = true;
 
-    // Listener Único para todo o ciclo de vida da Autenticação
+    // Supabase Auth Listener com tratamento de erro de relógio (Future Session)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
-      const currentId = currentSession?.user?.id || null;
-
-      // Estabilidade: Evita processar o mesmo ID múltiplas vezes (Corrige o loop de 4 disparos)
-      if (currentId === lastProcessedId.current && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED') {
-        setLoading(false);
-        return;
-      }
-
-      lastProcessedId.current = currentId;
-
-      if (!currentSession?.user) {
-        if (isMounted.current) {
-          setUser(null);
-          setLoading(false);
-        }
-        return;
-      }
-
       try {
-        const appUser = await fetchProfile(currentSession.user);
-        if (isMounted.current) {
-          setUser(appUser);
-        }
-      } catch (err) {
-        console.error("AuthContext: Erro ao carregar perfil:", err);
-      } finally {
-        if (isMounted.current) {
+        const currentId = currentSession?.user?.id || null;
+
+        if (currentId === lastProcessedId.current && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED') {
           setLoading(false);
+          return;
         }
+
+        lastProcessedId.current = currentId;
+
+        if (!currentSession?.user) {
+          if (isMounted.current) {
+            setUser(null);
+            setLoading(false);
+          }
+          return;
+        }
+
+        const appUser = await fetchProfile(currentSession.user);
+        if (isMounted.current) setUser(appUser);
+
+      } catch (err: any) {
+        // Se o erro for de clock skew ("issued in the future"), o SDK tentará revalidar depois.
+        // Liberamos a UI para não ficar em loop infinito.
+        console.error("Auth Exception:", err.message);
+      } finally {
+        if (isMounted.current) setLoading(false);
       }
     });
 
-    // Safety Timeout para evitar travamento da UI em falhas de rede severas
     const safetyTimer = setTimeout(() => {
-      if (isMounted.current && loading) {
-        console.warn("AuthContext: Safety timeout atingido. Liberando UI.");
-        setLoading(false);
-      }
-    }, 5000);
+      if (isMounted.current && loading) setLoading(false);
+    }, 4000);
 
     return () => {
       isMounted.current = false;
@@ -130,29 +114,14 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const updatePassword = async (newPassword: string) => supabase.auth.updateUser({ password: newPassword });
   
   const signOut = async () => {
-    try {
-      lastProcessedId.current = null;
-      await supabase.auth.signOut();
-    } finally {
-      localStorage.clear(); 
-      sessionStorage.clear();
-      setUser(null);
-      setLoading(false);
-      window.location.href = '/login'; 
-    }
+    lastProcessedId.current = null;
+    await supabase.auth.signOut();
+    localStorage.clear();
+    sessionStorage.clear();
+    window.location.href = '/login';
   };
 
-  const value = useMemo(() => ({ 
-    user, 
-    loading, 
-    signIn, 
-    signUp, 
-    signInWithGoogle, 
-    resetPassword, 
-    updatePassword, 
-    signOut 
-  }), [user, loading]);
-
+  const value = useMemo(() => ({ user, loading, signIn, signUp, signInWithGoogle, resetPassword, updatePassword, signOut }), [user, loading]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

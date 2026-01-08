@@ -12,7 +12,6 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const START_HOUR = 8;
 const END_HOUR = 20; 
-const SLOT_PX_HEIGHT = 80; 
 
 const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
     const { user, loading: authLoading } = useAuth(); 
@@ -25,6 +24,7 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
 
+    // BUSCA VIA CLIENTE SDK (NUNCA REST DIRETO)
     const loadAppointments = async (date: Date) => {
         if (authLoading || !user) return;
         setIsLoadingData(true);
@@ -35,7 +35,7 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
             const { data, error } = await supabase
                 .from('appointments')
                 .select(`
-                    *,
+                    id, client_id, service_id, professional_id, date, status, origin, created_at,
                     clients!client_id(id, nome, whatsapp),
                     services!service_id(id, nome, preco, cor_hex, duracao_min),
                     team_members!professional_id(id, name, photo_url)
@@ -46,7 +46,6 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
                 .order('date', { ascending: true });
 
             if (error) {
-                // Logging detalhado para diagnóstico de erros de busca (Ex: 400 Bad Request)
                 console.error("LOAD appointments error:", {
                     message: error?.message,
                     details: error?.details,
@@ -107,13 +106,11 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
                 origin: 'agenda'
             };
 
-            // Log do payload para conferência de tipos e valores antes da ida ao banco
             console.log("INSERT appointments payload:", payload);
 
             const { error } = await supabase.from('appointments').insert([payload]);
             
             if (error) {
-                // Fix: Logging detalhado para capturar falhas de API key, RLS ou violação de restrições
                 console.error("INSERT appointments error:", {
                     message: error?.message,
                     details: error?.details,
@@ -126,9 +123,11 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
 
             setToast({ message: 'Agendamento salvo!', type: 'success' });
             setModalState(null);
+            
+            // REFRESH IMEDIATO DA LISTA
             await loadAppointments(currentDate);
         } catch (e: any) {
-            setToast({ message: 'Erro ao salvar. Verifique se os campos estão preenchidos.', type: 'error' });
+            setToast({ message: 'Erro ao salvar agendamento.', type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
@@ -136,7 +135,7 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
 
     const handleUpdateStatus = async (id: number, newStatus: AppointmentStatus) => {
         const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
-        if (!error) loadAppointments(currentDate);
+        if (!error) await loadAppointments(currentDate);
         setActiveAppointmentDetail(null);
     };
 
@@ -175,8 +174,8 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
 
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${resources.length}, 220px)` }}>
                         <div className="sticky left-0 z-[50] bg-white border-r border-slate-200">
-                            {Array.from({ length: (END_HOUR - START_HOUR) * 2 }).map((_, i) => {
-                                const hour = START_HOUR + Math.floor(i / 2);
+                            {Array.from({ length: 24 }).map((_, i) => {
+                                const hour = 8 + Math.floor(i / 2);
                                 const min = (i % 2) * 30;
                                 const time = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
                                 return (
@@ -190,7 +189,7 @@ const AtendimentosView: React.FC<any> = ({ onNavigateToCommand }) => {
                         {resources.map((res) => (
                             <div key={res.id} className="relative border-r border-slate-200 min-h-[960px]">
                                 {appointments.filter(app => String(app.professional.id) === String(res.id)).map(app => {
-                                    const startMinutes = (app.start.getHours() * 60 + app.start.getMinutes()) - (START_HOUR * 60);
+                                    const startMinutes = (app.start.getHours() * 60 + app.start.getMinutes()) - (8 * 60);
                                     const durMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
                                     const top = (startMinutes / 30) * 80;
                                     const height = (durMinutes / 30) * 80;
