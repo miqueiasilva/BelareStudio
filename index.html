@@ -8,9 +8,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BelareStudio - Gestão Inteligente</title>
 
-    <!-- Tailwind is handled by Vite via PostCSS, but keeping CDN for fallback if config misses -->
-    <script src="https://cdn.tailwindcss.com"></script>
-
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -22,6 +19,7 @@
     <style>
       body {
         font-family: 'Poppins', sans-serif;
+        -webkit-font-smoothing: antialiased;
       }
       .scrollbar-hide::-webkit-scrollbar {
         display: none;
@@ -31,7 +29,6 @@
         scrollbar-width: none;
       }
     </style>
-    <!-- v1.0.1 Fix: Importmap removed to prevent React version conflict -->
 <script type="importmap">
 {
   "imports": {
@@ -39,6 +36,7 @@
     "react": "https://esm.sh/react@^19.2.3",
     "recharts": "https://esm.sh/recharts@^3.6.0",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react-dom": "https://esm.sh/react-dom@^19.2.3",
     "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
     "@google/genai": "https://esm.sh/@google/genai@^1.33.0",
     "date-fns/": "https://esm.sh/date-fns@^4.1.0/",
