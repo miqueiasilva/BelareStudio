@@ -5,7 +5,7 @@ import {
     Trash2, Plus, ArrowRight, Loader2, CheckCircle,
     User, Phone, Scissors, ShoppingBag, Receipt,
     FileText, Tag, DollarSign, Percent, AlertCircle,
-    Calendar, ShoppingCart, Info, X, Coins
+    Calendar, ShoppingCart, Info, X, Coins, UserCheck
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -25,7 +25,7 @@ interface PaymentEntry {
 }
 
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
-    const [command, setCommand] = useState<Command | null>(null);
+    const [command, setCommand] = useState<any | null>(null);
     const [loading, setLoading] = useState(true);
     const [isFinishing, setIsFinishing] = useState(false);
     
@@ -40,9 +40,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const fetchCommand = async () => {
         setLoading(true);
         try {
+            // CORREÇÃO: Join profundo para buscar nomes de clientes e profissionais de cada item
             const { data, error } = await supabase
                 .from('commands')
-                .select('*, clients(*), command_items(*)')
+                .select(`
+                    *, 
+                    clients(id, name, nome, whatsapp), 
+                    command_items(*, team_members(id, name))
+                `)
                 .eq('id', commandId)
                 .single();
 
@@ -60,26 +65,19 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (commandId) fetchCommand();
     }, [commandId]);
 
-    // --- CÁLCULOS DE TOTAIS ---
     const totals = useMemo(() => {
         if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0 };
         
-        const subtotal = command.command_items.reduce((acc, i) => acc + (Number(i.price) * Number(i.quantity)), 0);
+        const subtotal = command.command_items.reduce((acc: number, i: any) => acc + (Number(i.price) * Number(i.quantity)), 0);
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         
         const paid = addedPayments.reduce((acc, p) => acc + p.amount, 0);
         const remaining = Math.max(0, totalAfterDiscount - paid);
 
-        return {
-            subtotal,
-            total: totalAfterDiscount,
-            paid,
-            remaining
-        };
+        return { subtotal, total: totalAfterDiscount, paid, remaining };
     }, [command, discount, addedPayments]);
 
-    // --- HANDLERS DE PAGAMENTO ---
     const handleInitPayment = (method: PaymentMethod) => {
         setActiveMethod(method);
         setAmountToPay(totals.remaining.toFixed(2));
@@ -108,10 +106,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setIsFinishing(true);
 
         const shortId = command.id.split('-')[0].toUpperCase();
-        const clientName = command.clients?.nome || command.clients?.name || command.clients?.full_name || 'Cliente';
+        const clientName = command.clients?.nome || command.clients?.name || 'Cliente';
 
         try {
-            // PASSO 1: SALVAR TRANSAÇÕES (FLUXO DE CAIXA)
             for (const payment of addedPayments) {
                 const { error: finError } = await supabase.from('financial_transactions').insert([{
                     description: `Recebimento Comanda #${shortId} (${payment.method.toUpperCase()}) - ${clientName}`,
@@ -122,14 +119,10 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     client_id: command.client_id,
                     date: new Date().toISOString(),
                     status: 'paid'
-                    // Nota: se houver a coluna command_id na tabela transactions, ela deve ser vinculada aqui
                 }]);
-                
                 if (finError) throw finError;
             }
 
-            // PASSO 2: FECHAR A COMANDA (ATUALIZAÇÃO SIMPLES)
-            // Definimos o payment_method da comanda como 'multiple' se houver mais de um método
             const finalMethodLabel = addedPayments.length > 1 ? 'multiple' : addedPayments[0].method;
 
             const { error: cmdError } = await supabase
@@ -138,7 +131,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     status: 'paid',
                     closed_at: new Date().toISOString(),
                     total_amount: totals.total,
-                    payment_method: finalMethodLabel // Grava apenas o texto, corrigindo o erro 400
+                    payment_method: finalMethodLabel 
                 })
                 .eq('id', command.id);
 
@@ -147,32 +140,30 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setToast({ message: "Comanda finalizada com sucesso! 💰", type: 'success' });
             setTimeout(onBack, 2000);
         } catch (e: any) {
-            console.error("Erro no checkout:", e);
-            setToast({ message: `Falha ao finalizar checkout: ${e.message}`, type: 'error' });
+            setToast({ message: `Falha no checkout: ${e.message}`, type: 'error' });
         } finally {
             setIsFinishing(false);
         }
     };
 
-    if (loading) {
-        return (
-            <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50">
-                <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
-                <p className="text-xs font-black uppercase tracking-widest animate-pulse">Sincronizando Checkout...</p>
-            </div>
-        );
-    }
+    if (loading) return (
+        <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50">
+            <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
+            <p className="text-xs font-black uppercase tracking-widest animate-pulse">Sincronizando Checkout...</p>
+        </div>
+    );
 
     if (!command) return null;
 
-    const clientName = command.clients?.nome || command.clients?.name || command.clients?.full_name || 'Cliente sem nome';
-    const clientPhone = command.clients?.whatsapp || command.clients?.telefone || command.clients?.phone || 'Sem telefone';
+    // CORREÇÃO: Prioridade para 'nome' do banco (português) ou fallback
+    const clientDisplayName = command.clients?.nome || command.clients?.name || 'Cliente Não Identificado';
+    const clientPhone = command.clients?.whatsapp || 'Sem telefone';
 
     const paymentMethods = [
-        { id: 'pix', label: 'Pix', icon: Smartphone, color: 'text-teal-600', bg: 'bg-teal-50' },
-        { id: 'dinheiro', label: 'Dinheiro', icon: Banknote, color: 'text-green-600', bg: 'bg-green-50' },
-        { id: 'cartao_credito', label: 'Crédito', icon: CreditCard, color: 'text-blue-600', bg: 'bg-blue-50' },
-        { id: 'cartao_debito', label: 'Débito', icon: CreditCard, color: 'text-cyan-600', bg: 'bg-cyan-50' },
+        { id: 'pix', label: 'Pix', icon: Smartphone },
+        { id: 'dinheiro', label: 'Dinheiro', icon: Banknote },
+        { id: 'cartao_credito', label: 'Crédito', icon: CreditCard },
+        { id: 'cartao_debito', label: 'Débito', icon: CreditCard },
     ];
 
     return (
@@ -200,13 +191,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
                     
                     <div className="lg:col-span-2 space-y-6">
-                        {/* CARD CLIENTE */}
+                        {/* CARD CLIENTE - CORRIGIDO NOME */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
                             <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl shadow-inner border-4 border-white">
-                                {clientName.charAt(0).toUpperCase()}
+                                {clientDisplayName.charAt(0).toUpperCase()}
                             </div>
                             <div className="flex-1 text-center md:text-left">
-                                <h3 className="text-2xl font-black text-slate-800">{clientName}</h3>
+                                <h3 className="text-2xl font-black text-slate-800">{clientDisplayName}</h3>
                                 <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
                                     <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter">
                                         <Phone size={14} className="text-orange-500" />
@@ -220,7 +211,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* LISTA DE ITENS */}
+                        {/* LISTA DE ITENS - COM NOME DO PROFISSIONAL */}
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
                                 <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
@@ -229,7 +220,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </header>
 
                             <div className="divide-y divide-slate-50">
-                                {command.command_items.map(item => (
+                                {command.command_items.map((item: any) => (
                                     <div key={item.id} className="p-8 flex items-center justify-between group hover:bg-slate-50/50 transition-colors">
                                         <div className="flex items-center gap-5">
                                             <div className={`p-4 rounded-3xl ${item.product_id ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
@@ -237,47 +228,25 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             </div>
                                             <div>
                                                 <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
-                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-1">
+                                                {/* CORREÇÃO: Badge de Profissional para Comissões */}
+                                                {!item.product_id && (
+                                                    <div className="flex items-center gap-1.5 mt-1">
+                                                        <UserCheck size={12} className="text-orange-500" />
+                                                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">
+                                                            Feito por: <span className="text-slate-600">{item.team_members?.name || 'Não vinculado'}</span>
+                                                        </p>
+                                                    </div>
+                                                )}
+                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-0.5">
                                                     {item.quantity} un. x R$ {Number(item.price).toFixed(2)}
                                                 </p>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-8">
-                                            <p className="font-black text-slate-800 text-xl">R$ {(item.price * item.quantity).toFixed(2)}</p>
-                                        </div>
+                                        <p className="font-black text-slate-800 text-xl">R$ {(item.price * item.quantity).toFixed(2)}</p>
                                     </div>
                                 ))}
                             </div>
                         </div>
-
-                        {/* LISTA DE PAGAMENTOS JÁ ADICIONADOS */}
-                        {addedPayments.length > 0 && (
-                            <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
-                                <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50">
-                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2">
-                                        <CheckCircle size={16} /> Parcelas de Recebimento
-                                    </h3>
-                                </header>
-                                <div className="divide-y divide-slate-50">
-                                    {addedPayments.map(p => (
-                                        <div key={p.id} className="px-8 py-4 flex items-center justify-between group">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500">
-                                                    <Coins size={16} />
-                                                </div>
-                                                <span className="text-sm font-black text-slate-700 uppercase">{p.method.replace('_', ' ')}</span>
-                                            </div>
-                                            <div className="flex items-center gap-6">
-                                                <span className="font-black text-slate-800">R$ {p.amount.toFixed(2)}</span>
-                                                <button onClick={() => handleRemovePayment(p.id)} className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors">
-                                                    <X size={18} strokeWidth={3} />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
                     </div>
 
                     <div className="space-y-6">
@@ -365,7 +334,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                         <button
                                             key={pm.id}
                                             onClick={() => handleInitPayment(pm.id as PaymentMethod)}
-                                            className="flex flex-col items-center justify-center p-6 rounded-[32px] border-2 border-transparent bg-slate-50 text-slate-400 hover:border-slate-200 hover:bg-white transition-all active:scale-95"
+                                            className="flex flex-col items-center justify-center p-6 rounded-[32px] border-2 border-transparent bg-slate-50 text-slate-400 hover:border-slate-200 hover:bg-white transition-all active:scale-95 group"
                                         >
                                             <pm.icon size={28} className="mb-3 text-slate-300 group-hover:text-orange-500" />
                                             <span className="text-[10px] font-black uppercase tracking-tighter">{pm.label}</span>

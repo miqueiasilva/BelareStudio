@@ -23,7 +23,7 @@ type CommandTab = 'open' | 'paid' | 'all';
 
 const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     const { user } = useAuth();
-    const [tabs, setTabs] = useState<Command[]>([]);
+    const [tabs, setTabs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [currentTab, setCurrentTab] = useState<CommandTab>('open');
@@ -36,8 +36,8 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     const [activeTabId, setActiveTabId] = useState<string | null>(null);
     const [pendingItem, setPendingItem] = useState<any>(null);
     
-    // Close Tab Modal State
-    const [closingTab, setClosingTab] = useState<Command | null>(null);
+    // Close Tab Modal State (Fallback para Checkout Modal se necessário)
+    const [closingTab, setClosingTab] = useState<any | null>(null);
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
     const [isFinishing, setIsFinishing] = useState(false);
 
@@ -48,9 +48,10 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     const fetchCommands = async () => {
         setLoading(true);
         try {
+            // CORREÇÃO: Query incluindo o join com team_members para os itens já salvos
             let query = supabase
                 .from('commands')
-                .select('*, clients(id, name, nome, avatar_url, photo_url), command_items(*)');
+                .select('*, clients(id, name, nome, avatar_url, photo_url), command_items(*, team_members(id, name))');
 
             if (currentTab === 'open') {
                 query = query.eq('status', 'open');
@@ -73,7 +74,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     const fetchData = async () => {
         const [svcs, prods, teamRes] = await Promise.all([
             supabase.from('services').select('id, nome, preco').eq('ativo', true),
-            supabase.from('products').select('id, name, price').eq('active', true),
+            supabase.from('products').select('id, name, price').eq('ativo', true),
             supabase.from('team_members').select('id, name').eq('active', true)
         ]);
 
@@ -90,22 +91,17 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         fetchData();
     }, [currentTab]);
 
-    // --- Handlers ---
-
     const handleDeleteCommand = async (e: React.MouseEvent, id: string) => {
         e.stopPropagation();
-        if (!window.confirm("Deseja realmente excluir esta comanda? Todos os itens lançados serão perdidos.")) return;
-
+        if (!window.confirm("Deseja realmente excluir esta comanda?")) return;
         try {
             await supabase.from('command_items').delete().eq('command_id', id);
             const { error } = await supabase.from('commands').delete().eq('id', id);
-            
             if (error) throw error;
-
             setTabs(prev => prev.filter(t => t.id !== id));
             setToast({ message: "Comanda excluída.", type: 'info' });
         } catch (e) {
-            setToast({ message: "Erro ao excluir comanda.", type: 'error' });
+            setToast({ message: "Erro ao excluir.", type: 'error' });
         }
     };
 
@@ -117,25 +113,19 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                 .insert([{ client_id: client.id, status: 'open' }])
                 .select('*, clients(*), command_items(*)')
                 .single();
-
             if (error) throw error;
-            
-            if (currentTab !== 'paid') {
-                setTabs(prev => [data, ...prev]);
-            }
-            
+            if (currentTab !== 'paid') setTabs(prev => [data, ...prev]);
             setToast({ message: `Comanda aberta!`, type: 'success' });
         } catch (e: any) {
             setToast({ message: "Erro ao abrir comanda.", type: 'error' });
         }
     };
 
-    // Função que decide se precisa de profissional ou não
     const handleSelectItemFromCatalog = (item: any) => {
         if (item.type === 'produto') {
             handleAddItemToDB(item, null);
         } else {
-            // É serviço: precisa vincular profissional
+            // É serviço: OBRIGATÓRIO vincular profissional
             setPendingItem(item);
             setIsSelectionOpen(false);
             setIsProfSelectionOpen(true);
@@ -145,6 +135,20 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     const handleAddItemToDB = async (item: any, professionalId: string | null) => {
         if (!activeTabId) return;
 
+        // CORREÇÃO: Se não há profissional selecionado e é serviço, tenta usar o logado se ele for da equipe
+        let finalProfId = professionalId;
+        if (!finalProfId && item.type === 'servico') {
+             // Fallback preventivo: se o usuário não escolheu, pegamos o da equipe (se o logado for equipe)
+             const profLogado = team.find(t => t.id === user?.id);
+             finalProfId = profLogado ? profLogado.id : null;
+             
+             if (!finalProfId) {
+                 setToast({ message: "Por favor, selecione um profissional para o serviço.", type: 'error' });
+                 setIsProfSelectionOpen(true);
+                 return;
+             }
+        }
+
         try {
             const payload = {
                 command_id: activeTabId,
@@ -153,13 +157,13 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                 quantity: 1,
                 product_id: item.type === 'produto' ? item.id : null,
                 service_id: item.type === 'servico' ? item.id : null,
-                professional_id: professionalId
+                professional_id: finalProfId
             };
 
             const { data, error } = await supabase
                 .from('command_items')
                 .insert([payload])
-                .select()
+                .select('*, team_members(id, name)')
                 .single();
 
             if (error) throw error;
@@ -178,10 +182,9 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
             setIsSelectionOpen(false);
             setIsProfSelectionOpen(false);
             setPendingItem(null);
-            setToast({ message: "Item adicionado!", type: 'success' });
+            setToast({ message: "Item lançado!", type: 'success' });
         } catch (e) {
-            console.error("Erro ao adicionar item:", e);
-            setToast({ message: "Erro ao adicionar item.", type: 'error' });
+            setToast({ message: "Erro ao lançar item.", type: 'error' });
         }
     };
 
@@ -189,16 +192,11 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
         try {
             const { error } = await supabase.from('command_items').delete().eq('id', itemId);
             if (error) throw error;
-
             setTabs(prev => prev.map(tab => {
                 if (tab.id === commandId) {
-                    const removedItem = tab.command_items.find(i => i.id === itemId);
+                    const removedItem = tab.command_items.find((i: any) => i.id === itemId);
                     const newTotal = removedItem ? Number(tab.total_amount) - (Number(removedItem.price) * removedItem.quantity) : tab.total_amount;
-                    return { 
-                        ...tab, 
-                        command_items: tab.command_items.filter(i => i.id !== itemId),
-                        total_amount: newTotal
-                    };
+                    return { ...tab, command_items: tab.command_items.filter((i: any) => i.id !== itemId), total_amount: newTotal };
                 }
                 return tab;
             }));
@@ -209,69 +207,17 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
     };
 
     const handleOpenCloseTab = (id: string) => {
-        const tab = tabs.find(t => t.id === id);
-        if (tab) setClosingTab(tab);
-    };
-
-    const handleFinishCommand = async () => {
-        if (!closingTab || isFinishing) return;
-        setIsFinishing(true);
-
-        const total = closingTab.command_items.reduce((acc, i) => acc + (i.price * i.quantity), 0);
-
-        try {
-            const clientName = closingTab.clients?.name || closingTab.clients?.nome || 'Cliente';
-
-            const { error: finError } = await supabase.from('financial_transactions').insert([{
-                description: `Fechamento Comanda - ${clientName}`,
-                amount: total,
-                type: 'income',
-                category: 'servico',
-                payment_method: paymentMethod,
-                client_id: closingTab.client_id,
-                date: new Date().toISOString()
-            }]);
-
-            if (finError) throw finError;
-
-            const { error: cmdError } = await supabase
-                .from('commands')
-                .update({ 
-                    status: 'paid',
-                    closed_at: new Date().toISOString()
-                })
-                .eq('id', closingTab.id);
-
-            if (cmdError) throw cmdError;
-
-            if (currentTab === 'open') {
-                setTabs(prev => prev.filter(t => t.id !== closingTab.id));
-            } else {
-                setTabs(prev => prev.map(t => t.id === closingTab.id ? { ...t, status: 'paid' } : t));
-            }
-
-            setClosingTab(null);
-            setToast({ message: "Comanda finalizada com sucesso! 💰", type: 'success' });
-        } catch (e) {
-            setToast({ message: "Erro ao finalizar.", type: 'error' });
-        } finally {
-            setIsFinishing(false);
-        }
+        // Redireciona para o detalhe para o checkout profissional
+        const command = tabs.find(t => t.id === id);
+        if (command) window.location.hash = `#/comanda/${command.id}`;
     };
 
     const filteredTabs = useMemo(() => {
         return tabs.filter(t => {
-            const name = (t.clients?.name || t.clients?.nome || t.clients?.full_name || '').toLowerCase();
+            const name = (t.clients?.nome || t.clients?.name || '').toLowerCase();
             return name.includes(searchTerm.toLowerCase());
         });
     }, [tabs, searchTerm]);
-
-    const paymentMethodsConfig = [
-        { id: 'pix', label: 'Pix', icon: Smartphone, color: 'bg-teal-500' },
-        { id: 'cartao_credito', label: 'Crédito', icon: CreditCard, color: 'bg-blue-500' },
-        { id: 'cartao_debito', label: 'Débito', icon: CreditCard, color: 'bg-cyan-500' },
-        { id: 'dinheiro', label: 'Dinheiro', icon: Banknote, color: 'bg-green-500' },
-    ];
 
     return (
         <div className="h-full flex flex-col bg-slate-50 relative font-sans text-left">
@@ -285,46 +231,18 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                     </h1>
                     <div className="flex items-center gap-4 mt-2">
                         <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-                            <button 
-                                onClick={() => setCurrentTab('open')}
-                                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'open' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
-                            >
-                                <LayoutGrid size={14} /> Em Aberto
-                            </button>
-                            <button 
-                                onClick={() => setCurrentTab('paid')}
-                                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'paid' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
-                            >
-                                <History size={14} /> Histórico
-                            </button>
-                            <button 
-                                onClick={() => setCurrentTab('all')}
-                                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'all' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
-                            >
-                                Todas
-                            </button>
+                            <button onClick={() => setCurrentTab('open')} className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'open' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><LayoutGrid size={14} /> Em Aberto</button>
+                            <button onClick={() => setCurrentTab('paid')} className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'paid' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><History size={14} /> Histórico</button>
                         </div>
                     </div>
                 </div>
                 
                 <div className="flex gap-3 w-full md:w-auto">
                     <div className="relative flex-1 md:w-64 group">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors" size={16} />
-                        <input 
-                            type="text" 
-                            placeholder="Buscar cliente..." 
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2.5 bg-slate-100 border border-transparent rounded-xl focus:bg-white focus:border-orange-200 focus:ring-4 focus:ring-orange-50 outline-none transition-all font-bold text-slate-700"
-                        />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                        <input type="text" placeholder="Buscar cliente..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-slate-100 border border-transparent rounded-xl outline-none font-bold text-slate-700" />
                     </div>
-                    <button 
-                        onClick={() => setIsClientSearchOpen(true)}
-                        className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-xl font-black flex items-center gap-2 shadow-lg shadow-orange-100 transition-all active:scale-95 text-sm uppercase tracking-widest"
-                    >
-                        <Plus size={20} />
-                        <span>Abrir Nova</span>
-                    </button>
+                    <button onClick={() => setIsClientSearchOpen(true)} className="bg-orange-500 text-white px-6 py-2.5 rounded-xl font-black flex items-center gap-2 shadow-lg active:scale-95 text-sm uppercase tracking-widest"><Plus size={20} /><span>Abrir Nova</span></button>
                 </div>
             </header>
 
@@ -336,119 +254,70 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                     </div>
                 ) : filteredTabs.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-slate-400 opacity-60">
-                        <div className="w-24 h-24 bg-white rounded-[40px] flex items-center justify-center shadow-inner border-2 border-dashed border-slate-200 mb-6">
-                            <FileText size={40} className="text-slate-200" />
-                        </div>
-                        <p className="text-sm font-black uppercase tracking-[0.2em]">Nenhuma comanda encontrada</p>
-                        <button onClick={() => setIsClientSearchOpen(true)} className="mt-4 text-orange-500 font-black text-xs uppercase hover:underline">Iniciar novo atendimento</button>
+                        <FileText size={40} className="mb-4" />
+                        <p className="text-sm font-black uppercase tracking-widest">Nenhuma comanda encontrada</p>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         {filteredTabs.map(tab => {
-                            const total = tab.command_items.reduce((acc, i) => acc + (i.price * i.quantity), 0);
+                            const total = tab.command_items.reduce((acc: number, i: any) => acc + (i.price * i.quantity), 0);
                             const duration = differenceInMinutes(new Date(), parseISO(tab.created_at));
-                            const clientName = tab.clients?.name || tab.clients?.nome || 'Cliente Não Identificado';
-                            const clientAvatar = tab.clients?.avatar_url || tab.clients?.photo_url;
+                            const clientDisplayName = tab.clients?.nome || tab.clients?.name || 'Cliente Não Identificado';
                             const isPaid = tab.status === 'paid';
 
                             return (
-                                <div key={tab.id} className={`bg-white rounded-[32px] border transition-all flex flex-col overflow-hidden group h-[480px] ${isPaid ? 'border-slate-100 opacity-90' : 'border-slate-100 shadow-sm hover:shadow-xl hover:border-orange-100'}`}>
+                                <div key={tab.id} className={`bg-white rounded-[32px] border transition-all flex flex-col overflow-hidden h-[480px] ${isPaid ? 'border-slate-100 opacity-90' : 'border-slate-100 shadow-sm hover:shadow-xl'}`}>
                                     <div className="p-5 border-b border-slate-50 flex justify-between items-start bg-slate-50/50">
                                         <div className="flex items-center gap-3">
                                             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg border-2 border-white shadow-sm overflow-hidden ${isPaid ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
-                                                {clientAvatar ? (
-                                                    <img src={clientAvatar} className="w-full h-full object-cover" alt={clientName} />
-                                                ) : (
-                                                    clientName.charAt(0).toUpperCase()
-                                                )}
+                                                {clientDisplayName.charAt(0).toUpperCase()}
                                             </div>
                                             <div className="min-w-0">
-                                                <h3 className="font-black text-slate-800 text-sm truncate max-w-[120px]">{clientName}</h3>
-                                                {isPaid ? (
-                                                    <span className="flex items-center gap-1 text-[9px] font-black text-emerald-600 uppercase tracking-tighter">
-                                                        <CheckCircle2 size={10} /> Pago em {format(parseISO(tab.closed_at || tab.created_at), 'dd/MM')}
-                                                    </span>
-                                                ) : (
-                                                    <div className="flex items-center gap-1 text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
-                                                        <Clock size={10} />
-                                                        <span>Há {duration} min</span>
-                                                    </div>
-                                                )}
+                                                <h3 className="font-black text-slate-800 text-sm truncate max-w-[120px]">{clientDisplayName}</h3>
+                                                <div className="flex items-center gap-1 text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
+                                                    <Clock size={10} />
+                                                    <span>{isPaid ? 'Finalizada' : `Há ${duration} min`}</span>
+                                                </div>
                                             </div>
                                         </div>
                                         {!isPaid && (
-                                            <button 
-                                                onClick={(e) => handleDeleteCommand(e, tab.id)}
-                                                className="p-2 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"
-                                                title="Excluir Comanda"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
+                                            <button onClick={(e) => handleDeleteCommand(e, tab.id)} className="p-2 text-slate-300 hover:text-rose-500"><Trash2 size={16} /></button>
                                         )}
                                     </div>
 
                                     <div className="flex-1 p-5 bg-white space-y-3 overflow-y-auto custom-scrollbar">
-                                        {tab.command_items.length === 0 ? (
-                                            <div className="flex flex-col items-center justify-center h-full text-slate-300 opacity-50">
-                                                <ShoppingBag size={32} className="mb-2"/>
-                                                <p className="text-[10px] font-black uppercase tracking-widest">Sem itens</p>
-                                            </div>
-                                        ) : (
-                                            tab.command_items.map((item) => (
-                                                <div key={item.id} className="flex justify-between items-center group/item bg-slate-50 p-3 rounded-2xl border border-transparent hover:border-slate-200 transition-all">
-                                                    <div className="flex items-center gap-3 overflow-hidden">
-                                                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                                                            item.product_id ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'
-                                                        }`}>
-                                                            {item.product_id ? <ShoppingBag size={14}/> : <Scissors size={14}/>}
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <p className="text-xs font-bold text-slate-700 truncate">{item.title}</p>
-                                                            <p className="text-[10px] font-black text-slate-400">
-                                                                {item.quantity}x R$ {Number(item.price).toFixed(2)}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                    {!isPaid && (
-                                                        <button 
-                                                            onClick={() => handleRemoveItem(tab.id, item.id)}
-                                                            className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover/item:opacity-100"
-                                                        >
-                                                            <X size={14} strokeWidth={3} />
-                                                        </button>
-                                                    )}
+                                        {tab.command_items.map((item: any) => (
+                                            <div key={item.id} className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl border border-transparent">
+                                                <div className="min-w-0">
+                                                    <p className="text-xs font-bold text-slate-700 truncate">{item.title}</p>
+                                                    <p className="text-[10px] text-slate-400 font-black flex items-center gap-1">
+                                                        {item.team_members?.name && <><UserCheck size={8}/> {item.team_members.name} • </>} 
+                                                        R$ {Number(item.price).toFixed(2)}
+                                                    </p>
                                                 </div>
-                                            ))
-                                        )}
+                                                {!isPaid && (
+                                                    <button onClick={() => handleRemoveItem(tab.id, item.id)} className="p-1 text-slate-300 hover:text-rose-500"><X size={14} /></button>
+                                                )}
+                                            </div>
+                                        ))}
                                     </div>
 
                                     <div className="p-5 bg-slate-50/50 border-t border-slate-50 space-y-4">
                                         {!isPaid ? (
-                                            <button 
-                                                onClick={() => { setActiveTabId(tab.id); setIsSelectionOpen(true); }}
-                                                className="w-full py-3 bg-white border-2 border-slate-100 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:border-orange-400 hover:text-orange-600 transition-all flex items-center justify-center gap-2 shadow-sm"
-                                            >
-                                                <Plus size={14} strokeWidth={3} /> Adicionar Item
+                                            <button onClick={() => { setActiveTabId(tab.id); setIsSelectionOpen(true); }} className="w-full py-3 bg-white border-2 border-slate-100 rounded-2xl text-[10px] font-black uppercase text-slate-500 hover:border-orange-400 hover:text-orange-600 transition-all flex items-center justify-center gap-2">
+                                                <Plus size={14} /> Lançar Item
                                             </button>
                                         ) : (
-                                            <div className="flex items-center justify-center gap-2 py-3 bg-emerald-50 text-emerald-600 rounded-2xl text-[9px] font-black uppercase tracking-[0.2em] border border-emerald-100 shadow-inner">
-                                                <CheckCircle size={14} /> Atendimento Finalizado
-                                            </div>
+                                            <div className="flex items-center justify-center gap-2 py-3 bg-emerald-50 text-emerald-600 rounded-2xl text-[9px] font-black uppercase border border-emerald-100"><CheckCircle size={14} /> Atendimento Pago</div>
                                         )}
 
                                         <div className="flex justify-between items-end px-1">
                                             <div>
-                                                <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-0.5">{isPaid ? 'Total Pago' : 'Total Aberto'}</p>
-                                                <p className={`text-2xl font-black tracking-tighter ${isPaid ? 'text-emerald-600' : 'text-slate-800'}`}>R$ {Number(total).toFixed(2)}</p>
+                                                <p className="text-[9px] text-slate-400 font-black uppercase mb-0.5">Total</p>
+                                                <p className={`text-2xl font-black ${isPaid ? 'text-emerald-600' : 'text-slate-800'}`}>R$ {Number(total).toFixed(2)}</p>
                                             </div>
                                             {!isPaid && (
-                                                <button 
-                                                    onClick={() => handleOpenCloseTab(tab.id)}
-                                                    className="bg-emerald-600 hover:bg-emerald-700 text-white p-3 rounded-2xl shadow-lg shadow-emerald-100 transition-all active:scale-90"
-                                                    title="Fechar Comanda"
-                                                >
-                                                    <Receipt size={20} />
-                                                </button>
+                                                <button onClick={() => handleOpenCloseTab(tab.id)} className="bg-emerald-600 hover:bg-emerald-700 text-white p-3 rounded-2xl shadow-lg transition-all active:scale-90"><Receipt size={20} /></button>
                                             )}
                                         </div>
                                     </div>
@@ -459,113 +328,29 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction }) => {
                 )}
             </div>
 
-            {/* MODAL: Selecionar Cliente (Abertura) */}
+            {/* MODAL: Selecionar Cliente */}
             {isClientSearchOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="relative w-full max-w-md h-[600px] bg-white rounded-[40px] shadow-2xl overflow-hidden">
-                        <ClientSearchModal 
-                            onClose={() => setIsClientSearchOpen(false)}
-                            onSelect={handleCreateCommand}
-                            onNewClient={() => { setIsClientSearchOpen(false); alert("Redirecione para cadastro"); }}
-                        />
+                        <ClientSearchModal onClose={() => setIsClientSearchOpen(false)} onSelect={handleCreateCommand} onNewClient={() => {}} />
                     </div>
                 </div>
             )}
 
-            {/* MODAL: Adicionar Item (Fase 1: Escolha do Item) */}
+            {/* MODAL: Seleção de Item (Serviço/Produto) */}
             {isSelectionOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="relative w-full max-w-md h-[550px] bg-white rounded-[40px] shadow-2xl overflow-hidden">
-                        <SelectionModal
-                            title="Lançar Item"
-                            items={catalog}
-                            onClose={() => setIsSelectionOpen(false)}
-                            onSelect={handleSelectItemFromCatalog}
-                            searchPlaceholder="O que o cliente consumiu?"
-                            renderItemIcon={() => <Plus size={18}/>}
-                        />
+                        <SelectionModal title="Lançar Item" items={catalog} onClose={() => setIsSelectionOpen(false)} onSelect={handleSelectItemFromCatalog} searchPlaceholder="Buscar no catálogo..." renderItemIcon={() => <Plus size={18}/>} />
                     </div>
                 </div>
             )}
 
-            {/* MODAL: Vincular Profissional (Fase 2: Escolha do Profissional) */}
+            {/* MODAL: Seleção de Profissional (OBRIGATÓRIO PARA SERVIÇOS) */}
             {isProfSelectionOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="relative w-full max-w-md h-[550px] bg-white rounded-[40px] shadow-2xl overflow-hidden">
-                        <SelectionModal
-                            title="Vincular Profissional"
-                            items={team}
-                            onClose={() => { setIsProfSelectionOpen(false); setPendingItem(null); }}
-                            onSelect={(prof) => handleAddItemToDB(pendingItem, String(prof.id))}
-                            searchPlaceholder="Quem realizou o serviço?"
-                            renderItemIcon={() => <UserCheck size={18}/>}
-                        />
-                    </div>
-                </div>
-            )}
-
-            {/* MODAL: Fechamento de Conta */}
-            {closingTab && (
-                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-[48px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-100">
-                        <header className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
-                            <h3 className="font-black text-slate-800 text-xl tracking-tight uppercase">Fechar Comanda</h3>
-                            <button onClick={() => setClosingTab(null)} className="p-2 hover:bg-white rounded-full text-slate-400"><X size={24} /></button>
-                        </header>
-                        <div className="p-10 space-y-8">
-                            <div className="text-center">
-                                <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-[28px] flex items-center justify-center mx-auto mb-4 font-black text-3xl border-4 border-white shadow-xl overflow-hidden">
-                                    {(closingTab.clients?.avatar_url || closingTab.clients?.photo_url) ? (
-                                        <img src={closingTab.clients.avatar_url || closingTab.clients.photo_url} className="w-full h-full object-cover" />
-                                    ) : (
-                                        (closingTab.clients?.name || closingTab.clients?.nome || 'C').charAt(0).toUpperCase()
-                                    )}
-                                </div>
-                                <h2 className="text-xl font-black text-slate-800">{closingTab.clients?.name || closingTab.clients?.nome || 'Cliente'}</h2>
-                                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Check-out de Consumo</p>
-                            </div>
-
-                            <div className="bg-slate-900 rounded-[32px] p-8 text-white shadow-2xl relative overflow-hidden group">
-                                <div className="absolute -right-4 -top-4 opacity-10 group-hover:rotate-12 transition-transform">
-                                    <DollarSign size={100} />
-                                </div>
-                                <div className="relative z-10">
-                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Total a Receber</p>
-                                    <h3 className="text-4xl font-black tracking-tighter text-emerald-400">
-                                        R$ {closingTab.command_items.reduce((acc, i) => acc + (i.price * i.quantity), 0).toFixed(2)}
-                                    </h3>
-                                </div>
-                            </div>
-
-                            <div className="space-y-4">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Método de Pagamento</label>
-                                <div className="grid grid-cols-4 gap-2">
-                                    {paymentMethodsConfig.map(pm => (
-                                        <button
-                                            key={pm.id}
-                                            onClick={() => setPaymentMethod(pm.id as PaymentMethod)}
-                                            className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${
-                                                paymentMethod === pm.id 
-                                                ? 'border-orange-500 bg-orange-50/50 shadow-lg' 
-                                                : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'
-                                            }`}
-                                        >
-                                            <pm.icon size={22} className={`mb-1.5 ${paymentMethod === pm.id ? 'text-orange-500' : 'text-slate-300'}`} />
-                                            <span className="text-[9px] font-black uppercase tracking-tighter">{pm.label}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <button 
-                                onClick={handleFinishCommand}
-                                disabled={isFinishing}
-                                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-5 rounded-[24px] shadow-xl shadow-orange-100 transition-all active:scale-95 flex items-center justify-center gap-3 text-lg uppercase tracking-widest disabled:opacity-50"
-                            >
-                                {isFinishing ? <Loader2 size={24} className="animate-spin"/> : <CheckCircle size={24} />}
-                                Finalizar e Baixar
-                            </button>
-                        </div>
+                        <SelectionModal title="Quem realizou o serviço?" items={team} onClose={() => { setIsProfSelectionOpen(false); setPendingItem(null); }} onSelect={(prof) => handleAddItemToDB(pendingItem, String(prof.id))} searchPlaceholder="Selecionar profissional..." renderItemIcon={() => <UserCheck size={18}/>} />
                     </div>
                 </div>
             )}
