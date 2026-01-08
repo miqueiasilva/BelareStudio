@@ -180,10 +180,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfDay(currentDate);
             }
 
-            // --- REESTRUTURAÇÃO: Uso da VIEW SQL para leitura simplificada ---
+            // --- REESTRUTURAÇÃO SÊNIOR: Uso de VIEW SQL para evitar Join Error 400 ---
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
-                    .from('vw_agenda_completa') // Usando a View flat
+                    .from('vw_agenda_completa') // Usando View Flat
                     .select('*')
                     .gte('date', rangeStart.toISOString())
                     .lte('date', rangeEnd.toISOString())
@@ -271,7 +271,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         };
     }, []);
 
-    // --- MAPPER ATUALIZADO: Consumindo colunas flat da View vw_agenda_completa ---
+    // --- MAPPER PLANO: Consumindo colunas da View sem objetos aninhados ---
     const mapRowToAppointment = (row: any): LegacyAppointment => {
         const start = new Date(row.date);
         const dur = row.duration || 30;
@@ -282,63 +282,83 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             end: new Date(start.getTime() + dur * 60000), 
             status: row.status as AppointmentStatus,
             notas: row.notes || '', 
-            origem: row.origem || 'interno',
+            origem: row.origin || 'agenda',
             client: { 
                 id: row.client_id, 
-                nome: row.client_name || 'Cliente', // Da View
+                nome: row.client_name || 'Cliente', 
                 consent: true 
             },
             professional: { 
                 id: row.professional_id, 
-                name: row.professional_name || 'Profissional', // Da View
+                name: row.professional_name || 'Profissional', 
                 avatarUrl: '' 
             },
             service: { 
                 id: row.service_id, 
-                name: row.service_name || 'Serviço', // Da View
-                price: Number(row.service_price || row.value || 0), // Da View
+                name: row.service_name || 'Serviço', 
+                price: Number(row.value || 0), 
                 duration: dur, 
-                color: row.service_color || '#3b82f6' // Da View
+                color: row.service_color || '#3b82f6' 
             }
         } as LegacyAppointment;
     };
 
-    // --- SALVAMENTO: Continua na tabela base 'appointments' com IDs ---
+    // --- SALVAMENTO HIGIENIZADO: Apenas IDs e Tipos Primitivos ---
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
         setIsLoadingData(true);
         try {
             if (!force) {
-                const { data: existingOnDay } = await supabase.from('appointments').select('id, date, duration').eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startOfDay(app.start).toISOString()).lte('date', endOfDay(app.start).toISOString());
+                // Verificação de conflito rápida
+                const { data: existingOnDay } = await supabase
+                    .from('appointments')
+                    .select('id, date, duration')
+                    .eq('professional_id', app.professional.id)
+                    .neq('status', 'cancelado')
+                    .gte('date', startOfDay(app.start).toISOString())
+                    .lte('date', endOfDay(app.start).toISOString());
+                
                 const conflict = existingOnDay?.find(row => {
                     if (app.id && row.id === app.id) return false;
                     return (app.start < addMinutes(new Date(row.date), row.duration || 30)) && (app.end > new Date(row.date));
                 });
-                if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
+                if (conflict) { 
+                    setPendingConflict({ newApp: app, conflictWith: conflict }); 
+                    setIsLoadingData(false); 
+                    return; 
+                }
             }
 
+            // HIGIENIZAÇÃO DO PAYLOAD (Regras do Banco Atualizado)
             const payload = { 
-                client_id: app.client?.id,
-                professional_id: app.professional.id, 
-                service_id: app.service.id,
-                value: app.service.price, 
-                duration: app.service.duration, 
                 date: app.start.toISOString(), 
-                status: app.status, 
-                notes: app.notas, 
-                origem: app.origem || 'interno' 
+                duration: Number(app.service.duration), 
+                value: Number(app.service.price), 
+                status: app.status || 'agendado', 
+                notes: app.notas || '', 
+                origin: app.origem || 'agenda', 
+                client_id: Number(app.client?.id),
+                service_id: Number(app.service.id),
+                professional_id: String(app.professional.id) // UUID or BigInt String
             };
             
-            if (app.id && appointments.some(a => a.id === app.id)) {
-                await supabase.from('appointments').update(payload).eq('id', app.id);
+            if (app.id && typeof app.id === 'number' && app.id > 1000000000) { // Check if it's not a temp ID
+                const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
+                if (error) throw error;
+            } else if (app.id && appointments.some(a => a.id === app.id)) {
+                const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
+                if (error) throw error;
             } else {
-                await supabase.from('appointments').insert([payload]);
+                const { error } = await supabase.from('appointments').insert([payload]);
+                if (error) throw error;
             }
 
-            setToast({ message: 'Agendamento salvo!', type: 'success' });
-            setModalState(null); setPendingConflict(null);
+            setToast({ message: 'Agendamento salvo com sucesso!', type: 'success' });
+            setModalState(null); 
+            setPendingConflict(null);
             fetchAppointments();
-        } catch (e) { 
-            setToast({ message: 'Erro ao salvar dados.', type: 'error' }); 
+        } catch (e: any) { 
+            console.error("Save Error Detail:", e);
+            setToast({ message: `Erro ao salvar: ${e.message || 'Verifique os campos.'}`, type: 'error' }); 
         } finally { setIsLoadingData(false); }
     };
 
