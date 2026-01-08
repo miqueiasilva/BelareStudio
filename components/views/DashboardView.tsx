@@ -50,6 +50,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const [financialGoal, setFinancialGoal] = useState(0);
     const [monthRevenueTotal, setMonthRevenueTotal] = useState(0);
     
+    // Filtro de Período
     const [filter, setFilter] = useState<'hoje' | 'semana' | 'mes' | 'custom'>('hoje');
     const [customStart, setCustomStart] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -93,6 +94,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         }
     }, [filter, customStart, customEnd]);
 
+    // --- CARREGAMENTO DE DADOS VIA VIEW (vw_agenda_completa) ---
     useEffect(() => {
         let mounted = true;
 
@@ -100,9 +102,9 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
             try {
                 if (mounted) setIsLoading(true);
 
-                // LEITURA OBRIGATÓRIA DA VIEW PARA EVITAR ERRO 400
+                // 1. Agendamentos via VIEW (Resolve Erro 400 de colunas inexistentes)
                 const { data: appts, error: apptsError } = await supabase
-                    .from('vw_agenda_completa')
+                    .from('vw_agenda_completa') // Lendo da View obrigatória
                     .select('*')
                     .gte('date', dateRange.start)
                     .lte('date', dateRange.end)
@@ -111,7 +113,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 if (apptsError) throw apptsError;
                 if (mounted) setAppointments(appts || []);
 
-                // Cálculo de faturamento mensal para Meta via View
+                // 2. Faturamento mensal acumulado para Meta (Também via View para consistência)
                 const now = new Date();
                 const startMonthStr = startOfMonth(now).toISOString();
                 const endMonthStr = endOfMonth(now).toISOString();
@@ -128,11 +130,17 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 const totalMonthRev = monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0;
                 if (mounted) setMonthRevenueTotal(totalMonthRev);
 
-                const { data: settings } = await supabase.from('studio_settings').select('revenue_goal').maybeSingle();
+                // 3. Meta do Estúdio
+                const { data: settings, error: settingsError } = await supabase
+                    .from('studio_settings')
+                    .select('revenue_goal')
+                    .maybeSingle();
+                
+                if (settingsError) throw settingsError;
                 if (mounted) setFinancialGoal(settings?.revenue_goal || 5000);
 
             } catch (e) {
-                console.error("Dashboard Fetch Error:", e);
+                console.error("Erro crítico ao sincronizar dashboard:", e);
             } finally {
                 if (mounted) setIsLoading(false);
             }
@@ -142,6 +150,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         return () => { mounted = false; };
     }, [dateRange]);
 
+    // KPIs Calculados sobre os dados da View
     const kpis = useMemo(() => {
         const revenue = appointments
             .filter(a => a.status === 'concluido')
@@ -172,7 +181,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         return (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-white">
                 <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
-                <p className="text-xs font-black uppercase tracking-[0.3em] animate-pulse">Sincronizando BI...</p>
+                <p className="text-xs font-black uppercase tracking-[0.3em] animate-pulse">Sincronizando {dateRange.label}...</p>
             </div>
         );
     }
@@ -260,12 +269,13 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         <div className="py-10 text-center text-slate-400 flex flex-col items-center">
                             <TrendingUp className="opacity-10 mb-2" size={48} />
                             <p className="text-sm font-bold uppercase tracking-widest">Gráficos de fluxo ativos</p>
-                            <p className="text-[10px] font-medium text-slate-300 mt-2">Dados via vw_agenda_completa.</p>
+                            <p className="text-[10px] font-medium text-slate-300 mt-2">Dados sincronizados via vw_agenda_completa.</p>
                         </div>
                     </Card>
                 </div>
 
                 <div className="lg:col-span-1">
+                    {/* O Widget agora recebe dados limpos da View */}
                     <TodayScheduleWidget 
                         onNavigate={onNavigate} 
                         appointments={appointments} 
