@@ -1,3 +1,4 @@
+
 import { 
     format, addDays, isSameDay, startOfDay, addMinutes, 
     isAfter, isBefore, getDay, parseISO, subDays,
@@ -160,8 +161,6 @@ const PublicBookingPreview: React.FC = () => {
                 const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true);
                 if (servicesData) setServices(servicesData);
 
-                // FIX: Sincronizada tabela para 'team_members' e adicionado filtro 'online_booking_enabled'
-                // para garantir que a configuração do administrador seja respeitada na página pública.
                 const { data: profsData } = await supabase
                     .from('team_members')
                     .select('*')
@@ -200,7 +199,6 @@ const PublicBookingPreview: React.FC = () => {
         fetchRulesAndData();
     }, []);
 
-    // --- LÓGICA DO CALENDÁRIO MENSAL (Refinada para UX) ---
     const calendarDays = useMemo(() => {
         const start = startOfWeek(startOfMonth(viewMonth), { weekStartsOn: 0 });
         const end = endOfWeek(endOfMonth(viewMonth), { weekStartsOn: 0 });
@@ -223,7 +221,6 @@ const PublicBookingPreview: React.FC = () => {
         }
     };
 
-    // --- FILTRAGEM DE HORÁRIOS ---
     const generateAvailableSlots = async (date: Date, professional: any) => {
         if (!studio || selectedServices.length === 0) return;
         setIsLoadingSlots(true);
@@ -242,10 +239,11 @@ const PublicBookingPreview: React.FC = () => {
             const now = new Date();
             const minTimeLimit = addMinutes(now, rules.minNoticeMinutes);
 
+            // Sincronizando com professional_id para busca de slots livres
             const { data: busyAppointments } = await supabase
                 .from('appointments')
                 .select('date, duration')
-                .eq('resource_id', professional?.id)
+                .eq('professional_id', professional?.id)
                 .neq('status', 'cancelado')
                 .gte('date', startOfDay(date).toISOString())
                 .lte('date', addDays(startOfDay(date), 1).toISOString());
@@ -328,13 +326,14 @@ const PublicBookingPreview: React.FC = () => {
             const totalValue = selectedServices.reduce((acc, s) => acc + Number(s.preco), 0);
             const serviceNames = selectedServices.map(s => s.nome || s.name).join(' + ');
 
+            // Enviar apenas professional_id. resource_id é gerado no DB a partir dele.
             const { error: apptErr } = await supabase
                 .from('appointments')
                 .insert([{
                     client_id: clientId,
                     client_name: clientName,
                     client_whatsapp: cleanPhone,
-                    resource_id: selectedProfessional.id,
+                    professional_id: selectedProfessional.id,
                     professional_name: selectedProfessional.name,
                     service_name: serviceNames,
                     value: totalValue,
@@ -391,7 +390,6 @@ const PublicBookingPreview: React.FC = () => {
     return (
         <div className="min-h-screen bg-slate-50 font-sans relative pb-40 text-left">
             
-            {/* Botão administrativo visível APENAS para usuários logados */}
             {user && (
                 <button 
                     onClick={() => window.location.hash = '#/'}
@@ -510,7 +508,6 @@ const PublicBookingPreview: React.FC = () => {
 
                                     {bookingStep === 2 && (
                                         <div className="space-y-8 animate-in fade-in duration-300">
-                                            {/* CALENDÁRIO MENSAL (GRID VIEW) */}
                                             <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
                                                 <div className="flex justify-between items-center mb-6">
                                                     <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
@@ -556,7 +553,7 @@ const PublicBookingPreview: React.FC = () => {
                                                                 disabled={isDisabled}
                                                                 onClick={() => { setSelectedDate(day); setSelectedTime(null); }}
                                                                 className={`
-                                                                    aspect-square rounded-2xl flex flex-col items-center justify-center text-sm font-bold transition-all relative
+                                                                    aspect-square rounded-2xl flex items-center justify-center text-sm font-bold transition-all relative
                                                                     ${!isCurrentMonth ? 'opacity-20 pointer-events-none' : ''}
                                                                     ${isSelected ? 'bg-orange-500 text-white shadow-lg shadow-orange-200 scale-110 z-10' : 
                                                                       isDisabled ? 'text-slate-300 cursor-not-allowed' : 
@@ -573,7 +570,6 @@ const PublicBookingPreview: React.FC = () => {
                                                 </div>
                                             </div>
 
-                                            {/* SELEÇÃO DE HORÁRIOS */}
                                             <div className="space-y-4">
                                                 <div className="flex items-center gap-2 ml-1">
                                                     <Clock size={16} className="text-slate-400" />

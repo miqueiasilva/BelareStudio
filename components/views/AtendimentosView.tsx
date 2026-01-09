@@ -106,7 +106,7 @@ const TimelineIndicator = ({ timeSlot }: { timeSlot: number }) => {
         };
         calculatePosition();
         const intervalId = setInterval(calculatePosition, 60000); 
-        return () => clearInterval(intervalId);
+        return () => intervalId && clearInterval(intervalId);
     }, [timeSlot]);
     if (topPosition < 0) return null;
     return (
@@ -216,6 +216,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const fetchResources = async () => {
         if (authLoading || !user) return;
         try {
+            // STEP A: Carregar profissionais. O ID (UUID) é a identidade da coluna.
             const { data, error } = await supabase
                 .from('team_members')
                 .select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled') 
@@ -291,7 +292,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         const start = new Date(row.date);
         const dur = row.duration || 30;
         
-        // FIX: Usando professional_id em vez de resource_id
+        // STEP C: Mapear agendamentos para colunas usando professional_id (UUID)
         let prof = professionalsList.find(p => String(p.id) === String(row.professional_id));
         if (!prof && row.professional_name) {
             prof = professionalsList.find(p => p.name.toLowerCase() === row.professional_name.toLowerCase());
@@ -310,7 +311,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         setIsLoadingData(true);
         try {
             if (!force) {
-                // FIX: Mudado de resource_id para professional_id no filtro de conflitos
+                // Sincronização de conflitos agora usa professional_id (estável)
                 const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startOfDay(app.start).toISOString()).lte('date', endOfDay(app.start).toISOString());
                 const conflict = existingOnDay?.find(row => {
                     if (app.id && row.id === app.id) return false;
@@ -319,7 +320,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
             }
             
-            // FIX: Mudado de resource_id para professional_id no payload
+            // STEP D: Payload de inserção usa professional_id. resource_id é gerado no banco.
             const payload = { 
                 client_id: app.client?.id,
                 client_name: app.client?.nome, 
@@ -346,7 +347,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         } catch (e) { 
             setToast({ message: 'Erro ao salvar.', type: 'error' }); 
             fetchAppointments(); 
-        } finally { setIsLoadingData(true); }
+        } finally { setIsLoadingData(false); }
     };
 
     const handleDeleteBlock = async (e: React.MouseEvent, blockId: string | number) => {
@@ -502,7 +503,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const start = startOfWeek(currentDate, { weekStartsOn: 1 });
             return eachDayOfInterval({ start, end: endOfWeek(currentDate, { weekStartsOn: 1 }) }).map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date' as const, data: day }));
         }
-        // FIX: Identidade baseada em p.id (UUID do team_member)
+        // STEP B: Renderizar colunas usando team_member.id (UUID)
         return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional' as const, data: p }));
     }, [periodType, currentDate, resources]);
 
@@ -626,7 +627,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                 {filteredAppointments
                                     .filter(app => {
                                         if (periodType === 'Semana') return isSameDay(app.start, col.data as Date);
-                                        // FIX: Usando professional_id em vez de resource_id
+                                        // STEP C: Comparar agendamento com o ID da coluna (UUID do profissional)
                                         if (app.type === 'block' && (app.professional.id === null || String(app.professional.id) === 'null')) {
                                             return true;
                                         }
