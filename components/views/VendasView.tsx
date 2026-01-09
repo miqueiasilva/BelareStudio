@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
     Search, ShoppingCart, Plus, Minus, Trash2, CreditCard, 
@@ -6,6 +7,7 @@ import {
     Eraser
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
+import { useStudio } from '../../contexts/StudioContext';
 import { FinancialTransaction, PaymentMethod, Client } from '../../types';
 import Toast, { ToastType } from '../shared/Toast';
 import { format } from 'date-fns';
@@ -66,6 +68,7 @@ const ReceiptModal = ({ transaction, onClose, onNewSale }: { transaction: any, o
 );
 
 const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
+    const { activeStudioId } = useStudio();
     const [activeTab, setActiveTab] = useState<'servicos' | 'produtos' | 'agenda'>('servicos');
     const [searchTerm, setSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
@@ -82,6 +85,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
     const [isFinishing, setIsFinishing] = useState(false);
 
     const fetchPOSData = async () => {
+        if (!activeStudioId) return;
         setIsLoading(true);
         try {
             const today = new Date();
@@ -89,10 +93,9 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             const endOfToday = new Date(today.setHours(23, 59, 59, 999)).toISOString();
 
             const [servicesRes, productsRes, appointmentsRes] = await Promise.all([
-                supabase.from('services').select('*').eq('ativo', true).order('nome'),
-                // FIX: Mudado de 'nome' para 'name' para evitar erro 400
-                supabase.from('products').select('*').eq('ativo', true).order('name'),
-                supabase.from('appointments').select('*').gte('date', startOfToday).lte('date', endOfToday).neq('status', 'cancelado').order('date')
+                supabase.from('services').select('*').eq('studio_id', activeStudioId).eq('ativo', true).order('nome'),
+                supabase.from('products').select('*').eq('studio_id', activeStudioId).eq('ativo', true).order('name'),
+                supabase.from('appointments').select('*').eq('studio_id', activeStudioId).gte('date', startOfToday).lte('date', endOfToday).neq('status', 'cancelado').order('date')
             ]);
 
             if (servicesRes.data) setDbServices(servicesRes.data);
@@ -105,9 +108,8 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
         }
     };
 
-    useEffect(() => { fetchPOSData(); }, []);
+    useEffect(() => { fetchPOSData(); }, [activeStudioId]);
 
-    // FUNÇÃO CRÍTICA: Reset de Ambiente PDV
     const resetSaleState = () => {
         setCart([]);
         setDiscount('');
@@ -121,7 +123,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
     const filteredItems = useMemo(() => {
         const term = searchTerm.toLowerCase();
         if (activeTab === 'servicos') return dbServices.filter(s => (s.nome || '').toLowerCase().includes(term));
-        if (activeTab === 'produtos') return dbProducts.filter(p => (p.nome || '').toLowerCase().includes(term));
+        if (activeTab === 'produtos') return dbProducts.filter(p => (p.name || '').toLowerCase().includes(term));
         return dbAppointments.filter(a => (a.client_name || '').toLowerCase().includes(term));
     }, [activeTab, searchTerm, dbServices, dbProducts, dbAppointments]);
 
@@ -155,7 +157,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
     };
 
     const handleFinishSale = async () => {
-        if (cart.length === 0 || isFinishing) return;
+        if (cart.length === 0 || isFinishing || !activeStudioId) return;
         setIsFinishing(true);
 
         try {
@@ -163,6 +165,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             const description = selectedClient ? `Venda PDV - ${selectedClient.nome}: ${itemsResumo}` : `Venda PDV: ${itemsResumo}`;
 
             const transactionData = {
+                studio_id: activeStudioId,
                 description,
                 amount: total,
                 type: 'income',
@@ -175,7 +178,6 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             const { data: transaction, error: transError } = await supabase.from('financial_transactions').insert([transactionData]).select().single();
             if (transError) throw transError;
 
-            // Sucesso UX: Mostra o modal de recibo, mas já sinaliza o reset
             setLastTransaction(transaction);
             setToast({ message: "Venda registrada!", type: 'success' });
             fetchPOSData(); 
@@ -201,7 +203,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             {lastTransaction && (
                 <ReceiptModal 
                     transaction={lastTransaction} 
-                    onClose={() => resetSaleState()} // Ao fechar recibo, LIMPA TUDO
+                    onClose={() => resetSaleState()} 
                     onNewSale={resetSaleState} 
                 />
             )}
@@ -228,7 +230,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                                 <button key={item.id} onClick={() => addToCart(item, activeTab === 'servicos' ? 'servico' : 'produto')} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:border-orange-400 hover:shadow-md transition-all text-left flex flex-col h-full group">
                                     <div className="flex-1">
                                         <span className="text-[9px] uppercase font-black text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">{item.categoria || activeTab}</span>
-                                        <h4 className="font-black text-slate-800 text-sm leading-tight mt-2 line-clamp-2">{item.nome || item.client_name}</h4>
+                                        <h4 className="font-black text-slate-800 text-sm leading-tight mt-2 line-clamp-2">{item.nome || item.name || item.client_name}</h4>
                                     </div>
                                     <div className="mt-4 flex items-center justify-between">
                                         <span className="font-black text-lg text-slate-800">R$ {Number(item.preco || item.price || item.value).toFixed(2)}</span>
