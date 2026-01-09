@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { useStudio } from './contexts/StudioContext';
 import { ViewState, FinancialTransaction, UserRole } from './types';
 import EnvGate from './components/EnvGate';
 import { hasAccess } from './utils/permissions';
@@ -28,9 +29,11 @@ import EquipeView from './components/views/EquipeView';
 import PublicBookingPreview from './components/views/PublicBookingPreview';
 
 import { mockTransactions } from './data/mockData';
+import { ShieldAlert, LogOut } from 'lucide-react';
 
 const AppContent: React.FC = () => {
-  const { user, loading } = useAuth();
+  const { user, loading: authLoading, signOut } = useAuth();
+  const { activeStudioId, loading: studioLoading } = useStudio();
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
@@ -47,12 +50,12 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  if (loading) {
+  if (authLoading || studioLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-slate-500 font-medium font-sans">Carregando BelareStudio...</p>
+          <p className="text-slate-500 font-medium font-sans">Sincronizando dados...</p>
         </div>
       </div>
     );
@@ -61,6 +64,27 @@ const AppContent: React.FC = () => {
   if (hash === '#/public-preview') return <PublicBookingPreview />;
   if (pathname === '/reset-password' || hash === '#/reset-password') return <ResetPasswordView />;
   if (!user) return <LoginView />;
+
+  // Caso o usuário esteja logado mas não tenha estúdios vinculados
+  if (!activeStudioId) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white rounded-[40px] shadow-2xl p-10 text-center border border-slate-200 animate-in zoom-in-95 duration-300">
+          <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-3xl flex items-center justify-center mx-auto mb-6">
+            <ShieldAlert size={40} />
+          </div>
+          <h2 className="text-2xl font-black text-slate-800 leading-tight">Nenhum Studio vinculado</h2>
+          <p className="text-slate-500 mt-4 font-medium leading-relaxed">
+            Seu usuário ainda não possui permissão de acesso a nenhuma unidade do <b>BelareStudio</b>.
+          </p>
+          <div className="mt-10 space-y-3">
+             <button onClick={() => window.location.reload()} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl transition-all active:scale-95">Tentar Novamente</button>
+             <button onClick={signOut} className="w-full py-4 text-rose-500 font-bold flex items-center justify-center gap-2 hover:bg-rose-50 rounded-2xl transition-all"><LogOut size={18} /> Sair do Sistema</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleAddTransaction = (t: FinancialTransaction) => setTransactions(prev => [t, ...prev]);
 

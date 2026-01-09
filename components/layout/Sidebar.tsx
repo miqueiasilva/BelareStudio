@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { 
     Home, Calendar, MessageSquare, ShoppingCart, ClipboardList, ArrowRightLeft, Archive,
@@ -7,6 +8,7 @@ import { ViewState, UserRole } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { hasAccess } from '../../utils/permissions';
 import { supabase } from '../../services/supabaseClient';
+import { StudioSwitcher } from './StudioSwitcher';
 
 interface SidebarProps {
     currentView: ViewState;
@@ -24,7 +26,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
     const { user, signOut } = useAuth();
     const userRole = (user?.papel as UserRole) || 'profissional';
 
-    // 1. Definição Semântica de todos os itens do sistema
     const principalItems: MenuItem[] = [
         { id: 'dashboard', icon: Home, label: 'Página principal' },
         { id: 'agenda', icon: Calendar, label: 'Atendimentos' },
@@ -49,7 +50,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         { id: 'produtos', icon: Package, label: 'Produtos' },
     ];
 
-    // 2. Filtro de Permissão
     const filter = (items: MenuItem[]) => items.filter(item => hasAccess(userRole, item.id));
 
     const filteredPrincipal = filter(principalItems);
@@ -61,21 +61,15 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         onNavigate(viewId as ViewState);
     };
 
-    // CORREÇÃO: Função de Logout Forçado para garantir redirecionamento
     const handleLogout = async () => {
         if (window.confirm("Deseja realmente sair do sistema?")) {
-            // Limpeza imediata do cache local
             localStorage.clear();
             sessionStorage.clear();
-            
-            // Tentativa de aviso ao Supabase (não bloqueante)
             try {
                 signOut();
             } catch (e) {
                 console.error("Erro ignorado ao notificar logout:", e);
             }
-
-            // Redirecionamento forçado (Hard Refresh) para a tela de login
             window.location.href = '/login';
         }
     };
@@ -102,8 +96,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
 
     return (
         <aside className={`bg-white border-r border-slate-200 flex flex-col h-full ${className}`}>
-            {/* Logo Section */}
-            <div className="h-16 flex items-center px-6 gap-3 border-b border-slate-100 flex-shrink-0">
+            <div className="h-16 flex items-center px-6 gap-3 border-b border-slate-100 flex-shrink-0 mb-4">
                 <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center font-black text-white text-xl shadow-lg shadow-orange-100">
                     B
                 </div>
@@ -112,9 +105,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Gestão Inteligente</p>
                 </div>
             </div>
+
+            <StudioSwitcher />
             
             <nav className="flex-1 overflow-y-auto p-4 scrollbar-hide">
-                {/* GRUPO PRINCIPAL */}
                 {filteredPrincipal.length > 0 && (
                     <div className="mb-6">
                         <div className="mb-2 text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] px-3">Principal</div>
@@ -124,7 +118,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                     </div>
                 )}
 
-                {/* GRUPO OPERACIONAL (Vendas, Comandas, etc) */}
                 {filteredOperacional.length > 0 && (
                     <div className="mb-6">
                         <div className="mb-2 text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] px-3">Operação</div>
@@ -134,7 +127,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                     </div>
                 )}
 
-                {/* GRUPO GESTÃO (Admin Only) */}
                 {filteredGestao.length > 0 && (
                     <div className="mb-6">
                         <div className="mb-2 text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] px-3">Gestão</div>
@@ -145,7 +137,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                 )}
             </nav>
 
-            {/* User Profile Section */}
             <div className="p-4 border-t border-slate-100 bg-slate-50/50">
                 <div className="flex items-center gap-3 w-full p-3 rounded-2xl bg-white border border-slate-100 shadow-sm">
                     <img 
