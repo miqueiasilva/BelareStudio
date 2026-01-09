@@ -66,7 +66,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const totals = useMemo(() => {
         if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0 };
         
-        const subtotal = command.command_items.reduce((acc, i) => acc + (Number(i.price) * Number(i.quantity)), 0);
+        const subtotal = command.command_items.reduce((acc, i) => acc + (Number(i.unit_price) * Number(i.qty)), 0);
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         
@@ -102,16 +102,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setIsFinishing(true);
 
         try {
-            // Chamada da RPC otimizada para fechar comanda e gerar transações
-            // O backend deve validar o studio_id via RLS ou argumento
+            // Chamada da RPC otimizada para fechar comanda com p_command_id uuid
             const { error } = await supabase.rpc('close_command_and_generate_transactions', {
-                p_command_id: command.id,
-                p_studio_id: activeStudioId,
-                p_discount: parseFloat(discount) || 0,
-                p_payments: addedPayments.map(p => ({ method: p.method, amount: p.amount }))
+                p_command_id: command.id
             });
 
-            if (error) throw error;
+            if (error) {
+                console.error("Erro RPC details:", error.message, error.details);
+                throw error;
+            }
 
             setToast({ message: "Comanda finalizada com sucesso! 💰", type: 'success' });
             setTimeout(onBack, 2000);
@@ -203,12 +202,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             <div>
                                                 <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
                                                 <p className="text-[10px] text-slate-400 font-black uppercase mt-1">
-                                                    {item.quantity} un. x R$ {Number(item.price).toFixed(2)}
+                                                    {item.qty} un. x R$ {Number(item.unit_price).toFixed(2)}
                                                 </p>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-8">
-                                            <p className="font-black text-slate-800 text-xl">R$ {(item.price * item.quantity).toFixed(2)}</p>
+                                            <p className="font-black text-slate-800 text-xl">R$ {(item.unit_price * item.qty).toFixed(2)}</p>
                                         </div>
                                     </div>
                                 ))}

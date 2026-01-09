@@ -108,7 +108,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction }) => {
                                     {tab.command_items.map(item => (
                                         <div key={item.id} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
                                             <span className="text-xs font-bold text-slate-600 truncate flex-1 pr-2">{item.title}</span>
-                                            <span className="text-xs font-black text-slate-800">R$ {Number(item.price).toFixed(2)}</span>
+                                            <span className="text-xs font-black text-slate-800">R$ {Number(item.unit_price).toFixed(2)}</span>
                                         </div>
                                     ))}
                                 </div>

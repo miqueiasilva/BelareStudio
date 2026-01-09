@@ -415,6 +415,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
+            // CRIAR COMANDA SEM user_id
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
@@ -426,19 +427,27 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 .select()
                 .single();
 
-            if (cmdError) throw cmdError;
+            if (cmdError) {
+                console.error("Erro ao criar comanda:", cmdError.message, cmdError.details);
+                throw cmdError;
+            }
 
+            // CRIAR ITEM DA COMANDA: unit_price e qty (NÃO quantity)
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
                     command_id: command.id,
                     appointment_id: appointment.id,
                     title: appointment.service.name,
-                    price: appointment.service.price,
-                    quantity: 1
+                    unit_price: appointment.service.price,
+                    qty: 1,
+                    professional_id: appointment.professional.id
                 }]);
 
-            if (itemError) throw itemError;
+            if (itemError) {
+                console.error("Erro ao criar item da comanda:", itemError.message, itemError.details);
+                throw itemError;
+            }
 
             const { error: apptUpdateError } = await supabase
                 .from('appointments')
@@ -454,7 +463,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 onNavigateToCommand(command.id);
             }
         } catch (e: any) {
-            console.error("Falha ao gerar comanda:", e);
+            console.error("Falha ao gerar comanda (detalhes):", e);
             setToast({ message: "Erro ao converter agendamento em comanda.", type: 'error' });
         } finally {
             setIsLoadingData(false);

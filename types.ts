@@ -145,8 +145,8 @@ export interface CommandItem {
     product_id?: number;
     appointment_id?: number;
     title: string;
-    price: number;
-    quantity: number;
+    unit_price: number;
+    qty: number;
     created_at: string;
 }
 
@@ -157,7 +157,7 @@ export interface Command {
     total_amount: number;
     created_at: string;
     closed_at?: string;
-    clients?: any; // Alterado para any para suportar clients(*) sem quebra de tipo
+    clients?: any; 
     command_items: CommandItem[];
 }
 

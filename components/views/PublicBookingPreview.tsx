@@ -1,4 +1,3 @@
-
 import { 
     format, addDays, isSameDay, addMinutes, 
     isAfter, isBefore, getDay, 
@@ -19,7 +18,7 @@ import {
     ArrowLeft, ChevronRight
 } from 'lucide-react';
 
-const DEFAULT_COVER = "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1350&q=80";
+const DEFAULT_COVER = "https://images.unsplash.com/photo-1560066984-138dadb4c035?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80";
 const DEFAULT_LOGO = "https://ui-avatars.com/api/?name=BelareStudio&background=random";
 
 const ServiceItem = ({ service, isSelected, onToggle }: any) => (
@@ -110,6 +109,8 @@ const PublicBookingPreview: React.FC = () => {
     const [isBookingOpen, setIsBookingOpen] = useState(false);
     const [isClientAppsOpen, setIsClientAppsOpen] = useState(false);
     const [bookingStep, setBookingStep] = useState(1); 
+    // FIX: Added missing selectedProfessional state and its setter.
+    const [selectedProfessional, setSelectedProfessional] = useState<any>(null);
 
     // Regras de Agendamento Dinâmicas
     const [rules, setRules] = useState({
