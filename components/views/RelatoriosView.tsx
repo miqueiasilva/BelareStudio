@@ -13,10 +13,11 @@ import {
     ArrowUp, ArrowDown, PieChart, Receipt, Target, LayoutDashboard,
     HardDrive, History, Archive, Cake, Gauge, FileDown, Sheet
 } from 'lucide-react';
+// FIX: Removed missing members 'startOfMonth', 'parseISO', 'subMonths', 'startOfDay', 'subDays', 'startOfYesterday' and replaced them with standard Date logic.
 import { 
-    format, startOfMonth, endOfMonth, parseISO, 
-    differenceInDays, subMonths, isSameDay, startOfDay, endOfDay,
-    eachDayOfInterval, isWithinInterval, subDays, startOfYesterday, endOfYesterday
+    format, endOfMonth, 
+    differenceInDays, isSameDay, 
+    eachDayOfInterval, isWithinInterval, endOfYesterday
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { 
@@ -66,7 +67,8 @@ const RelatoriosView: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [isComparing, setIsComparing] = useState(false);
     
-    const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+    // FIX: Replaced startOfMonth with manual logic.
+    const [startDate, setStartDate] = useState(format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd'));
     const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     
     const [transactions, setTransactions] = useState<any[]>([]);
@@ -82,11 +84,13 @@ const RelatoriosView: React.FC = () => {
         if (!activeStudioId) return;
         setIsLoading(true);
         try {
-            const currentStart = startOfDay(parseISO(startDate));
-            const currentEnd = endOfDay(parseISO(endDate));
+            // FIX: Replaced parseISO and startOfDay with manual logic.
+            const currentStart = new Date(new Date(startDate).setHours(0, 0, 0, 0));
+            const currentEnd = new Date(new Date(endDate).setHours(23, 59, 59, 999));
             const diffDays = differenceInDays(currentEnd, currentStart) + 1;
-            const prevStart = subDays(currentStart, diffDays);
-            const prevEnd = subDays(currentEnd, diffDays);
+            // FIX: Replaced subDays with manual logic.
+            const prevStart = new Date(currentStart.getTime() - diffDays * 86400000);
+            const prevEnd = new Date(currentEnd.getTime() - diffDays * 86400000);
 
             const [transRes, prevTransRes, apptsRes, prodsRes, clientsRes, ltvRes] = await Promise.all([
                 supabase.from('financial_transactions').select('*').eq('studio_id', activeStudioId).gte('date', currentStart.toISOString()).lte('date', currentEnd.toISOString()).neq('status', 'cancelado'),
@@ -131,10 +135,12 @@ const RelatoriosView: React.FC = () => {
 
         const criticalStock = products.filter(p => p.stock_quantity <= (p.min_stock || 5));
 
-        const days = eachDayOfInterval({ start: parseISO(startDate), end: parseISO(endDate) });
+        // FIX: Replaced parseISO with standard new Date().
+        const days = eachDayOfInterval({ start: new Date(startDate), end: new Date(endDate) });
         const evolutionData = days.map(day => {
             const dStr = format(day, 'yyyy-MM-dd');
-            const dayTrans = transactions.filter(t => format(parseISO(t.date), 'yyyy-MM-dd') === dStr);
+            // FIX: Replaced parseISO with standard new Date().
+            const dayTrans = transactions.filter(t => format(new Date(t.date), 'yyyy-MM-dd') === dStr);
             return {
                 day: format(day, 'dd/MM'),
                 receita: dayTrans.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0),
@@ -183,7 +189,8 @@ const RelatoriosView: React.FC = () => {
         };
         doc.text(titleMap[type], 14, 42);
         doc.setFontSize(9);
-        doc.text(`Período: ${format(parseISO(startDate), 'dd/MM/yy')} até ${format(parseISO(endDate), 'dd/MM/yy')}`, 14, 48);
+        // FIX: Replaced parseISO with standard new Date().
+        doc.text(`Período: ${format(new Date(startDate), 'dd/MM/yy')} até ${format(new Date(endDate), 'dd/MM/yy')}`, 14, 48);
 
         doc.save(`Relatorio_${type}_${activeStudioId?.split('-')[0]}.pdf`);
     };

@@ -12,7 +12,8 @@ import { FinancialTransaction, PaymentMethod, Client, Command, CommandItem } fro
 import Toast, { ToastType } from '../shared/Toast';
 import SelectionModal from '../modals/SelectionModal';
 import ClientSearchModal from '../modals/ClientSearchModal';
-import { differenceInMinutes, parseISO, format } from 'date-fns';
+// FIX: Removed missing member 'parseISO' and replaced it with standard new Date().
+import { differenceInMinutes, format } from 'date-fns';
 
 const ComandasView: React.FC<any> = ({ onAddTransaction }) => {
     const { activeStudioId } = useStudio();

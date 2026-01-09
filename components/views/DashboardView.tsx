@@ -6,7 +6,8 @@ import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import WeeklyChart from '../charts/WeeklyChart';
 import { getDashboardInsight } from '../../services/geminiService';
 import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Edit3, Loader2, BarChart3, AlertCircle, ChevronRight, CalendarRange, Filter as FilterIcon } from 'lucide-react';
-import { format, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, isSameDay, parseISO } from 'date-fns';
+// FIX: Removed missing members 'startOfDay', 'subDays', 'startOfMonth', 'parseISO' and replaced them with standard Date logic.
+import { format, endOfDay, endOfMonth } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
 import { supabase } from '../../services/supabaseClient';
@@ -66,31 +67,37 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         switch (filter) {
             case 'hoje':
                 return { 
-                    start: startOfDay(now).toISOString(), 
+                    // FIX: Replaced startOfDay with manual implementation.
+                    start: new Date(new Date(now).setHours(0, 0, 0, 0)).toISOString(), 
                     end: endOfDay(now).toISOString(),
                     label: 'Hoje'
                 };
             case 'semana':
                 return { 
-                    start: startOfDay(subDays(now, 7)).toISOString(), 
+                    // FIX: Replaced subDays with addDays with negative value.
+                    start: new Date(new Date(now).setHours(0, 0, 0, 0) - 7 * 86400000).toISOString(), 
                     end: endOfDay(now).toISOString(),
                     label: 'Últimos 7 dias'
                 };
             case 'mes':
                 return { 
-                    start: startOfMonth(now).toISOString(), 
+                    // FIX: Replaced startOfMonth with manual implementation.
+                    start: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(), 
                     end: endOfMonth(now).toISOString(),
                     label: 'Este Mês'
                 };
             case 'custom':
+                // FIX: Replaced parseISO with standard new Date().
                 return {
-                    start: startOfDay(parseISO(customStart)).toISOString(),
-                    end: endOfDay(parseISO(customEnd)).toISOString(),
-                    label: `Período: ${format(parseISO(customStart), 'dd/MM')} a ${format(parseISO(customEnd), 'dd/MM')}`
+                    start: new Date(new Date(customStart).setHours(0, 0, 0, 0)).toISOString(),
+                    end: endOfDay(new Date(customEnd)).toISOString(),
+                    // FIX: Replaced parseISO with standard new Date().
+                    label: `Período: ${format(new Date(customStart), 'dd/MM')} a ${format(new Date(customEnd), 'dd/MM')}`
                 };
             default:
                 return { 
-                    start: startOfDay(now).toISOString(), 
+                    // FIX: Replaced startOfDay with manual implementation.
+                    start: new Date(new Date(now).setHours(0, 0, 0, 0)).toISOString(), 
                     end: endOfDay(now).toISOString(),
                     label: 'Hoje'
                 };
@@ -118,7 +125,8 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 if (mounted) setAppointments(appts || []);
 
                 const now = new Date();
-                const startMonthStr = startOfMonth(now).toISOString();
+                // FIX: Replaced startOfMonth with manual implementation.
+                const startMonthStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
                 const endMonthStr = endOfMonth(now).toISOString();
                 
                 const { data: monthData, error: monthError } = await supabase

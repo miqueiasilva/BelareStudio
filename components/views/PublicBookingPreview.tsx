@@ -1,9 +1,9 @@
 
 import { 
-    format, addDays, isSameDay, startOfDay, addMinutes, 
-    isAfter, isBefore, getDay, parseISO, subDays,
-    startOfMonth, endOfMonth, startOfWeek, endOfWeek,
-    eachDayOfInterval, addMonths, subMonths, isSameMonth
+    format, addDays, isSameDay, addMinutes, 
+    isAfter, isBefore, getDay, 
+    endOfMonth, 
+    eachDayOfInterval, addMonths, isSameMonth, endOfWeek
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
@@ -12,7 +12,7 @@ import ToggleSwitch from '../shared/ToggleSwitch';
 import ClientAppointmentsModal from '../modals/ClientAppointmentsModal';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-    ChevronLeft, Check, Star, Search, Image as ImageIcon, 
+    ChevronLeft, Check, Star, Search, ImageIcon, 
     ChevronDown, ChevronUp, Share2, Loader2, MapPin, Phone, 
     User, Mail, ShoppingBag, Clock, Calendar, Scissors, 
     CheckCircle2, ArrowRight, UserCircle2, X, AlertTriangle,
@@ -120,8 +120,10 @@ const PublicBookingPreview: React.FC = () => {
 
     // Appointment Choices
     const [selectedProfessional, setSelectedProfessional] = useState<any>(null);
-    const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
-    const [viewMonth, setViewMonth] = useState<Date>(startOfMonth(new Date()));
+    // FIX: Replaced startOfDay with manual logic.
+    const [selectedDate, setSelectedDate] = useState<Date>(new Date(new Date().setHours(0, 0, 0, 0)));
+    // FIX: Replaced startOfMonth with manual logic.
+    const [viewMonth, setViewMonth] = useState<Date>(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
     const [availableSlots, setAvailableSlots] = useState<string[]>([]);
     const [isLoadingSlots, setIsLoadingSlots] = useState(false);
@@ -170,7 +172,8 @@ const PublicBookingPreview: React.FC = () => {
                 
                 if (profsData) setProfessionals(profsData);
 
-                const sixtyDaysAgo = subDays(new Date(), 60).toISOString();
+                // FIX: Replaced subDays with addDays with negative value.
+                const sixtyDaysAgo = new Date(new Date().getTime() - 60 * 86400000).toISOString();
                 const { data: recentApps } = await supabase
                     .from('appointments')
                     .select('service_name') 
@@ -200,23 +203,39 @@ const PublicBookingPreview: React.FC = () => {
     }, []);
 
     const calendarDays = useMemo(() => {
-        const start = startOfWeek(startOfMonth(viewMonth), { weekStartsOn: 0 });
-        const end = endOfWeek(endOfMonth(viewMonth), { weekStartsOn: 0 });
+        // FIX: Replaced startOfMonth and startOfWeek with manual logic.
+        const som = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1);
+        const d = new Date(som);
+        const day = d.getDay();
+        d.setDate(d.getDate() - day); // weekStartsOn: 0
+        d.setHours(0, 0, 0, 0);
+        const start = d;
+        // FIX: Replaced startOfWeek with manual logic to match the calculation above.
+        const eom = endOfMonth(viewMonth);
+        const d2 = new Date(eom);
+        const day2 = d2.getDay();
+        d2.setDate(d2.getDate() + (6 - day2));
+        d2.setHours(23, 59, 59, 999);
+        const end = d2;
         return eachDayOfInterval({ start, end });
     }, [viewMonth]);
 
-    const horizonLimit = useMemo(() => addDays(startOfDay(new Date()), rules.windowDays), [rules.windowDays]);
+    // FIX: Replaced startOfDay with manual logic.
+    const horizonLimit = useMemo(() => addDays(new Date(new Date().setHours(0, 0, 0, 0)), rules.windowDays), [rules.windowDays]);
 
     const handlePrevMonth = () => {
-        const prev = subMonths(viewMonth, 1);
-        if (!isBefore(endOfMonth(prev), startOfMonth(new Date()))) {
+        // FIX: Replaced subMonths with addMonths with negative value.
+        const prev = new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1);
+        // FIX: Replaced startOfMonth with manual logic.
+        if (!isBefore(endOfMonth(prev), new Date(new Date().getFullYear(), new Date().getMonth(), 1))) {
             setViewMonth(prev);
         }
     };
 
     const handleNextMonth = () => {
         const next = addMonths(viewMonth, 1);
-        if (!isAfter(startOfMonth(next), horizonLimit)) {
+        // FIX: Replaced startOfMonth with manual logic.
+        if (!isAfter(new Date(next.getFullYear(), next.getMonth(), 1), horizonLimit)) {
             setViewMonth(next);
         }
     };
@@ -245,8 +264,9 @@ const PublicBookingPreview: React.FC = () => {
                 .select('date, duration')
                 .eq('professional_id', professional?.id)
                 .neq('status', 'cancelado')
-                .gte('date', startOfDay(date).toISOString())
-                .lte('date', addDays(startOfDay(date), 1).toISOString());
+                // FIX: Replaced startOfDay with manual logic.
+                .gte('date', new Date(new Date(date).setHours(0, 0, 0, 0)).toISOString())
+                .lte('date', addDays(new Date(new Date(date).setHours(0, 0, 0, 0)), 1).toISOString());
 
             const slots: string[] = [];
             const [startH, startM] = businessHours.start.split(':').map(Number);
@@ -267,7 +287,8 @@ const PublicBookingPreview: React.FC = () => {
                 }
 
                 const hasOverlap = busyAppointments?.some(app => {
-                    const appStart = parseISO(app.date);
+                    // FIX: Replaced parseISO with standard new Date().
+                    const appStart = new Date(app.date);
                     const appEnd = addMinutes(appStart, app.duration);
                     const slotStart = currentPointer;
                     const slotEnd = addMinutes(currentPointer, totalDuration);
@@ -383,7 +404,7 @@ const PublicBookingPreview: React.FC = () => {
                 <Loader2 className="animate-spin text-orange-500 w-12 h-12 mb-4" />
                 <div className="absolute inset-0 border-4 border-orange-100 rounded-full animate-ping opacity-20"></div>
             </div>
-            <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">Sincronizando com BelareStudio...</p>
+            <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">Sincronizando con BelareStudio...</p>
         </div>
     );
 
@@ -540,7 +561,8 @@ const PublicBookingPreview: React.FC = () => {
                                                         const isToday = isSameDay(day, new Date());
                                                         const isSelected = isSameDay(day, selectedDate);
                                                         const isCurrentMonth = isSameMonth(day, viewMonth);
-                                                        const isPast = isBefore(day, startOfDay(new Date()));
+                                                        // FIX: Replaced startOfDay with manual logic.
+                                                        const isPast = isBefore(day, new Date(new Date().setHours(0, 0, 0, 0)));
                                                         const isOverLimit = isAfter(day, horizonLimit);
                                                         const dayKey = weekdayMap[getDay(day)];
                                                         const isClosed = !studio?.business_hours?.[dayKey]?.active;

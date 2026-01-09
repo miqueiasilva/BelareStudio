@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Clock, MessageCircle, ChevronRight, CalendarX, Plus, Scissors } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import { AppointmentStatus } from '../../types';
 
 const statusMap: Record<AppointmentStatus, { label: string; color: string; bg: string }> = {
@@ -67,8 +67,8 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center justify-between mb-0.5">
                                         <span className="text-xs font-black text-slate-800">
-                                            {format(parseISO(app.date), 'HH:mm')}
-                                            {dateLabel !== 'Hoje' && <span className="ml-1 opacity-40 text-[9px]">({format(parseISO(app.date), 'dd/MM')})</span>}
+                                            {format(new Date(app.date), 'HH:mm')}
+                                            {dateLabel !== 'Hoje' && <span className="ml-1 opacity-40 text-[9px]">({format(new Date(app.date), 'dd/MM')})</span>}
                                         </span>
                                         <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter ${statusMap[app.status as AppointmentStatus]?.bg} ${statusMap[app.status as AppointmentStatus]?.color}`}>
                                             {statusMap[app.status as AppointmentStatus]?.label}

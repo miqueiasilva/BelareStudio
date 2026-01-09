@@ -15,7 +15,8 @@ import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import { supabase } from '../../services/supabaseClient';
 import Toast, { ToastType } from '../shared/Toast';
-import { format, subDays, startOfDay, parseISO, isSameDay } from 'date-fns';
+// FIX: Removed missing members 'subDays', 'startOfDay', 'parseISO' and replaced them with standard Date logic.
+import { format, isSameDay } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
 // --- Subcomponente de KPI Card ---
@@ -61,7 +62,8 @@ const ReviewCard = ({ review, onToggle, onDelete }: any) => (
                     <div className="flex items-center gap-2 mt-1">
                         <StarRating rating={review.rating} size={12} />
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                            {review.created_at ? format(parseISO(review.created_at), 'dd MMM yyyy', { locale: pt }) : '---'}
+                            // FIX: Replaced parseISO with standard new Date().
+                            {review.created_at ? format(new Date(review.created_at), 'dd MMM yyyy', { locale: pt }) : '---'}
                         </span>
                     </div>
                 </div>
@@ -176,7 +178,8 @@ const AgendaOnlineView: React.FC = () => {
     const fetchAnalytics = async () => {
         setIsRefreshing(true);
         try {
-            const thirtyDaysAgo = subDays(new Date(), 30).toISOString();
+            // FIX: Replaced subDays with manual logic.
+            const thirtyDaysAgo = new Date(new Date().getTime() - 30 * 86400000).toISOString();
             const { data: appts } = await supabase
                 .from('appointments')
                 .select('value, service_name, date')
@@ -208,8 +211,10 @@ const AgendaOnlineView: React.FC = () => {
                 setTopServices(sortedRanking);
 
                 const last7Days = Array.from({ length: 7 }).map((_, i) => {
-                    const d = subDays(new Date(), 6 - i);
-                    const dayBookings = appts.filter(a => isSameDay(parseISO(a.date), d)).length;
+                    // FIX: Replaced subDays with manual logic.
+                    const d = new Date(new Date().setHours(0,0,0,0) - (6 - i) * 86400000);
+                    // FIX: Replaced parseISO with standard new Date().
+                    const dayBookings = appts.filter(a => isSameDay(new Date(a.date), d)).length;
                     const dayViews = Math.floor(Math.random() * 20) + 10; 
                     return {
                         name: format(d, 'dd/MM'),
