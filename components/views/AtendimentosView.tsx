@@ -8,11 +8,11 @@ import {
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
     CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle
 } from 'lucide-react';
-// FIX: Grouping date-fns imports to ensure correct symbol resolution in the build environment.
+// FIX: Grouping date-fns imports and removing problematic members startOfDay, startOfWeek, startOfMonth.
 import { 
     format, addDays, addWeeks, addMonths, eachDayOfInterval, 
     isSameDay, isWithinInterval, isSameMonth, addMinutes, 
-    startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth 
+    endOfDay, endOfWeek, endOfMonth 
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
@@ -166,13 +166,22 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         try {
             let rangeStart: Date, rangeEnd: Date;
             if (periodType === 'Semana') {
-                rangeStart = startOfWeek(currentDate, { weekStartsOn: 1 });
+                // FIX: Manual calculation for startOfWeek to avoid non-exported member error.
+                rangeStart = new Date(currentDate);
+                const day = rangeStart.getDay();
+                const diff = (day < 1 ? -6 : 1) - day;
+                rangeStart.setDate(rangeStart.getDate() + diff);
+                rangeStart.setHours(0, 0, 0, 0);
+                
                 rangeEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
             } else if (periodType === 'Mês') {
-                rangeStart = startOfMonth(currentDate);
+                // FIX: Manual calculation for startOfMonth to avoid non-exported member error.
+                rangeStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1, 0, 0, 0, 0);
                 rangeEnd = endOfMonth(currentDate);
             } else {
-                rangeStart = startOfDay(currentDate);
+                // FIX: Manual calculation for startOfDay to avoid non-exported member error.
+                rangeStart = new Date(currentDate);
+                rangeStart.setHours(0, 0, 0, 0);
                 rangeEnd = endOfDay(currentDate);
             }
 
@@ -320,7 +329,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         setIsLoadingData(true);
         try {
             if (!force) {
-                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('studio_id', activeStudioId).eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startOfDay(app.start).toISOString()).lte('date', endOfDay(app.start).toISOString());
+                // FIX: Manual calculation for startOfDay and endOfDay to avoid non-exported member error.
+                const startDay = new Date(app.start);
+                startDay.setHours(0, 0, 0, 0);
+                const endDay = new Date(app.start);
+                endDay.setHours(23, 59, 59, 999);
+
+                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('studio_id', activeStudioId).eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startDay.toISOString()).lte('date', endDay.toISOString());
                 const conflict = existingOnDay?.find(row => {
                     if (app.id && row.id === app.id) return false;
                     return (app.start < addMinutes(new Date(row.date), row.duration || 30)) && (app.end > new Date(row.date));
@@ -510,7 +525,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
     const columns = useMemo(() => {
         if (periodType === 'Semana') {
-            const start = startOfWeek(currentDate, { weekStartsOn: 1 });
+            // FIX: Manual calculation for startOfWeek to avoid non-exported member error.
+            const start = new Date(currentDate);
+            const day = start.getDay();
+            const diff = (day < 1 ? -6 : 1) - day;
+            start.setDate(start.getDate() + diff);
+            start.setHours(0, 0, 0, 0);
+
             return eachDayOfInterval({ start, end: endOfWeek(currentDate, { weekStartsOn: 1 }) }).map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date' as const, data: day }));
         }
         return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional' as const, data: p }));
@@ -519,7 +540,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const filteredAppointments = useMemo(() => {
         let baseList = appointments.filter(a => {
             if (periodType === 'Dia' || periodType === 'Lista') return isSameDay(a.start, currentDate);
-            if (periodType === 'Semana') return isWithinInterval(a.start, { start: startOfWeek(currentDate, { weekStartsOn: 1 }), end: endOfWeek(currentDate, { weekStartsOn: 1 }) });
+            if (periodType === 'Semana') {
+                // FIX: Manual calculation for startOfWeek to avoid non-exported member error.
+                const start = new Date(currentDate);
+                const day = start.getDay();
+                const diff = (day < 1 ? -6 : 1) - day;
+                start.setDate(start.getDate() + diff);
+                start.setHours(0, 0, 0, 0);
+
+                return isWithinInterval(a.start, { start, end: endOfWeek(currentDate, { weekStartsOn: 1 }) });
+            }
             return isSameMonth(a.start, currentDate);
         });
         return [...baseList].sort((a, b) => (STATUS_PRIORITY[a.status] || 99) - (STATUS_PRIORITY[b.status] || 99) || a.start.getTime() - b.start.getTime());

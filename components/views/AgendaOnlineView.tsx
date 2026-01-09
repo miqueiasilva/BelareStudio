@@ -15,8 +15,8 @@ import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import { supabase } from '../../services/supabaseClient';
 import Toast, { ToastType } from '../shared/Toast';
-// FIX: Grouping date-fns imports to ensure correct symbol resolution in the build environment.
-import { format, subDays, startOfDay, isSameDay } from 'date-fns';
+// FIX: Grouping date-fns imports and removing problematic members subDays and startOfDay.
+import { format, addDays, isSameDay } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
 // --- Subcomponente de KPI Card ---
@@ -177,7 +177,8 @@ const AgendaOnlineView: React.FC = () => {
     const fetchAnalytics = async () => {
         setIsRefreshing(true);
         try {
-            const thirtyDaysAgo = subDays(new Date(), 30).toISOString();
+            // FIX: Manual subDays replacement using addDays with negative value.
+            const thirtyDaysAgo = addDays(new Date(), -30).toISOString();
             const { data: appts } = await supabase
                 .from('appointments')
                 .select('value, service_name, date')
@@ -209,7 +210,8 @@ const AgendaOnlineView: React.FC = () => {
                 setTopServices(sortedRanking);
 
                 const last7Days = Array.from({ length: 7 }).map((_, i) => {
-                    const d = subDays(new Date(), 6 - i);
+                    // FIX: Manual subDays replacement.
+                    const d = addDays(new Date(), -(6 - i));
                     const dayBookings = appts.filter(a => isSameDay(new Date(a.date), d)).length;
                     const dayViews = Math.floor(Math.random() * 20) + 10; 
                     return {

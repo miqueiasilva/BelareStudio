@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { X, DollarSign, Calendar, Tag, Plus } from 'lucide-react';
 import { FinancialTransaction, TransactionType, TransactionCategory, PaymentMethod } from '../../types';
@@ -19,7 +20,6 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
 
   const [isCustomCategory, setIsCustomCategory] = useState(false);
 
-  // Listas de categorias sugeridas por tipo
   const receitaCategories = ['Venda de Serviços', 'Venda de Produtos', 'Aporte / Investimento', 'Outros'];
   const despesaCategories = [
     'Aluguel', 'Energia / Luz', 'Água', 'Internet / Telefone', 
@@ -46,12 +46,13 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
           return;
       }
       
+      // PAYLOAD LIMPO: Sem referências a user_id para evitar erro de coluna no banco
       const newTransaction: FinancialTransaction = {
           id: Date.now(),
           description: formData.description!,
           amount: Number(formData.amount),
           type: formData.type!,
-          category: formData.category as any, // Cast para aceitar strings personalizadas
+          category: formData.category as any,
           date: new Date(formData.date || new Date()),
           paymentMethod: formData.paymentMethod as PaymentMethod,
           status: 'pago'
@@ -74,7 +75,6 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
             </header>
             
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
-                {/* Descrição */}
                 <div className="space-y-1">
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Descrição do Lançamento</label>
                     <input 
@@ -87,7 +87,6 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
                     />
                 </div>
 
-                {/* Valor e Data */}
                 <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-1">
                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor (R$)</label>
@@ -118,7 +117,6 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
                     </div>
                 </div>
 
-                {/* Categoria Inteligente */}
                 <div className="space-y-1">
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Categoria</label>
                     <div className="flex items-end gap-3 group">
@@ -161,7 +159,6 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
                     </div>
                 </div>
 
-                {/* Forma de Pagamento */}
                 <div className="space-y-1">
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Forma de Pagamento</label>
                     <select 

@@ -6,9 +6,9 @@ import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import WeeklyChart from '../charts/WeeklyChart';
 import { getDashboardInsight } from '../../services/geminiService';
 import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Edit3, Loader2, BarChart3, AlertCircle, ChevronRight, CalendarRange, Filter as FilterIcon } from 'lucide-react';
-// FIX: Grouping date-fns imports to ensure correct symbol resolution in the build environment.
+// FIX: Grouping date-fns imports and removing problematic members startOfDay, subDays, startOfMonth.
 import { 
-    format, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, isSameDay 
+    format, addDays, endOfDay, endOfMonth, isSameDay 
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
@@ -68,32 +68,47 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         const now = new Date();
         switch (filter) {
             case 'hoje':
+                // FIX: Manual startOfDay replacement.
+                const startToday = new Date(now);
+                startToday.setHours(0, 0, 0, 0);
                 return { 
-                    start: startOfDay(now).toISOString(), 
+                    start: startToday.toISOString(), 
                     end: endOfDay(now).toISOString(),
                     label: 'Hoje'
                 };
             case 'semana':
+                // FIX: Manual subDays and startOfDay replacement.
+                const startWeek = addDays(now, -7);
+                startWeek.setHours(0, 0, 0, 0);
                 return { 
-                    start: startOfDay(subDays(now, 7)).toISOString(), 
+                    start: startWeek.toISOString(), 
                     end: endOfDay(now).toISOString(),
                     label: 'Últimos 7 dias'
                 };
             case 'mes':
+                // FIX: Manual startOfMonth replacement.
+                const startMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
                 return { 
-                    start: startOfMonth(now).toISOString(), 
+                    start: startMonth.toISOString(), 
                     end: endOfMonth(now).toISOString(),
                     label: 'Este Mês'
                 };
             case 'custom':
+                // FIX: Manual startOfDay replacement.
+                const startCustom = new Date(customStart);
+                startCustom.setHours(0, 0, 0, 0);
+                const endCustom = new Date(customEnd);
+                endCustom.setHours(23, 59, 59, 999);
                 return {
-                    start: startOfDay(new Date(customStart)).toISOString(),
-                    end: endOfDay(new Date(customEnd)).toISOString(),
+                    start: startCustom.toISOString(),
+                    end: endCustom.toISOString(),
                     label: `Período: ${format(new Date(customStart), 'dd/MM')} a ${format(new Date(customEnd), 'dd/MM')}`
                 };
             default:
+                const sToday = new Date(now);
+                sToday.setHours(0, 0, 0, 0);
                 return { 
-                    start: startOfDay(now).toISOString(), 
+                    start: sToday.toISOString(), 
                     end: endOfDay(now).toISOString(),
                     label: 'Hoje'
                 };
@@ -121,7 +136,9 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 if (mounted) setAppointments(appts || []);
 
                 const now = new Date();
-                const startMonthStr = startOfMonth(now).toISOString();
+                // FIX: Manual startOfMonth replacement.
+                const startMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+                const startMonthStr = startMonth.toISOString();
                 const endMonthStr = endOfMonth(now).toISOString();
                 
                 const { data: monthData, error: monthError } = await supabase

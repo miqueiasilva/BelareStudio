@@ -1,9 +1,9 @@
 
 import { 
-    format, addDays, isSameDay, startOfDay, addMinutes, 
-    isAfter, isBefore, getDay, parseISO, subDays,
-    startOfMonth, endOfMonth, startOfWeek, endOfWeek,
-    eachDayOfInterval, addMonths, subMonths, isSameMonth
+    format, addDays, isSameDay, addMinutes, 
+    isAfter, isBefore, getDay, 
+    endOfMonth, endOfWeek,
+    eachDayOfInterval, addMonths, isSameMonth
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
@@ -119,9 +119,12 @@ const PublicBookingPreview: React.FC = () => {
     });
 
     // Appointment Choices
-    const [selectedProfessional, setSelectedProfessional] = useState<any>(null);
-    const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
-    const [viewMonth, setViewMonth] = useState<Date>(startOfMonth(new Date()));
+    // FIX: Manual startOfDay replacement.
+    const getStartOfDay = (d: Date) => { const nd = new Date(d); nd.setHours(0, 0, 0, 0); return nd; };
+    const [selectedDate, setSelectedDate] = useState<Date>(getStartOfDay(new Date()));
+    // FIX: Manual startOfMonth replacement.
+    const getStartOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+    const [viewMonth, setViewMonth] = useState<Date>(getStartOfMonth(new Date()));
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
     const [availableSlots, setAvailableSlots] = useState<string[]>([]);
     const [isLoadingSlots, setIsLoadingSlots] = useState(false);
@@ -170,7 +173,8 @@ const PublicBookingPreview: React.FC = () => {
                 
                 if (profsData) setProfessionals(profsData);
 
-                const sixtyDaysAgo = subDays(new Date(), 60).toISOString();
+                // FIX: Manual subDays replacement using addDays.
+                const sixtyDaysAgo = addDays(new Date(), -60).toISOString();
                 const { data: recentApps } = await supabase
                     .from('appointments')
                     .select('service_name') 
@@ -200,23 +204,29 @@ const PublicBookingPreview: React.FC = () => {
     }, []);
 
     const calendarDays = useMemo(() => {
-        const start = startOfWeek(startOfMonth(viewMonth), { weekStartsOn: 0 });
+        // FIX: Manual startOfMonth and startOfWeek replacements.
+        const sm = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1, 0, 0, 0, 0);
+        const start = new Date(sm);
+        start.setDate(start.getDate() - start.getDay());
+        start.setHours(0, 0, 0, 0);
+
         const end = endOfWeek(endOfMonth(viewMonth), { weekStartsOn: 0 });
         return eachDayOfInterval({ start, end });
     }, [viewMonth]);
 
-    const horizonLimit = useMemo(() => addDays(startOfDay(new Date()), rules.windowDays), [rules.windowDays]);
+    const horizonLimit = useMemo(() => addDays(getStartOfDay(new Date()), rules.windowDays), [rules.windowDays]);
 
     const handlePrevMonth = () => {
-        const prev = subMonths(viewMonth, 1);
-        if (!isBefore(endOfMonth(prev), startOfMonth(new Date()))) {
+        // FIX: Manual subMonths replacement using addMonths.
+        const prev = addMonths(viewMonth, -1);
+        if (!isBefore(endOfMonth(prev), getStartOfMonth(new Date()))) {
             setViewMonth(prev);
         }
     };
 
     const handleNextMonth = () => {
         const next = addMonths(viewMonth, 1);
-        if (!isAfter(startOfMonth(next), horizonLimit)) {
+        if (!isAfter(getStartOfMonth(next), horizonLimit)) {
             setViewMonth(next);
         }
     };
@@ -245,8 +255,8 @@ const PublicBookingPreview: React.FC = () => {
                 .select('date, duration')
                 .eq('professional_id', professional?.id)
                 .neq('status', 'cancelado')
-                .gte('date', startOfDay(date).toISOString())
-                .lte('date', addDays(startOfDay(date), 1).toISOString());
+                .gte('date', getStartOfDay(date).toISOString())
+                .lte('date', addDays(getStartOfDay(date), 1).toISOString());
 
             const slots: string[] = [];
             const [startH, startM] = businessHours.start.split(':').map(Number);
@@ -267,7 +277,8 @@ const PublicBookingPreview: React.FC = () => {
                 }
 
                 const hasOverlap = busyAppointments?.some(app => {
-                    const appStart = parseISO(app.date);
+                    // FIX: Manual parseISO replacement using new Date().
+                    const appStart = new Date(app.date);
                     const appEnd = addMinutes(appStart, app.duration);
                     const slotStart = currentPointer;
                     const slotEnd = addMinutes(currentPointer, totalDuration);
@@ -540,7 +551,9 @@ const PublicBookingPreview: React.FC = () => {
                                                         const isToday = isSameDay(day, new Date());
                                                         const isSelected = isSameDay(day, selectedDate);
                                                         const isCurrentMonth = isSameMonth(day, viewMonth);
-                                                        const isPast = isBefore(day, startOfDay(new Date()));
+                                                        // FIX: Manual startOfDay replacement.
+                                                        const startOfToday = new Date(); startOfToday.setHours(0,0,0,0);
+                                                        const isPast = isBefore(day, startOfToday);
                                                         const isOverLimit = isAfter(day, horizonLimit);
                                                         const dayKey = weekdayMap[getDay(day)];
                                                         const isClosed = !studio?.business_hours?.[dayKey]?.active;

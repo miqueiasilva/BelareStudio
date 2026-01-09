@@ -168,10 +168,12 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                 studio_id: activeStudioId,
                 description,
                 amount: total,
+                net_value: total, // Para vendas PDV sem integração complexa de taxa JIT
                 type: 'income',
                 category: cart.some(i => i.type === 'produto') ? 'produto' : 'servico',
                 payment_method: paymentMethod,
                 client_id: selectedClient?.id || null,
+                status: 'pago',
                 date: new Date().toISOString()
             };
 
@@ -277,7 +279,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
 
                     <div className="grid grid-cols-4 gap-2">
                         {paymentMethodsConfig.map(pm => (
-                            <button key={pm.id} onClick={() => setPaymentMethod(pm.id as PaymentMethod)} className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${paymentMethod === pm.id ? 'border-orange-500 bg-orange-50/50 shadow-md' : 'bg-white border-slate-100 text-slate-400'}`}>
+                            <button key={pm.id} onClick={() => setPaymentMethod(pm.id as PaymentMethod)} className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${paymentMethod === pm.id ? 'border-orange-500 bg-orange-50/50 shadow-md ring-4 ring-orange-50' : 'bg-white border-slate-100 text-slate-400'}`}>
                                 <pm.icon size={20} className="mb-1" />
                                 <span className="text-[8px] font-black uppercase">{pm.label}</span>
                             </button>

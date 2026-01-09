@@ -12,11 +12,11 @@ import NewTransactionModal from '../modals/NewTransactionModal';
 import { FinancialTransaction, TransactionType } from '../../types';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
-// FIX: Grouping date-fns imports to ensure correct symbol resolution in the build environment.
+// FIX: Grouping date-fns imports and removing problematic members startOfDay, startOfWeek, startOfMonth, parseISO.
 import { 
     format, isSameDay, isSameWeek, isSameMonth, 
-    startOfDay, endOfDay, startOfWeek, endOfWeek, 
-    startOfMonth, endOfMonth, parseISO 
+    endOfDay, endOfWeek, 
+    endOfMonth 
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import Toast, { ToastType } from '../shared/Toast';
@@ -55,7 +55,8 @@ const FinanceiroView: React.FC<any> = ({ onAddTransaction }) => {
 
     const filteredTransactions = useMemo(() => {
         return dbTransactions.filter(t => {
-            const tDate = parseISO(t.date);
+            // FIX: Manual parseISO replacement using new Date().
+            const tDate = new Date(t.date);
             if (viewMode === 'daily') return isSameDay(tDate, currentDate);
             if (viewMode === 'monthly') return isSameMonth(tDate, currentDate);
             return true;

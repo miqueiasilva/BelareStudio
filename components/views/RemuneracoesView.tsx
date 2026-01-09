@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-// FIX: Reorganizing date-fns imports to resolve symbol resolution errors.
-import { format, addMonths, startOfMonth, endOfMonth } from 'date-fns';
+// FIX: Reorganizing date-fns imports and removing non-exported member startOfMonth.
+import { format, addMonths, endOfMonth } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { 
     Wallet, ChevronDown, ChevronUp, Download, CheckCircle, 
@@ -34,7 +34,8 @@ const RemuneracoesView: React.FC = () => {
     setError(null);
 
     try {
-        const start = startOfMonth(currentDate).toISOString();
+        // FIX: Manual startOfMonth replacement.
+        const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1, 0, 0, 0, 0).toISOString();
         const end = endOfMonth(currentDate).toISOString();
 
         const [teamRes, transRes] = await Promise.all([

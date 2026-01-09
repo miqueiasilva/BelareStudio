@@ -64,7 +64,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return typeof id === 'string' && sid.length > 20 && sid !== 'undefined' && sid !== 'null';
     };
 
-    // 2. RESET DE ESTADO (Obrigatório para UX de múltiplas vendas)
+    // 2. RESET DE ESTADO
     const resetLocalState = () => {
         setSelectedProfessionalId('');
         setSelectedCategory('pix');
@@ -101,7 +101,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
     useEffect(() => {
         if (isOpen) loadSystemData();
-        else resetLocalState(); // Limpa ao fechar
+        else resetLocalState();
     }, [isOpen]);
 
     // 4. SINCRONIZAÇÃO REATIVA
@@ -141,7 +141,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);
 
-    // --- 5. CONFIRMAÇÃO DE PAGAMENTO (CÓDIGO BLINDADO) ---
+    // --- 5. CONFIRMAÇÃO DE PAGAMENTO ---
     const handleConfirmPayment = async () => {
         if (!currentMethod) {
             setToast({ message: "Selecione o método de pagamento.", type: 'error' });
@@ -150,7 +150,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         setIsLoading(true);
 
-        // Busca JIT para garantir UUID
         let finalProfessionalId: any = selectedProfessionalId || appointment?.professional_id;
         if (!isUUID(finalProfessionalId) && appointment?.professional_name) {
             try {
@@ -164,6 +163,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         try {
             await supabase.from('financial_transactions').delete().eq('appointment_id', appointment.id);
 
+            // PAYLOAD LIMPO: Sem user_id para evitar erro 42703
             const payload = {
                 amount: appointment.price, 
                 net_value: financialMetrics.netValue, 
@@ -177,7 +177,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 client_id: isUUID(appointment.client_id) ? appointment.client_id : null,
                 appointment_id: appointment.id,
                 installments: installments,
-                status: 'paid',
+                status: 'pago',
                 date: new Date().toISOString()
             };
 
@@ -188,7 +188,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
             setToast({ message: "Recebimento concluído com sucesso! 💰", type: 'success' });
             
-            // UX FEEDBACK LOOP: Aguarda 1s para o usuário ver o sucesso antes de resetar e fechar
             setTimeout(() => {
                 resetLocalState();
                 onSuccess(); 

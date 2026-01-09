@@ -13,11 +13,11 @@ import {
     ArrowUp, ArrowDown, PieChart, Receipt, Target, LayoutDashboard,
     HardDrive, History, Archive, Cake, Gauge, FileDown, Sheet
 } from 'lucide-react';
-// FIX: Grouping date-fns imports to ensure correct symbol resolution in the build environment.
+// FIX: Grouping date-fns imports and removing problematic members startOfMonth, subMonths, startOfDay, subDays, startOfYesterday.
 import { 
-    format, startOfMonth, endOfMonth, 
-    differenceInDays, subMonths, isSameDay, startOfDay, endOfDay,
-    eachDayOfInterval, isWithinInterval, subDays, startOfYesterday, endOfYesterday
+    format, endOfMonth, 
+    differenceInDays, isSameDay, endOfDay,
+    eachDayOfInterval, isWithinInterval, addDays, addMonths, endOfYesterday
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { 
@@ -67,7 +67,9 @@ const RelatoriosView: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [isComparing, setIsComparing] = useState(false);
     
-    const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+    // FIX: Manual startOfMonth replacement.
+    const getStartOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+    const [startDate, setStartDate] = useState(format(getStartOfMonth(new Date()), 'yyyy-MM-dd'));
     const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     
     const [transactions, setTransactions] = useState<any[]>([]);
@@ -83,11 +85,13 @@ const RelatoriosView: React.FC = () => {
         if (!activeStudioId) return;
         setIsLoading(true);
         try {
-            const currentStart = startOfDay(new Date(startDate));
+            // FIX: Manual startOfDay replacement.
+            const currentStart = new Date(startDate); currentStart.setHours(0,0,0,0);
             const currentEnd = endOfDay(new Date(endDate));
             const diffDays = differenceInDays(currentEnd, currentStart) + 1;
-            const prevStart = subDays(currentStart, diffDays);
-            const prevEnd = subDays(currentEnd, diffDays);
+            // FIX: Manual subDays replacement using addDays.
+            const prevStart = addDays(currentStart, -diffDays);
+            const prevEnd = addDays(currentEnd, -diffDays);
 
             const [transRes, prevTransRes, apptsRes, prodsRes, clientsRes, ltvRes] = await Promise.all([
                 supabase.from('financial_transactions').select('*').eq('studio_id', activeStudioId).gte('date', currentStart.toISOString()).lte('date', currentEnd.toISOString()).neq('status', 'cancelado'),

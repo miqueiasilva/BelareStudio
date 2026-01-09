@@ -7,12 +7,12 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
-// FIX: Grouping date-fns imports to ensure correct symbol resolution in the build environment.
+// FIX: Grouping date-fns imports and removing problematic members startOfMonth, startOfWeek, subMonths, startOfDay, set.
 import { 
-    format, startOfMonth, endOfMonth, 
-    startOfWeek, endOfWeek, eachDayOfInterval, 
-    isSameDay, addMonths, subMonths, isSameMonth, 
-    isBefore, startOfDay, set
+    format, endOfMonth, 
+    endOfWeek, eachDayOfInterval, 
+    isSameDay, addMonths, isSameMonth, 
+    isBefore
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import Toast, { ToastType } from '../shared/Toast';
@@ -69,7 +69,12 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     useEffect(() => { fetchData(); }, [activeStudioId]);
 
     const calendarDays = useMemo(() => {
-        const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 0 });
+        // FIX: Manual startOfMonth and startOfWeek replacements.
+        const sm = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1, 0, 0, 0, 0);
+        const start = new Date(sm);
+        start.setDate(start.getDate() - start.getDay());
+        start.setHours(0, 0, 0, 0);
+
         const end = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 0 });
         return eachDayOfInterval({ start, end });
     }, [currentMonth]);
@@ -101,8 +106,11 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             const blocksToInsert = [];
 
             for (const date of selectedDates) {
-                const startTime = set(date, { hours: startH, minutes: startM, seconds: 0, milliseconds: 0 });
-                const endTime = set(date, { hours: endH, minutes: endM, seconds: 0, milliseconds: 0 });
+                // FIX: Manual set replacement using Date object methods.
+                const startTime = new Date(date);
+                startTime.setHours(startH, startM, 0, 0);
+                const endTime = new Date(date);
+                endTime.setHours(endH, endM, 0, 0);
 
                 for (const profId of selectedProfIds) {
                     blocksToInsert.push({
@@ -230,7 +238,7 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 <div className="flex items-center justify-between">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">2. Selecione as Datas</label>
                                     <div className="flex items-center gap-2">
-                                        <button type="button" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="p-1 text-slate-400 hover:bg-slate-100 rounded"><ChevronLeft size={16} /></button>
+                                        <button type="button" onClick={() => setCurrentMonth(addMonths(currentMonth, -1))} className="p-1 text-slate-400 hover:bg-slate-100 rounded"><ChevronLeft size={16} /></button>
                                         <span className="text-xs font-black text-slate-700 uppercase">{format(currentMonth, 'MMMM yyyy', { locale: pt })}</span>
                                         <button type="button" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="p-1 text-slate-400 hover:bg-slate-100 rounded"><ChevronRight size={16} /></button>
                                     </div>
@@ -240,7 +248,9 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                     {calendarDays.map(day => {
                                         const isSelected = selectedDates.some(d => isSameDay(d, day));
                                         const isCurrMonth = isSameMonth(day, currentMonth);
-                                        const isPast = isBefore(day, startOfDay(new Date()));
+                                        // FIX: Manual startOfDay replacement.
+                                        const startOfToday = new Date(); startOfToday.setHours(0,0,0,0);
+                                        const isPast = isBefore(day, startOfToday);
                                         return (
                                             <button 
                                                 key={day.toISOString()}
