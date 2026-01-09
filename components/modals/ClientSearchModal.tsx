@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Search, User, ChevronRight, Plus, Loader2, UserPlus } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
+import { useStudio } from '../../contexts/StudioContext';
 import { Client } from '../../types';
 
 interface ClientSearchModalProps {
@@ -11,6 +12,7 @@ interface ClientSearchModalProps {
 }
 
 const ClientSearchModal: React.FC<ClientSearchModalProps> = ({ onClose, onSelect, onNewClient }) => {
+  const { activeStudioId } = useStudio();
   const [searchTerm, setSearchTerm] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(false);
@@ -23,14 +25,16 @@ const ClientSearchModal: React.FC<ClientSearchModalProps> = ({ onClose, onSelect
     }, 300);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm]);
+  }, [searchTerm, activeStudioId]);
 
   const searchClients = async (term: string) => {
+    if (!activeStudioId) return;
     setLoading(true);
     try {
       let query = supabase
         .from('clients')
         .select('id, nome, whatsapp, email')
+        .eq('studio_id', activeStudioId)
         .limit(20);
 
       if (term.trim()) {
