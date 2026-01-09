@@ -50,10 +50,12 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const [financialGoal, setFinancialGoal] = useState(0);
     const [monthRevenueTotal, setMonthRevenueTotal] = useState(0);
     
+    // Filtro de Período
     const [filter, setFilter] = useState<'hoje' | 'semana' | 'mes' | 'custom'>('hoje');
     const [customStart, setCustomStart] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
     
+    // Estados temporários para o filtro personalizado (UX de confirmação)
     const [tempStart, setTempStart] = useState(customStart);
     const [tempEnd, setTempEnd] = useState(customEnd);
 
@@ -82,7 +84,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 return {
                     start: startOfDay(parseISO(customStart)).toISOString(),
                     end: endOfDay(parseISO(customEnd)).toISOString(),
-                    label: `Período personalizado`
+                    label: `Período: ${format(parseISO(customStart), 'dd/MM')} a ${format(parseISO(customEnd), 'dd/MM')}`
                 };
             default:
                 return { 
@@ -93,7 +95,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         }
     }, [filter, customStart, customEnd]);
 
-    // --- LEITURA OBRIGATÓRIA DA VIEW PARA EVITAR ERRO 400 ---
+    // --- CARREGAMENTO DE DADOS ---
     useEffect(() => {
         let mounted = true;
 
@@ -101,9 +103,9 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
             try {
                 if (mounted) setIsLoading(true);
 
-                // 1. Agendamentos via VIEW (Flattened Data)
+                // 1. Agendamentos no PERÍODO SELECIONADO para os Cards principais
                 const { data: appts, error: apptsError } = await supabase
-                    .from('vw_agenda_completa')
+                    .from('appointments')
                     .select('*')
                     .gte('date', dateRange.start)
                     .lte('date', dateRange.end)
@@ -112,13 +114,13 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 if (apptsError) throw apptsError;
                 if (mounted) setAppointments(appts || []);
 
-                // 2. Faturamento mensal acumulado para Meta (Sempre via View)
+                // 2. Dados específicos para o card de Meta (Sempre focado no MÊS ATUAL acumulado)
                 const now = new Date();
                 const startMonthStr = startOfMonth(now).toISOString();
                 const endMonthStr = endOfMonth(now).toISOString();
                 
                 const { data: monthData, error: monthError } = await supabase
-                    .from('vw_agenda_completa')
+                    .from('appointments')
                     .select('value')
                     .eq('status', 'concluido')
                     .gte('date', startMonthStr)
@@ -129,22 +131,33 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 const totalMonthRev = monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0;
                 if (mounted) setMonthRevenueTotal(totalMonthRev);
 
-                // 3. Meta do Estúdio
-                const { data: settings } = await supabase.from('studio_settings').select('revenue_goal').maybeSingle();
-                if (mounted) setFinancialGoal(settings?.revenue_goal || 5000);
+                // 3. Busca DEDICADA da meta configurada em studio_settings (revenue_goal)
+                const { data: settings, error: settingsError } = await supabase
+                    .from('studio_settings')
+                    .select('revenue_goal')
+                    .maybeSingle();
+                
+                if (settingsError) throw settingsError;
+                
+                if (mounted) {
+                    setFinancialGoal(settings?.revenue_goal || 5000); // Fallback de 5000 se não houver meta
+                }
 
             } catch (e) {
-                console.error("Erro ao sincronizar dashboard:", e);
+                console.error("Erro crítico ao sincronizar dashboard:", e);
             } finally {
                 if (mounted) setIsLoading(false);
             }
         };
 
         fetchDashboardData();
-        return () => { mounted = false; };
+
+        return () => {
+            mounted = false;
+        };
     }, [dateRange]);
 
-    // KPIs Calculados sobre os dados da View
+    // KPIs Dinâmicos baseados no filtro selecionado (Hoje, 7 Dias, etc)
     const kpis = useMemo(() => {
         const revenue = appointments
             .filter(a => a.status === 'concluido')
@@ -156,6 +169,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         return { revenue, scheduled, completed };
     }, [appointments]);
 
+    // Lógica de Meta Financeira
     const goalMetrics = useMemo(() => {
         const goalProgress = financialGoal > 0 ? (monthRevenueTotal / financialGoal) * 100 : 0;
         const displayGoal = financialGoal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -174,8 +188,11 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     if (isLoading) {
         return (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-white">
-                <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
-                <p className="text-xs font-black uppercase tracking-[0.3em] animate-pulse">Sincronizando BI...</p>
+                <div className="relative">
+                    <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
+                    <div className="absolute inset-0 animate-ping rounded-full border-4 border-orange-100"></div>
+                </div>
+                <p className="text-xs font-black uppercase tracking-[0.3em] animate-pulse mt-4">Sincronizando {dateRange.label}...</p>
             </div>
         );
     }
@@ -189,45 +206,102 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         <span className="capitalize">{format(new Date(), "EEEE, dd 'de' MMMM", { locale: pt })}</span>
                     </div>
                     <h1 className="text-xl sm:text-3xl font-black text-slate-800 leading-tight">
-                        Dashboard <span className="text-orange-500">Inteligente</span>
+                        Dashboard <span className="text-orange-500">Real-Time</span>
                     </h1>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-4">
+                    {/* Filtro de Período UI */}
                     <div className="flex flex-col gap-2 items-end">
                         <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                            {['hoje', 'semana', 'mes', 'custom'].map((f) => (
-                                <button 
-                                    key={f}
-                                    onClick={() => setFilter(f as any)}
-                                    className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === f ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
-                                >
-                                    {f === 'custom' ? <CalendarRange size={12} /> : f}
-                                </button>
-                            ))}
+                            <button 
+                                onClick={() => setFilter('hoje')}
+                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'hoje' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
+                            >
+                                Hoje
+                            </button>
+                            <button 
+                                onClick={() => setFilter('semana')}
+                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'semana' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
+                            >
+                                7 Dias
+                            </button>
+                            <button 
+                                onClick={() => setFilter('mes')}
+                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'mes' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
+                            >
+                                Mês
+                            </button>
+                            <button 
+                                onClick={() => setFilter('custom')}
+                                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'custom' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
+                            >
+                                <span className="flex items-center gap-1"><CalendarRange size={12} /> Personalizado</span>
+                            </button>
                         </div>
 
                         {filter === 'custom' && (
-                            <div className="flex items-center gap-2 animate-in slide-in-from-top-2">
-                                <input type="date" value={tempStart} onChange={(e) => setTempStart(e.target.value)} className="text-[11px] font-bold p-1.5 border rounded-xl" />
-                                <input type="date" value={tempEnd} onChange={(e) => setTempEnd(e.target.value)} className="text-[11px] font-bold p-1.5 border rounded-xl" />
-                                <button onClick={handleApplyCustomFilter} className="bg-orange-500 text-white p-2 rounded-xl"><FilterIcon size={14} /></button>
+                            <div className="flex items-center gap-2 animate-in slide-in-from-top-2 duration-300">
+                                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase">De:</span>
+                                    <input 
+                                        type="date" 
+                                        value={tempStart} 
+                                        onChange={(e) => setTempStart(e.target.value)}
+                                        className="text-[11px] font-bold text-slate-700 outline-none"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase">Até:</span>
+                                    <input 
+                                        type="date" 
+                                        value={tempEnd} 
+                                        onChange={(e) => setTempEnd(e.target.value)}
+                                        className="text-[11px] font-bold text-slate-700 outline-none"
+                                    />
+                                </div>
+                                <button 
+                                    onClick={handleApplyCustomFilter}
+                                    className="bg-orange-500 hover:bg-orange-600 text-white p-2 rounded-xl shadow-lg shadow-orange-100 transition-all active:scale-90"
+                                    title="Aplicar Filtro"
+                                >
+                                    <FilterIcon size={16} />
+                                </button>
                             </div>
                         )}
                     </div>
 
-                    <button onClick={() => onNavigate('agenda')} className="px-4 py-2.5 bg-orange-500 text-white font-black rounded-xl hover:bg-orange-600 transition shadow-lg flex items-center gap-2 text-sm">
+                    <button onClick={() => onNavigate('agenda')} className="px-4 py-2.5 bg-orange-500 text-white font-black rounded-xl hover:bg-orange-600 transition shadow-lg shadow-orange-100 flex items-center gap-2 text-sm active:scale-95">
                         <PlusCircle size={18} /> Novo Agendamento
                     </button>
                 </div>
             </header>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6 sm:mb-8">
-                <StatCard title={`Faturamento`} value={formatCurrency(kpis.revenue)} icon={DollarSign} colorClass="bg-green-500" subtext={dateRange.label} />
-                <StatCard title={`Agendados`} value={kpis.scheduled} icon={Calendar} colorClass="bg-blue-500" subtext={dateRange.label} />
-                <StatCard title={`Concluídos`} value={kpis.completed} icon={Users} colorClass="bg-purple-500" subtext={dateRange.label} />
+                <StatCard 
+                    title={`Faturamento (${dateRange.label})`} 
+                    value={formatCurrency(kpis.revenue)} 
+                    icon={DollarSign} 
+                    colorClass="bg-green-500" 
+                    subtext="Serviços concluídos"
+                />
+                <StatCard 
+                    title={`Agendados (${dateRange.label})`} 
+                    value={kpis.scheduled} 
+                    icon={Calendar} 
+                    colorClass="bg-blue-500" 
+                    subtext="Total no período"
+                />
+                <StatCard 
+                    title={`Concluídos (${dateRange.label})`} 
+                    value={kpis.completed} 
+                    icon={Users} 
+                    colorClass="bg-purple-500" 
+                    subtext="Finalizados"
+                />
                 
-                <div className="bg-slate-800 p-4 sm:p-5 rounded-2xl text-white flex flex-col justify-between shadow-lg relative overflow-hidden group h-full transition-all">
+                {/* CARD DE META FINANCEIRA DINÂMICA */}
+                <div className="bg-slate-800 p-4 sm:p-5 rounded-2xl text-white flex flex-col justify-between shadow-lg relative overflow-hidden group h-full transition-all hover:shadow-xl hover:shadow-slate-200">
                     <div className="flex justify-between items-start z-10">
                         <p className="text-[10px] font-black uppercase tracking-widest opacity-60">META MENSAL</p>
                         <TrendingUp size={12} className="text-orange-400" />
@@ -238,8 +312,12 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                             <span className="text-[10px] font-bold opacity-60">alvo: {goalMetrics.display}</span>
                         </div>
                         <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden mb-1">
-                            <div className="h-full bg-orange-500 transition-all duration-1000" style={{ width: `${goalMetrics.visual}%` }} />
+                            <div 
+                                className="h-full bg-orange-500 transition-all duration-1000 ease-out" 
+                                style={{ width: `${goalMetrics.visual}%` }} 
+                            />
                         </div>
+                        <p className="text-[8px] font-black uppercase tracking-tighter opacity-40 mt-1">Sincronizado com fechamentos do mês</p>
                     </div>
                     <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity">
                         <TrendingUp size={100} />
@@ -262,8 +340,8 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     <Card title="Atividade Recente" icon={<BarChart3 size={18} className="text-orange-500" />}>
                         <div className="py-10 text-center text-slate-400 flex flex-col items-center">
                             <TrendingUp className="opacity-10 mb-2" size={48} />
-                            <p className="text-sm font-bold uppercase tracking-widest">Gráficos de fluxo ativos</p>
-                            <p className="text-[10px] font-medium text-slate-300 mt-2">Dados sincronizados via View vw_agenda_completa.</p>
+                            <p className="text-sm font-bold uppercase tracking-widest">Análise de fluxo em processamento...</p>
+                            <p className="text-[10px] font-medium text-slate-300 mt-2">Os gráficos são atualizados a cada fechamento de caixa.</p>
                         </div>
                     </Card>
                 </div>
