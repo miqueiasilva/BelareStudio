@@ -8,10 +8,10 @@ import {
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import { 
-    format, endOfMonth, 
-    endOfWeek, eachDayOfInterval, 
-    isSameDay, addMonths, isSameMonth, 
-    isBefore
+    format, parseISO, startOfMonth, endOfMonth, 
+    startOfWeek, endOfWeek, eachDayOfInterval, 
+    isSameDay, addMonths, subMonths, isSameMonth, 
+    isBefore, startOfDay, set
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import Toast, { ToastType } from '../shared/Toast';
@@ -67,14 +67,7 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     useEffect(() => { fetchData(); }, [activeStudioId]);
 
     const calendarDays = useMemo(() => {
-        // FIX: Replaced startOfMonth and startOfWeek with manual implementation
-        const som = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
-        const d = new Date(som);
-        const day = d.getDay();
-        d.setDate(d.getDate() - day);
-        d.setHours(0, 0, 0, 0);
-        const start = d;
-
+        const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 0 });
         const end = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 0 });
         return eachDayOfInterval({ start, end });
     }, [currentMonth]);
@@ -106,17 +99,11 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             selectedProfIds.forEach(profId => {
                 selectedDates.forEach(date => {
-                    // FIX: Replaced set with manual Date implementation
-                    const startTime = new Date(date);
-                    startTime.setHours(startH, startM, 0, 0);
-                    const endTime = new Date(date);
-                    endTime.setHours(endH, endM, 0, 0);
-
                     blocksToInsert.push({
                         studio_id: activeStudioId,
                         professional_id: profId === 'store' ? null : profId,
-                        start_time: startTime.toISOString(),
-                        end_time: endTime.toISOString(),
+                        start_time: set(date, { hours: startH, minutes: startM, seconds: 0 }).toISOString(),
+                        end_time: set(date, { hours: endH, minutes: endM, seconds: 0 }).toISOString(),
                         reason: reason
                     });
                 });
@@ -169,8 +156,8 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             <div className="space-y-4"><div className="flex items-center justify-between"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">1. Profissionais Afetados</label><button type="button" onClick={toggleAllProfs} className="text-[10px] font-black text-orange-500 uppercase tracking-widest hover:underline">{selectedProfIds.length === professionals.length ? 'Desmarcar Todos' : 'Selecionar Todos'}</button></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><button type="button" onClick={() => toggleProf('store')} className={`flex items-center gap-3 p-4 rounded-2xl border-2 transition-all text-left ${selectedProfIds.includes('store') ? 'border-orange-500 bg-orange-50 shadow-md' : 'border-slate-100 bg-slate-50/50 hover:border-slate-200'}`}><div className={`w-6 h-6 rounded-lg flex items-center justify-center border-2 transition-all ${selectedProfIds.includes('store') ? 'bg-orange-500 border-orange-500 text-white' : 'bg-white border-slate-200'}`}>{selectedProfIds.includes('store') && <Check size={14} strokeWidth={4} />}</div><div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><Store size={14}/></div><span className="text-xs font-bold text-slate-700">Toda a Loja</span></button>
                                 {professionals.map(p => (<button key={p.id} type="button" onClick={() => toggleProf(p.id)} className={`flex items-center gap-3 p-4 rounded-2xl border-2 transition-all text-left ${selectedProfIds.includes(p.id) ? 'border-orange-500 bg-orange-50 shadow-md' : 'border-slate-100 bg-slate-50/50 hover:border-slate-200'}`}><div className={`w-6 h-6 rounded-lg flex items-center justify-center border-2 transition-all ${selectedProfIds.includes(p.id) ? 'bg-orange-500 border-orange-500 text-white' : 'bg-white border-slate-200'}`}>{selectedProfIds.includes(p.id) && <Check size={14} strokeWidth={4} />}</div><div className="w-8 h-8 rounded-full overflow-hidden bg-slate-200"><img src={p.photo_url || `https://ui-avatars.com/api/?name=${p.name}`} className="w-full h-full object-cover" /></div><span className="text-xs font-bold text-slate-700 truncate">{p.name}</span></button>))}
                             </div></div>
-                            <div className="space-y-4"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">2. Selecione os Dias ({selectedDates.length})</label><div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm"><div className="flex justify-between items-center mb-6"><h4 className="font-black text-slate-800 uppercase text-xs tracking-widest flex items-center gap-2"><Calendar size={16} className="text-orange-500" /><span className="capitalize">{format(currentMonth, 'MMMM yyyy', { locale: pt })}</span></h4><div className="flex gap-2"><button type="button" onClick={() => setCurrentMonth(addMonths(currentMonth, -1))} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400"><ChevronLeft size={20} /></button><button type="button" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400"><ChevronRight size={20} /></button></div></div><div className="grid grid-cols-7 gap-1">{['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map(d => (<div key={d} className="text-center text-[10px] font-black text-slate-300 py-2">{d}</div>))}
-                                {calendarDays.map((day) => { const isSelected = selectedDates.some(d => isSameDay(d, day)); const isCurrMonth = isSameMonth(day, currentMonth); const isPast = isBefore(new Date(new Date(day).setHours(0, 0, 0, 0)), new Date(new Date().setHours(0, 0, 0, 0))); return (<button key={day.toISOString()} type="button" disabled={!isCurrMonth || isPast} onClick={() => toggleDate(day)} className={`aspect-square rounded-2xl flex items-center justify-center text-xs font-bold transition-all relative ${!isCurrMonth ? 'opacity-0 pointer-events-none' : ''} ${isSelected ? 'bg-orange-500 text-white shadow-lg scale-110 z-10' : isPast ? 'text-slate-200 cursor-not-allowed' : 'text-slate-600 hover:bg-orange-50 hover:text-orange-600'}`}>{format(day, 'd')}</button>); })}
+                            <div className="space-y-4"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">2. Selecione os Dias ({selectedDates.length})</label><div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm"><div className="flex justify-between items-center mb-6"><h4 className="font-black text-slate-800 uppercase text-xs tracking-widest flex items-center gap-2"><Calendar size={16} className="text-orange-500" /><span className="capitalize">{format(currentMonth, 'MMMM yyyy', { locale: pt })}</span></h4><div className="flex gap-2"><button type="button" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400"><ChevronLeft size={20} /></button><button type="button" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400"><ChevronRight size={20} /></button></div></div><div className="grid grid-cols-7 gap-1">{['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map(d => (<div key={d} className="text-center text-[10px] font-black text-slate-300 py-2">{d}</div>))}
+                                {calendarDays.map((day) => { const isSelected = selectedDates.some(d => isSameDay(d, day)); const isCurrMonth = isSameMonth(day, currentMonth); const isPast = isBefore(startOfDay(day), startOfDay(new Date())); return (<button key={day.toISOString()} type="button" disabled={!isCurrMonth || isPast} onClick={() => toggleDate(day)} className={`aspect-square rounded-2xl flex items-center justify-center text-xs font-bold transition-all relative ${!isCurrMonth ? 'opacity-0 pointer-events-none' : ''} ${isSelected ? 'bg-orange-500 text-white shadow-lg scale-110 z-10' : isPast ? 'text-slate-200 cursor-not-allowed' : 'text-slate-600 hover:bg-orange-50 hover:text-orange-600'}`}>{format(day, 'd')}</button>); })}
                             </div></div></div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8"><div className="space-y-4"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">3. Janela de Horário</label><div className="flex items-center gap-3"><input type="time" value={timeRange.start} onChange={e => setTimeRange({...timeRange, start: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-orange-300" /><span className="text-slate-300 font-bold">até</span><input type="time" value={timeRange.end} onChange={e => setTimeRange({...timeRange, end: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-orange-300" /></div></div><div className="space-y-4"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">4. Motivo do Bloqueio</label><input required value={reason} onChange={e => setReason(e.target.value)} className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-orange-300" placeholder="Ex: Almoço, Folga, Reforma..." /></div></div>
                         </form>

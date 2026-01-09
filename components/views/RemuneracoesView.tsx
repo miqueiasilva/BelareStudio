@@ -1,7 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-// FIX: Removed missing member 'startOfMonth' and replaced it with standard Date logic.
-import { format, addMonths, endOfMonth } from 'date-fns';
+import { format, addMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { 
     Wallet, ChevronDown, ChevronUp, Download, CheckCircle, 
@@ -34,8 +33,7 @@ const RemuneracoesView: React.FC = () => {
     setError(null);
 
     try {
-        // FIX: Replaced startOfMonth with manual implementation.
-        const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+        const start = startOfMonth(currentDate).toISOString();
         const end = endOfMonth(currentDate).toISOString();
 
         const [teamRes, transRes] = await Promise.all([

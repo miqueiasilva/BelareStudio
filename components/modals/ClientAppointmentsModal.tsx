@@ -5,7 +5,7 @@ import {
     CheckCircle2, ChevronRight, ArrowLeft, Loader2, Trash2 
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
-import { format, differenceInHours, isAfter } from 'date-fns';
+import { format, differenceInHours, isAfter, parseISO } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
 interface ClientAppointmentsModalProps {
@@ -54,8 +54,7 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
 
     const handleCancelAppointment = async (app: any) => {
         const now = new Date();
-        // FIX: Replaced parseISO with new Date()
-        const appDate = new Date(app.date);
+        const appDate = parseISO(app.date);
         const hoursDiff = differenceInHours(appDate, now);
 
         if (hoursDiff < policyHours) {
@@ -90,8 +89,7 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
     };
 
     const filteredList = appointments.filter(app => {
-        // FIX: Replaced parseISO with new Date()
-        const isPast = !isAfter(new Date(app.date), new Date());
+        const isPast = !isAfter(parseISO(app.date), new Date());
         return activeTab === 'next' ? !isPast && app.status !== 'cancelado' : isPast || app.status === 'cancelado';
     });
 
@@ -101,7 +99,7 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
                 <header className="p-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
                     <div className="flex items-center gap-4">
                         {step === 'list' && (
-                            <button onClick={() => setStep('identify')} className="p-2 bg-white rounded-xl text-slate-400 hover:text-orange-50 shadow-sm transition-all">
+                            <button onClick={() => setStep('identify')} className="p-2 bg-white rounded-xl text-slate-400 hover:text-orange-500 shadow-sm transition-all">
                                 <ArrowLeft size={20} />
                             </button>
                         )}
@@ -169,17 +167,15 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
                                         <div key={app.id} className="bg-white border border-slate-100 rounded-3xl p-4 shadow-sm hover:shadow-md transition-all flex gap-4 items-center">
                                             {/* Data Badge */}
                                             <div className="flex-shrink-0 w-14 h-14 bg-slate-50 rounded-2xl flex flex-col items-center justify-center border border-slate-100">
-                                                {/* FIX: Replaced parseISO with new Date() */}
-                                                <span className="text-[10px] font-black text-slate-400 uppercase leading-none">{format(new Date(app.date), 'MMM', { locale: pt })}</span>
-                                                <span className="text-xl font-black text-slate-800 leading-none">{format(new Date(app.date), 'dd')}</span>
+                                                <span className="text-[10px] font-black text-slate-400 uppercase leading-none">{format(parseISO(app.date), 'MMM', { locale: pt })}</span>
+                                                <span className="text-xl font-black text-slate-800 leading-none">{format(parseISO(app.date), 'dd')}</span>
                                             </div>
 
                                             {/* Info */}
                                             <div className="flex-1 min-w-0">
                                                 <h4 className="font-bold text-slate-800 text-sm truncate">{app.service_name}</h4>
                                                 <div className="flex items-center gap-3 text-slate-400 text-[10px] font-bold uppercase mt-0.5">
-                                                    {/* FIX: Replaced parseISO with new Date() */}
-                                                    <span className="flex items-center gap-1"><Clock size={10} /> {format(new Date(app.date), 'HH:mm')}</span>
+                                                    <span className="flex items-center gap-1"><Clock size={10} /> {format(parseISO(app.date), 'HH:mm')}</span>
                                                     <span className="flex items-center gap-1"><Scissors size={10} /> {app.professional_name}</span>
                                                 </div>
                                             </div>
