@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
     Plus, Scissors, Clock, DollarSign, Edit2, Trash2, 
     Loader2, Search, X, CheckCircle, RefreshCw,
@@ -22,7 +22,7 @@ const ServicosView: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
     
-    // FIX: Alterado para 'list' como padrão conforme solicitado
+    // Visualização padrão: Lista
     const [viewMode, setViewMode] = useState<'kanban' | 'list'>('list');
     
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -30,7 +30,7 @@ const ServicosView: React.FC = () => {
     const [editingService, setEditingService] = useState<Partial<Service> | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    const fetchCategories = async () => {
+    const fetchCategories = useCallback(async () => {
         if (!activeStudioId) return;
         try {
             const { data, error } = await supabase
@@ -43,9 +43,9 @@ const ServicosView: React.FC = () => {
         } catch (e) {
             console.error("Erro categorias:", e);
         }
-    };
+    }, [activeStudioId]);
 
-    const fetchServices = async () => {
+    const fetchServices = useCallback(async () => {
         if (!activeStudioId) return;
         setLoading(true);
         try {
@@ -61,18 +61,12 @@ const ServicosView: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [activeStudioId]);
 
     useEffect(() => { 
         fetchServices();
         fetchCategories();
-    }, [activeStudioId]);
-
-    // Lista de nomes para filtros e modais
-    const categoryOptions = useMemo(() => {
-        const names = dbCategories.map(c => c.name);
-        return ['Todas', ...names].sort();
-    }, [dbCategories]);
+    }, [fetchServices, fetchCategories]);
 
     const handleSave = async (payload: any) => {
         if (!activeStudioId) return;
@@ -113,7 +107,6 @@ const ServicosView: React.FC = () => {
 
     const servicesByCategory = useMemo(() => {
         const groups: Record<string, Service[]> = {};
-        // Inicializa com as categorias do banco para manter ordem
         dbCategories.forEach(cat => { groups[cat.name] = []; });
         if (!groups['Sem Categoria']) groups['Sem Categoria'] = [];
 
@@ -123,9 +116,8 @@ const ServicosView: React.FC = () => {
             groups[cat].push(s);
         });
         
-        // Remove vazias se não for 'Sem Categoria'
         return Object.fromEntries(
-            Object.entries(groups).filter(([name, items]) => items.length > 0 || name === 'Sem Categoria')
+            Object.entries(groups).filter(([name, items]) => items.length > 0 || dbCategories.some(c => c.name === name))
         );
     }, [filteredServices, dbCategories]);
 
@@ -166,7 +158,7 @@ const ServicosView: React.FC = () => {
                         onClick={() => setIsCategoryModalOpen(true)}
                         className="bg-white border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl font-black text-xs hover:bg-slate-50 transition-all uppercase tracking-widest flex items-center gap-2 shadow-sm"
                     >
-                        <Tag size={16} /> Categorias
+                        <Tag size={16} /> Gerenciar Categorias
                     </button>
 
                     <button 
@@ -189,17 +181,18 @@ const ServicosView: React.FC = () => {
                         className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-orange-50 focus:border-orange-400 focus:bg-white outline-none font-bold text-slate-700 transition-all" 
                     />
                 </div>
-                <div className="relative min-w-[220px]">
-                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                <div className="relative min-w-[250px]">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-orange-500">
                         <Filter size={18} />
                     </div>
                     <select 
                         value={selectedCategory}
                         onChange={(e) => setSelectedCategory(e.target.value)}
-                        className="w-full pl-11 pr-10 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl appearance-none outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 font-bold text-slate-700 cursor-pointer transition-all"
+                        className="w-full pl-11 pr-10 py-3.5 bg-slate-50 border-2 border-slate-100 rounded-2xl appearance-none outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 font-black text-xs uppercase tracking-widest text-slate-600 cursor-pointer transition-all"
                     >
-                        {categoryOptions.map(cat => (
-                            <option key={cat} value={cat}>{cat}</option>
+                        <option value="Todas">Todas as Categorias</option>
+                        {dbCategories.map(cat => (
+                            <option key={cat.id} value={cat.name}>{cat.name}</option>
                         ))}
                     </select>
                     <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={16} />
@@ -271,7 +264,7 @@ const ServicosView: React.FC = () => {
                                                 <div className="w-2 h-8 rounded-full" style={{ backgroundColor: s.cor_hex || '#f97316' }}></div>
                                                 <div>
                                                     <p className="font-black text-slate-800 group-hover:text-orange-600 transition-colors">{s.nome}</p>
-                                                    <span className="text-[9px] font-black text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded-lg mt-1 inline-block border border-slate-200">{s.categoria || 'Geral'}</span>
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded-lg mt-1 inline-block border border-slate-200">{s.categoria || 'Sem Categoria'}</span>
                                                 </div>
                                             </div>
                                         </td>
@@ -300,7 +293,8 @@ const ServicosView: React.FC = () => {
                     service={editingService} 
                     onClose={() => setIsModalOpen(false)} 
                     onSave={handleSave} 
-                    availableCategories={categoryOptions.filter(c => c !== 'Todas')} 
+                    dbCategories={dbCategories}
+                    onOpenCategoryManager={() => setIsCategoryModalOpen(true)}
                 />
             )}
 

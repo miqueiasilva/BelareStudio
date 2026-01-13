@@ -1,16 +1,17 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Save, Scissors, DollarSign, Clock, Tag, AlignLeft, Info, Loader2, ChevronDown } from 'lucide-react';
+import { X, Save, Scissors, DollarSign, Clock, Tag, AlignLeft, Info, Loader2, ChevronDown, Plus } from 'lucide-react';
 import { Service } from '../../types';
 
 interface ServiceModalProps {
     service?: Partial<Service> | null;
-    availableCategories: string[];
+    dbCategories: any[];
     onClose: () => void;
     onSave: (service: any) => Promise<void>;
+    onOpenCategoryManager: () => void;
 }
 
-const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCategories, onClose, onSave }) => {
+const ServiceModal: React.FC<ServiceModalProps> = ({ service, dbCategories, onClose, onSave, onOpenCategoryManager }) => {
     const [formData, setFormData] = useState<any>({
         nome: '',
         preco: 0,
@@ -95,23 +96,33 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCategorie
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Categoria</label>
-                            <div className="relative group">
-                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors">
-                                    <Tag size={18} />
+                            <div className="flex gap-2">
+                                <div className="relative flex-1 group">
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors">
+                                        <Tag size={18} />
+                                    </div>
+                                    <select 
+                                        value={formData.categoria}
+                                        onChange={e => setFormData({...formData, categoria: e.target.value})}
+                                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl pl-12 pr-10 py-3.5 outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all font-bold text-slate-700 appearance-none cursor-pointer"
+                                    >
+                                        <option value="">Sem Categoria</option>
+                                        {dbCategories.map(cat => (
+                                            <option key={cat.id} value={cat.name}>{cat.name}</option>
+                                        ))}
+                                    </select>
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none">
+                                        <ChevronDown size={16} />
+                                    </div>
                                 </div>
-                                <input 
-                                    list="categories-list"
-                                    value={formData.categoria}
-                                    onChange={e => setFormData({...formData, categoria: e.target.value})}
-                                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl pl-12 pr-10 py-3.5 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-bold text-slate-700"
-                                    placeholder="Escolha ou digite nova..."
-                                />
-                                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none">
-                                    <ChevronDown size={16} />
-                                </div>
-                                <datalist id="categories-list">
-                                    {availableCategories.map(cat => <option key={cat} value={cat} />)}
-                                </datalist>
+                                <button 
+                                    type="button"
+                                    onClick={onOpenCategoryManager}
+                                    className="p-3.5 bg-orange-500 text-white rounded-2xl hover:bg-orange-600 transition-all shadow-lg shadow-orange-100 active:scale-95"
+                                    title="Nova Categoria"
+                                >
+                                    <Plus size={20} strokeWidth={3} />
+                                </button>
                             </div>
                         </div>
 
@@ -144,7 +155,7 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCategorie
                                     step="0.01" 
                                     value={formData.preco} 
                                     onChange={e => setFormData({...formData, preco: parseFloat(e.target.value)})} 
-                                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl pl-12 pr-4 py-3.5 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-black text-slate-800 text-xl" 
+                                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl pl-12 pr-4 py-3.5 outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all font-black text-slate-800 text-xl" 
                                 />
                             </div>
                         </div>
@@ -158,7 +169,7 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCategorie
                                         min="0"
                                         value={hours}
                                         onChange={(e) => setHours(Math.max(0, parseInt(e.target.value) || 0))}
-                                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3.5 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-black text-center text-lg text-slate-700"
+                                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3.5 outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all font-black text-center text-lg text-slate-700"
                                         placeholder="0"
                                     />
                                     <span className="absolute right-3 top-4 text-slate-300 text-[8px] font-black uppercase">hrs</span>
@@ -171,7 +182,7 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, availableCategorie
                                         max="59"
                                         value={minutes}
                                         onChange={(e) => setMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
-                                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3.5 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-black text-center text-lg text-slate-700"
+                                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3.5 outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all font-black text-center text-lg text-slate-700"
                                         placeholder="00"
                                     />
                                     <span className="absolute right-3 top-4 text-slate-300 text-[8px] font-black uppercase">min</span>
