@@ -4,25 +4,46 @@ import {
     Plus, Scissors, Clock, DollarSign, Edit2, Trash2, 
     Loader2, Search, X, CheckCircle, RefreshCw,
     LayoutGrid, List, Kanban, Filter, Tag, 
-    ChevronRight, MoreVertical, Layers, ChevronDown
+    ChevronRight, MoreVertical, Layers, ChevronDown,
+    Settings2
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import { Service } from '../../types';
 import Toast, { ToastType } from '../shared/Toast';
 import ServiceModal from '../modals/ServiceModal';
+import CategoryManagerModal from '../modals/CategoryManagerModal';
 
 const ServicosView: React.FC = () => {
     const { activeStudioId } = useStudio();
     const [services, setServices] = useState<Service[]>([]);
+    const [dbCategories, setDbCategories] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
-    const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
+    
+    // FIX: Alterado para 'list' como padrão conforme solicitado
+    const [viewMode, setViewMode] = useState<'kanban' | 'list'>('list');
     
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
     const [editingService, setEditingService] = useState<Partial<Service> | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+
+    const fetchCategories = async () => {
+        if (!activeStudioId) return;
+        try {
+            const { data, error } = await supabase
+                .from('service_categories')
+                .select('*')
+                .eq('studio_id', activeStudioId)
+                .order('name');
+            if (error) throw error;
+            setDbCategories(data || []);
+        } catch (e) {
+            console.error("Erro categorias:", e);
+        }
+    };
 
     const fetchServices = async () => {
         if (!activeStudioId) return;
@@ -36,19 +57,22 @@ const ServicosView: React.FC = () => {
             if (error) throw error;
             setServices(data || []);
         } catch (error: any) {
-            setToast({ message: "Erro ao carregar catálogo de serviços.", type: 'error' });
+            setToast({ message: "Erro ao carregar catálogo.", type: 'error' });
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => { fetchServices(); }, [activeStudioId]);
+    useEffect(() => { 
+        fetchServices();
+        fetchCategories();
+    }, [activeStudioId]);
 
-    // Extrai categorias únicas para o filtro
-    const categories = useMemo(() => {
-        const cats = services.map(s => s.categoria || 'Sem Categoria');
-        return ['Todas', ...Array.from(new Set(cats))].sort();
-    }, [services]);
+    // Lista de nomes para filtros e modais
+    const categoryOptions = useMemo(() => {
+        const names = dbCategories.map(c => c.name);
+        return ['Todas', ...names].sort();
+    }, [dbCategories]);
 
     const handleSave = async (payload: any) => {
         if (!activeStudioId) return;
@@ -61,7 +85,7 @@ const ServicosView: React.FC = () => {
             
             if (error) throw error;
             
-            setToast({ message: isEdit ? 'Serviço atualizado com sucesso!' : 'Novo serviço cadastrado!', type: 'success' });
+            setToast({ message: isEdit ? 'Serviço atualizado!' : 'Novo serviço cadastrado!', type: 'success' });
             fetchServices();
             setIsModalOpen(false);
         } catch (error: any) { 
@@ -70,18 +94,18 @@ const ServicosView: React.FC = () => {
     };
 
     const handleDelete = async (id: number) => {
-        if (window.confirm("Deseja realmente excluir este serviço? Esta ação não pode ser desfeita.")) {
+        if (window.confirm("Deseja realmente excluir este serviço?")) {
             const { error } = await supabase.from('services').delete().eq('id', id);
             if (!error) { 
                 fetchServices(); 
-                setToast({ message: 'Serviço removido do catálogo.', type: 'info' }); 
+                setToast({ message: 'Serviço removido.', type: 'info' }); 
             }
         }
     };
 
     const filteredServices = useMemo(() => {
         return services.filter(s => {
-            const matchesSearch = s.nome.toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesSearch = (s.nome || '').toLowerCase().includes(searchTerm.toLowerCase());
             const matchesCategory = selectedCategory === 'Todas' || (s.categoria || 'Sem Categoria') === selectedCategory;
             return matchesSearch && matchesCategory;
         });
@@ -89,13 +113,21 @@ const ServicosView: React.FC = () => {
 
     const servicesByCategory = useMemo(() => {
         const groups: Record<string, Service[]> = {};
+        // Inicializa com as categorias do banco para manter ordem
+        dbCategories.forEach(cat => { groups[cat.name] = []; });
+        if (!groups['Sem Categoria']) groups['Sem Categoria'] = [];
+
         filteredServices.forEach(s => {
             const cat = s.categoria || 'Sem Categoria';
             if (!groups[cat]) groups[cat] = [];
             groups[cat].push(s);
         });
-        return groups;
-    }, [filteredServices]);
+        
+        // Remove vazias se não for 'Sem Categoria'
+        return Object.fromEntries(
+            Object.entries(groups).filter(([name, items]) => items.length > 0 || name === 'Sem Categoria')
+        );
+    }, [filteredServices, dbCategories]);
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
@@ -112,8 +144,8 @@ const ServicosView: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                    <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                    <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 mr-2">
                         <button 
                             onClick={() => setViewMode('kanban')}
                             className={`p-2 rounded-lg transition-all ${viewMode === 'kanban' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`}
@@ -129,9 +161,17 @@ const ServicosView: React.FC = () => {
                             <List size={18} />
                         </button>
                     </div>
+                    
+                    <button 
+                        onClick={() => setIsCategoryModalOpen(true)}
+                        className="bg-white border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl font-black text-xs hover:bg-slate-50 transition-all uppercase tracking-widest flex items-center gap-2 shadow-sm"
+                    >
+                        <Tag size={16} /> Categorias
+                    </button>
+
                     <button 
                         onClick={() => { setEditingService(null); setIsModalOpen(true); }} 
-                        className="flex-1 md:flex-none bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-xl font-black text-xs shadow-lg shadow-orange-100 active:scale-95 transition-all uppercase tracking-widest flex items-center justify-center gap-2"
+                        className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-xl font-black text-xs shadow-lg shadow-orange-100 active:scale-95 transition-all uppercase tracking-widest flex items-center gap-2"
                     >
                         <Plus size={18} /> Novo Serviço
                     </button>
@@ -143,7 +183,7 @@ const ServicosView: React.FC = () => {
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors" size={20} />
                     <input 
                         type="text" 
-                        placeholder="Buscar por nome do serviço..." 
+                        placeholder="Buscar serviço..." 
                         value={searchTerm} 
                         onChange={e => setSearchTerm(e.target.value)} 
                         className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-orange-50 focus:border-orange-400 focus:bg-white outline-none font-bold text-slate-700 transition-all" 
@@ -151,14 +191,14 @@ const ServicosView: React.FC = () => {
                 </div>
                 <div className="relative min-w-[220px]">
                     <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-                        <Tag size={18} />
+                        <Filter size={18} />
                     </div>
                     <select 
                         value={selectedCategory}
                         onChange={(e) => setSelectedCategory(e.target.value)}
                         className="w-full pl-11 pr-10 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl appearance-none outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 font-bold text-slate-700 cursor-pointer transition-all"
                     >
-                        {categories.map(cat => (
+                        {categoryOptions.map(cat => (
                             <option key={cat} value={cat}>{cat}</option>
                         ))}
                     </select>
@@ -182,7 +222,6 @@ const ServicosView: React.FC = () => {
                     </div>
                 ) : viewMode === 'kanban' ? (
                     <div className="flex gap-6 pb-10 min-h-full">
-                        {/* FIX: Explicitly type the parameters in Object.entries().map to resolve 'unknown' type errors for 'items'. */}
                         {Object.entries(servicesByCategory).map(([category, items]: [string, Service[]]) => (
                             <div key={category} className="flex-shrink-0 w-80 flex flex-col">
                                 <header className="flex items-center justify-between mb-4 px-2">
@@ -204,9 +243,7 @@ const ServicosView: React.FC = () => {
                                                 </div>
                                             </div>
                                             <div className="flex items-center justify-between mt-auto pt-4 border-t border-slate-50">
-                                                <div className="flex flex-col">
-                                                    <span className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1"><Clock size={12} /> {s.duracao_min} MIN</span>
-                                                </div>
+                                                <span className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1"><Clock size={12} /> {s.duracao_min} MIN</span>
                                                 <span className="text-lg font-black text-slate-800">R$ {Number(s.preco).toFixed(2)}</span>
                                             </div>
                                         </div>
@@ -263,7 +300,14 @@ const ServicosView: React.FC = () => {
                     service={editingService} 
                     onClose={() => setIsModalOpen(false)} 
                     onSave={handleSave} 
-                    availableCategories={categories.filter(c => c !== 'Todas')} 
+                    availableCategories={categoryOptions.filter(c => c !== 'Todas')} 
+                />
+            )}
+
+            {isCategoryModalOpen && (
+                <CategoryManagerModal 
+                    onClose={() => setIsCategoryModalOpen(false)} 
+                    onUpdate={() => { fetchCategories(); fetchServices(); }}
                 />
             )}
         </div>
