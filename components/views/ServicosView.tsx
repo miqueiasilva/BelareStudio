@@ -22,7 +22,6 @@ const ServicosView: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
     
-    // Visualização padrão: Lista
     const [viewMode, setViewMode] = useState<'kanban' | 'list'>('list');
     
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -30,7 +29,7 @@ const ServicosView: React.FC = () => {
     const [editingService, setEditingService] = useState<Partial<Service> | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // Carregamento dinâmico de categorias com isolamento studio_id
+    // 1. Busca Categorias do Supabase (Prioridade 1)
     const fetchCategories = useCallback(async () => {
         if (!activeStudioId) return;
         try {
@@ -46,6 +45,7 @@ const ServicosView: React.FC = () => {
         }
     }, [activeStudioId]);
 
+    // 2. Busca Serviços do Supabase
     const fetchServices = useCallback(async () => {
         if (!activeStudioId) return;
         setLoading(true);
@@ -58,15 +58,15 @@ const ServicosView: React.FC = () => {
             if (error) throw error;
             setServices(data || []);
         } catch (error: any) {
-            setToast({ message: "Erro ao carregar catálogo de serviços.", type: 'error' });
+            setToast({ message: "Erro ao carregar catálogo.", type: 'error' });
         } finally {
             setLoading(false);
         }
     }, [activeStudioId]);
 
     useEffect(() => { 
-        fetchServices();
         fetchCategories();
+        fetchServices();
     }, [fetchServices, fetchCategories]);
 
     const handleSave = async (payload: any) => {
@@ -80,7 +80,7 @@ const ServicosView: React.FC = () => {
             
             if (error) throw error;
             
-            setToast({ message: isEdit ? 'Serviço atualizado com sucesso!' : 'Novo serviço cadastrado!', type: 'success' });
+            setToast({ message: isEdit ? 'Serviço atualizado!' : 'Novo serviço cadastrado!', type: 'success' });
             fetchServices();
             setIsModalOpen(false);
         } catch (error: any) { 
@@ -108,8 +108,6 @@ const ServicosView: React.FC = () => {
 
     const servicesByCategory = useMemo(() => {
         const groups: Record<string, Service[]> = {};
-        
-        // Inicializa grupos com categorias reais do banco
         dbCategories.forEach(cat => { groups[cat.name] = []; });
         if (!groups['Sem Categoria']) groups['Sem Categoria'] = [];
 
@@ -119,7 +117,6 @@ const ServicosView: React.FC = () => {
             groups[cat].push(s);
         });
         
-        // Remove categorias vazias do kanban, a menos que existam no banco e o usuário queira vê-las
         return Object.fromEntries(
             Object.entries(groups).filter(([name, items]) => items.length > 0 || dbCategories.some(c => c.name === name))
         );
@@ -136,33 +133,16 @@ const ServicosView: React.FC = () => {
                     </div>
                     <div>
                         <h1 className="text-xl font-black text-slate-800 tracking-tight">Catálogo de Serviços</h1>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Gestão de Procedimentos e Preços</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Gestão Técnica</p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 w-full md:w-auto">
-                    <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 mr-2">
-                        <button 
-                            onClick={() => setViewMode('kanban')}
-                            className={`p-2 rounded-lg transition-all ${viewMode === 'kanban' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`}
-                            title="Modo Kanban"
-                        >
-                            <Kanban size={18} />
-                        </button>
-                        <button 
-                            onClick={() => setViewMode('list')}
-                            className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-400 hover:text-slate-600'}`}
-                            title="Modo Lista"
-                        >
-                            <List size={18} />
-                        </button>
-                    </div>
-                    
+                <div className="flex items-center gap-2">
                     <button 
                         onClick={() => setIsCategoryModalOpen(true)}
                         className="bg-white border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl font-black text-xs hover:bg-slate-50 transition-all uppercase tracking-widest flex items-center gap-2 shadow-sm"
                     >
-                        <Tag size={16} /> Gerenciar Categorias
+                        <Tag size={16} /> Categorias
                     </button>
 
                     <button 
@@ -174,6 +154,7 @@ const ServicosView: React.FC = () => {
                 </div>
             </header>
 
+            {/* FILTRO DINÂMICO REAL */}
             <div className="bg-white border-b border-slate-100 p-4 sticky top-0 z-20 flex flex-col md:flex-row gap-4 flex-shrink-0">
                 <div className="relative flex-1 group">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors" size={20} />
@@ -207,7 +188,7 @@ const ServicosView: React.FC = () => {
                 {loading ? (
                     <div className="flex flex-col items-center justify-center h-64 text-slate-400">
                         <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
-                        <p className="text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">Sincronizando Catálogo...</p>
+                        <p className="text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">Sincronizando Banco...</p>
                     </div>
                 ) : filteredServices.length === 0 ? (
                     <div className="py-32 text-center">
@@ -215,39 +196,6 @@ const ServicosView: React.FC = () => {
                             <Filter size={40} />
                         </div>
                         <h3 className="text-lg font-black text-slate-700 uppercase tracking-tighter">Nenhum serviço encontrado</h3>
-                        <p className="text-slate-400 text-sm mt-1 max-w-xs mx-auto font-medium">Tente ajustar sua busca ou mude a categoria selecionada no filtro acima.</p>
-                    </div>
-                ) : viewMode === 'kanban' ? (
-                    <div className="flex gap-6 pb-10 min-h-full">
-                        {Object.entries(servicesByCategory).map(([category, items]: [string, Service[]]) => (
-                            <div key={category} className="flex-shrink-0 w-80 flex flex-col">
-                                <header className="flex items-center justify-between mb-4 px-2">
-                                    <h3 className="font-black text-slate-500 text-[10px] uppercase tracking-[0.2em] flex items-center gap-2">
-                                        <Layers size={14} className="text-orange-500" />
-                                        {category}
-                                        <span className="bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-lg ml-1 font-black">{items.length}</span>
-                                    </h3>
-                                </header>
-                                <div className="space-y-4">
-                                    {items.map(s => (
-                                        <div key={s.id} className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-sm hover:shadow-md hover:border-orange-200 transition-all group relative overflow-hidden">
-                                            <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: s.cor_hex || '#f97316' }}></div>
-                                            <div className="flex justify-between items-start mb-4">
-                                                <h4 className="font-black text-slate-800 leading-tight group-hover:text-orange-600 transition-colors pr-2">{s.nome}</h4>
-                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button onClick={() => { setEditingService(s); setIsModalOpen(true); }} className="p-1.5 text-slate-300 hover:text-orange-500 bg-slate-50 rounded-lg"><Edit2 size={14} /></button>
-                                                    <button onClick={() => handleDelete(s.id)} className="p-1.5 text-slate-300 hover:text-rose-500 bg-slate-50 rounded-lg"><Trash2 size={14} /></button>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center justify-between mt-auto pt-4 border-t border-slate-50">
-                                                <span className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1"><Clock size={12} /> {s.duracao_min} MIN</span>
-                                                <span className="text-lg font-black text-slate-800">R$ {Number(s.preco).toFixed(2)}</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
                     </div>
                 ) : (
                     <div className="bg-white rounded-[32px] border border-slate-200 overflow-hidden shadow-sm max-w-5xl mx-auto">
@@ -295,9 +243,9 @@ const ServicosView: React.FC = () => {
             {isModalOpen && (
                 <ServiceModal 
                     service={editingService} 
+                    dbCategories={dbCategories}
                     onClose={() => setIsModalOpen(false)} 
                     onSave={handleSave} 
-                    dbCategories={dbCategories}
                     onOpenCategoryManager={() => setIsCategoryModalOpen(true)}
                 />
             )}
