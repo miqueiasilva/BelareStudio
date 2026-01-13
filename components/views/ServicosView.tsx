@@ -22,7 +22,7 @@ const ServicosView: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
     
-    // Visualização padrão: Lista
+    // Visualização padrão: Lista conforme solicitado
     const [viewMode, setViewMode] = useState<'kanban' | 'list'>('list');
     
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -30,6 +30,7 @@ const ServicosView: React.FC = () => {
     const [editingService, setEditingService] = useState<Partial<Service> | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
+    // Busca Categorias Reais do Banco
     const fetchCategories = useCallback(async () => {
         if (!activeStudioId) return;
         try {
@@ -41,7 +42,7 @@ const ServicosView: React.FC = () => {
             if (error) throw error;
             setDbCategories(data || []);
         } catch (e) {
-            console.error("Erro categorias:", e);
+            console.error("Erro ao carregar categorias:", e);
         }
     }, [activeStudioId]);
 

@@ -57,7 +57,7 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ onClose, on
             };
 
             const { error } = editingId 
-                ? await supabase.from('service_categories').update(payload).eq('id', editingId)
+                ? await supabase.from('service_categories').update(payload).eq('id', editingId).eq('studio_id', activeStudioId)
                 : await supabase.from('service_categories').insert([payload]);
 
             if (error) throw error;
@@ -68,7 +68,7 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ onClose, on
             await fetchCategories();
             onUpdate();
         } catch (e: any) {
-            alert("Erro ao salvar: " + e.message);
+            alert("Erro ao salvar categoria: " + e.message);
         } finally {
             setIsSaving(false);
         }
@@ -78,15 +78,18 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ onClose, on
         setEditingId(cat.id);
         setName(cat.name);
         setSelectedColor(cat.color_hex || colors[0]);
-        // Scroll para o topo para mostrar o formulário
-        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const handleDelete = async (id: string) => {
         if (!confirm("⚠️ ATENÇÃO: Serviços vinculados a esta categoria ficarão sem categoria no catálogo.\n\nDeseja realmente excluir?")) return;
         
         try {
-            const { error } = await supabase.from('service_categories').delete().eq('id', id);
+            const { error } = await supabase
+                .from('service_categories')
+                .delete()
+                .eq('id', id)
+                .eq('studio_id', activeStudioId);
+
             if (error) throw error;
             await fetchCategories();
             onUpdate();
