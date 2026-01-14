@@ -4,7 +4,7 @@ import {
     Plus, Scissors, Clock, DollarSign, Edit2, Trash2, 
     Loader2, Search, X, CheckCircle, AlertTriangle, RefreshCw,
     LayoutGrid, List, FileSpreadsheet, SlidersHorizontal, ChevronRight,
-    Tag, MoreVertical, Filter, Download, ArrowUpRight, FolderPlus
+    Tag, MoreVertical, Filter, Download, ArrowUpRight, FolderPlus, ChevronDown
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
@@ -24,7 +24,6 @@ const ServicosView: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState<string>('all');
     const [viewMode, setViewMode] = useState<ViewMode>('list');
-    const [selectedIds, setSelectedIds] = useState<number[]>([]);
     
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -34,7 +33,7 @@ const ServicosView: React.FC = () => {
     const isMounted = useRef(true);
     const abortControllerRef = useRef<AbortController | null>(null);
 
-    // Busca Categorias do Banco (Sincronização Real)
+    // Busca Categorias do Banco (Fonte de Verdade Única)
     const fetchCategories = useCallback(async () => {
         if (!activeStudioId) return;
         try {
@@ -70,7 +69,7 @@ const ServicosView: React.FC = () => {
             if (isMounted.current) setServices(data || []);
         } catch (error: any) {
             if (isMounted.current && error.name !== 'AbortError') {
-                setError(error.message || "Erro inesperado ao carregar catálogo.");
+                setError(error.message || "Erro inesperado.");
             }
         } finally {
             if (isMounted.current) setLoading(false);
@@ -88,31 +87,31 @@ const ServicosView: React.FC = () => {
         };
     }, [activeStudioId, fetchCategories]);
 
-    // Categorias reais vindas do banco
-    const categories = useMemo(() => {
-        return dbCategories?.map(c => c.name) || [];
-    }, [dbCategories]);
-
     const filteredServices = useMemo(() => {
-        return services?.filter(s => {
-            const name = (s.nome || '').toLowerCase();
+        if (!Array.isArray(services)) return [];
+        return services.filter(s => {
+            const name = (s?.nome || '').toLowerCase();
             const term = (searchTerm || '').toLowerCase();
             const matchesSearch = name.includes(term);
             
-            const category = (s as any).categoria || 'Sem Categoria';
-            const matchesCat = filterCategory === 'all' || category === filterCategory;
+            const categoryName = (s as any)?.categoria || 'Sem Categoria';
+            const matchesCat = filterCategory === 'all' || categoryName === filterCategory;
             return matchesSearch && matchesCat;
-        }) || [];
+        });
     }, [services, searchTerm, filterCategory]);
 
     const groupedServices = useMemo(() => {
         const groups: Record<string, Service[]> = {};
-        // Inicializa com as categorias do banco para garantir que apareçam mesmo vazias no Kanban
-        dbCategories?.forEach(cat => { groups[cat.name] = []; });
+        
+        // Inicializa grupos com as categorias REAIS do banco
+        dbCategories?.forEach(cat => { 
+            if (cat?.name) groups[cat.name] = []; 
+        });
+        
         if (!groups['Sem Categoria']) groups['Sem Categoria'] = [];
 
         filteredServices?.forEach(s => {
-            const cat = (s as any).categoria || 'Sem Categoria';
+            const cat = (s as any)?.categoria || 'Sem Categoria';
             if (!groups[cat]) groups[cat] = [];
             groups[cat].push(s);
         });
@@ -154,7 +153,7 @@ const ServicosView: React.FC = () => {
             
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 z-20 shadow-sm flex-shrink-0">
                 <div className="flex items-center gap-4">
-                    <div className="p-2.5 bg-orange-50 text-orange-600 rounded-2xl">
+                    <div className="p-2.5 bg-orange-50 text-orange-600 rounded-xl">
                         <Scissors size={24} />
                     </div>
                     <div>
@@ -216,8 +215,8 @@ const ServicosView: React.FC = () => {
                         className="w-full pl-11 pr-10 py-3.5 bg-slate-50 border-2 border-slate-100 rounded-2xl appearance-none outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 font-black text-xs uppercase tracking-widest text-slate-600 cursor-pointer transition-all"
                     >
                         <option value="all">Todas as Categorias</option>
-                        {categories?.map(cat => (
-                            <option key={cat} value={cat}>{cat}</option>
+                        {dbCategories?.map(cat => (
+                            <option key={cat.id} value={cat.name}>{cat.name}</option>
                         ))}
                     </select>
                     <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" />
@@ -312,9 +311,9 @@ const ServicosView: React.FC = () => {
             {isModalOpen && (
                 <ServiceModal 
                     service={editingService} 
+                    dbCategories={dbCategories}
                     onClose={() => { setIsModalOpen(false); setEditingService(null); }} 
                     onSave={handleSave} 
-                    dbCategories={dbCategories}
                     onOpenCategoryManager={() => setIsCategoryModalOpen(true)}
                 />
             )}
@@ -328,11 +327,5 @@ const ServicosView: React.FC = () => {
         </div>
     );
 };
-
-const ChevronDown = ({ size, className }: any) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}>
-        <path d="m6 9 6 6 6-6"/>
-    </svg>
-);
 
 export default ServicosView;

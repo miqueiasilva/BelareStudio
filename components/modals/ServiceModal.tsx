@@ -16,6 +16,7 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, dbCategories, onCl
         nome: '',
         preco: 0,
         categoria: '',
+        category_id: '',
         descricao: '',
         cor_hex: '#f97316',
         ativo: true
@@ -33,6 +34,7 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, dbCategories, onCl
                 nome: service.nome || '',
                 preco: Number(service.preco) || 0,
                 categoria: (service as any).categoria || '',
+                category_id: (service as any).category_id || '',
                 descricao: (service as any).descricao || '',
                 cor_hex: service.cor_hex || '#f97316',
                 ativo: service.ativo ?? true
@@ -45,13 +47,29 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, dbCategories, onCl
         }
     }, [service]);
 
+    const handleCategoryChange = (id: string) => {
+        const selected = dbCategories?.find(c => String(c.id) === String(id));
+        setFormData({
+            ...formData,
+            category_id: id,
+            categoria: selected ? selected.name : ''
+        });
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.nome.trim()) return;
 
         setIsSaving(true);
         const totalMinutes = (Number(hours) * 60) + Number(minutes);
-        const payload = { ...formData, duracao_min: totalMinutes };
+        
+        // Payload garantindo tanto nome quanto ID da categoria para compatibilidade
+        const payload = { 
+            ...formData, 
+            duracao_min: totalMinutes,
+            category_id: formData.category_id || null,
+            categoria: formData.categoria || 'Sem Categoria'
+        };
 
         try {
             await onSave(payload);
@@ -102,13 +120,13 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, dbCategories, onCl
                                         <Tag size={18} />
                                     </div>
                                     <select 
-                                        value={formData.categoria}
-                                        onChange={e => setFormData({...formData, categoria: e.target.value})}
+                                        value={formData.category_id}
+                                        onChange={e => handleCategoryChange(e.target.value)}
                                         className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl pl-12 pr-10 py-3.5 outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all font-bold text-slate-700 appearance-none cursor-pointer"
                                     >
                                         <option value="">Sem Categoria</option>
-                                        {dbCategories.map(cat => (
-                                            <option key={cat.id} value={cat.name}>{cat.name}</option>
+                                        {dbCategories?.map(cat => (
+                                            <option key={cat.id} value={cat.id}>{cat.name}</option>
                                         ))}
                                     </select>
                                     <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none">
@@ -202,7 +220,7 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, dbCategories, onCl
                                 value={formData.descricao} 
                                 onChange={e => setFormData({...formData, descricao: e.target.value})} 
                                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-3xl pl-12 pr-4 py-4 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-medium text-slate-600 h-28 resize-none shadow-inner" 
-                                placeholder="Dicas de execução, contraindicações ou orientações para a recepção..." 
+                                placeholder="Instruções especiais..." 
                             />
                         </div>
                     </div>
