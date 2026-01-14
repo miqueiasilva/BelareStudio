@@ -40,9 +40,9 @@ export type PaymentMethod = 'pix' | 'cartao_credito' | 'cartao_debito' | 'dinhei
 
 export interface ScheduleBlock {
   id: string;
-  professional_id: string | null; // null significa "Loja Inteira"
-  start_time: string; // ISO Timestamp
-  end_time: string;   // ISO Timestamp
+  professional_id: string | null; 
+  start_time: string; 
+  end_time: string;   
   reason: string;
   created_at?: string;
 }
@@ -136,8 +136,6 @@ export interface FinancialTransaction {
   client_id?: number;
 }
 
-// --- NOVAS INTERFACES DE COMANDA ---
-
 export interface CommandItem {
     id: string;
     command_id: string;
@@ -145,8 +143,8 @@ export interface CommandItem {
     product_id?: string;
     appointment_id?: number;
     title: string;
-    price: number; // Schema real: price
-    quantity: number; // Schema real: quantity
+    price: number; 
+    quantity: number; 
     created_at: string;
     professional_id?: string;
     studio_id?: string;
@@ -194,6 +192,17 @@ export interface Product {
   min_stock?: number;
   active: boolean;
   category?: string;
+  supplier_id?: string | null;
+  studio_id?: string;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  contact_person?: string;
+  phone?: string;
+  email?: string;
+  studio_id: string;
 }
 
 export interface OnlineBookingConfig {
@@ -210,16 +219,7 @@ export interface OnlineBookingConfig {
   showStudioInSearch: boolean;
 }
 
-export interface Review {
-  id: number;
-  clientName: string;
-  rating: number;
-  comment: string;
-  date: Date;
-  serviceName?: string;
-  reply?: string;
-}
-
+// FIX: Added missing AnalyticsData interface
 export interface AnalyticsData {
   pageViews: {
     profile: number;
@@ -232,4 +232,14 @@ export interface AnalyticsData {
     completed: number;
     whatsappClicks: number;
   };
+}
+
+export interface Review {
+  id: number;
+  clientName: string;
+  rating: number;
+  comment: string;
+  date: Date;
+  serviceName?: string;
+  reply?: string;
 }
