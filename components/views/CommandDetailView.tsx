@@ -6,7 +6,8 @@ import {
     Phone, Scissors, ShoppingBag, Receipt,
     Percent, Calendar, ShoppingCart, X, Coins,
     ArrowRight, ShieldCheck, Tag, CreditCard as CardIcon,
-    AlertCircle, Sparkles, CheckCircle2, ArrowUpRight
+    AlertCircle, Sparkles, CheckCircle2, ArrowUpRight,
+    Trash2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -43,7 +44,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [isFinishing, setIsFinishing] = useState(false);
     const [isSuccessfullyClosed, setIsSuccessfullyClosed] = useState(false);
     
-    // Estados de Checkout
+    // Estados de Checkout (Motor de Pagamentos Múltiplos)
     const [addedPayments, setAddedPayments] = useState<PaymentEntry[]>([]);
     const [activeMethod, setActiveMethod] = useState<'credit' | 'debit' | 'pix' | 'money' | null>(null);
     const [selectedBrand, setSelectedBrand] = useState<string>('Visa');
@@ -88,13 +89,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const subtotal = command.command_items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 0)), 0);
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
+        
+        // SOMA DOS PAGAMENTOS ADICIONADOS NA LISTA
         const paid = addedPayments.reduce((acc, p) => acc + p.amount, 0);
         const remaining = Math.max(0, totalAfterDiscount - paid);
+        
         return { subtotal, total: totalAfterDiscount, paid, remaining };
     }, [command, discount, addedPayments]);
 
     const handleInitPayment = (method: 'credit' | 'debit' | 'pix' | 'money') => {
         setActiveMethod(method);
+        // Preenche automaticamente o valor restante
         setAmountToPay(totals.remaining.toFixed(2));
         setSelectedBrand('Visa');
         setSelectedInstallments(1);
@@ -103,6 +108,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const handleConfirmPartialPayment = () => {
         const val = parseFloat(amountToPay);
         if (!activeMethod || val <= 0) return;
+
+        if (val > totals.remaining + 0.01) {
+            setToast({ message: `Valor superior ao restante (R$ ${totals.remaining.toFixed(2)})`, type: 'error' });
+            return;
+        }
 
         const newPayment: PaymentEntry = {
             id: Math.random().toString(36).substring(2, 9),
@@ -123,46 +133,53 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     const handleFinishPayment = async () => {
         if (!command || !activeStudioId || isFinishing || addedPayments.length === 0) return;
+        if (totals.remaining > 0.01) {
+            setToast({ message: "Ainda restam valores a pagar!", type: 'error' });
+            return;
+        }
         
         setIsFinishing(true);
-        const primaryEntry = addedPayments[0];
-        const grossValueSnapshot = totals.total;
+        let totalNet = 0;
+        let grossValueSnapshot = totals.total;
 
         try {
-            // Chamada da RPC v5 - Zelda Engine
-            // p_brand é crucial aqui para a Zelda buscar o method_id correto com a taxa (ex: 1.37% no débito Visa)
-            const { data, error } = await supabase.rpc('pay_and_close_command_v5', {
-                p_command_id: command.id,
-                p_payment_method: primaryEntry.method,
-                p_brand: primaryEntry.brand.toLowerCase(),
-                p_installments: Math.floor(primaryEntry.installments)
-            });
+            // PROCESSAMENTO SERIAL: Envia cada método de pagamento para a RPC v5
+            // Isso garante que o Fluxo de Caixa receba cada transação com sua taxa específica
+            for (const entry of addedPayments) {
+                const { data, error } = await supabase.rpc('pay_and_close_command_v5', {
+                    p_command_id: command.id,
+                    p_payment_method: entry.method,
+                    p_brand: entry.brand.toLowerCase(),
+                    p_installments: Math.floor(entry.installments),
+                    p_amount: entry.amount // Assumindo que a RPC v5 suporta o parâmetro de valor parcial
+                });
 
-            if (error) throw error;
+                if (error) throw error;
+                
+                // Acumula o valor líquido real retornado pelo banco para o extrato final
+                totalNet += (data?.net_amount || data?.net_value || entry.amount);
+            }
 
-            // CAPTURA DE RESULTADOS FINANCEIROS REAIS DO BANCO
-            const netAmount = data?.net_amount || data?.net_value || 0;
-            const feeAmount = grossValueSnapshot - netAmount;
+            const totalFee = grossValueSnapshot - totalNet;
 
             setServerReceipt({
                 gross_amount: grossValueSnapshot,
-                net_amount: netAmount,
-                fee_amount: feeAmount > 0 ? feeAmount : 0
+                net_amount: totalNet,
+                fee_amount: totalFee > 0 ? totalFee : 0
             });
 
-            // LIMPEZA E FINALIZAÇÃO DO PDV
+            // LIMPEZA FINAL DO PDV
             setIsSuccessfullyClosed(true);
             setAddedPayments([]);
             setDiscount('0');
             setActiveMethod(null);
             
-            setToast({ message: "Comanda liquidada com sucesso!", type: 'success' });
-            
+            setToast({ message: "Comanda Liquidada with Sucesso!", type: 'success' });
             fetchCommand();
 
         } catch (e: any) {
-            console.error("[RPC_V5_FAIL]", e);
-            setToast({ message: `Erro Zelda: ${e.message}`, type: 'error' });
+            console.error("[RPC_V5_SPLIT_FAIL]", e);
+            setToast({ message: `Erro na liquidação múltipla: ${e.message}`, type: 'error' });
             setIsFinishing(false);
         }
     };
@@ -196,13 +213,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     </button>
                     <div>
                         <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                            Checkout <span className="text-orange-500 font-mono">#{command.id.split('-')[0].toUpperCase()}</span>
+                            Terminal <span className="text-orange-500 font-mono">#{command.id.split('-')[0].toUpperCase()}</span>
                         </h1>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Processamento Zelda v5</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Motor Multi-Pagamento Zelda v5</p>
                     </div>
                 </div>
                 <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${isSuccessfullyClosed ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-orange-50 text-orange-600 border border-orange-100'}`}>
-                    {isSuccessfullyClosed ? 'Liquidado' : 'Em Aberto'}
+                    {isSuccessfullyClosed ? 'Venda Finalizada' : 'Caixa Aberto'}
                 </div>
             </header>
 
@@ -221,7 +238,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                         <CheckCircle2 size={48} className="text-white" />
                                     </div>
                                     <h2 className="text-3xl font-black mb-2 uppercase tracking-widest">Venda Finalizada!</h2>
-                                    <p className="text-emerald-100 font-medium max-w-sm">O estoque e financeiro foram atualizados. O PDV está livre para o próximo cliente.</p>
+                                    <p className="text-emerald-100 font-medium max-w-sm">O PDV está livre para o próximo cliente. Os registros financeiros individuais foram processados.</p>
                                 </div>
                             </div>
                         )}
@@ -243,30 +260,72 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
+                        {/* LISTAGENS DO LADO ESQUERDO (OCULTAS APÓS SUCESSO) */}
                         {!isSuccessfullyClosed && (
-                            <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-left-4">
-                                <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
-                                    <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
-                                        <ShoppingCart size={18} className="text-orange-500" /> Detalhes da Venda
-                                    </h3>
-                                </header>
-                                <div className="divide-y divide-slate-50">
-                                    {command.command_items.map(item => (
-                                        <div key={item.id} className="p-8 flex items-center justify-between group hover:bg-slate-50/50 transition-colors">
-                                            <div className="flex items-center gap-5">
-                                                <div className={`p-4 rounded-3xl ${item.product_id ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
-                                                    {item.product_id ? <ShoppingBag size={24} /> : <Scissors size={24} />}
+                            <div className="space-y-6">
+                                {/* ITENS DA COMANDA */}
+                                <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-left-4">
+                                    <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
+                                        <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
+                                            <ShoppingCart size={18} className="text-orange-500" /> Itens na Comanda
+                                        </h3>
+                                    </header>
+                                    <div className="divide-y divide-slate-50">
+                                        {command.command_items.map(item => (
+                                            <div key={item.id} className="p-6 md:p-8 flex items-center justify-between group hover:bg-slate-50/50 transition-colors">
+                                                <div className="flex items-center gap-5">
+                                                    <div className={`p-4 rounded-3xl ${item.product_id ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
+                                                        {item.product_id ? <ShoppingBag size={24} /> : <Scissors size={24} />}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
+                                                        <p className="text-[10px] text-slate-400 font-black uppercase mt-1">
+                                                            {item.quantity} un. x R$ {Number(item.price || 0).toFixed(2)}
+                                                        </p>
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
-                                                    <p className="text-[10px] text-slate-400 font-black uppercase mt-1">
-                                                        {item.quantity} un. x R$ {Number(item.price || 0).toFixed(2)}
-                                                    </p>
-                                                </div>
+                                                <p className="font-black text-slate-800 text-xl">R$ {(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}</p>
                                             </div>
-                                            <p className="font-black text-slate-800 text-xl">R$ {(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}</p>
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* PAGAMENTOS ADICIONADOS (ESTADO LOCAL) */}
+                                <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-left-6">
+                                    <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-800 text-white">
+                                        <h3 className="font-black text-sm uppercase tracking-widest flex items-center gap-2">
+                                            <CheckCircle size={18} className="text-emerald-400" /> Pagamentos Lançados
+                                        </h3>
+                                        <span className="text-[10px] font-black uppercase bg-white/10 px-3 py-1 rounded-full">Soma: R$ {totals.paid.toFixed(2)}</span>
+                                    </header>
+                                    <div className="divide-y divide-slate-50">
+                                        {addedPayments.length === 0 ? (
+                                            <div className="p-10 text-center text-slate-300 italic text-sm font-medium">Nenhum pagamento registrado ainda.</div>
+                                        ) : (
+                                            addedPayments.map(p => (
+                                                <div key={p.id} className="p-6 flex items-center justify-between group animate-in fade-in slide-in-from-top-1">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className={`p-2 rounded-xl bg-slate-50 text-slate-500`}>
+                                                            {p.method === 'pix' ? <Smartphone size={20}/> : p.method === 'money' ? <Coins size={20}/> : <CreditCard size={20}/>}
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-black text-slate-700 text-sm uppercase">
+                                                                {p.method === 'credit' ? 'Crédito' : p.method === 'debit' ? 'Débito' : p.method === 'pix' ? 'Pix' : 'Dinheiro'} 
+                                                                {p.brand !== 'outros' && ` • ${p.brand}`}
+                                                            </p>
+                                                            {p.installments > 1 && <p className="text-[9px] font-black text-orange-500 uppercase tracking-widest">Parcelado em {p.installments}x</p>}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-4">
+                                                        <span className="font-black text-slate-800 text-lg">R$ {p.amount.toFixed(2)}</span>
+                                                        <button onClick={() => handleRemovePayment(p.id)} className="p-2 text-slate-200 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all">
+                                                            <X size={20} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -394,10 +453,10 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 
                                 <button 
                                     onClick={handleFinishPayment} 
-                                    disabled={isFinishing || totals.remaining > 0 || addedPayments.length === 0} 
-                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${totals.remaining === 0 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'}`}
+                                    disabled={isFinishing || totals.remaining > 0.01 || addedPayments.length === 0} 
+                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${totals.remaining < 0.02 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'}`}
                                 >
-                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> {totals.remaining > 0 ? `Faltam R$ ${totals.remaining.toFixed(2)}` : 'LIQUIDAR COMANDA'}</>}
+                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> {totals.remaining > 0.01 ? `Faltam R$ ${totals.remaining.toFixed(2)}` : 'LIQUIDAR COMANDA'}</>}
                                 </button>
                             </div>
                         )}
