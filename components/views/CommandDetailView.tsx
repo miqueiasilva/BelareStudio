@@ -129,7 +129,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const grossValueSnapshot = totals.total;
 
         try {
-            // Chamada da RPC v5
+            // Chamada da RPC v5 - Zelda Engine
+            // p_brand é crucial aqui para a Zelda buscar o method_id correto com a taxa (ex: 1.37% no débito Visa)
             const { data, error } = await supabase.rpc('pay_and_close_command_v5', {
                 p_command_id: command.id,
                 p_payment_method: primaryEntry.method,
@@ -139,7 +140,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (error) throw error;
 
-            // CAPTURA DE RESULTADOS FINANCEIROS (NET_VALUE DO BANCO)
+            // CAPTURA DE RESULTADOS FINANCEIROS REAIS DO BANCO
             const netAmount = data?.net_amount || data?.net_value || 0;
             const feeAmount = grossValueSnapshot - netAmount;
 
@@ -149,20 +150,19 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 fee_amount: feeAmount > 0 ? feeAmount : 0
             });
 
-            // LIMPEZA DO PDV PARA PRÓXIMO CLIENTE
+            // LIMPEZA E FINALIZAÇÃO DO PDV
             setIsSuccessfullyClosed(true);
             setAddedPayments([]);
             setDiscount('0');
             setActiveMethod(null);
             
-            setToast({ message: "Venda finalizada com sucesso!", type: 'success' });
+            setToast({ message: "Comanda liquidada com sucesso!", type: 'success' });
             
-            // Recarrega apenas para atualizar status visual de 'paid' caso necessário
             fetchCommand();
 
         } catch (e: any) {
-            console.error("[RPC_V5_CRITICAL_FAIL]", e);
-            setToast({ message: `Erro no processamento: ${e.message}`, type: 'error' });
+            console.error("[RPC_V5_FAIL]", e);
+            setToast({ message: `Erro Zelda: ${e.message}`, type: 'error' });
             setIsFinishing(false);
         }
     };
@@ -171,7 +171,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         return (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50">
                 <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
-                <p className="text-xs font-black uppercase tracking-[0.2em]">Sincronizando PDV v5...</p>
+                <p className="text-xs font-black uppercase tracking-[0.2em]">Iniciando Zelda PDV v5...</p>
             </div>
         );
     }
@@ -196,23 +196,21 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     </button>
                     <div>
                         <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                            Terminal <span className="text-orange-500 font-mono">#{command.id.split('-')[0].toUpperCase()}</span>
+                            Checkout <span className="text-orange-500 font-mono">#{command.id.split('-')[0].toUpperCase()}</span>
                         </h1>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Motor Financeiro Zelda v5 Ativo</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Processamento Zelda v5</p>
                     </div>
                 </div>
                 <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${isSuccessfullyClosed ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-orange-50 text-orange-600 border border-orange-100'}`}>
-                    {isSuccessfullyClosed ? 'Venda Finalizada' : 'Caixa Aberto'}
+                    {isSuccessfullyClosed ? 'Liquidado' : 'Em Aberto'}
                 </div>
             </header>
 
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
                     
-                    {/* ÁREA DE ITENS E SUCESSO (COLUNA ESQUERDA) */}
                     <div className="lg:col-span-2 space-y-6">
                         
-                        {/* MENSAGEM DE SUCESSO E LIMPEZA DE PDV */}
                         {isSuccessfullyClosed && (
                             <div className="bg-emerald-600 rounded-[40px] p-10 text-white shadow-2xl animate-in zoom-in-95 duration-500 relative overflow-hidden">
                                 <div className="absolute top-0 right-0 p-8 opacity-10 rotate-12">
@@ -222,13 +220,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mb-6 backdrop-blur-md">
                                         <CheckCircle2 size={48} className="text-white" />
                                     </div>
-                                    <h2 className="text-3xl font-black mb-2 uppercase tracking-tighter tracking-widest">Comanda Liquidada</h2>
-                                    <p className="text-emerald-100 font-medium max-w-sm">O estoque e financeiro foram atualizados com sucesso. O PDV está pronto para o próximo atendimento.</p>
+                                    <h2 className="text-3xl font-black mb-2 uppercase tracking-widest">Venda Finalizada!</h2>
+                                    <p className="text-emerald-100 font-medium max-w-sm">O estoque e financeiro foram atualizados. O PDV está livre para o próximo cliente.</p>
                                 </div>
                             </div>
                         )}
 
-                        {/* CARD DO CLIENTE */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
                             <div className={`w-20 h-20 rounded-3xl flex items-center justify-center font-black text-2xl shadow-inner border-4 border-white ${isSuccessfullyClosed ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
                                 {command.clients?.nome?.charAt(0).toUpperCase() || 'C'}
@@ -246,12 +243,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* LISTAGEM DE SERVIÇOS (FICA VAZIA/LIMPA APÓS SUCESSO) */}
                         {!isSuccessfullyClosed && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-left-4">
                                 <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
                                     <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
-                                        <ShoppingCart size={18} className="text-orange-500" /> Itens na Comanda
+                                        <ShoppingCart size={18} className="text-orange-500" /> Detalhes da Venda
                                     </h3>
                                 </header>
                                 <div className="divide-y divide-slate-50">
@@ -276,13 +272,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         )}
                     </div>
 
-                    {/* RESUMO FINANCEIRO (COLUNA DIREITA) */}
                     <div className="space-y-6">
                         <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden group">
                             <div className="relative z-10 space-y-6 text-left">
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-xs font-black uppercase tracking-widest text-slate-400">
-                                        <span>Total Bruto</span>
+                                        <span>Subtotal</span>
                                         <span>R$ {totals.subtotal.toFixed(2)}</span>
                                     </div>
                                     {!isSuccessfullyClosed && (
@@ -306,11 +301,10 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     </h2>
                                 </div>
 
-                                {/* EXTRATO DE LIQUIDAÇÃO (RETORNO DO BANCO) */}
                                 {serverReceipt && (
                                     <div className="mt-8 p-6 bg-white/5 border border-white/10 rounded-[32px] animate-in slide-in-from-top-4">
                                         <div className="flex items-center gap-2 mb-4 text-[10px] font-black uppercase text-emerald-400 tracking-widest">
-                                            <ShieldCheck size={14} /> Detalhamento v5 (Zelda)
+                                            <ShieldCheck size={14} /> Detalhamento Zelda v5
                                         </div>
                                         <div className="space-y-3">
                                             <div className="flex justify-between text-xs font-bold">
@@ -319,8 +313,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             </div>
                                             <div className="flex justify-between items-end pt-3 border-t border-white/5">
                                                 <div className="flex flex-col">
-                                                    <span className="text-[10px] font-black uppercase text-slate-400">Saldo Líquido</span>
-                                                    <span className="text-[8px] font-bold text-slate-500">CREDITADO NO CAIXA</span>
+                                                    <span className="text-[10px] font-black uppercase text-slate-400">Recebimento Líquido</span>
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-2xl font-black text-white">R$ {serverReceipt.net_amount.toFixed(2)}</span>
@@ -333,15 +326,16 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* SELETOR DE PAGAMENTO (DESABILITADO APÓS SUCESSO) */}
                         {!isSuccessfullyClosed && (
                             <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6 text-left">
-                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Meio de Recebimento</h4>
+                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Forma de Pagamento</h4>
                                 
-                                {activeMethod === 'credit' ? (
+                                { (activeMethod === 'credit' || activeMethod === 'debit') ? (
                                     <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95 space-y-6">
                                         <div className="flex justify-between items-center">
-                                            <span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">Configuração de Crédito</span>
+                                            <span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">
+                                                Configuração {activeMethod === 'credit' ? 'Crédito' : 'Débito'}
+                                            </span>
                                             <button onClick={() => setActiveMethod(null)} className="text-slate-300 hover:text-slate-500"><X size={20}/></button>
                                         </div>
                                         
@@ -361,15 +355,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                 </div>
                                             </div>
 
-                                            <div className="space-y-1.5">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Parcelas: {selectedInstallments}x</label>
-                                                <input 
-                                                    type="range" min="1" max="12" 
-                                                    value={selectedInstallments}
-                                                    onChange={e => setSelectedInstallments(parseInt(e.target.value))}
-                                                    className="w-full accent-orange-500" 
-                                                />
-                                            </div>
+                                            {activeMethod === 'credit' && (
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Parcelas: {selectedInstallments}x</label>
+                                                    <input 
+                                                        type="range" min="1" max="12" 
+                                                        value={selectedInstallments}
+                                                        onChange={e => setSelectedInstallments(parseInt(e.target.value))}
+                                                        className="w-full accent-orange-500" 
+                                                    />
+                                                </div>
+                                            )}
 
                                             <div className="relative">
                                                 <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span>
@@ -377,7 +373,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             </div>
                                         </div>
                                         
-                                        <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg">Confirmar Parcela</button>
+                                        <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg">Confirmar {activeMethod === 'credit' ? 'Parcela' : 'Bandeira'}</button>
                                     </div>
                                 ) : activeMethod ? (
                                     <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95">
