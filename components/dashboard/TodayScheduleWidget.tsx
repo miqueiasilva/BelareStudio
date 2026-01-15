@@ -19,21 +19,19 @@ const statusMap: Record<AppointmentStatus, { label: string; color: string; bg: s
 
 interface TodayScheduleWidgetProps {
     onNavigate: (view: any) => void;
-    appointments?: any[]; // Tornado opcional para evitar crash
+    appointments: any[];
     dateLabel?: string;
 }
 
-const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, appointments = [], dateLabel = 'Hoje' }) => {
+const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, appointments, dateLabel = 'Hoje' }) => {
     
-    // Proteção contra appointments ser null ou undefined
-    const safeAppointments = Array.isArray(appointments) ? appointments : [];
-
-    const activeApps = [...safeAppointments]
+    // LOGICA DE ORDENAÇÃO: Cronológica Decrescente (O mais futuro/recente primeiro)
+    const activeApps = [...appointments]
         .filter(app => app.status !== 'cancelado' && app.status !== 'bloqueado')
         .sort((a, b) => {
             const dateA = new Date(a.date).getTime();
             const dateB = new Date(b.date).getTime();
-            return dateB - dateA;
+            return dateB - dateA; // B - A = Ordem Decrescente
         })
         .slice(0, 10);
 
@@ -42,7 +40,7 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
             <header className="p-5 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
                 <div>
                     <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Timeline {dateLabel === 'Hoje' ? 'de Hoje' : 'do Período'}</h3>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">{safeAppointments.filter(a => a.status !== 'cancelado').length} Atendimentos</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">{appointments.filter(a => a.status !== 'cancelado').length} Atendimentos</p>
                 </div>
                 <button 
                     onClick={() => onNavigate('agenda')}
@@ -57,6 +55,7 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
                     <div className="space-y-6 relative before:absolute before:left-[15px] before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-100">
                         {activeApps.map((app) => (
                             <div key={app.id} className="relative flex items-start gap-4 group animate-in fade-in slide-in-from-left-2 duration-300">
+                                {/* Dot Indicator */}
                                 <div className="z-10 mt-1.5 w-8 h-8 rounded-full bg-white border-2 border-slate-100 flex items-center justify-center flex-shrink-0 group-hover:border-orange-200 transition-colors">
                                     <div className={`w-2.5 h-2.5 rounded-full ${
                                         app.status === 'em_atendimento' ? 'bg-indigo-500 animate-pulse' : 

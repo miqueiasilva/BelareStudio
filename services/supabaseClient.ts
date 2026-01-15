@@ -1,9 +1,9 @@
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Helper para timeout obrigatório de 20s em todas as requisições (Anti-Hang)
+// Helper para timeout obrigatório de 10s em todas as requisições (Anti-Hang)
 const fetchWithTimeout = async (url: string, options: any = {}) => {
-  const timeout = 20000; // Aumentado para 20 segundos para maior estabilidade
+  const timeout = 10000; // 10 segundos
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
 
@@ -62,6 +62,7 @@ export const supabase = (isConfigured
         detectSessionInUrl: true,
       },
       global: {
+        // INJEÇÃO DE SEGURANÇA: Timeout global em todas as chamadas de rede
         fetch: fetchWithTimeout
       }
     }) 

@@ -85,9 +85,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     const totals = useMemo(() => {
         if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0 };
-        
-        // FONTE DA VERDADE: total_amount do header da comanda, conforme especificação
-        const subtotal = Number(command.total_amount || 0);
+        const subtotal = command.command_items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 0)), 0);
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         
@@ -143,7 +141,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         let grossValueSnapshot = totals.total;
 
         try {
-            // Mapeamento estrito para os tipos aceitos pela register_payment_transaction
+            // Mapeamento de métodos para o padrão esperado pela register_payment_transaction
             const methodMap: Record<string, string> = {
                 'money': 'cash',
                 'credit': 'credit',
@@ -157,8 +155,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     p_amount: entry.amount,
                     p_method: methodMap[entry.method] || entry.method,
                     p_brand: (entry.method === 'credit' || entry.method === 'debit') 
-                        ? (entry.brand.toLowerCase() === 'outros' ? 'default' : entry.brand.toLowerCase()) 
-                        : 'default',
+                        ? (entry.brand.toLowerCase() === 'outros' ? null : entry.brand.toLowerCase()) 
+                        : null,
                     p_installments: Math.floor(entry.installments)
                 };
 
@@ -169,13 +167,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     throw error;
                 }
                 
+                // Se a RPC não retornar net_amount (pois agora delega para register_payment_transaction),
+                // usamos o valor bruto para a UI. No banco as taxas estarão corretas.
                 totalNetValue += (data?.net_amount || data?.net_value || entry.amount);
             }
+
+            const totalFee = grossValueSnapshot - totalNetValue;
 
             setServerReceipt({
                 gross_amount: grossValueSnapshot,
                 net_amount: totalNetValue,
-                fee_amount: Math.max(0, grossValueSnapshot - totalNetValue)
+                fee_amount: totalFee > 0 ? totalFee : 0
             });
 
             setIsSuccessfullyClosed(true);
@@ -183,13 +185,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setDiscount('0');
             setActiveMethod(null);
             
-            setToast({ message: "Comanda liquidada com sucesso!", type: 'success' });
+            setToast({ message: "Liquidação processada com sucesso!", type: 'success' });
             fetchCommand();
 
         } catch (e: any) {
-            console.error("[COMMAND_CLOSE_FAIL]", e);
-            const displayError = e?.message || e?.hint || "Erro ao processar fechamento.";
-            setToast({ message: `Falha: ${displayError}`, type: 'error' });
+            console.error("[RPC_API_V1_FAIL]", e);
+            // Previne a exibição de [object Object] extraindo a mensagem real
+            const displayError = e?.message || e?.hint || (typeof e === 'string' ? e : "Erro interno no servidor.");
+            setToast({ message: `Falha na liquidação: ${displayError}`, type: 'error' });
             setIsFinishing(false);
         }
     };
@@ -248,7 +251,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                         <CheckCircle2 size={48} className="text-white" />
                                     </div>
                                     <h2 className="text-3xl font-black mb-2 uppercase tracking-widest">Venda Finalizada!</h2>
-                                    <p className="text-emerald-100 font-medium max-w-sm">A comanda foi fechada e o pagamento registrado via motor de transações.</p>
+                                    <p className="text-emerald-100 font-medium max-w-sm">Os pagamentos foram processados individualmente e integrados ao Fluxo de Caixa.</p>
                                 </div>
                             </div>
                         )}
@@ -343,7 +346,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             <div className="relative z-10 space-y-6 text-left">
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-xs font-black uppercase tracking-widest text-slate-400">
-                                        <span>Subtotal Bruto (Comanda)</span>
+                                        <span>Subtotal Bruto</span>
                                         <span>R$ {totals.subtotal.toFixed(2)}</span>
                                     </div>
                                     {!isSuccessfullyClosed && (
@@ -361,7 +364,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     )}
                                 </div>
                                 <div className="pt-6 border-t border-white/10">
-                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Total Final</p>
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Total da Venda</p>
                                     <h2 className={`text-5xl font-black tracking-tighter ${isSuccessfullyClosed ? 'text-emerald-400' : 'text-white'}`}>
                                         R$ {isSuccessfullyClosed && serverReceipt ? serverReceipt.gross_amount.toFixed(2) : totals.total.toFixed(2)}
                                     </h2>
@@ -370,17 +373,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 {serverReceipt && (
                                     <div className="mt-8 p-6 bg-white/5 border border-white/10 rounded-[32px] animate-in slide-in-from-top-4">
                                         <div className="flex items-center gap-2 mb-4 text-[10px] font-black uppercase text-emerald-400 tracking-widest">
-                                            <ShieldCheck size={14} /> Recebimento Real
+                                            <ShieldCheck size={14} /> Detalhamento de Taxas
                                         </div>
                                         <div className="space-y-3">
                                             <div className="flex justify-between text-xs font-bold">
-                                                <span className="text-slate-400">Taxas de Operadora</span>
+                                                <span className="text-slate-400">Taxas Retidas</span>
                                                 <span className="text-rose-400">- R$ {serverReceipt.fee_amount.toFixed(2)}</span>
                                             </div>
                                             <div className="flex justify-between items-end pt-3 border-t border-white/5">
                                                 <div className="flex flex-col">
-                                                    <span className="text-[10px] font-black uppercase text-slate-400">Valor Líquido</span>
-                                                    <span className="text-[8px] font-bold text-slate-500">SALDO EM CAIXA</span>
+                                                    <span className="text-[10px] font-black uppercase text-slate-400">Recebimento Líquido</span>
+                                                    <span className="text-[8px] font-bold text-slate-500">SALDO REAL EM CAIXA</span>
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-2xl font-black text-white">R$ {serverReceipt.net_amount.toFixed(2)}</span>
@@ -396,7 +399,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         {!isSuccessfullyClosed && (
                             <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6 text-left">
                                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2">
-                                    <Tag size={14} className="text-orange-500" /> Método de Pagamento
+                                    <Tag size={14} className="text-orange-500" /> Forma de Recebimento
                                 </h4>
                                 
                                 { (activeMethod === 'credit' || activeMethod === 'debit') ? (
@@ -466,7 +469,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     disabled={isFinishing || totals.remaining > 0.01 || addedPayments.length === 0} 
                                     className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${totals.remaining < 0.02 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'}`}
                                 >
-                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> {totals.remaining > 0.01 ? `Faltam R$ ${totals.remaining.toFixed(2)}` : 'FECHAR COMANDA'}</>}
+                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> {totals.remaining > 0.01 ? `Faltam R$ ${totals.remaining.toFixed(2)}` : 'LIQUIDAR COMANDA'}</>}
                                 </button>
                             </div>
                         )}

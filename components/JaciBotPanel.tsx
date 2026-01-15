@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { X, Sparkles, BrainCircuit, CalendarCheck, FileBarChart } from 'lucide-react';
 import * as geminiService from '../services/geminiService';

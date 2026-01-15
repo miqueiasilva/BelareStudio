@@ -147,7 +147,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         setIsLoading(true);
 
         try {
-            // ATUALIZAÇÃO: Uso estrito dos termos da RPC register_payment_transaction
+            // ATUALIZAÇÃO: Uso da RPC register_payment_transaction
             const methodMapping: Record<string, string> = {
                 'pix': 'pix',
                 'money': 'cash',
@@ -156,7 +156,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             };
 
             const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                p_studio_id: null, // A RPC gerencia internamente ou via profissional
+                p_studio_id: currentMethod.id ? null : null, // A RPC gerencia via auth ou enviaremos direto se necessário.
+                // Na nossa estrutura, enviamos studio_id se for requerido pela assinatura da função
                 p_professional_id: isUUID(selectedProfessionalId) ? selectedProfessionalId : null,
                 p_amount: appointment.price,
                 p_method: methodMapping[selectedCategory] || 'pix',
@@ -180,7 +181,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         } catch (error: any) {
             console.error("[CHECKOUT] Erro:", error);
-            setToast({ message: `Erro: ${error.message || "Falha técnica na transação."}`, type: 'error' });
+            setToast({ message: `Erro: ${error.message}`, type: 'error' });
             setIsLoading(false);
         }
     };
