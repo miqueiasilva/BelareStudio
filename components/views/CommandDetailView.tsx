@@ -85,15 +85,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     const totals = useMemo(() => {
         if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0 };
-        
-        // FONTE DA VERDADE: total_amount do header da comanda
         const subtotal = Number(command.total_amount || 0);
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
-        
         const paid = addedPayments.reduce((acc, p) => acc + p.amount, 0);
         const remaining = Math.max(0, totalAfterDiscount - paid);
-        
         return { subtotal, total: totalAfterDiscount, paid, remaining };
     }, [command, discount, addedPayments]);
 
@@ -107,12 +103,10 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const handleConfirmPartialPayment = () => {
         const val = parseFloat(amountToPay);
         if (!activeMethod || isNaN(val) || val <= 0) return;
-
         if (val > totals.remaining + 0.01) {
             setToast({ message: `Valor superior ao restante (R$ ${totals.remaining.toFixed(2)})`, type: 'error' });
             return;
         }
-
         const newPayment: PaymentEntry = {
             id: Math.random().toString(36).substring(2, 9),
             method: activeMethod,
@@ -120,7 +114,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             brand: (activeMethod === 'credit' || activeMethod === 'debit') ? selectedBrand : 'default',
             installments: activeMethod === 'credit' ? selectedInstallments : 1
         };
-
         setAddedPayments(prev => [...prev, newPayment]);
         setActiveMethod(null);
         setAmountToPay('0');
@@ -131,15 +124,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     const handleFinishPayment = async () => {
-        if (!command?.id || !activeStudioId || isFinishing || addedPayments.length === 0) {
-            console.warn("[CHECKOUT] Tentativa de fechamento bloqueada: Dados incompletos.");
+        // --- CLÁUSULA DE GUARDA RIGOROSA ---
+        if (!command?.id || !command?.client_id) {
+            console.warn("[CHECKOUT] Abortando: Aguardando IDs de Comanda/Cliente para processamento.");
             return;
         }
         
-        if (totals.remaining > 0.05) {
-            setToast({ message: "A soma dos pagamentos não atinge o total da venda!", type: 'error' });
-            return;
-        }
+        if (isFinishing || addedPayments.length === 0) return;
         
         setIsFinishing(true);
         let totalNetValue = 0;
@@ -154,24 +145,21 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             };
 
             for (const entry of addedPayments) {
-                // BLINDAGEM: Sanitização do payload para evitar Erro 400
+                // Sanitização final de parâmetros para evitar Erro 400 (Bad Request)
                 const payload = {
                     p_command_id: command.id,
                     p_amount: entry.amount,
                     p_method: methodMap[entry.method] || entry.method,
-                    p_brand: (entry.method === 'credit' || entry.method === 'debit') 
-                        ? (entry.brand.toLowerCase() === 'outros' ? 'default' : entry.brand.toLowerCase()) 
-                        : 'default',
-                    p_installments: Math.max(1, Math.floor(entry.installments))
+                    p_brand: entry.brand.toLowerCase() === 'outros' ? 'default' : entry.brand.toLowerCase(),
+                    p_installments: Math.max(1, entry.installments)
                 };
 
                 const { data, error } = await supabase.rpc('pay_and_close_command_api_v1', payload);
 
                 if (error) {
-                    // RESOLVE [object Object]: Extraindo mensagem real
-                    const errorDetail = error.message || JSON.stringify(error);
-                    console.error("[RPC_ERROR_DETAIL]", errorDetail);
-                    throw new Error(errorDetail);
+                    // Extração de erro detalhada para evitar [object Object]
+                    const errorMessage = error.message || error.details || JSON.stringify(error);
+                    throw new Error(errorMessage);
                 }
                 
                 totalNetValue += (data?.net_amount || data?.net_value || entry.amount);
@@ -185,16 +173,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             setIsSuccessfullyClosed(true);
             setAddedPayments([]);
-            setDiscount('0');
-            setActiveMethod(null);
-            
-            setToast({ message: "Comanda liquidada com sucesso!", type: 'success' });
+            setToast({ message: "Venda finalizada com sucesso!", type: 'success' });
             fetchCommand();
 
         } catch (e: any) {
-            const displayError = e?.message || "Erro ao processar fechamento no servidor.";
-            console.error("[COMMAND_CLOSE_FAIL]", displayError);
-            setToast({ message: `Falha: ${displayError}`, type: 'error' });
+            console.error("[CHECKOUT_RPC_FAIL]", e.message);
+            setToast({ message: `Falha no processamento: ${e.message}`, type: 'error' });
             setIsFinishing(false);
         }
     };
@@ -360,7 +344,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                 type="number" 
                                                 value={discount}
                                                 onChange={e => setDiscount(e.target.value)}
-                                                className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500 transition-all"
+                                                className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-50 focus:border-orange-500 transition-all"
                                             />
                                         </div>
                                     )}
