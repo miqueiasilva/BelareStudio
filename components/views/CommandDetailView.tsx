@@ -57,13 +57,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [serverReceipt, setServerReceipt] = useState<ServerReceipt | null>(null);
 
-    // 1. FETCH DE TAXAS ATIVAS (FINANCIAL ENGINE)
     const fetchSystemData = async () => {
-        // CLÁUSULA DE GUARDA NO CARREGAMENTO
-        if (!activeStudioId || !commandId) {
-            console.log('[CHECKOUT] Aguardando parâmetros de estúdio ou comanda...');
-            return;
-        }
+        if (!activeStudioId || !commandId) return;
         
         setLoading(true);
         try {
@@ -85,7 +80,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         }
     };
 
-    // Garantindo que a função seja chamada novamente se IDs mudarem
     useEffect(() => { 
         fetchSystemData(); 
     }, [commandId, activeStudioId]);
@@ -155,10 +149,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     const handleFinishPayment = async () => {
-        // --- CLÁUSULA DE GUARDA RIGOROSA (PROTEÇÃO CONTRA ERRO 400) ---
         if (!command?.id || !activeStudioId) {
-            console.warn('[CHECKOUT] Abortando: Comanda ou Estúdio não carregados corretamente.');
-            setToast({ message: "Aguardando sincronização de dados...", type: 'info' });
+            setToast({ message: "Dados do estúdio não carregados.", type: 'error' });
             return;
         }
 
@@ -171,27 +163,39 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         
         setIsFinishing(true);
         try {
-            const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
+            const methodMap: Record<string, string> = { 
+                'money': 'cash', 
+                'credit': 'credit', 
+                'debit': 'debit', 
+                'pix': 'pix' 
+            };
+
+            // Extrair o primeiro profissional dos itens para fins de comissão se aplicável
+            const firstProfId = command.command_items?.find(i => i.professional_id)?.professional_id || null;
 
             for (const entry of addedPayments) {
                 const payload = {
-                    p_command_id: command.id,
+                    p_studio_id: activeStudioId,
+                    p_professional_id: firstProfId,
                     p_amount: entry.amount,
                     p_method: methodMap[entry.method],
                     p_brand: entry.brand.toLowerCase(),
-                    p_installments: entry.installments
+                    p_installments: entry.installments,
+                    p_description: `Liquidação Comanda #${command.id.split('-')[0].toUpperCase()}`,
+                    p_command_id: command.id,
+                    p_client_id: command.client_id
                 };
 
-                // Execução do RPC Blindada
-                const { error } = await supabase.rpc('pay_and_close_command_api_v1', payload);
-                if (error) {
-                    // Tratamento detalhado para o erro de coluna do Postgres
-                    const errorMsg = error.message.includes('column "total" does not exist') 
-                        ? "Erro de esquema no banco (coluna 'total' inválida). Contate o suporte." 
-                        : error.message;
-                    throw new Error(errorMsg);
-                }
+                // Uso da RPC validada 'register_payment_transaction'
+                const { error } = await supabase.rpc('register_payment_transaction', payload);
+                if (error) throw error;
             }
+
+            // Garante o fechamento da comanda no banco
+            await supabase
+                .from('commands')
+                .update({ status: 'paid', closed_at: new Date().toISOString() })
+                .eq('id', command.id);
 
             setServerReceipt({
                 gross_amount: totals.total,
@@ -205,7 +209,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             fetchSystemData();
 
         } catch (e: any) {
-            setToast({ message: `Falha: ${e.message}`, type: 'error' });
+            setToast({ message: `Falha na Liquidação: ${e.message}`, type: 'error' });
             setIsFinishing(false);
         }
     };
