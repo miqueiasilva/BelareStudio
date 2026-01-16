@@ -1,23 +1,34 @@
 
--- 1. LIMPEZA TOTAL DE SOBRECARGAS (Resolve o erro: "Could not choose the best candidate function")
--- Removemos as assinaturas conhecidas para limpar o cache do PostgREST e evitar ambiguidade.
-DROP FUNCTION IF EXISTS public.register_payment_transaction(numeric, text, uuid, uuid, text, numeric, integer, text, numeric, uuid, uuid);
-DROP FUNCTION IF EXISTS public.register_payment_transaction(numeric, text, text, text, text, numeric, integer, text, numeric, text, text);
+-- 1. LIMPEZA AGRESSIVA DE SOBRECARGAS (Evita erro 400 por ambiguidade)
+DO $$ 
+DECLARE 
+    _func_name text := 'register_payment_transaction';
+    _routine record;
+BEGIN
+    FOR _routine IN 
+        SELECT oid::regprocedure as signature
+        FROM pg_proc 
+        WHERE proname = _func_name 
+        AND pronamespace = 'public'::regnamespace
+    LOOP
+        EXECUTE 'DROP FUNCTION ' || _routine.signature;
+    END LOOP;
+END $$;
 
--- 2. CRIAÇÃO DA FUNÇÃO DEFINITIVA COM PARÂMETROS TEXT
--- Usar TEXT nos IDs garante que o banco aceite tanto IDs legados ("2433") quanto UUIDs sem erro 400.
+-- 2. CRIAÇÃO DA FUNÇÃO DEFINITIVA COM TIPOS UUID
+-- Recebemos parâmetros como TEXT no RPC para total flexibilidade do frontend
 CREATE OR REPLACE FUNCTION public.register_payment_transaction(
   p_amount numeric,
   p_brand text,
-  p_client_id text,        -- Recebe como texto para flexibilidade
-  p_command_id text,       -- Recebe como texto para flexibilidade
+  p_client_id text,        -- Recebe como texto para validação interna
+  p_command_id text,       -- Recebe como texto para validação interna
   p_description text,
   p_fee_amount numeric,
   p_installments integer,
   p_method text,
   p_net_value numeric,
-  p_professional_id text,  -- Recebe como texto para flexibilidade
-  p_studio_id text         -- Recebe como texto para flexibilidade
+  p_professional_id text,  -- Recebe como texto para validação interna
+  p_studio_id text         -- Recebe como texto para validação interna
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -31,15 +42,15 @@ DECLARE
   v_professional_uuid uuid;
   v_studio_uuid uuid;
 BEGIN
-  -- 3. TENTATIVA DE CONVERSÃO SEGURA (CASTING DEFENSIVO)
-  -- Tenta converter strings para UUID apenas se tiverem o formato correto.
-  -- Caso falhe (ex: "2433"), o valor fica como NULL na coluna UUID para não quebrar a transação.
+  -- 3. CASTING DEFENSIVO (Ajustado para o seu schema de UUID)
+  -- Tenta converter strings para UUID. Se falhar (ex: "2433"), o valor fica NULL
+  -- Isso evita o erro "expression is of type bigint/text but column is uuid"
   BEGIN v_client_uuid := p_client_id::uuid; EXCEPTION WHEN OTHERS THEN v_client_uuid := NULL; END;
   BEGIN v_command_uuid := p_command_id::uuid; EXCEPTION WHEN OTHERS THEN v_command_uuid := NULL; END;
   BEGIN v_professional_uuid := p_professional_id::uuid; EXCEPTION WHEN OTHERS THEN v_professional_uuid := NULL; END;
   BEGIN v_studio_uuid := p_studio_id::uuid; EXCEPTION WHEN OTHERS THEN v_studio_uuid := NULL; END;
 
-  -- 4. INSERÇÃO NO FLUXO FINANCEIRO (financial_transactions)
+  -- 4. INSERÇÃO NO FINANCEIRO
   INSERT INTO public.financial_transactions (
     amount,
     net_value,
@@ -71,7 +82,7 @@ BEGIN
   )
   RETURNING id INTO v_transaction_id;
 
-  -- 5. ATUALIZAÇÃO DA COMANDA (Se o ID for válido)
+  -- 5. ATUALIZAÇÃO DA COMANDA (Se ID for válido)
   IF v_command_uuid IS NOT NULL THEN
     UPDATE public.commands 
     SET 
@@ -85,9 +96,8 @@ BEGIN
 END;
 $$;
 
--- 6. PERMISSÕES E RECARGA DE SCHEMA
+-- 6. PERMISSÕES E RECARGA DE CACHE
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO authenticated;
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO service_role;
 
--- Notifica o PostgREST para invalidar o cache de definições de funções
 NOTIFY pgrst, 'reload schema';

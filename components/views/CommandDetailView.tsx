@@ -50,10 +50,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [discount, setDiscount] = useState<string>('0');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // Validador de UUID para evitar erro de casting no Postgres
-    const isUUID = (id: any): boolean => {
+    // Validador robusto de UUID
+    const isValidUUID = (id: any): boolean => {
+        if (!id || typeof id !== 'string') return false;
         const regex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        return typeof id === 'string' && regex.test(id);
+        return regex.test(id);
     };
 
     useEffect(() => {
@@ -160,15 +161,16 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         try {
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
             
-            // Filtro de Segurança: Apenas envia professional_id se for um UUID válido
+            // Garantia de envio de IDs válidos ou NULL (Complemento ao SQL)
             const rawProfId = command.command_items?.find(i => i.professional_id)?.professional_id;
-            const validProfId = isUUID(rawProfId) ? rawProfId : null;
+            const validProfId = isValidUUID(rawProfId) ? rawProfId : null;
+            const validClientId = isValidUUID(command.client_id) ? command.client_id : null;
 
             for (const entry of addedPayments) {
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: entry.amount,
                     p_brand: entry.brand,
-                    p_client_id: isUUID(command.client_id) ? command.client_id : null,
+                    p_client_id: validClientId,
                     p_command_id: command.id,
                     p_description: `Liquidação Comanda #${command.id.split('-')[0].toUpperCase()}`,
                     p_fee_amount: entry.fee,
