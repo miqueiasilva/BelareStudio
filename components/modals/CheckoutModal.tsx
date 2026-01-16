@@ -7,6 +7,7 @@ import {
     User, Receipt, UserCheck, UserPlus
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
+import { useStudio } from '../../contexts/StudioContext';
 import Toast, { ToastType } from '../shared/Toast';
 
 const formatCurrency = (value: number) => {
@@ -43,6 +44,7 @@ interface CheckoutModalProps {
 }
 
 const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointment, onSuccess }) => {
+    const { activeStudioId } = useStudio();
     const [isLoading, setIsLoading] = useState(false);
     const [isFetching, setIsFetching] = useState(true);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -137,7 +139,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const financialMetrics = useMemo(() => {
         if (!currentMethod) return { rate: 0, feeAmount: 0, netValue: appointment.price };
         
-        // --- HARD-FIX DE TAXAS (WHITELIST LOGIC) ---
+        // WHITELIST LOGIC
         const isFeeFree = selectedCategory === 'pix' || selectedCategory === 'money' || currentMethod.brand === 'direto' || currentMethod.type === 'money';
         
         let rate = 0;
@@ -150,7 +152,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     }, [currentMethod, selectedCategory, installments, appointment.price]);
 
     const handleConfirmPayment = async () => {
-        if (!currentMethod) return;
+        if (!currentMethod || !activeStudioId) return;
 
         setIsLoading(true);
 
@@ -162,21 +164,26 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 'debit': 'debit'
             };
 
-            const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                p_studio_id: null, 
-                p_professional_id: isUUID(selectedProfessionalId) ? selectedProfessionalId : null,
-                p_amount: appointment.price,
-                p_net_value: financialMetrics.netValue, // FORÇANDO VALOR LÍQUIDO CORRETO (WHITELIST)
-                p_fee_amount: financialMetrics.feeAmount,
-                p_method: methodMapping[selectedCategory] || 'pix',
-                p_brand: currentMethod?.brand?.toLowerCase() || 'default',
-                p_installments: Math.floor(installments),
-                p_description: `Recebimento: ${appointment.service_name} - ${appointment.client_name}`,
-                p_command_id: null,
-                p_client_id: isUUID(appointment.client_id) ? appointment.client_id : null
-            });
+            // REGISTRO DIRETO (Estabilidade 100%)
+            const { error: insertError } = await supabase
+                .from('financial_transactions')
+                .insert([{
+                    studio_id: activeStudioId,
+                    professional_id: isUUID(selectedProfessionalId) ? selectedProfessionalId : null,
+                    client_id: isUUID(appointment.client_id) ? appointment.client_id : null,
+                    appointment_id: appointment.id,
+                    amount: appointment.price,
+                    net_value: financialMetrics.netValue,
+                    fee_amount: financialMetrics.feeAmount,
+                    payment_method: methodMapping[selectedCategory] || 'pix',
+                    type: 'income',
+                    category: 'Serviço',
+                    description: `Recebimento: ${appointment.service_name} - ${appointment.client_name}`,
+                    status: 'pago',
+                    date: new Date().toISOString()
+                }]);
 
-            if (rpcError) throw rpcError;
+            if (insertError) throw insertError;
 
             await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
 
@@ -212,7 +219,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
                         <div>
-                            <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Checkout Zelda</h2>
+                            <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Finalizar Atendimento</h2>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>

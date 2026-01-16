@@ -117,7 +117,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         }
 
         // --- HARD-FIX DE TAXAS (WHITELIST LOGIC) ---
-        // Implementação de regra sênior: Whitelist para PIX e DINHEIRO
         const isFeeFree = activeCategory === 'pix' || activeCategory === 'money' || (selectedMethodObj?.slug === 'pix' || selectedMethodObj?.slug === 'dinheiro');
         
         let finalRate = 0;
@@ -175,28 +174,37 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             const firstProfId = command.command_items?.find(i => i.professional_id)?.professional_id || null;
 
+            // REGISTRO FINANCEIRO DIRETO (Corrige erro 404 RPC)
             for (const entry of addedPayments) {
-                const payload = {
-                    p_studio_id: activeStudioId,
-                    p_professional_id: firstProfId,
-                    p_amount: entry.amount,
-                    p_net_value: entry.net, // ENVIO DO VALOR LÍQUIDO CALCULADO NA WHITELIST
-                    p_fee_amount: entry.fee, // ENVIO DA TAXA CALCULADA
-                    p_method: methodMap[entry.method],
-                    p_brand: entry.brand.toLowerCase(),
-                    p_installments: entry.installments,
-                    p_description: `Liquidação Comanda #${command.id.split('-')[0].toUpperCase()}`,
-                    p_command_id: command.id,
-                    p_client_id: command.client_id
-                };
+                const { error: transError } = await supabase
+                    .from('financial_transactions')
+                    .insert([{
+                        studio_id: activeStudioId,
+                        professional_id: firstProfId,
+                        client_id: command.client_id,
+                        command_id: command.id,
+                        amount: entry.amount,
+                        net_value: entry.net, // Valor Líquido (Garante Whitelist)
+                        fee_amount: entry.fee,
+                        payment_method: methodMap[entry.method],
+                        type: 'income',
+                        category: 'Serviço',
+                        description: `Liquidação Comanda #${command.id.split('-')[0].toUpperCase()}`,
+                        status: 'pago',
+                        date: new Date().toISOString()
+                    }]);
 
-                const { error } = await supabase.rpc('register_payment_transaction', payload);
-                if (error) throw error;
+                if (transError) throw transError;
             }
 
+            // ATUALIZAÇÃO DA COMANDA
             await supabase
                 .from('commands')
-                .update({ status: 'paid', closed_at: new Date().toISOString() })
+                .update({ 
+                    status: 'paid', 
+                    closed_at: new Date().toISOString(),
+                    total_amount: totals.total // Atualiza caso tenha havido desconto no checkout
+                })
                 .eq('id', command.id);
 
             setServerReceipt({
