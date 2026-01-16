@@ -116,8 +116,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             return;
         }
 
+        // --- HARD-FIX DE TAXAS (WHITELIST LOGIC) ---
+        // Pix e Dinheiro (Money) sempre possuem taxa 0%
+        const isFeeFree = activeCategory === 'pix' || activeCategory === 'money';
+        
         let rate = 0;
-        if (activeCategory === 'credit' || activeCategory === 'debit') {
+        if (!isFeeFree) {
+            // Só buscamos a taxa se FOR crédito ou débito
             if (!selectedMethodObj) {
                 setToast({ message: "Selecione a bandeira do cartão", type: 'error' });
                 return;
@@ -125,9 +130,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             rate = (selectedInstallments === 1) 
                 ? Number(selectedMethodObj.rate_cash || 0) 
                 : Number(selectedMethodObj.installment_rates?.[selectedInstallments.toString()] || selectedMethodObj.rate_installment_12x || 0);
-        } else if (activeCategory === 'pix') {
-            rate = Number(selectedMethodObj?.rate_cash || 0);
         }
+        // Se isFeeFree for true, a 'rate' permanece 0.
 
         const feeAmount = val * (rate / 100);
         const netAmount = val - feeAmount;
@@ -136,7 +140,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             id: Math.random().toString(36).substring(2, 9),
             method: activeCategory,
             amount: val,
-            brand: selectedMethodObj?.brand || 'Default',
+            brand: isFeeFree ? 'Direto' : (selectedMethodObj?.brand || 'Default'),
             rate: rate,
             fee: feeAmount,
             net: netAmount,
@@ -170,7 +174,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 'pix': 'pix' 
             };
 
-            // Extrair o primeiro profissional dos itens para fins de comissão se aplicável
             const firstProfId = command.command_items?.find(i => i.professional_id)?.professional_id || null;
 
             for (const entry of addedPayments) {
@@ -186,12 +189,10 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     p_client_id: command.client_id
                 };
 
-                // Uso da RPC validada 'register_payment_transaction'
                 const { error } = await supabase.rpc('register_payment_transaction', payload);
                 if (error) throw error;
             }
 
-            // Garante o fechamento da comanda no banco
             await supabase
                 .from('commands')
                 .update({ status: 'paid', closed_at: new Date().toISOString() })
@@ -286,8 +287,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                     {p.method === 'pix' ? <Smartphone size={20}/> : p.method === 'money' ? <Coins size={20}/> : <CreditCard size={20}/>}
                                                 </div>
                                                 <div>
-                                                    <p className="font-black text-slate-700 text-sm uppercase">{p.method} {p.brand !== 'Default' && `• ${p.brand}`}</p>
-                                                    <p className="text-[9px] font-black text-rose-400 uppercase tracking-tighter">Taxa Aplicada: {p.rate}% (- R$ {p.fee.toFixed(2)})</p>
+                                                    <p className="font-black text-slate-700 text-sm uppercase">{p.method} {p.brand !== 'Direto' && `• ${p.brand}`}</p>
+                                                    {p.rate > 0 ? (
+                                                        <p className="text-[9px] font-black text-rose-400 uppercase tracking-tighter">Taxa Aplicada: {p.rate}% (- R$ {p.fee.toFixed(2)})</p>
+                                                    ) : (
+                                                        <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">Taxa Isenta (0%)</p>
+                                                    )}
                                                 </div>
                                             </div>
                                             <div className="text-right">
