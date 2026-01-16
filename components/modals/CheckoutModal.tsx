@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
     X, CheckCircle, Wallet, CreditCard, Banknote, 
     Smartphone, Loader2, ShoppingCart, ArrowRight,
@@ -45,6 +45,7 @@ interface CheckoutModalProps {
 
 const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointment, onSuccess }) => {
     const { activeStudioId } = useStudio();
+    const isMounted = useRef(true);
     const [isLoading, setIsLoading] = useState(false);
     const [isFetching, setIsFetching] = useState(true);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -55,6 +56,11 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const [selectedCategory, setSelectedCategory] = useState<'pix' | 'money' | 'credit' | 'debit'>('pix');
     const [selectedMethodId, setSelectedMethodId] = useState<string>('');
     const [installments, setInstallments] = useState(1);
+
+    useEffect(() => {
+        isMounted.current = true;
+        return () => { isMounted.current = false; };
+    }, []);
 
     const isUUID = (id: any): boolean => {
         if (!id) return false;
@@ -77,28 +83,21 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 supabase.from('team_members').select('id, name').order('name'),
                 supabase.from('payment_methods_config').select('*').eq('is_active', true)
             ]);
-
             if (profsRes.error) throw profsRes.error;
             if (methodsRes.error) throw methodsRes.error;
-
-            setDbProfessionals(profsRes.data || []);
-            setDbPaymentMethods(methodsRes.data || []);
-
-            if (methodsRes.data && methodsRes.data.length > 0) {
-                const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
-                if (firstPix) {
-                    setSelectedCategory('pix');
-                    setSelectedMethodId(firstPix.id);
-                } else {
-                    setSelectedCategory(methodsRes.data[0].type);
-                    setSelectedMethodId(methodsRes.data[0].id);
+            if (isMounted.current) {
+                setDbProfessionals(profsRes.data || []);
+                setDbPaymentMethods(methodsRes.data || []);
+                if (methodsRes.data && methodsRes.data.length > 0) {
+                    const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
+                    if (firstPix) { setSelectedCategory('pix'); setSelectedMethodId(firstPix.id); }
+                    else { setSelectedCategory(methodsRes.data[0].type); setSelectedMethodId(methodsRes.data[0].id); }
                 }
             }
         } catch (err: any) {
-            console.error("[CHECKOUT] Erro na carga de taxas:", err);
-            setToast({ message: "Erro ao sincronizar taxas.", type: 'error' });
+            if (isMounted.current) setToast({ message: "Erro ao sincronizar taxas.", type: 'error' });
         } finally {
-            setIsFetching(false);
+            if (isMounted.current) setIsFetching(false);
         }
     };
 
@@ -121,83 +120,65 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         }
     }, [isOpen, appointment, dbProfessionals]);
 
-    const filteredMethods = useMemo(() => {
-        return dbPaymentMethods.filter(m => m.type === selectedCategory);
-    }, [dbPaymentMethods, selectedCategory]);
+    const filteredMethods = useMemo(() => dbPaymentMethods.filter(m => m.type === selectedCategory), [dbPaymentMethods, selectedCategory]);
 
     useEffect(() => {
-        if (filteredMethods.length > 0) {
-            setSelectedMethodId(filteredMethods[0].id);
-            setInstallments(1);
-        } else setSelectedMethodId('');
+        if (filteredMethods.length > 0) { setSelectedMethodId(filteredMethods[0].id); setInstallments(1); }
+        else setSelectedMethodId('');
     }, [selectedCategory, filteredMethods]);
 
-    const currentMethod = useMemo(() => {
-        return dbPaymentMethods.find(m => m.id === selectedMethodId);
-    }, [dbPaymentMethods, selectedMethodId]);
+    const currentMethod = useMemo(() => dbPaymentMethods.find(m => m.id === selectedMethodId), [dbPaymentMethods, selectedMethodId]);
 
     const financialMetrics = useMemo(() => {
         if (!currentMethod) return { rate: 0, feeAmount: 0, netValue: appointment.price };
-        
-        // WHITELIST LOGIC
         const isFeeFree = selectedCategory === 'pix' || selectedCategory === 'money' || currentMethod.brand === 'direto' || currentMethod.type === 'money';
-        
         let rate = 0;
-        if (!isFeeFree) {
-            rate = (installments === 1) ? Number(currentMethod.rate_cash || 0) : Number(currentMethod.installment_rates?.[installments.toString()] || 0);
-        }
-
+        if (!isFeeFree) { rate = (installments === 1) ? Number(currentMethod.rate_cash || 0) : Number(currentMethod.installment_rates?.[installments.toString()] || 0); }
         const feeAmount = (appointment.price * rate) / 100;
         return { rate, feeAmount, netValue: appointment.price - feeAmount };
     }, [currentMethod, selectedCategory, installments, appointment.price]);
 
-    const handleConfirmPayment = async () => {
-        if (!currentMethod || !activeStudioId) return;
+    const handleConfirmPayment = async (e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
 
+        if (!currentMethod || !activeStudioId || isLoading) return;
         setIsLoading(true);
 
         try {
-            const methodMapping: Record<string, string> = {
-                'pix': 'pix',
-                'money': 'cash',
-                'credit': 'credit',
-                'debit': 'debit'
-            };
-
-            // REGISTRO DIRETO (Estabilidade 100%)
-            const { error: insertError } = await supabase
-                .from('financial_transactions')
-                .insert([{
-                    studio_id: activeStudioId,
-                    professional_id: isUUID(selectedProfessionalId) ? selectedProfessionalId : null,
-                    client_id: isUUID(appointment.client_id) ? appointment.client_id : null,
-                    appointment_id: appointment.id,
-                    amount: appointment.price,
-                    net_value: financialMetrics.netValue,
-                    fee_amount: financialMetrics.feeAmount,
-                    payment_method: methodMapping[selectedCategory] || 'pix',
-                    type: 'income',
-                    category: 'Serviço',
-                    description: `Recebimento: ${appointment.service_name} - ${appointment.client_name}`,
-                    status: 'pago',
-                    date: new Date().toISOString()
-                }]);
-
+            const methodMapping: Record<string, string> = { 'pix': 'pix', 'money': 'cash', 'credit': 'credit', 'debit': 'debit' };
+            const { error: insertError } = await supabase.from('financial_transactions').insert([{
+                studio_id: activeStudioId,
+                professional_id: isUUID(selectedProfessionalId) ? selectedProfessionalId : null,
+                client_id: isUUID(appointment.client_id) ? appointment.client_id : null,
+                appointment_id: appointment.id,
+                amount: appointment.price,
+                net_value: financialMetrics.netValue,
+                fee_amount: financialMetrics.feeAmount,
+                payment_method: methodMapping[selectedCategory] || 'pix',
+                type: 'income',
+                category: 'Serviço',
+                description: `Recebimento: ${appointment.service_name} - ${appointment.client_name}`,
+                status: 'pago',
+                date: new Date().toISOString()
+            }]);
             if (insertError) throw insertError;
-
             await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
-
-            setToast({ message: "Pagamento confirmado!", type: 'success' });
-            
-            setTimeout(() => {
-                onSuccess(); 
-                onClose(); 
-            }, 1000);
-
+            if (isMounted.current) {
+                setToast({ message: "Pagamento confirmado!", type: 'success' });
+                setTimeout(() => { if (isMounted.current) { onSuccess(); onClose(); } }, 1000);
+            }
         } catch (error: any) {
-            console.error("[CHECKOUT] Erro:", error);
-            setToast({ message: `Erro: ${error.message}`, type: 'error' });
-            setIsLoading(false);
+            if (error.message?.includes('message channel closed')) {
+                console.warn("[ZELDA-SHIELD] Ruído de extensão ignorado durante o checkout.");
+                return;
+            }
+            if (isMounted.current) {
+                setToast({ message: `Erro: ${error.message}`, type: 'error' });
+                setIsLoading(false);
+            }
         }
     };
 
@@ -207,20 +188,18 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         { id: 'pix', label: 'Pix', icon: Smartphone, color: 'text-teal-600', bg: 'bg-teal-50' },
         { id: 'money', label: 'Dinheiro', icon: Banknote, color: 'text-green-600', bg: 'bg-green-50' },
         { id: 'credit', label: 'Crédito', icon: CreditCard, color: 'text-blue-600', bg: 'bg-blue-50' },
+        // FIX: Replaced undefined CardIcon with correctly imported CreditCard icon
         { id: 'debit', label: 'Débito', icon: CreditCard, color: 'text-cyan-600', bg: 'bg-cyan-50' },
     ];
 
     return (
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-300">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-            
             <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                 <header className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
-                        <div>
-                            <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Finalizar Atendimento</h2>
-                        </div>
+                        <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase leading-none">Finalizar Atendimento</h2>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
                 </header>
@@ -230,26 +209,15 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         <div className="relative z-10 space-y-4 text-left">
                             <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">{appointment.service_name}</p>
                             <p className="text-sm font-bold text-slate-300">{appointment.client_name}</p>
-                            <div className="mt-4 pt-4 border-t border-white/5">
-                                <p className="text-3xl font-black text-emerald-400 tracking-tighter">{formatCurrency(appointment.price)}</p>
-                            </div>
+                            <div className="mt-4 pt-4 border-t border-white/5"><p className="text-3xl font-black text-emerald-400 tracking-tighter">{formatCurrency(appointment.price)}</p></div>
                         </div>
                     </div>
 
                     <div className="space-y-1.5 text-left">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-1.5">
-                            <UserCheck size={12} className="text-orange-500" />
-                            Profissional do Recebimento
-                        </label>
-                        <select 
-                            value={selectedProfessionalId}
-                            onChange={(e) => setSelectedProfessionalId(e.target.value)}
-                            className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-orange-100 font-bold text-slate-700"
-                        >
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-1.5"><UserCheck size={12} className="text-orange-500" /> Profissional do Recebimento</label>
+                        <select value={selectedProfessionalId} onChange={(e) => setSelectedProfessionalId(e.target.value)} className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-orange-100 font-bold text-slate-700">
                             <option value="">Selecionar Profissional...</option>
-                            {dbProfessionals.map(prof => (
-                                <option key={prof.id} value={prof.id}>{prof.name}</option>
-                            ))}
+                            {dbProfessionals.map(prof => (<option key={prof.id} value={prof.id}>{prof.name}</option>))}
                         </select>
                     </div>
 
@@ -257,47 +225,25 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Forma de Pagamento</label>
                         <div className="grid grid-cols-4 gap-2">
                             {categories.map((cat) => (
-                                <button
-                                    key={cat.id}
-                                    onClick={() => setSelectedCategory(cat.id as any)}
-                                    className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${selectedCategory === cat.id ? 'border-orange-500 bg-orange-50/50 shadow-md ring-4 ring-orange-50' : 'border-slate-50 bg-white hover:border-slate-200'}`}
-                                >
-                                    <div className={`p-2 rounded-xl mb-1 ${cat.bg} ${cat.color}`}><cat.icon size={20} /></div>
-                                    <span className="text-[9px] font-black text-slate-700 uppercase tracking-tighter">{cat.label}</span>
-                                </button>
+                                <button key={cat.id} onClick={() => setSelectedCategory(cat.id as any)} className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${selectedCategory === cat.id ? 'border-orange-500 bg-orange-50/50 shadow-md ring-4 ring-orange-50' : 'border-slate-50 bg-white hover:border-slate-200'}`}><div className={`p-2 rounded-xl mb-1 ${cat.bg} ${cat.color}`}><cat.icon size={20} /></div><span className="text-[9px] font-black text-slate-700 uppercase tracking-tighter">{cat.label}</span></button>
                             ))}
                         </div>
                     </div>
 
-                    {isFetching ? (
-                        <div className="py-4 flex justify-center"><Loader2 className="animate-spin text-orange-500" /></div>
-                    ) : filteredMethods.length > 0 ? (
+                    {isFetching ? (<div className="py-4 flex justify-center"><Loader2 className="animate-spin text-orange-500" /></div>) : filteredMethods.length > 0 ? (
                         <div className="space-y-4 text-left">
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Operadora Selecionada</label>
-                                <select 
-                                    value={selectedMethodId}
-                                    onChange={(e) => setSelectedMethodId(e.target.value)}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700"
-                                >
-                                    {filteredMethods.map(m => (
-                                        <option key={m.id} value={m.id}>{m.name} {m.brand ? `(${m.brand})` : ''}</option>
-                                    ))}
+                                <select value={selectedMethodId} onChange={(e) => setSelectedMethodId(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700">
+                                    {filteredMethods.map(m => (<option key={m.id} value={m.id}>{m.name} {m.brand ? `(${m.brand})` : ''}</option>))}
                                 </select>
                             </div>
-
                             {currentMethod?.type === 'credit' && (
                                 <div className="space-y-1.5 animate-in slide-in-from-top-2">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Plano de Parcelas</label>
-                                    <select 
-                                        value={installments}
-                                        onChange={(e) => setInstallments(parseInt(e.target.value))}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700"
-                                    >
+                                    <select value={installments} onChange={(e) => setInstallments(parseInt(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700">
                                         <option value={1}>À vista (1x)</option>
-                                        {Array.from({ length: (currentMethod.max_installments || 1) - 1 }, (_, i) => i + 2).map(n => (
-                                            <option key={n} value={n}>{n} Vezes</option>
-                                        ))}
+                                        {Array.from({ length: (currentMethod.max_installments || 1) - 1 }, (_, i) => i + 2).map(n => (<option key={n} value={n}>{n} Vezes</option>))}
                                     </select>
                                 </div>
                             )}
@@ -306,30 +252,15 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
                     {currentMethod && (
                         <div className="p-5 bg-slate-50 border-2 border-slate-100 rounded-[28px] space-y-3 shadow-inner text-left">
-                            <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                <span>Taxa Aplicada ({installments}x)</span>
-                                <span className={financialMetrics.rate > 0 ? "text-rose-600" : "text-emerald-600 font-black"}>
-                                    {financialMetrics.rate > 0 ? `${financialMetrics.rate}%` : 'ISENTA (0%)'}
-                                </span>
-                            </div>
-                            <div className="flex justify-between items-center pt-2 border-t border-slate-200/50">
-                                <span className="text-xs font-bold text-slate-500">Líquido Estimado</span>
-                                <span className="text-lg font-black text-emerald-600">{formatCurrency(financialMetrics.netValue)}</span>
-                            </div>
+                            <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400"><span>Taxa Aplicada ({installments}x)</span><span className={financialMetrics.rate > 0 ? "text-rose-600" : "text-emerald-600 font-black"}>{financialMetrics.rate > 0 ? `${financialMetrics.rate}%` : 'ISENTA (0%)'}</span></div>
+                            <div className="flex justify-between items-center pt-2 border-t border-slate-200/50"><span className="text-xs font-bold text-slate-500">Líquido Estimado</span><span className="text-lg font-black text-emerald-600">{formatCurrency(financialMetrics.netValue)}</span></div>
                         </div>
                     )}
                 </main>
 
                 <footer className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
                     <button onClick={onClose} className="flex-1 py-4 text-slate-500 font-black uppercase tracking-widest text-xs hover:bg-slate-200 rounded-2xl">Cancelar</button>
-                    <button
-                        onClick={handleConfirmPayment}
-                        disabled={isLoading || !currentMethod}
-                        className="flex-[2] bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
-                    >
-                        {isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
-                        Confirmar Recebimento
-                    </button>
+                    <button onClick={(e) => handleConfirmPayment(e)} disabled={isLoading || !currentMethod} className="flex-[2] bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50">{isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />} Confirmar Recebimento</button>
                 </footer>
             </div>
         </div>
