@@ -7,7 +7,7 @@ import {
     Percent, Calendar, ShoppingCart, X, Coins,
     ArrowRight, ShieldCheck, Tag, CreditCard as CardIcon,
     AlertCircle, Sparkles, CheckCircle2, ArrowUpRight,
-    Trash2, ChevronDown, Check
+    Trash2, ChevronDown, Check, User, Briefcase
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -35,7 +35,7 @@ interface PaymentEntry {
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
     const { activeStudioId } = useStudio();
     const isMounted = useRef(true);
-    const [command, setCommand] = useState<Command | null>(null);
+    const [command, setCommand] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [isFinishing, setIsFinishing] = useState(false);
     const [isSuccessfullyClosed, setIsSuccessfullyClosed] = useState(false);
@@ -66,11 +66,18 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
+            // SELECT ATUALIZADO: Inclui o nome do cliente e o nome do profissional através do relacionamento com team_members
             const [cmdRes, methodsRes] = await Promise.all([
-                supabase.from('commands').select('*, clients(*), command_items(*)').eq('id', commandId).single(),
+                supabase
+                    .from('commands')
+                    .select('*, clients(nome), command_items(*, team_members(name))')
+                    .eq('id', commandId)
+                    .single(),
                 supabase.from('payment_methods_config').select('*').eq('is_active', true)
             ]);
+
             if (cmdRes.error) throw cmdRes.error;
+            
             if (isMounted.current) {
                 setCommand(cmdRes.data);
                 setDbMethods(methodsRes.data || []);
@@ -98,6 +105,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const remaining = Math.max(0, totalAfterDiscount - paid);
         return { subtotal, total: totalAfterDiscount, paid, remaining, totalNet };
     }, [command, discount, addedPayments]);
+
+    // Extração segura do nome do profissional para o resumo
+    const professionalName = useMemo(() => {
+        if (!command?.command_items) return 'Não informado';
+        const itemWithProf = command.command_items.find((i: any) => i.team_members?.name);
+        return itemWithProf?.team_members?.name || 'Não informado';
+    }, [command]);
 
     const handleInitPayment = (category: 'credit' | 'debit' | 'pix' | 'money') => {
         setActiveCategory(category);
@@ -162,7 +176,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
             
             // Garantia de envio de IDs válidos ou NULL (Complemento ao SQL)
-            const rawProfId = command.command_items?.find(i => i.professional_id)?.professional_id;
+            const rawProfId = command.command_items?.find((i: any) => i.professional_id)?.professional_id;
             const validProfId = isValidUUID(rawProfId) ? rawProfId : null;
             const validClientId = isValidUUID(command.client_id) ? command.client_id : null;
 
@@ -231,13 +245,42 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 <p className="text-emerald-100 mt-2">A comanda foi baixada e as taxas foram aplicadas com sucesso.</p>
                             </div>
                         )}
+
+                        {/* NOVO CARTÃO: Resumo do Atendimento */}
+                        <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
+                            <header className="px-8 py-5 border-b border-slate-50 bg-slate-50/30 flex items-center gap-2">
+                                <Sparkles size={18} className="text-orange-500" />
+                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">Resumo do Atendimento</h3>
+                            </header>
+                            <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-2xl flex items-center justify-center shadow-sm border border-orange-100">
+                                        <User size={24} />
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Cliente</p>
+                                        <p className="font-black text-slate-700 text-lg leading-tight">{command.clients?.nome || 'Consumidor Final'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shadow-sm border border-blue-100">
+                                        <Scissors size={24} />
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Profissional</p>
+                                        <p className="font-black text-slate-700 text-lg leading-tight">{professionalName}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-5 border-b border-slate-50 bg-slate-50/30 flex items-center gap-2">
                                 <ShoppingCart size={18} className="text-orange-500" />
                                 <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">Itens da Comanda</h3>
                             </header>
                             <div className="divide-y divide-slate-50">
-                                {command.command_items.map(item => (
+                                {command.command_items.map((item: any) => (
                                     <div key={item.id} className="p-6 flex justify-between items-center">
                                         <div><p className="font-black text-slate-700">{item.title}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} un x R$ {Number(item.price).toFixed(2)}</p></div>
                                         <p className="font-black text-slate-800">R$ {(item.price * item.quantity).toFixed(2)}</p>
