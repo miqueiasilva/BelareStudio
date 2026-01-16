@@ -50,11 +50,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [discount, setDiscount] = useState<string>('0');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // Validador robusto de UUID
-    const isValidUUID = (id: any): boolean => {
-        if (!id || typeof id !== 'string') return false;
+    // Validador de UUID para garantir integridade com o banco
+    const getValidUUID = (id: any): string | null => {
+        if (!id || typeof id !== 'string') return null;
         const regex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        return regex.test(id);
+        return regex.test(id) ? id : null;
     };
 
     useEffect(() => {
@@ -66,7 +66,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
-            // SELECT ATUALIZADO: Inclui o nome do cliente e o nome do profissional através do relacionamento com team_members
             const [cmdRes, methodsRes] = await Promise.all([
                 supabase
                     .from('commands')
@@ -106,7 +105,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         return { subtotal, total: totalAfterDiscount, paid, remaining, totalNet };
     }, [command, discount, addedPayments]);
 
-    // Extração segura do nome do profissional para o resumo
     const professionalName = useMemo(() => {
         if (!command?.command_items) return 'Não informado';
         const itemWithProf = command.command_items.find((i: any) => i.team_members?.name);
@@ -175,24 +173,30 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         try {
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
             
-            // Garantia de envio de IDs válidos ou NULL (Complemento ao SQL)
+            // Tratamento rigoroso de UUIDs para a nova assinatura da função SQL
+            const validStudioId = getValidUUID(activeStudioId);
+            const validCommandId = getValidUUID(command.id);
+            const validClientId = getValidUUID(command.client_id);
             const rawProfId = command.command_items?.find((i: any) => i.professional_id)?.professional_id;
-            const validProfId = isValidUUID(rawProfId) ? rawProfId : null;
-            const validClientId = isValidUUID(command.client_id) ? command.client_id : null;
+            const validProfId = getValidUUID(rawProfId);
+
+            if (!validStudioId || !validCommandId) {
+                throw new Error("IDs internos inválidos para operação.");
+            }
 
             for (const entry of addedPayments) {
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: entry.amount,
                     p_brand: entry.brand,
                     p_client_id: validClientId,
-                    p_command_id: command.id,
-                    p_description: `Liquidação Comanda #${command.id.split('-')[0].toUpperCase()}`,
+                    p_command_id: validCommandId,
+                    p_description: `Liquidação Comanda #${command.id.toString().split('-')[0].toUpperCase()}`,
                     p_fee_amount: entry.fee,
                     p_installments: entry.installments,
                     p_method: methodMap[entry.method],
                     p_net_value: entry.net,
                     p_professional_id: validProfId,
-                    p_studio_id: activeStudioId
+                    p_studio_id: validStudioId
                 });
                 
                 if (rpcError) throw rpcError;
@@ -229,7 +233,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-colors"><ChevronLeft size={24} /></button>
                     <div>
-                        <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500">#{command.id.split('-')[0].toUpperCase()}</span></h1>
+                        <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500">#{command.id.toString().split('-')[0].toUpperCase()}</span></h1>
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Painel de Liquidação Direta</p>
                     </div>
                 </div>
@@ -246,7 +250,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         )}
 
-                        {/* NOVO CARTÃO: Resumo do Atendimento */}
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-5 border-b border-slate-50 bg-slate-50/30 flex items-center gap-2">
                                 <Sparkles size={18} className="text-orange-500" />
@@ -280,7 +283,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">Itens da Comanda</h3>
                             </header>
                             <div className="divide-y divide-slate-50">
-                                {command.command_items.map((item: any) => (
+                                {command.command_items?.map((item: any) => (
                                     <div key={item.id} className="p-6 flex justify-between items-center">
                                         <div><p className="font-black text-slate-700">{item.title}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} un x R$ {Number(item.price).toFixed(2)}</p></div>
                                         <p className="font-black text-slate-800">R$ {(item.price * item.quantity).toFixed(2)}</p>

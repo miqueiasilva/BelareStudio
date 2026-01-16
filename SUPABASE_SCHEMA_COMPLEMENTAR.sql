@@ -1,5 +1,5 @@
 
--- 1. REMOÇÃO DE TODAS AS VERSÕES ANTERIORES (Limpeza de cache de tipos)
+-- 1. LIMPEZA RADICAL: Remove todas as variações da função para evitar conflitos de tipos de parâmetros
 DO $$ 
 DECLARE 
     _func_name text := 'register_payment_transaction';
@@ -15,19 +15,20 @@ BEGIN
     END LOOP;
 END $$;
 
--- 2. NOVA FUNÇÃO - ESTREITAMENTE UUID
+-- 2. CRIAÇÃO DA FUNÇÃO COM PARÂMETROS UUID
+-- Esta assinatura é incompatível com a anterior (text), por isso o DROP acima é vital.
 CREATE OR REPLACE FUNCTION public.register_payment_transaction(
   p_amount numeric,
   p_brand text,
-  p_client_id text,
-  p_command_id text,
+  p_client_id uuid,        -- Tipo UUID estrito
+  p_command_id uuid,       -- Tipo UUID estrito
   p_description text,
   p_fee_amount numeric,
   p_installments integer,
   p_method text,
   p_net_value numeric,
-  p_professional_id text,
-  p_studio_id text
+  p_professional_id uuid,  -- Tipo UUID estrito
+  p_studio_id uuid         -- Tipo UUID estrito
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -36,19 +37,8 @@ SET search_path = public
 AS $$
 DECLARE
   v_transaction_id uuid;
-  v_client_uuid uuid;
-  v_command_uuid uuid;
-  v_professional_uuid uuid;
-  v_studio_uuid uuid;
 BEGIN
-  -- CASTING SEGURO: Convertemos texto para UUID. 
-  -- Se o valor for inválido (como um ID numérico de mock), tratamos como NULL para não dar erro 400.
-  BEGIN v_client_uuid := p_client_id::uuid; EXCEPTION WHEN OTHERS THEN v_client_uuid := NULL; END;
-  BEGIN v_command_uuid := p_command_id::uuid; EXCEPTION WHEN OTHERS THEN v_command_uuid := NULL; END;
-  BEGIN v_professional_uuid := p_professional_id::uuid; EXCEPTION WHEN OTHERS THEN v_professional_uuid := NULL; END;
-  BEGIN v_studio_uuid := p_studio_id::uuid; EXCEPTION WHEN OTHERS THEN v_studio_uuid := NULL; END;
-
-  -- INSERÇÃO DIRETA USANDO VARIÁVEIS UUID
+  -- 3. INSERÇÃO DIRETA (Sem conversões de tipo inconsistentes)
   INSERT INTO public.financial_transactions (
     amount,
     net_value,
@@ -73,26 +63,30 @@ BEGIN
     p_description,
     'pago',
     NOW(),
-    v_client_uuid,
-    v_command_uuid,
-    v_professional_uuid,
-    v_studio_uuid
+    p_client_id,
+    p_command_id,
+    p_professional_id,
+    p_studio_id
   )
   RETURNING id INTO v_transaction_id;
 
-  -- ATUALIZAÇÃO DA COMANDA
-  IF v_command_uuid IS NOT NULL THEN
+  -- 4. ATUALIZAÇÃO DA COMANDA (Obrigatória para fechar o ciclo de venda)
+  IF p_command_id IS NOT NULL THEN
     UPDATE public.commands 
     SET 
       status = 'paid', 
       closed_at = NOW(),
       total_amount = p_amount
-    WHERE id = v_command_uuid;
+    WHERE id = p_command_id;
   END IF;
 
   RETURN v_transaction_id;
 END;
 $$;
 
+-- 5. PERMISSÕES
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO authenticated;
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO service_role;
+
+-- Notifica o PostgREST para recarregar o schema da API
+NOTIFY pgrst, 'reload schema';
