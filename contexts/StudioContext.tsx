@@ -88,7 +88,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
 
       setStudios(mappedStudios);
 
-      // 4. Gerencia qual studio está ativo (Verificação de segurança contra array vazio)
+      // 4. Gerencia qual studio está ativo
       if (mappedStudios.length > 0) {
         const saved = localStorage.getItem(STORAGE_KEY);
         const savedStillValid = saved && mappedStudios.some((s) => s.id === saved);
@@ -103,8 +103,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
         localStorage.removeItem(STORAGE_KEY);
       }
     } catch (err: any) {
-      const errorMsg = err?.message || err?.details || "Erro desconhecido ao carregar unidades.";
-      console.error("[StudioProvider] refreshStudios error:", errorMsg);
+      console.error("[StudioProvider] refreshStudios error:", err?.message);
       setStudios([]);
       setActiveStudioIdState(null);
     } finally {
@@ -115,7 +114,15 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
   useEffect(() => {
     refreshStudios();
 
-    if (!supabase) return;
+    // Safety Timeout: Se em 5 segundos não carregar as unidades, libera a UI
+    const timer = setTimeout(() => {
+      if (loading) {
+        console.warn("[StudioContext] Tempo limite de carregamento atingido.");
+        setLoading(false);
+      }
+    }, 5000);
+
+    if (!supabase) return () => clearTimeout(timer);
 
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
@@ -136,6 +143,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
     return () => {
       sub.subscription.unsubscribe();
       window.removeEventListener("storage", onStorage);
+      clearTimeout(timer);
     };
   }, []);
 

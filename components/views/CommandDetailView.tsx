@@ -50,6 +50,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [discount, setDiscount] = useState<string>('0');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
+    // Validador de UUID para evitar erro de casting no Postgres
+    const isUUID = (id: any): boolean => {
+        const regex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        return typeof id === 'string' && regex.test(id);
+    };
+
     useEffect(() => {
         isMounted.current = true;
         return () => { isMounted.current = false; };
@@ -153,21 +159,23 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setIsFinishing(true);
         try {
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
-            const firstProfId = command.command_items?.find(i => i.professional_id)?.professional_id || null;
+            
+            // Filtro de Segurança: Apenas envia professional_id se for um UUID válido
+            const rawProfId = command.command_items?.find(i => i.professional_id)?.professional_id;
+            const validProfId = isUUID(rawProfId) ? rawProfId : null;
 
             for (const entry of addedPayments) {
-                // ATUALIZAÇÃO PARA USAR A NOVA RPC COM 11 PARÂMETROS
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: entry.amount,
                     p_brand: entry.brand,
-                    p_client_id: command.client_id,
+                    p_client_id: isUUID(command.client_id) ? command.client_id : null,
                     p_command_id: command.id,
                     p_description: `Liquidação Comanda #${command.id.split('-')[0].toUpperCase()}`,
                     p_fee_amount: entry.fee,
                     p_installments: entry.installments,
                     p_method: methodMap[entry.method],
                     p_net_value: entry.net,
-                    p_professional_id: firstProfId,
+                    p_professional_id: validProfId,
                     p_studio_id: activeStudioId
                 });
                 
@@ -181,7 +189,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 fetchSystemData();
             }
         } catch (e: any) {
-            if (e.message?.includes('message channel closed')) return;
             if (isMounted.current) {
                 setToast({ message: `Falha na Liquidação: ${e.message}`, type: 'error' });
                 setIsFinishing(false);

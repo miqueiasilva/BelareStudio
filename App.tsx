@@ -49,14 +49,16 @@ const AppContent: React.FC = () => {
   const [hash, setHash] = useState(window.location.hash);
   const [pathname, setPathname] = useState(window.location.pathname);
 
-  // Watchdog Timer: Se demorar mais de 5s para sincronizar, força logout
+  // Watchdog Timer: Se demorar mais de 5s para sincronizar, força logout e reload
   useEffect(() => {
     let timer: number;
     if (authLoading || studioLoading) {
       timer = window.setTimeout(() => {
         if (authLoading || studioLoading) {
-          console.warn("Watchdog: Tempo de carregamento excedido (5s). Forçando reset de sessão.");
-          signOut();
+          console.warn("Watchdog: Tempo de carregamento excedido (5s). Resetando sessão.");
+          signOut().then(() => {
+             window.location.reload();
+          });
         }
       }, 5000);
     }
@@ -79,7 +81,7 @@ const AppContent: React.FC = () => {
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
           <p className="text-slate-500 font-medium font-sans">Sincronizando dados...</p>
-          <p className="text-[10px] text-slate-300 font-bold uppercase tracking-widest">Limite de espera: 5 segundos</p>
+          <p className="text-[10px] text-slate-300 font-bold uppercase tracking-widest">Limite de segurança: 5s</p>
         </div>
       </div>
     );
@@ -87,6 +89,8 @@ const AppContent: React.FC = () => {
 
   if (hash === '#/public-preview') return <Suspense fallback={<ViewLoader />}><PublicBookingPreview /></Suspense>;
   if (pathname === '/reset-password' || hash === '#/reset-password') return <Suspense fallback={<ViewLoader />}><ResetPasswordView /></Suspense>;
+  
+  // Se após o loading não houver usuário, vai para login
   if (!user) return <LoginView />;
 
   if (!activeStudioId) {
@@ -98,7 +102,7 @@ const AppContent: React.FC = () => {
           </div>
           <h2 className="text-2xl font-black text-slate-800 leading-tight">Nenhum Studio vinculado</h2>
           <p className="text-slate-500 mt-4 font-medium leading-relaxed">
-            Seu usuário ainda não possui permissão de acesso a nenhuma unidade do <b>BelareStudio</b>.
+            Seu usuário ainda não possui permissão de acesso a nenhuma unidade ativa.
           </p>
           <div className="mt-10 space-y-3">
              <button onClick={() => window.location.reload()} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl transition-all active:scale-95">Tentar Novamente</button>
