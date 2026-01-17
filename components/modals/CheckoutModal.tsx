@@ -62,13 +62,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return () => { isMounted.current = false; };
     }, []);
 
-    // Validador de UUID rigoroso
-    const getValidUUID = (id: any): string | null => {
-        if (!id || typeof id !== 'string') return null;
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        return uuidRegex.test(id) ? id : null;
-    };
-
     const resetLocalState = () => {
         setSelectedProfessionalId('');
         setSelectedCategory('pix');
@@ -107,26 +100,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         else resetLocalState();
     }, [isOpen]);
 
-    useEffect(() => {
-        if (isOpen && appointment && dbProfessionals.length > 0) {
-            const currentValid = getValidUUID(selectedProfessionalId);
-            if (currentValid) return;
-
-            let targetId = '';
-            const apptProfUuid = getValidUUID(appointment.professional_id);
-            
-            if (apptProfUuid) {
-                targetId = apptProfUuid;
-            } else if (appointment.professional_name) {
-                const nameRef = appointment.professional_name.trim().toLowerCase();
-                const found = dbProfessionals.find(p => p.name.trim().toLowerCase() === nameRef);
-                const foundUuid = getValidUUID(found?.id);
-                if (foundUuid) targetId = foundUuid;
-            }
-            if (targetId) setSelectedProfessionalId(targetId);
-        }
-    }, [isOpen, appointment, dbProfessionals]);
-
     const filteredMethods = useMemo(() => dbPaymentMethods.filter(m => m.type === selectedCategory), [dbPaymentMethods, selectedCategory]);
 
     useEffect(() => {
@@ -135,15 +108,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     }, [selectedCategory, filteredMethods]);
 
     const currentMethod = useMemo(() => dbPaymentMethods.find(m => m.id === selectedMethodId), [dbPaymentMethods, selectedMethodId]);
-
-    const financialMetrics = useMemo(() => {
-        if (!currentMethod) return { rate: 0, feeAmount: 0, netValue: appointment.price };
-        const isFeeFree = selectedCategory === 'pix' || selectedCategory === 'money' || currentMethod.brand === 'direto' || currentMethod.type === 'money';
-        let rate = 0;
-        if (!isFeeFree) { rate = (installments === 1) ? Number(currentMethod.rate_cash || 0) : Number(currentMethod.installment_rates?.[installments.toString()] || 0); }
-        const feeAmount = (appointment.price * rate) / 100;
-        return { rate, feeAmount, netValue: appointment.price - feeAmount };
-    }, [currentMethod, selectedCategory, installments, appointment.price]);
 
     const handleConfirmPayment = async (e?: React.MouseEvent) => {
         if (e) {
@@ -155,39 +119,33 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         setIsLoading(true);
 
         try {
+            // Mapeamento técnico conforme regra da RPC pay_latest_open_command_v6
             const methodMapping: Record<string, string> = { 'pix': 'pix', 'money': 'cash', 'credit': 'credit', 'debit': 'debit' };
-            
-            // HIGIENIZAÇÃO DE IDs (Impede que '1' chegue como bigint)
-            const studioUuid = getValidUUID(activeStudioId);
-            const profUuid = getValidUUID(selectedProfessionalId);
-            const clientUuid = getValidUUID(appointment.client_id);
 
-            if (!studioUuid) throw new Error("ID de Unidade inválido para transação.");
-
-            const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
+            // CHAMADA À NOVA RPC INTELIGENTE
+            const { error: rpcError } = await supabase.rpc('pay_latest_open_command_v6', {
                 p_amount: appointment.price,
-                p_brand: currentMethod.brand || 'default',
-                p_client_id: clientUuid,
-                p_command_id: null,
-                p_description: `Recebimento: ${appointment.service_name} - ${appointment.client_name}`,
-                p_fee_amount: financialMetrics.feeAmount,
-                p_installments: installments,
                 p_method: methodMapping[selectedCategory] || 'pix',
-                p_net_value: financialMetrics.netValue,
-                p_professional_id: profUuid,
-                p_studio_id: studioUuid
+                p_brand: currentMethod.brand || 'default',
+                p_installments: installments
             });
 
-            if (rpcError) throw rpcError;
+            if (rpcError) {
+                console.error("Erro na liquidação (pay_latest_open_command_v6):", rpcError);
+                throw rpcError;
+            }
 
+            // Marca o agendamento original como concluído no frontend
             await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
             
             if (isMounted.current) {
-                setToast({ message: "Pagamento confirmado!", type: 'success' });
+                setToast({ message: "Recebimento confirmado!", type: 'success' });
                 setTimeout(() => { if (isMounted.current) { onSuccess(); onClose(); } }, 1000);
             }
         } catch (error: any) {
             if (isMounted.current) {
+                const detailedError = `[${error.message}] Details: ${error.details || 'N/A'}. Hint: ${error.hint || 'N/A'}`;
+                console.error("Falha Crítica no Checkout:", detailedError);
                 setToast({ message: `Falha na Liquidação: ${error.message}`, type: 'error' });
                 setIsLoading(false);
             }
@@ -224,14 +182,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         </div>
                     </div>
 
-                    <div className="space-y-1.5 text-left">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-1.5"><UserCheck size={12} className="text-orange-500" /> Profissional do Recebimento</label>
-                        <select value={selectedProfessionalId} onChange={(e) => setSelectedProfessionalId(e.target.value)} className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-orange-100 font-bold text-slate-700">
-                            <option value="">Selecionar Profissional...</option>
-                            {dbProfessionals.map(prof => (<option key={prof.id} value={prof.id}>{prof.name}</option>))}
-                        </select>
-                    </div>
-
                     <div className="space-y-3 text-left">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Forma de Pagamento</label>
                         <div className="grid grid-cols-4 gap-2">
@@ -249,24 +199,17 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                     {filteredMethods.map(m => (<option key={m.id} value={m.id}>{m.name} {m.brand ? `(${m.brand})` : ''}</option>))}
                                 </select>
                             </div>
-                            {currentMethod?.type === 'credit' && (
+                            {selectedCategory === 'credit' && (
                                 <div className="space-y-1.5 animate-in slide-in-from-top-2">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Plano de Parcelas</label>
                                     <select value={installments} onChange={(e) => setInstallments(parseInt(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700">
                                         <option value={1}>À vista (1x)</option>
-                                        {Array.from({ length: (currentMethod.max_installments || 1) - 1 }, (_, i) => i + 2).map(n => (<option key={n} value={n}>{n} Vezes</option>))}
+                                        {Array.from({ length: (currentMethod?.max_installments || 1) - 1 }, (_, i) => i + 2).map(n => (<option key={n} value={n}>{n} Vezes</option>))}
                                     </select>
                                 </div>
                             )}
                         </div>
                     ) : null}
-
-                    {currentMethod && (
-                        <div className="p-5 bg-slate-50 border-2 border-slate-100 rounded-[28px] space-y-3 shadow-inner text-left">
-                            <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400"><span>Taxa Aplicada ({installments}x)</span><span className={financialMetrics.rate > 0 ? "text-rose-600" : "text-emerald-600 font-black"}>{financialMetrics.rate > 0 ? `${financialMetrics.rate}%` : 'ISENTA (0%)'}</span></div>
-                            <div className="flex justify-between items-center pt-2 border-t border-slate-200/50"><span className="text-xs font-bold text-slate-500">Líquido Estimado</span><span className="text-lg font-black text-emerald-600">{formatCurrency(financialMetrics.netValue)}</span></div>
-                        </div>
-                    )}
                 </main>
 
                 <footer className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">

@@ -50,13 +50,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [discount, setDiscount] = useState<string>('0');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // Validador de UUID rigoroso para evitar erros de bigint no banco
-    const getValidUUID = (id: any): string | null => {
-        if (!id || typeof id !== 'string') return null;
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        return uuidRegex.test(id) ? id : null;
-    };
-
     useEffect(() => {
         isMounted.current = true;
         return () => { isMounted.current = false; };
@@ -171,48 +164,37 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         
         setIsFinishing(true);
         try {
+            // Mapeamento para valores técnicos esperados pela RPC
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
-            
-            // Tratamento rigoroso para garantir tipos UUID ou NULL (nunca bigint/number)
-            const studioUuid = getValidUUID(activeStudioId);
-            const commandUuid = getValidUUID(command.id);
-            const clientUuid = getValidUUID(command.client_id);
-            
-            // Busca o profissional do primeiro item da comanda
-            const firstItemProfId = command.command_items?.find((i: any) => i.professional_id)?.professional_id;
-            const professionalUuid = getValidUUID(firstItemProfId);
-
-            if (!studioUuid || !commandUuid) {
-                throw new Error("Erro de identificação da unidade ou comanda.");
-            }
 
             for (const entry of addedPayments) {
-                const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                // NOVA RPC: pay_latest_open_command_v6
+                // Não passamos command_id, o banco resolve pelo contexto de estúdio/sessão
+                const { error: rpcError } = await supabase.rpc('pay_latest_open_command_v6', {
                     p_amount: entry.amount,
-                    p_brand: entry.brand,
-                    p_client_id: clientUuid,
-                    p_command_id: commandUuid,
-                    p_description: `Liquidação Comanda #${command.id.toString().split('-')[0].toUpperCase()}`,
-                    p_fee_amount: entry.fee,
-                    p_installments: entry.installments,
-                    p_method: methodMap[entry.method],
-                    p_net_value: entry.net,
-                    p_professional_id: professionalUuid,
-                    p_studio_id: studioUuid
+                    p_method: methodMap[entry.method] || 'pix',
+                    p_brand: entry.brand || '',
+                    p_installments: entry.installments || 1
                 });
                 
-                if (rpcError) throw rpcError;
+                if (rpcError) {
+                    console.error("Erro na RPC pay_latest_open_command_v6:", rpcError);
+                    throw rpcError;
+                }
             }
 
             if (isMounted.current) {
                 setIsSuccessfullyClosed(true);
                 setAddedPayments([]);
-                setToast({ message: "Venda liquidada com sucesso!", type: 'success' });
-                fetchSystemData();
+                setToast({ message: "Liquidação realizada com sucesso!", type: 'success' });
+                fetchSystemData(); // Recarrega para refletir status 'paid'
             }
         } catch (e: any) {
             if (isMounted.current) {
-                setToast({ message: `Falha na Liquidação: ${e.message}`, type: 'error' });
+                // LOG COMPLETO CONFORME SOLICITADO
+                const detailedError = `[${e.message}] Detalhes: ${e.details || 'N/A'}. Sugestão: ${e.hint || 'N/A'}`;
+                console.error("Falha Crítica na Liquidação:", detailedError);
+                setToast({ message: `Erro: ${e.message}`, type: 'error' });
                 setIsFinishing(false);
             }
         }
@@ -236,7 +218,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-colors"><ChevronLeft size={24} /></button>
                     <div>
                         <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500">#{command.id.toString().split('-')[0].toUpperCase()}</span></h1>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Painel de Liquidação Direta</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Processamento SaaS Inteligente</p>
                     </div>
                 </div>
             </header>
@@ -247,8 +229,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         {isSuccessfullyClosed && (
                             <div className="bg-emerald-600 rounded-[40px] p-10 text-white shadow-2xl animate-in zoom-in-95 duration-500 flex flex-col items-center text-center">
                                 <CheckCircle2 size={64} className="mb-4" />
-                                <h2 className="text-3xl font-black uppercase tracking-widest">Venda Finalizada!</h2>
-                                <p className="text-emerald-100 mt-2">A comanda foi baixada e as taxas foram aplicadas com sucesso.</p>
+                                <h2 className="text-3xl font-black uppercase tracking-widest">Comanda Paga!</h2>
+                                <p className="text-emerald-100 mt-2">Atendimento finalizado e transações registradas no caixa.</p>
                             </div>
                         )}
 
@@ -378,7 +360,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         )}
                         {isSuccessfullyClosed && (
-                            <button onClick={onBack} className="w-full py-6 rounded-[32px] bg-slate-800 text-white font-black text-lg uppercase tracking-widest shadow-xl hover:bg-slate-900 transition-all active:scale-95 flex items-center justify-center gap-3"><ArrowRight size={24} /> Próximo Cliente</button>
+                            <button onClick={onBack} className="w-full py-6 rounded-[32px] bg-slate-800 text-white font-black text-lg uppercase tracking-widest shadow-xl hover:bg-slate-900 transition-all active:scale-95 flex items-center justify-center gap-3"><ArrowRight size={24} /> Próximo Atendimento</button>
                         )}
                     </div>
                 </div>
