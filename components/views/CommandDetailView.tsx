@@ -128,6 +128,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         return 'Não informado';
     }, [command]);
 
+    // FIX: Added missing useMemo for filteredMethodsForActiveCat to fix 'Cannot find name' error.
     const filteredMethodsForActiveCat = useMemo(() => {
         if (!activeCategory) return [];
         return dbMethods.filter(m => m.type === activeCategory);
@@ -159,7 +160,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const newPayment: PaymentEntry = {
             id: Math.random().toString(36).substring(2, 9),
             method: activeCategory,
-            method_id: selectedMethodObj.id, 
+            method_id: selectedMethodObj.id, // ID REAL DO BANCO
             amount: val,
             brand: isFeeFree ? 'DIRETO' : (selectedMethodObj?.brand || 'OUTROS'),
             rate: finalRate,
@@ -180,6 +181,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
+                // RPC Segura: IDs passados explicitamente como NULL se vazios
                 const { data: txId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: entry.amount,
                     p_brand: String(entry.brand || 'DIRETO'),
@@ -196,15 +198,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 
                 if (rpcError) throw rpcError;
 
-                // CORREÇÃO DOS CAMPOS: amount e net_value conforme schema real
+                // PERSISTÊNCIA CORRETA NA TABELA DE PAGAMENTOS
                 await supabase.from('command_payments').insert([{
                     command_id: commandId,
                     studio_id: activeStudioId,
                     financial_transaction_id: txId,
-                    method_id: entry.method_id,
-                    amount: entry.amount, 
-                    fee_value: entry.fee,
-                    net_value: entry.net,
+                    method_id: entry.method_id, // Usando a FK correta
+                    gross_amount: entry.amount,
+                    fee_value: entry.fee, // Alinhado com schema: fee_value
+                    net_amount: entry.net,
                     brand: entry.brand,
                     installments: entry.installments
                 }]);
