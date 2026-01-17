@@ -1,5 +1,9 @@
 
--- 1. LIMPEZA TOTAL: Remove qualquer versão anterior da função para evitar conflitos de cache
+-- 1. DESTRUIÇÃO TOTAL DE VERSÕES ANTERIORES
+-- Remove qualquer assinatura existente para permitir a troca de tipos (ex: de bigint para uuid)
+DROP FUNCTION IF EXISTS public.register_payment_transaction;
+
+-- Limpeza profunda de overloads (garante que não reste lixo no catálogo do Postgres)
 DO $$ 
 DECLARE 
     _routine record;
@@ -14,20 +18,20 @@ BEGIN
     END LOOP;
 END $$;
 
--- 2. RECRIAÇÃO COM ASSINATURA COMPATÍVEL (11 Parâmetros)
--- Adicionamos DEFAULT em parâmetros opcionais para evitar erros de "function not found"
+-- 2. RECRIAÇÃO COM ASSINATURA SINCRONIZADA (11 Parâmetros)
+-- Os parâmetros seguem a ordem e nomes exatos enviados pelo Frontend
 CREATE OR REPLACE FUNCTION public.register_payment_transaction(
   p_amount numeric,
-  p_brand text DEFAULT 'Outros',       -- Campo solicitado: Bandeira do cartão
-  p_client_id uuid DEFAULT NULL,       -- UUID Puro
-  p_command_id uuid DEFAULT NULL,      -- UUID Puro
+  p_brand text DEFAULT NULL,           -- Solicitado: DEFAULT NULL
+  p_client_id uuid DEFAULT NULL,        -- UUID Estrito
+  p_command_id uuid DEFAULT NULL,       -- UUID Estrito
   p_description text DEFAULT 'Venda',
   p_fee_amount numeric DEFAULT 0,
-  p_installments integer DEFAULT 1,    -- Campo solicitado: Parcelamento
+  p_installments integer DEFAULT 1,     -- Solicitado: DEFAULT 1
   p_method text DEFAULT 'pix',
   p_net_value numeric DEFAULT 0,
-  p_professional_id uuid DEFAULT NULL, -- UUID Puro
-  p_studio_id uuid DEFAULT NULL        -- UUID Puro
+  p_professional_id uuid DEFAULT NULL,  -- UUID Estrito
+  p_studio_id uuid DEFAULT NULL         -- UUID Estrito
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -37,7 +41,7 @@ AS $$
 DECLARE
   v_transaction_id uuid;
 BEGIN
-  -- 3. INSERÇÃO NA TABELA FINANCEIRA
+  -- 3. INSERÇÃO DIRETA NAS COLUNAS UUID (Garante que IDs de mock não quebrem o banco)
   INSERT INTO public.financial_transactions (
     amount,
     net_value,
@@ -87,5 +91,5 @@ $$;
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO authenticated;
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO service_role;
 
--- 5. COMANDO CRÍTICO: Recarrega o cache da API do Supabase instantaneamente
+-- 5. COMANDO CRÍTICO: Notifica o Supabase para recarregar o cache da API imediatamente
 NOTIFY pgrst, 'reload schema';
