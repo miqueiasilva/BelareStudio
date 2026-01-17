@@ -191,19 +191,19 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
-                // CORREÇÃO: Enviando p_professional_id e garantindo que IDs sejam strings para o cast do Postgres
+                // Sincronização estrita de 11 parâmetros com a assinatura do SQL
                 const { data: txId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: entry.amount,
-                    p_method: methodMap[entry.method] || 'pix',
-                    p_brand: String(entry.brand || ''),
-                    p_installments: entry.installments,
-                    p_command_id: String(commandId),
-                    p_studio_id: String(activeStudioId),
-                    p_net_value: entry.net,
-                    p_fee_amount: entry.fee,
+                    p_brand: String(entry.brand || 'DIRETO'),
                     p_client_id: command.client_id ? String(command.client_id) : '',
+                    p_command_id: String(commandId),
+                    p_description: `Checkout Comanda #${commandId.split('-')[0].toUpperCase()}`,
+                    p_fee_amount: entry.fee,
+                    p_installments: entry.installments,
+                    p_method: methodMap[entry.method] || 'pix',
+                    p_net_value: entry.net,
                     p_professional_id: command.professional_id ? String(command.professional_id) : '',
-                    p_description: `Checkout Comanda #${commandId.split('-')[0].toUpperCase()}`
+                    p_studio_id: String(activeStudioId)
                 });
                 
                 if (rpcError) throw rpcError;
