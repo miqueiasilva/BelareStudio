@@ -76,6 +76,17 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
     const [showModal, setShowModal] = useState<TransactionType | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
+    // --- HELPER: MAPEAMENTO DE LABELS DE PAGAMENTO ---
+    const getPaymentLabel = (method: string) => {
+        switch (method?.toLowerCase()) {
+            case 'pix': return 'PIX';
+            case 'cash': return 'DINHEIRO';
+            case 'credit': return 'CRÉDITO';
+            case 'debit': return 'DÉBITO';
+            default: return 'OUTRO';
+        }
+    };
+
     // Resolve nomes de clientes em lote para os IDs presentes nas transações
     const resolveClientNames = useCallback(async (txs: any[]) => {
         const uniqueIds = Array.from(new Set(
@@ -239,7 +250,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             Cliente: t.client_id ? (clientNames[t.client_id] || 'Consumidor Final') : '---',
             Categoria: t.category || 'Geral',
             Tipo: t.type === 'income' ? 'Entrada' : 'Saída',
-            Pagamento: t.payment_method,
+            Pagamento: getPaymentLabel(t.payment_method),
             Valor_Bruto: t.amount,
             Valor_Liquido: t.net_value || t.amount
         }));
@@ -262,7 +273,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             format(new Date(t.date), 'dd/MM/yy'),
             `${t.description}${t.client_id ? `\n(Cliente: ${clientNames[t.client_id] || 'Consumidor Final'})` : ''}`,
             t.category || 'Geral',
-            t.payment_method,
+            getPaymentLabel(t.payment_method),
             t.type === 'income' ? `+ ${formatBRL(t.amount)}` : `- ${formatBRL(t.amount)}`
         ]);
 
@@ -529,10 +540,12 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                                             </td>
                                             <td className="px-8 py-5">
                                                 <div className="flex items-center gap-2">
-                                                    {t.payment_method === 'pix' && <Smartphone size={14} className="text-teal-500" />}
-                                                    {t.payment_method === 'dinheiro' && <Banknote size={14} className="text-green-500" />}
-                                                    {(t.payment_method?.includes('cartao')) && <CreditCard size={14} className="text-blue-500" />}
-                                                    <span className="text-[10px] font-black text-slate-500 uppercase">{t.payment_method?.replace('_', ' ') || 'Outro'}</span>
+                                                    {(t.payment_method === 'pix') && <Smartphone size={14} className="text-teal-500" />}
+                                                    {(t.payment_method === 'cash') && <Banknote size={14} className="text-green-500" />}
+                                                    {(t.payment_method === 'credit' || t.payment_method === 'debit') && <CreditCard size={14} className="text-blue-500" />}
+                                                    <span className="text-[10px] font-black text-slate-500 uppercase">
+                                                        {getPaymentLabel(t.payment_method)}
+                                                    </span>
                                                 </div>
                                             </td>
                                             <td className="px-8 py-5 text-right">
