@@ -40,6 +40,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [isFinishing, setIsFinishing] = useState(false);
     const [isSuccessfullyClosed, setIsSuccessfullyClosed] = useState(false);
     
+    // Cache local para o nome do cliente resolvido
+    const [resolvedClientName, setResolvedClientName] = useState<string>('Consumidor Final');
+    
     const [dbMethods, setDbMethods] = useState<any[]>([]);
     const [addedPayments, setAddedPayments] = useState<PaymentEntry[]>([]);
     const [activeCategory, setActiveCategory] = useState<'credit' | 'debit' | 'pix' | 'money' | null>(null);
@@ -71,9 +74,25 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             if (cmdRes.error) throw cmdRes.error;
             
             if (isMounted.current) {
-                setCommand(cmdRes.data);
+                const cmdData = cmdRes.data;
+                setCommand(cmdData);
                 setDbMethods(methodsRes.data || []);
-                if (cmdRes.data.status === 'paid') setIsSuccessfullyClosed(true);
+                if (cmdData.status === 'paid') setIsSuccessfullyClosed(true);
+
+                // RESOLUÇÃO DO NOME DO CLIENTE VIA RPC
+                const clientId = cmdData.client_id;
+                console.log('[Checkout] client_id', clientId);
+
+                if (clientId && Number(clientId) > 0) {
+                    const { data: rpcName, error: rpcError } = await supabase.rpc('fn_get_client_name', { c_id: clientId });
+                    if (!rpcError && rpcName) {
+                        setResolvedClientName(rpcName);
+                    } else {
+                        setResolvedClientName(cmdData.clients?.nome || 'Consumidor Final');
+                    }
+                } else {
+                    setResolvedClientName('Consumidor Final');
+                }
             }
         } catch (e: any) {
             if (isMounted.current) {
@@ -164,12 +183,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         
         setIsFinishing(true);
         try {
-            // Mapeamento para valores técnicos esperados pela RPC
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
-                // NOVA RPC: pay_latest_open_command_v6
-                // Não passamos command_id, o banco resolve pelo contexto de estúdio/sessão
                 const { error: rpcError } = await supabase.rpc('pay_latest_open_command_v6', {
                     p_amount: entry.amount,
                     p_method: methodMap[entry.method] || 'pix',
@@ -187,11 +203,10 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setIsSuccessfullyClosed(true);
                 setAddedPayments([]);
                 setToast({ message: "Liquidação realizada com sucesso!", type: 'success' });
-                fetchSystemData(); // Recarrega para refletir status 'paid'
+                fetchSystemData();
             }
         } catch (e: any) {
             if (isMounted.current) {
-                // LOG COMPLETO CONFORME SOLICITADO
                 const detailedError = `[${e.message}] Detalhes: ${e.details || 'N/A'}. Sugestão: ${e.hint || 'N/A'}`;
                 console.error("Falha Crítica na Liquidação:", detailedError);
                 setToast({ message: `Erro: ${e.message}`, type: 'error' });
@@ -246,11 +261,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     </div>
                                     <div>
                                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Cliente</p>
-                                        <p className="font-black text-slate-700 text-lg leading-tight">{command.clients?.nome || 'Consumidor Final'}</p>
+                                        <p className="font-black text-slate-700 text-lg leading-tight">{resolvedClientName}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shadow-sm border border-blue-100">
+                                    <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shadow-sm border border-orange-100">
                                         <Scissors size={24} />
                                     </div>
                                     <div>
@@ -356,7 +371,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                         ))}
                                     </div>
                                 )}
-                                <button onClick={(e) => handleFinishPayment(e)} disabled={isFinishing || totals.remaining > 0.05 || addedPayments.length === 0} className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all ${totals.remaining < 0.05 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-2xl hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}>{isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> LIQUIDAR VENDA</>}</button>
+                                <button onClick={(e) => handleFinishPayment(e)} disabled={isFinishing || totals.remaining > 0.05 || addedPayments.length === 0} className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all ${totals.remaining < 0.05 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-2xl hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}>{isFinishing ? <Loader2 className="animate-spin" size={24} /> : <><CheckCircle size={24} /> LIQUIDAR VENDA</>}</button>
                             </div>
                         )}
                         {isSuccessfullyClosed && (
