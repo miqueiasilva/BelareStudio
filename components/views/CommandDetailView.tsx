@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
     ChevronLeft, CreditCard, Smartphone, Banknote, 
@@ -23,7 +24,6 @@ interface CommandDetailViewProps {
 interface PaymentEntry {
     id: string;
     method: 'credit' | 'debit' | 'pix' | 'money';
-    method_id: string; // Adicionado para persistência correta
     amount: number;
     brand: string;
     rate: number;
@@ -69,6 +69,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
+            // CORREÇÃO: Joins explícitos e leitura da VIEW de histórico
             const [cmdRes, methodsRes, paymentsRes] = await Promise.all([
                 supabase
                     .from('commands')
@@ -92,14 +93,24 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setDbMethods(methodsRes.data || []);
                 setHistoryPayments(paymentsRes.data || []);
                 
-                if (cmdData.status === 'paid') setIsSuccessfullyClosed(true);
+                if (cmdData.status === 'paid') {
+                    setIsSuccessfullyClosed(true);
+                }
 
                 const clientObj = cmdData?.client;
-                const clientName = clientObj?.nome || clientObj?.name || clientObj?.nickname || clientObj?.apelido || 'Consumidor Final';
+                const clientName = 
+                  clientObj?.nome || 
+                  clientObj?.name || 
+                  clientObj?.nickname || 
+                  clientObj?.apelido || 
+                  'Consumidor Final';
+
                 setResolvedClientName(clientName);
             }
         } catch (e: any) {
-            if (isMounted.current) setToast({ message: "Erro ao sincronizar comanda.", type: 'error' });
+            if (isMounted.current) {
+                setToast({ message: "Erro ao sincronizar dados da comanda.", type: 'error' });
+            }
         } finally {
             if (isMounted.current) setLoading(false);
         }
@@ -113,26 +124,28 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         
+        // CORREÇÃO: Se já estiver pago, somar o que está no histórico do DB
         const isClosed = command.status === 'paid' || isSuccessfullyClosed;
         const paidSource = isClosed ? historyPayments : addedPayments;
         
         const paid = paidSource.reduce((acc, p) => acc + Number(p.amount || p.gross_amount || 0), 0);
         const totalNet = paidSource.reduce((acc, p) => acc + Number(p.net || p.net_amount || 0), 0);
         
-        const remaining = Math.max(0, totalAfterDiscount - paid);
-        return { subtotal, total: isClosed ? paid : totalAfterDiscount, paid, remaining: isClosed ? 0 : remaining, totalNet };
+        const remaining = Math.max(0, totalAfterDiscount - (isClosed ? paid : paid));
+        
+        return { 
+            subtotal, 
+            total: isClosed ? paid : totalAfterDiscount, 
+            paid, 
+            remaining: isClosed ? 0 : remaining, 
+            totalNet 
+        };
     }, [command, discount, addedPayments, historyPayments, isSuccessfullyClosed]);
 
     const professionalName = useMemo(() => {
         if (command?.professional?.name) return command.professional.name;
         return 'Não informado';
     }, [command]);
-
-    // FIX: Added missing useMemo for filteredMethodsForActiveCat to fix 'Cannot find name' error.
-    const filteredMethodsForActiveCat = useMemo(() => {
-        if (!activeCategory) return [];
-        return dbMethods.filter(m => m.type === activeCategory);
-    }, [dbMethods, activeCategory]);
 
     const handleInitPayment = (category: 'credit' | 'debit' | 'pix' | 'money') => {
         setActiveCategory(category);
@@ -144,11 +157,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     const handleConfirmPartialPayment = () => {
         const val = parseFloat(amountToPay);
-        if (!activeCategory || isNaN(val) || val <= 0 || !selectedMethodObj) return;
+        if (!activeCategory || isNaN(val) || val <= 0) return;
         
         const isFeeFree = activeCategory === 'pix' || activeCategory === 'money';
         let finalRate = 0;
-        if (!isFeeFree) {
+        if (!isFeeFree && selectedMethodObj) {
             finalRate = (selectedInstallments === 1) 
                 ? Number(selectedMethodObj.rate_cash || 0) 
                 : Number(selectedMethodObj.installment_rates?.[selectedInstallments.toString()] || selectedMethodObj.rate_installment_12x || 0);
@@ -160,7 +173,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const newPayment: PaymentEntry = {
             id: Math.random().toString(36).substring(2, 9),
             method: activeCategory,
-            method_id: selectedMethodObj.id, // ID REAL DO BANCO
             amount: val,
             brand: isFeeFree ? 'DIRETO' : (selectedMethodObj?.brand || 'OUTROS'),
             rate: finalRate,
@@ -181,32 +193,30 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
-                // RPC Segura: IDs passados explicitamente como NULL se vazios
                 const { data: txId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: entry.amount,
                     p_brand: String(entry.brand || 'DIRETO'),
-                    p_client_id: command.client_id ? String(command.client_id) : null,
+                    p_client_id: command.client_id ? String(command.client_id) : '',
                     p_command_id: String(commandId),
                     p_description: `Checkout Comanda #${commandId.split('-')[0].toUpperCase()}`,
                     p_fee_amount: entry.fee,
                     p_installments: entry.installments,
                     p_method: methodMap[entry.method] || 'pix',
                     p_net_value: entry.net,
-                    p_professional_id: command.professional_id ? String(command.professional_id) : null,
+                    p_professional_id: command.professional_id ? String(command.professional_id) : '',
                     p_studio_id: String(activeStudioId)
                 });
                 
                 if (rpcError) throw rpcError;
 
-                // PERSISTÊNCIA CORRETA NA TABELA DE PAGAMENTOS
                 await supabase.from('command_payments').insert([{
                     command_id: commandId,
                     studio_id: activeStudioId,
                     financial_transaction_id: txId,
-                    method_id: entry.method_id, // Usando a FK correta
                     gross_amount: entry.amount,
-                    fee_value: entry.fee, // Alinhado com schema: fee_value
+                    fee_amount: entry.fee,
                     net_amount: entry.net,
+                    method: entry.method,
                     brand: entry.brand,
                     installments: entry.installments
                 }]);
@@ -222,6 +232,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setIsSuccessfullyClosed(true);
                 setAddedPayments([]);
                 setToast({ message: "Liquidação realizada com sucesso!", type: 'success' });
+                // Recarrega para popular historyPayments da View
                 fetchSystemData();
             }
         } catch (e: any) {
@@ -313,12 +324,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                         <div key={p.id || idx} className="p-6 flex items-center justify-between">
                                             <div className="flex items-center gap-4">
                                                 <div className="p-3 bg-slate-50 rounded-2xl text-slate-400">
-                                                    {['PIX', 'pix'].includes(p.payment_channel || p.method) ? <Smartphone size={20}/> : <Coins size={20}/>}
+                                                    {(p.method || p.payment_method) === 'pix' ? <Smartphone size={20}/> : <Coins size={20}/>}
                                                 </div>
                                                 <div>
                                                     <p className="font-black text-slate-700 text-sm uppercase">
-                                                        {(p.payment_channel || p.method || 'PAGAMENTO').toUpperCase()} {p.brand && `• ${p.brand}`}
-                                                        {p.installments > 1 && ` (${p.installments}x)`}
+                                                        {p.method?.toUpperCase() || 'PAGAMENTO'} {p.brand && `• ${p.brand}`}
                                                     </p>
                                                     <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">
                                                         Líquido: R$ {(p.net || p.net_amount || 0).toFixed(2)}
@@ -367,7 +377,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             <button onClick={() => setActiveCategory(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X size={18}/></button>
                                         </div>
                                         <div className="space-y-2"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor do Pagamento</label><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all" /></div></div>
-                                        <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Operadora / Bandeira</label><select value={selectedMethodObj?.id || ''} onChange={e => setSelectedMethodObj(dbMethods.find(m => m.id === e.target.value))} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 font-bold text-slate-700 outline-none">{filteredMethodsForActiveCat.map(m => (<option key={m.id} value={m.id}>{m.name} {m.brand ? `(${m.brand})` : ''}</option>))}</select></div>
                                         <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">Registrar Pagamento</button>
                                     </div>
                                 ) : (

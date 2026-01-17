@@ -58,6 +58,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
     const [dbTransactions, setDbTransactions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     
+    // Filtros
     const [filterPeriod, setFilterPeriod] = useState<'hoje' | 'mes' | 'custom'>('hoje');
     const [startDate, setStartDate] = useState(format(startOfDay(new Date()), 'yyyy-MM-dd'));
     const [endDate, setEndDate] = useState(format(endOfDay(new Date()), 'yyyy-MM-dd'));
@@ -82,9 +83,9 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
                 end = endOfDay(new Date(endDate));
             }
 
-            // CONSULTA À VIEW v_cashflow_sales (Unificada Vendas + Manual)
+            // CORREÇÃO: Consultando a VIEW detalhada v_cashflow_detailed
             const { data, error } = await supabase
-                .from('v_cashflow_sales')
+                .from('v_cashflow_detailed')
                 .select('*')
                 .eq('studio_id', activeStudioId)
                 .gte('date', start.toISOString())
@@ -104,22 +105,22 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
 
     const bi = useMemo(() => {
         const filtered = dbTransactions.filter(t => {
-            const matchSearch = (t.display_description || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-                               (t.client_name || '').toLowerCase().includes(searchTerm.toLowerCase());
+            const matchSearch = (t.description || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+                               (t.client_display_name || '').toLowerCase().includes(searchTerm.toLowerCase());
             return matchSearch;
         });
 
         const grossRevenue = filtered
             .filter(t => t.type === 'income' || t.type === 'receita')
-            .reduce((acc, t) => acc + (Number(t.gross_amount) || 0), 0);
+            .reduce((acc, t) => acc + (Number(t.gross_value) || 0), 0);
 
         const netRevenue = filtered
             .filter(t => t.type === 'income' || t.type === 'receita')
-            .reduce((acc, t) => acc + (Number(t.net_amount) || 0), 0);
+            .reduce((acc, t) => acc + (Number(t.net_value) || 0), 0);
 
         const totalExpenses = filtered
             .filter(t => t.type === 'expense' || t.type === 'despesa')
-            .reduce((acc, t) => acc + (Number(t.gross_amount) || 0), 0);
+            .reduce((acc, t) => acc + (Number(t.gross_value) || 0), 0);
 
         return { 
             filtered, 
@@ -133,12 +134,12 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
     const handleExportExcel = () => {
         const dataToExport = bi.filtered.map(t => ({
             Data: format(new Date(t.date), 'dd/MM/yyyy HH:mm'),
-            Descrição: t.display_description,
-            Cliente: t.client_name,
+            Descrição: t.description,
+            Cliente: t.client_display_name,
             Canal: t.payment_channel,
-            'Valor Bruto': t.gross_amount,
-            'Taxa': t.fee_value,
-            'Valor Líquido': t.net_amount
+            'Valor Bruto': t.gross_value,
+            'Taxa': t.fee_amount,
+            'Valor Líquido': t.net_value
         }));
         const ws = XLSX.utils.json_to_sheet(dataToExport);
         const wb = XLSX.utils.book_new();
@@ -205,7 +206,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
                                     <tr><td colSpan={5} className="p-20 text-center text-slate-400 font-bold uppercase text-xs italic">Sem movimentações.</td></tr>
                                 ) : (
                                     bi.filtered.map(t => (
-                                        <tr key={t.tx_id} className="hover:bg-orange-50/20 transition-colors group">
+                                        <tr key={t.transaction_id} className="hover:bg-orange-50/20 transition-colors group">
                                             <td className="px-8 py-5">
                                                 <p className="text-xs font-bold text-slate-700">{format(new Date(t.date), 'dd/MM/yy HH:mm')}</p>
                                                 <span className={`inline-block mt-1 text-[8px] font-black px-2 py-0.5 rounded border ${
@@ -217,18 +218,18 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
                                                 </span>
                                             </td>
                                             <td className="px-8 py-5">
-                                                <p className="text-sm font-black text-slate-800">{t.client_name}</p>
-                                                <p className="text-[10px] text-slate-400 font-medium truncate max-w-xs">{t.display_description}</p>
+                                                <p className="text-sm font-black text-slate-800">{t.client_display_name}</p>
+                                                <p className="text-[10px] text-slate-400 font-medium truncate max-w-xs">{t.description}</p>
                                             </td>
                                             <td className="px-8 py-5 text-right font-bold text-slate-400 text-xs">
-                                                {formatBRL(t.gross_amount)}
+                                                {formatBRL(t.gross_value)}
                                             </td>
                                             <td className="px-8 py-5 text-right font-bold text-rose-300 text-xs">
-                                                - {formatBRL(t.fee_value || 0)}
+                                                - {formatBRL(t.fee_amount || 0)}
                                             </td>
                                             <td className="px-8 py-5 text-right">
                                                 <p className={`text-sm font-black ${t.type === 'income' || t.type === 'receita' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                    {formatBRL(t.net_amount || t.gross_amount)}
+                                                    {formatBRL(t.net_value || t.gross_value)}
                                                 </p>
                                             </td>
                                         </tr>
