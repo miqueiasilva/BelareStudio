@@ -62,11 +62,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return () => { isMounted.current = false; };
     }, []);
 
-    // Validador Rigoroso de UUID
-    const getValidUUID = (id: any): string | null => {
-        if (!id || typeof id !== 'string') return null;
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        return uuidRegex.test(id) ? id : null;
+    const isUUID = (id: any): boolean => {
+        if (!id) return false;
+        const sid = String(id).trim();
+        return typeof id === 'string' && sid.length > 20;
     };
 
     const resetLocalState = () => {
@@ -109,18 +108,13 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
     useEffect(() => {
         if (isOpen && appointment && dbProfessionals.length > 0) {
-            const currentValid = getValidUUID(selectedProfessionalId);
-            if (currentValid) return;
-
+            if (selectedProfessionalId && isUUID(selectedProfessionalId)) return;
             let targetId = '';
-            const apptProfId = getValidUUID(appointment.professional_id);
-            if (apptProfId) {
-                targetId = apptProfId;
-            } else if (appointment.professional_name) {
+            if (isUUID(appointment.professional_id)) targetId = String(appointment.professional_id);
+            else if (appointment.professional_name) {
                 const nameRef = appointment.professional_name.trim().toLowerCase();
                 const found = dbProfessionals.find(p => p.name.trim().toLowerCase() === nameRef);
-                const foundId = getValidUUID(found?.id);
-                if (foundId) targetId = foundId;
+                if (found && isUUID(found.id)) targetId = found.id;
             }
             if (targetId) setSelectedProfessionalId(targetId);
         }
@@ -155,40 +149,34 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         try {
             const methodMapping: Record<string, string> = { 'pix': 'pix', 'money': 'cash', 'credit': 'credit', 'debit': 'debit' };
-            
-            // HIGIENIZAÇÃO CRÍTICA DE UUIDs
-            const studioUuid = getValidUUID(activeStudioId);
-            const profUuid = getValidUUID(selectedProfessionalId);
-            const clientUuid = getValidUUID(appointment.client_id);
-            const commandUuid = null; // Caso fosse comanda
-
-            if (!studioUuid) throw new Error("ID de Studio inválido para transação.");
-
-            const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                p_amount: appointment.price,
-                p_brand: currentMethod.brand || 'default',
-                p_client_id: clientUuid,
-                p_command_id: commandUuid,
-                p_description: `Recebimento: ${appointment.service_name} - ${appointment.client_name}`,
-                p_fee_amount: financialMetrics.feeAmount,
-                p_installments: installments,
-                p_method: methodMapping[selectedCategory] || 'pix',
-                p_net_value: financialMetrics.netValue,
-                p_professional_id: profUuid,
-                p_studio_id: studioUuid
-            });
-
-            if (rpcError) throw rpcError;
-
+            const { error: insertError } = await supabase.from('financial_transactions').insert([{
+                studio_id: activeStudioId,
+                professional_id: isUUID(selectedProfessionalId) ? selectedProfessionalId : null,
+                client_id: isUUID(appointment.client_id) ? appointment.client_id : null,
+                appointment_id: appointment.id,
+                amount: appointment.price,
+                net_value: financialMetrics.netValue,
+                fee_amount: financialMetrics.feeAmount,
+                payment_method: methodMapping[selectedCategory] || 'pix',
+                type: 'income',
+                category: 'Serviço',
+                description: `Recebimento: ${appointment.service_name} - ${appointment.client_name}`,
+                status: 'pago',
+                date: new Date().toISOString()
+            }]);
+            if (insertError) throw insertError;
             await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
-            
             if (isMounted.current) {
                 setToast({ message: "Pagamento confirmado!", type: 'success' });
                 setTimeout(() => { if (isMounted.current) { onSuccess(); onClose(); } }, 1000);
             }
         } catch (error: any) {
+            if (error.message?.includes('message channel closed')) {
+                console.warn("[ZELDA-SHIELD] Ruído de extensão ignorado durante o checkout.");
+                return;
+            }
             if (isMounted.current) {
-                setToast({ message: `Erro na Liquidação: ${error.message}`, type: 'error' });
+                setToast({ message: `Erro: ${error.message}`, type: 'error' });
                 setIsLoading(false);
             }
         }
@@ -200,6 +188,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         { id: 'pix', label: 'Pix', icon: Smartphone, color: 'text-teal-600', bg: 'bg-teal-50' },
         { id: 'money', label: 'Dinheiro', icon: Banknote, color: 'text-green-600', bg: 'bg-green-50' },
         { id: 'credit', label: 'Crédito', icon: CreditCard, color: 'text-blue-600', bg: 'bg-blue-50' },
+        // FIX: Replaced undefined CardIcon with correctly imported CreditCard icon
         { id: 'debit', label: 'Débito', icon: CreditCard, color: 'text-cyan-600', bg: 'bg-cyan-50' },
     ];
 
