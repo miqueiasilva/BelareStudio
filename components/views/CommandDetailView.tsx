@@ -62,7 +62,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
-            // CORREÇÃO: Forçando a seleção dos campos name/nome nos relacionamentos
+            // CORREÇÃO TÉCNICA OBRIGATÓRIA: Query com alias explícito para garantir retorno do PostgREST
             const [cmdRes, methodsRes] = await Promise.all([
                 supabase
                     .from('commands')
@@ -70,19 +70,16 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                       *,
                       client:clients (
                         id,
-                        nome,
-                        name
+                        nome
                       ),
                       professional:professionals (
                         uuid_id,
-                        name,
-                        nome
+                        name
                       ),
                       command_items (
                         *,
                         team_members (
-                          name,
-                          nome
+                          name
                         )
                       )
                     `)
@@ -99,12 +96,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setDbMethods(methodsRes.data || []);
                 if (cmdData.status === 'paid') setIsSuccessfullyClosed(true);
 
-                // LÓGICA DE EXIBIÇÃO: Prioriza 'name', depois 'nome', com fallback para 'Consumidor Final'
-                const clientObj = cmdData?.client;
-                const resolvedName = clientObj?.name || clientObj?.nome || 'Consumidor Final';
-                setResolvedClientName(resolvedName.trim());
+                // LOGS DE VALIDAÇÃO SOLICITADOS
+                console.log('[Checkout] command.client_id', cmdData.client_id);
                 
-                console.log('[Checkout] client_id:', cmdData.client_id, '| resolved name:', resolvedName);
+                // LÓGICA DE EXIBIÇÃO OBRIGATÓRIA
+                const resolvedName = cmdData?.client?.nome?.trim() || 'Consumidor Final';
+                setResolvedClientName(resolvedName);
+                
+                console.log('[Checkout] resolvedClientName', resolvedName);
             }
         } catch (e: any) {
             if (isMounted.current) {
@@ -132,8 +131,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     const professionalName = useMemo(() => {
         if (!command?.command_items) return 'Não informado';
-        const itemWithProf = command.command_items.find((i: any) => i.team_members?.name || i.team_members?.nome);
-        return itemWithProf?.team_members?.name || itemWithProf?.team_members?.nome || 'Não informado';
+        const itemWithProf = command.command_items.find((i: any) => i.team_members?.name);
+        return itemWithProf?.team_members?.name || 'Não informado';
     }, [command]);
 
     const handleInitPayment = (category: 'credit' | 'debit' | 'pix' | 'money') => {
