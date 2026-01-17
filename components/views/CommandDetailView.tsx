@@ -50,7 +50,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [resolvedClientName, setResolvedClientName] = useState<string>('Consumidor Final');
     const [dbMethods, setDbMethods] = useState<any[]>([]);
     const [addedPayments, setAddedPayments] = useState<PaymentEntry[]>([]);
-    const [historyPayments, setHistoryPayments] = useState<any[]>([]); // Histórico do banco
+    const [historyPayments, setHistoryPayments] = useState<any[]>([]); 
     
     const [activeCategory, setActiveCategory] = useState<'credit' | 'debit' | 'pix' | 'money' | null>(null);
     const [selectedMethodObj, setSelectedMethodObj] = useState<any>(null);
@@ -69,6 +69,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
+            // CORREÇÃO: Joins explícitos e leitura da VIEW de histórico
             const [cmdRes, methodsRes, paymentsRes] = await Promise.all([
                 supabase
                     .from('commands')
@@ -81,7 +82,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     .eq('id', commandId)
                     .single(),
                 supabase.from('payment_methods_config').select('*').eq('is_active', true),
-                supabase.from('command_payments').select('*').eq('command_id', commandId)
+                supabase.from('v_command_payments_history').select('*').eq('command_id', commandId)
             ]);
 
             if (cmdRes.error) throw cmdRes.error;
@@ -92,7 +93,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setDbMethods(methodsRes.data || []);
                 setHistoryPayments(paymentsRes.data || []);
                 
-                if (cmdData.status === 'paid') setIsSuccessfullyClosed(true);
+                if (cmdData.status === 'paid') {
+                    setIsSuccessfullyClosed(true);
+                }
 
                 const clientObj = cmdData?.client;
                 const clientName = 
@@ -100,15 +103,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                   clientObj?.name || 
                   clientObj?.nickname || 
                   clientObj?.apelido || 
-                  (clientObj?.whatsapp ? `WA: ${clientObj.whatsapp.slice(-4)}` : null) || 
                   'Consumidor Final';
 
                 setResolvedClientName(clientName);
             }
         } catch (e: any) {
             if (isMounted.current) {
-                setToast({ message: "Erro ao sincronizar dados.", type: 'error' });
-                setTimeout(onBack, 2000);
+                setToast({ message: "Erro ao sincronizar dados da comanda.", type: 'error' });
             }
         } finally {
             if (isMounted.current) setLoading(false);
@@ -123,21 +124,26 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         
-        // Se já está pago, usa o histórico do banco. Se não, usa o estado local.
-        const paidSource = isSuccessfullyClosed ? historyPayments : addedPayments;
-        const paid = paidSource.reduce((acc, p) => acc + (p.amount || p.gross_amount || 0), 0);
-        const totalNet = paidSource.reduce((acc, p) => acc + (p.net || p.net_amount || 0), 0);
+        // CORREÇÃO: Se já estiver pago, somar o que está no histórico do DB
+        const isClosed = command.status === 'paid' || isSuccessfullyClosed;
+        const paidSource = isClosed ? historyPayments : addedPayments;
         
-        const remaining = Math.max(0, totalAfterDiscount - paid);
-        return { subtotal, total: totalAfterDiscount, paid, remaining, totalNet };
+        const paid = paidSource.reduce((acc, p) => acc + Number(p.amount || p.gross_amount || 0), 0);
+        const totalNet = paidSource.reduce((acc, p) => acc + Number(p.net || p.net_amount || 0), 0);
+        
+        const remaining = Math.max(0, totalAfterDiscount - (isClosed ? paid : paid));
+        
+        return { 
+            subtotal, 
+            total: isClosed ? paid : totalAfterDiscount, 
+            paid, 
+            remaining: isClosed ? 0 : remaining, 
+            totalNet 
+        };
     }, [command, discount, addedPayments, historyPayments, isSuccessfullyClosed]);
 
     const professionalName = useMemo(() => {
         if (command?.professional?.name) return command.professional.name;
-        if (command?.command_items) {
-            const itemWithProf = command.command_items.find((i: any) => i.team_members?.name);
-            return itemWithProf?.team_members?.name || 'Não informado';
-        }
         return 'Não informado';
     }, [command]);
 
@@ -152,11 +158,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const handleConfirmPartialPayment = () => {
         const val = parseFloat(amountToPay);
         if (!activeCategory || isNaN(val) || val <= 0) return;
-        if (val > totals.remaining + 0.05) {
-            setToast({ message: `Valor superior ao restante`, type: 'error' });
-            return;
-        }
-
+        
         const isFeeFree = activeCategory === 'pix' || activeCategory === 'money';
         let finalRate = 0;
         if (!isFeeFree && selectedMethodObj) {
@@ -180,7 +182,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         };
         setAddedPayments(prev => [...prev, newPayment]);
         setActiveCategory(null);
-        setSelectedMethodObj(null);
     };
 
     const handleFinishPayment = async (e?: React.MouseEvent) => {
@@ -192,7 +193,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
-                // 1. Registra a transação financeira principal via RPC (11 parâmetros)
                 const { data: txId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: entry.amount,
                     p_brand: String(entry.brand || 'DIRETO'),
@@ -209,8 +209,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 
                 if (rpcError) throw rpcError;
 
-                // 2. Registra o histórico detalhado do pagamento (command_payments)
-                const { error: payError } = await supabase.from('command_payments').insert([{
+                await supabase.from('command_payments').insert([{
                     command_id: commandId,
                     studio_id: activeStudioId,
                     financial_transaction_id: txId,
@@ -221,21 +220,19 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     brand: entry.brand,
                     installments: entry.installments
                 }]);
-
-                if (payError) throw payError;
             }
 
-            // 3. Fecha a comanda
             await supabase.from('commands').update({ 
                 status: 'paid', 
                 closed_at: new Date().toISOString(),
-                total_amount: totals.total 
+                total_amount: totals.paid
             }).eq('id', commandId);
 
             if (isMounted.current) {
                 setIsSuccessfullyClosed(true);
                 setAddedPayments([]);
                 setToast({ message: "Liquidação realizada com sucesso!", type: 'success' });
+                // Recarrega para popular historyPayments da View
                 fetchSystemData();
             }
         } catch (e: any) {
@@ -366,7 +363,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 <div className="pt-6 border-t border-white/10">
                                     <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Total Líquido (Real em Caixa)</p>
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.totalNet.toFixed(2)}</h2>
-                                    <p className="text-[10px] font-bold text-slate-500 mt-2">TOTAL BRUTO: R$ {totals.total.toFixed(2)}</p>
+                                    <p className="text-[10px] font-bold text-slate-500 mt-2">TOTAL BRUTO: R$ {totals.paid.toFixed(2)}</p>
                                 </div>
                             </div>
                         </div>
@@ -379,19 +376,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             <h4 className="text-[10px] font-black uppercase text-orange-600 tracking-widest">Configurar {activeCategory}</h4>
                                             <button onClick={() => setActiveCategory(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X size={18}/></button>
                                         </div>
-                                        {(activeCategory === 'credit' || activeCategory === 'debit') && (
-                                            <div className="space-y-3">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Bandeira</label>
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    {dbMethods.filter(m => m.type === activeCategory).map(m => (
-                                                        <button key={m.id} onClick={() => setSelectedMethodObj(m)} className={`p-3 rounded-2xl border-2 transition-all text-left flex items-center justify-between ${selectedMethodObj?.id === m.id ? 'border-orange-500 bg-orange-50' : 'border-slate-50 bg-slate-50 hover:border-slate-200'}`}>
-                                                            <div className="min-w-0"><p className="text-[10px] font-black text-slate-700 truncate uppercase">{m.brand || m.name}</p><p className="text-[9px] font-bold text-slate-400">{m.rate_cash}% taxa</p></div>
-                                                            {selectedMethodObj?.id === m.id && <Check size={14} className="text-orange-500" />}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
                                         <div className="space-y-2"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor do Pagamento</label><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all" /></div></div>
                                         <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">Registrar Pagamento</button>
                                     </div>

@@ -63,7 +63,6 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
     const [startDate, setStartDate] = useState(format(startOfDay(new Date()), 'yyyy-MM-dd'));
     const [endDate, setEndDate] = useState(format(endOfDay(new Date()), 'yyyy-MM-dd'));
     
-    const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
     const [searchTerm, setSearchTerm] = useState('');
     const [showModal, setShowModal] = useState<TransactionType | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -84,9 +83,9 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
                 end = endOfDay(new Date(endDate));
             }
 
-            // CORREÇÃO: Consultando a VIEW v_cashflow para trazer cliente e canal amigável sem RPCs pesados no frontend
+            // CORREÇÃO: Consultando a VIEW detalhada v_cashflow_detailed
             const { data, error } = await supabase
-                .from('v_cashflow')
+                .from('v_cashflow_detailed')
                 .select('*')
                 .eq('studio_id', activeStudioId)
                 .gte('date', start.toISOString())
@@ -123,7 +122,13 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
             .filter(t => t.type === 'expense' || t.type === 'despesa')
             .reduce((acc, t) => acc + (Number(t.gross_value) || 0), 0);
 
-        return { filtered, grossRevenue, netRevenue, totalExpenses, balance: netRevenue - totalExpenses };
+        return { 
+            filtered, 
+            grossRevenue, 
+            netRevenue, 
+            totalExpenses, 
+            balance: netRevenue - totalExpenses 
+        };
     }, [dbTransactions, searchTerm]);
 
     const handleExportExcel = () => {
@@ -133,7 +138,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
             Cliente: t.client_display_name,
             Canal: t.payment_channel,
             'Valor Bruto': t.gross_value,
-            'Taxa Adm': t.fee_amount,
+            'Taxa': t.fee_amount,
             'Valor Líquido': t.net_value
         }));
         const ws = XLSX.utils.json_to_sheet(dataToExport);
@@ -151,7 +156,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
                     <div className="p-2.5 bg-orange-50 text-orange-600 rounded-2xl"><Landmark size={24} /></div>
                     <div>
                         <h1 className="text-xl font-black text-slate-800 tracking-tight">Fluxo de Caixa</h1>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Visão Analítica de Recebíveis</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Visão Contábil Detalhada</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -165,20 +170,20 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
 
             <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 custom-scrollbar">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <StatCard title="Saldo Consolidado" value={formatBRL(bi.balance)} icon={Wallet} colorClass="bg-slate-800" subtext="Disponível (Pós-Taxas)" />
-                    <StatCard title="Faturamento Bruto" value={formatBRL(bi.grossRevenue)} icon={TrendingUp} colorClass="bg-blue-600" />
-                    <StatCard title="Total de Taxas" value={formatBRL(bi.grossRevenue - bi.netRevenue)} icon={Percent} colorClass="bg-orange-500" subtext="Custos de Transação" />
-                    <StatCard title="Despesas Gerais" value={formatBRL(bi.totalExpenses)} icon={ArrowDownCircle} colorClass="bg-rose-600" />
+                    <StatCard title="Saldo em Conta" value={formatBRL(bi.balance)} icon={Wallet} colorClass="bg-slate-800" subtext="Líquido total disponível" />
+                    <StatCard title="Faturamento Bruto" value={formatBRL(bi.grossRevenue)} icon={TrendingUp} colorClass="bg-blue-600" subtext="Soma de recebíveis" />
+                    <StatCard title="Faturamento Líquido" value={formatBRL(bi.netRevenue)} icon={CheckCircle} colorClass="bg-emerald-600" subtext="Pós taxas administrativas" />
+                    <StatCard title="Despesas" value={formatBRL(bi.totalExpenses)} icon={ArrowDownCircle} colorClass="bg-rose-600" subtext="Saídas do período" />
                 </div>
 
                 <Card className="rounded-[40px] border-slate-200 shadow-xl overflow-hidden">
                     <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-                        <div className="flex items-center gap-3"><History className="text-orange-500" size={24} /><h2 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Extrato Consolidado</h2></div>
+                        <div className="flex items-center gap-3"><History className="text-orange-500" size={24} /><h2 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Extrato Analítico</h2></div>
                         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                             <button onClick={handleExportExcel} className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-all shadow-sm"><FileSpreadsheet size={20}/></button>
                             <div className="relative flex-1 md:w-64">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                                <input type="text" placeholder="Buscar por cliente ou item..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-4 focus:ring-orange-100 outline-none" />
+                                <input type="text" placeholder="Buscar cliente ou descrição..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-4 focus:ring-orange-100 outline-none" />
                             </div>
                         </div>
                     </header>
@@ -188,31 +193,29 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ onAddTransaction }) => 
                             <thead className="bg-slate-50/50 border-y border-slate-100">
                                 <tr>
                                     <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Data / Canal</th>
-                                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cliente / Descrição</th>
-                                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Bruto</th>
-                                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Taxas</th>
-                                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Líquido</th>
+                                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cliente / Origem</th>
+                                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Vlr Bruto</th>
+                                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Taxa (Custo)</th>
+                                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Vlr Líquido</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
                                 {loading ? (
                                     <tr><td colSpan={5} className="p-20 text-center"><Loader2 className="animate-spin text-orange-500 mx-auto" /></td></tr>
                                 ) : bi.filtered.length === 0 ? (
-                                    <tr><td colSpan={5} className="p-20 text-center text-slate-400 font-bold uppercase text-xs italic">Nenhuma movimentação.</td></tr>
+                                    <tr><td colSpan={5} className="p-20 text-center text-slate-400 font-bold uppercase text-xs italic">Sem movimentações.</td></tr>
                                 ) : (
                                     bi.filtered.map(t => (
                                         <tr key={t.transaction_id} className="hover:bg-orange-50/20 transition-colors group">
                                             <td className="px-8 py-5">
                                                 <p className="text-xs font-bold text-slate-700">{format(new Date(t.date), 'dd/MM/yy HH:mm')}</p>
-                                                <div className="flex items-center gap-2 mt-1">
-                                                    <span className={`text-[8px] font-black px-2 py-0.5 rounded border ${
-                                                        t.payment_channel === 'PIX' ? 'bg-teal-50 text-teal-600 border-teal-100' : 
-                                                        t.payment_channel === 'DINHEIRO' ? 'bg-green-50 text-green-600 border-green-100' : 
-                                                        'bg-blue-50 text-blue-600 border-blue-100'
-                                                    }`}>
-                                                        {t.payment_channel}
-                                                    </span>
-                                                </div>
+                                                <span className={`inline-block mt-1 text-[8px] font-black px-2 py-0.5 rounded border ${
+                                                    t.payment_channel === 'PIX' ? 'bg-teal-50 text-teal-600 border-teal-100' : 
+                                                    t.payment_channel === 'DINHEIRO' ? 'bg-green-50 text-green-600 border-green-100' : 
+                                                    'bg-blue-50 text-blue-600 border-blue-100'
+                                                }`}>
+                                                    {t.payment_channel} {t.brand && `• ${t.brand}`}
+                                                </span>
                                             </td>
                                             <td className="px-8 py-5">
                                                 <p className="text-sm font-black text-slate-800">{t.client_display_name}</p>
