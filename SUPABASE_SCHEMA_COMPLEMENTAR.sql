@@ -1,6 +1,9 @@
 
--- 1. LIMPEZA PROFUNDA
--- Remove qualquer assinatura existente (uuid ou text) para evitar conflitos de overload no schema cache
+-- 1. DESTRUIÇÃO TOTAL DE VERSÕES ANTERIORES
+-- Remove qualquer assinatura existente para permitir a troca de tipos (ex: de bigint para uuid)
+DROP FUNCTION IF EXISTS public.register_payment_transaction;
+
+-- Limpeza profunda de overloads (garante que não reste lixo no catálogo do Postgres)
 DO $$ 
 DECLARE 
     _routine record;
@@ -15,20 +18,20 @@ BEGIN
     END LOOP;
 END $$;
 
--- 2. RECRIAÇÃO COM ASSINATURA COMPATÍVEL (Text para IDs)
--- Usar TEXT nos parâmetros de entrada é mais resiliente a strings vindas do JS
+-- 2. RECRIAÇÃO COM ASSINATURA SINCRONIZADA (11 Parâmetros)
+-- Os parâmetros seguem a ordem e nomes exatos enviados pelo Frontend
 CREATE OR REPLACE FUNCTION public.register_payment_transaction(
   p_amount numeric,
-  p_brand text DEFAULT NULL,
-  p_client_id text DEFAULT NULL,
-  p_command_id text DEFAULT NULL,
+  p_brand text DEFAULT NULL,           -- Solicitado: DEFAULT NULL
+  p_client_id uuid DEFAULT NULL,        -- UUID Estrito
+  p_command_id uuid DEFAULT NULL,       -- UUID Estrito
   p_description text DEFAULT 'Venda',
   p_fee_amount numeric DEFAULT 0,
-  p_installments integer DEFAULT 1,
+  p_installments integer DEFAULT 1,     -- Solicitado: DEFAULT 1
   p_method text DEFAULT 'pix',
   p_net_value numeric DEFAULT 0,
-  p_professional_id text DEFAULT NULL,
-  p_studio_id text DEFAULT NULL
+  p_professional_id uuid DEFAULT NULL,  -- UUID Estrito
+  p_studio_id uuid DEFAULT NULL         -- UUID Estrito
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -37,18 +40,8 @@ SET search_path = public
 AS $$
 DECLARE
   v_transaction_id uuid;
-  v_u_client_id uuid;
-  v_u_command_id uuid;
-  v_u_professional_id uuid;
-  v_u_studio_id uuid;
 BEGIN
-  -- Conversão segura: string vazia vira NULL, senão cast para UUID
-  v_u_client_id := NULLIF(p_client_id, '')::uuid;
-  v_u_command_id := NULLIF(p_command_id, '')::uuid;
-  v_u_professional_id := NULLIF(p_professional_id, '')::uuid;
-  v_u_studio_id := NULLIF(p_studio_id, '')::uuid;
-
-  -- 3. INSERÇÃO NO FLUXO DE CAIXA
+  -- 3. INSERÇÃO DIRETA NAS COLUNAS UUID (Garante que IDs de mock não quebrem o banco)
   INSERT INTO public.financial_transactions (
     amount,
     net_value,
@@ -73,21 +66,21 @@ BEGIN
     p_description,
     'pago',
     NOW(),
-    v_u_client_id,
-    v_u_command_id,
-    v_u_professional_id,
-    v_u_studio_id
+    p_client_id,
+    p_command_id,
+    p_professional_id,
+    p_studio_id
   )
   RETURNING id INTO v_transaction_id;
 
-  -- 4. ATUALIZAÇÃO DA COMANDA
-  IF v_u_command_id IS NOT NULL THEN
+  -- 4. ATUALIZAÇÃO DA COMANDA (Fluxo de liquidação)
+  IF p_command_id IS NOT NULL THEN
     UPDATE public.commands 
     SET 
       status = 'paid', 
       closed_at = NOW(),
       total_amount = p_amount
-    WHERE id = v_u_command_id;
+    WHERE id = p_command_id;
   END IF;
 
   RETURN v_transaction_id;
@@ -98,5 +91,5 @@ $$;
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO authenticated;
 GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO service_role;
 
--- 5. RECARGA DE CACHE (CRÍTICO para resolver o erro 404)
+-- 5. COMANDO CRÍTICO: Notifica o Supabase para recarregar o cache da API imediatamente
 NOTIFY pgrst, 'reload schema';
