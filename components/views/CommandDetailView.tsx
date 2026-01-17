@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
     ChevronLeft, CreditCard, Smartphone, Banknote, 
@@ -62,7 +61,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
-            // CORREÇÃO TÉCNICA: Join explícito com a tabela de clientes capturando campos de fallback e whatsapp
+            // CORREÇÃO TÉCNICA: Ajustado professional para a tabela professionals!commands_professional_id_fkey
             const [cmdRes, methodsRes] = await Promise.all([
                 supabase
                     .from('commands')
@@ -70,14 +69,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                       *,
                       client:clients!commands_client_id_fkey ( 
                         id, 
-                        name, 
                         nome, 
+                        name, 
                         nickname, 
                         apelido, 
                         whatsapp 
                       ),
-                      professional:team_members!commands_professional_id_fkey (
-                        id,
+                      professional:professionals!commands_professional_id_fkey (
+                        uuid_id,
                         name
                       ),
                       command_items (
@@ -100,19 +99,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setDbMethods(methodsRes.data || []);
                 if (cmdData.status === 'paid') setIsSuccessfullyClosed(true);
 
-                // DEBUG OBRIGATÓRIO (No console)
-                console.log('[Checkout] commandId:', commandId);
-                console.log('[Checkout] client_id:', cmdData?.client_id);
-                console.log('[Checkout] client data:', cmdData?.client);
-                
-                // MOTOR DE RESOLUÇÃO DE NOMES (ORDEM DE PRIORIDADE)
+                // RESOLUÇÃO DE NOME DO CLIENTE (Cadeia de fallback conforme objetivo C)
                 const clientObj = cmdData?.client;
-                const clientName =
-                  clientObj?.name || 
+                const clientName = 
                   clientObj?.nome || 
+                  clientObj?.name || 
                   clientObj?.nickname || 
                   clientObj?.apelido || 
-                  clientObj?.whatsapp || 
+                  (clientObj?.whatsapp ? `WA: ${clientObj.whatsapp.slice(-4)}` : null) || 
                   'Consumidor Final';
 
                 setResolvedClientName(clientName);
@@ -142,15 +136,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     }, [command, discount, addedPayments]);
 
     const professionalName = useMemo(() => {
-        // Tenta pegar do relacionamento direto da comanda primeiro
+        // Prioriza o profissional vinculado diretamente à comanda
         if (command?.professional?.name) return command.professional.name;
-        
-        // Se não houver, tenta pegar do primeiro item da comanda
-        if (command?.command_items && command.command_items.length > 0) {
+        // Fallback para o primeiro profissional encontrado nos itens
+        if (command?.command_items) {
             const itemWithProf = command.command_items.find((i: any) => i.team_members?.name);
             return itemWithProf?.team_members?.name || 'Não informado';
         }
-        
         return 'Não informado';
     }, [command]);
 
@@ -217,7 +209,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
-                // RPC de liquidação enviando os dados de transação
                 const { error: rpcError } = await supabase.rpc('pay_latest_open_command_v6', {
                     p_amount: entry.amount,
                     p_method: methodMap[entry.method] || 'pix',
