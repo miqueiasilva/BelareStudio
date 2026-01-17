@@ -62,21 +62,19 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
-            // CORREÇÃO TÉCNICA OBRIGATÓRIA: Query com join explícito pelo constraint de FK
+            // CORREÇÃO TÉCNICA OBRIGATÓRIA: Query com alias explícito para garantir retorno do PostgREST
             const [cmdRes, methodsRes] = await Promise.all([
                 supabase
                     .from('commands')
                     .select(`
                       *,
-                      client:clients!commands_client_id_fkey (
+                      client:clients (
                         id,
-                        name,
                         nome
                       ),
-                      professional:professionals!commands_professional_id_fkey (
+                      professional:professionals (
                         uuid_id,
-                        name,
-                        nome
+                        name
                       ),
                       command_items (
                         *,
@@ -98,19 +96,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setDbMethods(methodsRes.data || []);
                 if (cmdData.status === 'paid') setIsSuccessfullyClosed(true);
 
-                // DEBUG OBRIGATÓRIO (SEM POLUIR INTERFACE)
-                console.log('[Checkout] commandId:', commandId);
-                console.log('[Checkout] client_id:', cmdData?.client_id);
-                console.log('[Checkout] client object:', cmdData?.client);
-                if (!cmdData?.client) console.log('[Checkout] Data completa:', cmdData);
+                // LOGS DE VALIDAÇÃO SOLICITADOS
+                console.log('[Checkout] command.client_id', cmdData.client_id);
                 
                 // LÓGICA DE EXIBIÇÃO OBRIGATÓRIA
-                const clientName =
-                  cmdData?.client?.name ??
-                  cmdData?.client?.nome ??
-                  'Consumidor Final';
-
-                setResolvedClientName(clientName);
+                const resolvedName = cmdData?.client?.nome?.trim() || 'Consumidor Final';
+                setResolvedClientName(resolvedName);
+                
+                console.log('[Checkout] resolvedClientName', resolvedName);
             }
         } catch (e: any) {
             if (isMounted.current) {
