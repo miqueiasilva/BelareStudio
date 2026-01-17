@@ -87,8 +87,6 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         setUser(null);
         setLoading(false);
       }
-      // Redirecionamento forçado para limpar estados globais e evitar 404/hang
-      window.location.href = window.location.origin + '/'; 
     }
   };
 
@@ -120,20 +118,21 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
           setUser(appUser);
         }
       } catch (err) {
-        console.error("AuthContext: Erro crítico ao sincronizar perfil:", err);
+        console.error("AuthContext: Erro ao carregar perfil:", err);
         if (isMounted.current) setUser(null);
       } finally {
         if (isMounted.current) setLoading(false);
       }
     });
 
-    // WATCHDOG DE SEGURANÇA: Se o sistema não liberar o loading em 7s, reseta a sessão
+    // RELAXED SAFETY TIMEOUT (20s): Apenas libera o loading se o Supabase demorar.
+    // Não redireciona e não faz logout automático para evitar Erro 404.
     const safetyTimer = setTimeout(() => {
       if (isMounted.current && loading) {
-        console.warn("AuthContext: Safety timeout atingido. Redirecionando.");
-        signOut();
+        console.warn("AuthContext: Sincronização lenta detectada (20s). Liberando interface...");
+        setLoading(false);
       }
-    }, 7000);
+    }, 20000);
 
     return () => {
       isMounted.current = false;

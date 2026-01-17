@@ -49,22 +49,6 @@ const AppContent: React.FC = () => {
   const [hash, setHash] = useState(window.location.hash);
   const [pathname, setPathname] = useState(window.location.pathname);
 
-  // Watchdog Timer: Se demorar mais de 5s para sincronizar, força logout e reload
-  useEffect(() => {
-    let timer: number;
-    if (authLoading || studioLoading) {
-      timer = window.setTimeout(() => {
-        if (authLoading || studioLoading) {
-          console.warn("Watchdog: Tempo de carregamento excedido (5s). Resetando sessão.");
-          signOut().then(() => {
-             window.location.reload();
-          });
-        }
-      }, 5000);
-    }
-    return () => clearTimeout(timer);
-  }, [authLoading, studioLoading, signOut]);
-
   useEffect(() => {
     const handleHashChange = () => {
       const newHash = window.location.hash;
@@ -81,7 +65,7 @@ const AppContent: React.FC = () => {
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
           <p className="text-slate-500 font-medium font-sans">Sincronizando dados...</p>
-          <p className="text-[10px] text-slate-300 font-bold uppercase tracking-widest">Limite de segurança: 5s</p>
+          <p className="text-[10px] text-slate-300 font-bold uppercase tracking-widest">Aguardando resposta do servidor</p>
         </div>
       </div>
     );
