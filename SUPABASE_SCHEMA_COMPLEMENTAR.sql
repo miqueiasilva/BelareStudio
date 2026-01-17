@@ -1,9 +1,5 @@
 
--- 1. DESTRUIÇÃO TOTAL DE VERSÕES ANTERIORES
--- Remove qualquer assinatura existente para permitir a troca de tipos (ex: de bigint para uuid)
-DROP FUNCTION IF EXISTS public.register_payment_transaction;
-
--- Limpeza profunda de overloads (garante que não reste lixo no catálogo do Postgres)
+-- 1. Limpeza de versões anteriores
 DO $$ 
 DECLARE 
     _routine record;
@@ -18,20 +14,19 @@ BEGIN
     END LOOP;
 END $$;
 
--- 2. RECRIAÇÃO COM ASSINATURA SINCRONIZADA (11 Parâmetros)
--- Os parâmetros seguem a ordem e nomes exatos enviados pelo Frontend
+-- 2. Função de Registro de Pagamento Enriquecida
 CREATE OR REPLACE FUNCTION public.register_payment_transaction(
   p_amount numeric,
-  p_brand text DEFAULT NULL,           -- Solicitado: DEFAULT NULL
-  p_client_id uuid DEFAULT NULL,        -- UUID Estrito
-  p_command_id uuid DEFAULT NULL,       -- UUID Estrito
+  p_brand text DEFAULT NULL,
+  p_client_id text DEFAULT NULL,
+  p_command_id text DEFAULT NULL,
   p_description text DEFAULT 'Venda',
   p_fee_amount numeric DEFAULT 0,
-  p_installments integer DEFAULT 1,     -- Solicitado: DEFAULT 1
+  p_installments integer DEFAULT 1,
   p_method text DEFAULT 'pix',
   p_net_value numeric DEFAULT 0,
-  p_professional_id uuid DEFAULT NULL,  -- UUID Estrito
-  p_studio_id uuid DEFAULT NULL         -- UUID Estrito
+  p_professional_id text DEFAULT NULL,
+  p_studio_id text DEFAULT NULL
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -40,13 +35,22 @@ SET search_path = public
 AS $$
 DECLARE
   v_transaction_id uuid;
+  v_u_client_id uuid;
+  v_u_command_id uuid;
+  v_u_professional_id uuid;
+  v_u_studio_id uuid;
 BEGIN
-  -- 3. INSERÇÃO DIRETA NAS COLUNAS UUID (Garante que IDs de mock não quebrem o banco)
+  v_u_client_id := NULLIF(p_client_id, '')::uuid;
+  v_u_command_id := NULLIF(p_command_id, '')::uuid;
+  v_u_professional_id := NULLIF(p_professional_id, '')::uuid;
+  v_u_studio_id := NULLIF(p_studio_id, '')::uuid;
+
   INSERT INTO public.financial_transactions (
-    amount,
-    net_value,
-    fee_amount,
-    payment_method,
+    amount,        -- Valor Bruto (Gross)
+    net_value,     -- Valor Líquido (Net)
+    fee_amount,    -- Valor da Taxa
+    payment_method,-- Enum original
+    payment_brand, -- Bandeira
     type,
     category,
     description,
@@ -58,38 +62,50 @@ BEGIN
     studio_id
   ) VALUES (
     p_amount,
-    p_net_value,
-    p_fee_amount,
+    COALESCE(p_net_value, p_amount),
+    COALESCE(p_fee_amount, 0),
     p_method,
+    p_brand,
     'income',
     'Serviço',
     p_description,
     'pago',
     NOW(),
-    p_client_id,
-    p_command_id,
-    p_professional_id,
-    p_studio_id
+    v_u_client_id,
+    v_u_command_id,
+    v_u_professional_id,
+    v_u_studio_id
   )
   RETURNING id INTO v_transaction_id;
-
-  -- 4. ATUALIZAÇÃO DA COMANDA (Fluxo de liquidação)
-  IF p_command_id IS NOT NULL THEN
-    UPDATE public.commands 
-    SET 
-      status = 'paid', 
-      closed_at = NOW(),
-      total_amount = p_amount
-    WHERE id = p_command_id;
-  END IF;
 
   RETURN v_transaction_id;
 END;
 $$;
 
--- PERMISSÕES
-GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO authenticated;
-GRANT EXECUTE ON FUNCTION public.register_payment_transaction TO service_role;
+-- 3. View de Fluxo de Caixa para Performance e Labels Amigáveis
+CREATE OR REPLACE VIEW public.v_cashflow AS
+SELECT 
+    ft.id as transaction_id,
+    ft.date,
+    ft.description,
+    ft.amount as gross_value,
+    ft.fee_amount,
+    ft.net_value,
+    ft.type,
+    ft.studio_id,
+    COALESCE(c.nome, c.name, 'Consumidor Final') as client_display_name,
+    UPPER(
+        CASE 
+            WHEN ft.payment_method = 'cash' THEN 'DINHEIRO'
+            WHEN ft.payment_method = 'pix' THEN 'PIX'
+            WHEN ft.payment_method = 'credit' THEN 'CRÉDITO'
+            WHEN ft.payment_method = 'debit' THEN 'DÉBITO'
+            ELSE ft.payment_method 
+        END
+    ) as payment_channel,
+    ft.payment_brand as brand
+FROM public.financial_transactions ft
+LEFT JOIN public.clients c ON ft.client_id = c.id;
 
--- 5. COMANDO CRÍTICO: Notifica o Supabase para recarregar o cache da API imediatamente
+GRANT SELECT ON public.v_cashflow TO authenticated;
 NOTIFY pgrst, 'reload schema';
