@@ -30,7 +30,6 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// FIX: Added FinanceiroViewProps interface to match props passed from App.tsx
 interface FinanceiroViewProps {
     transactions: FinancialTransaction[];
     onAddTransaction: (t: FinancialTransaction) => void;
@@ -58,12 +57,14 @@ const StatCard = ({ title, value, subtext, icon: Icon, colorClass, trend }: any)
     </div>
 );
 
-// FIX: Updated component definition to accept FinanceiroViewProps
-const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions, onAddTransaction }) => {
+const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTransactions, onAddTransaction }) => {
     const { activeStudioId } = useStudio();
     const [dbTransactions, setDbTransactions] = useState<any[]>([]);
     const [projections, setProjections] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    
+    // Cache de nomes de clientes para evitar chamadas repetidas
+    const [clientNames, setClientNames] = useState<Record<string, string>>({});
     
     // Filtros
     const [filterPeriod, setFilterPeriod] = useState<'hoje' | 'mes' | 'custom'>('hoje');
@@ -74,6 +75,34 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions, onAddTran
     const [searchTerm, setSearchTerm] = useState('');
     const [showModal, setShowModal] = useState<TransactionType | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+
+    // Resolve nomes de clientes em lote para os IDs presentes nas transações
+    const resolveClientNames = useCallback(async (txs: any[]) => {
+        const uniqueIds = Array.from(new Set(
+            txs
+                .map(t => t.client_id)
+                .filter(id => id !== null && id !== undefined && !clientNames[id])
+        ));
+
+        if (uniqueIds.length === 0) return;
+
+        try {
+            const results = await Promise.all(uniqueIds.map(async (id) => {
+                const { data, error } = await supabase.rpc('fn_get_client_name', { c_id: id });
+                return { id, name: !error && data ? data : 'Consumidor Final' };
+            }));
+
+            setClientNames(prev => {
+                const updated = { ...prev };
+                results.forEach(res => {
+                    updated[res.id] = res.name;
+                });
+                return updated;
+            });
+        } catch (e) {
+            console.error("Erro ao resolver nomes de clientes:", e);
+        }
+    }, [clientNames]);
 
     // --- FETCH DE DADOS REAIS ---
     const fetchData = useCallback(async () => {
@@ -119,13 +148,18 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions, onAddTran
 
             setDbTransactions(trans || []);
             setProjections(apps || []);
+            
+            // Inicia resolução dos nomes de clientes após carregar as transações
+            if (trans && trans.length > 0) {
+                resolveClientNames(trans);
+            }
         } catch (error: any) {
             console.error("Erro Financeiro:", error);
             setToast({ message: "Erro ao sincronizar financeiro.", type: 'error' });
         } finally {
             setLoading(false);
         }
-    }, [activeStudioId, startDate, endDate, filterPeriod]);
+    }, [activeStudioId, startDate, endDate, filterPeriod, resolveClientNames]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -202,6 +236,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions, onAddTran
         const dataToExport = bi.filtered.map(t => ({
             Data: format(new Date(t.date), 'dd/MM/yyyy HH:mm'),
             Descrição: t.description,
+            Cliente: t.client_id ? (clientNames[t.client_id] || 'Consumidor Final') : '---',
             Categoria: t.category || 'Geral',
             Tipo: t.type === 'income' ? 'Entrada' : 'Saída',
             Pagamento: t.payment_method,
@@ -225,7 +260,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions, onAddTran
 
         const tableData = bi.filtered.map(t => [
             format(new Date(t.date), 'dd/MM/yy'),
-            t.description,
+            `${t.description}${t.client_id ? `\n(Cliente: ${clientNames[t.client_id] || 'Consumidor Final'})` : ''}`,
             t.category || 'Geral',
             t.payment_method,
             t.type === 'income' ? `+ ${formatBRL(t.amount)}` : `- ${formatBRL(t.amount)}`
@@ -267,7 +302,6 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions, onAddTran
             const { error } = await supabase.from('financial_transactions').insert([payload]);
             if (error) throw error;
 
-            // FIX: If onAddTransaction exists, call it to keep parent state in sync
             if (onAddTransaction) {
                 onAddTransaction(t as FinancialTransaction);
             }
@@ -484,7 +518,14 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions, onAddTran
                                             </td>
                                             <td className="px-8 py-5">
                                                 <p className="text-sm font-black text-slate-700 group-hover:text-orange-600 transition-colors truncate max-w-xs">{t.description}</p>
-                                                <span className="inline-block px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-black uppercase tracking-wider mt-1">{t.category || 'Geral'}</span>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="inline-block px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-black uppercase tracking-wider">{t.category || 'Geral'}</span>
+                                                    {t.client_id && (
+                                                        <span className="text-[9px] font-bold text-orange-500 uppercase tracking-tight">
+                                                            • Cliente: {clientNames[t.client_id] || 'Consumidor Final'}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="px-8 py-5">
                                                 <div className="flex items-center gap-2">
