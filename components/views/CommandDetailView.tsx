@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
     ChevronLeft, CreditCard, Smartphone, Banknote, 
@@ -31,7 +32,6 @@ interface PaymentEntry {
     installments: number;
 }
 
-// FIX: Added missing categories constant used for rendering payment method options.
 const categories = [
     { id: 'pix', label: 'Pix', icon: Smartphone, color: 'text-teal-600', bg: 'bg-teal-50' },
     { id: 'money', label: 'Dinheiro', icon: Banknote, color: 'text-green-600', bg: 'bg-green-50' },
@@ -50,7 +50,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [resolvedClientName, setResolvedClientName] = useState<string>('Consumidor Final');
     const [dbMethods, setDbMethods] = useState<any[]>([]);
     const [addedPayments, setAddedPayments] = useState<PaymentEntry[]>([]);
-    const [historyPayments, setHistoryPayments] = useState<any[]>([]); // Histórico do banco
+    const [historyPayments, setHistoryPayments] = useState<any[]>([]); 
     
     const [activeCategory, setActiveCategory] = useState<'credit' | 'debit' | 'pix' | 'money' | null>(null);
     const [selectedMethodObj, setSelectedMethodObj] = useState<any>(null);
@@ -123,7 +123,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         
-        // Se já está pago, usa o histórico do banco. Se não, usa o estado local.
         const paidSource = isSuccessfullyClosed ? historyPayments : addedPayments;
         const paid = paidSource.reduce((acc, p) => acc + (p.amount || p.gross_amount || 0), 0);
         const totalNet = paidSource.reduce((acc, p) => acc + (p.net || p.net_amount || 0), 0);
@@ -192,23 +191,23 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
-                // 1. Registra a transação financeira principal
+                // CORREÇÃO: Enviando p_professional_id e garantindo que IDs sejam strings para o cast do Postgres
                 const { data: txId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: entry.amount,
                     p_method: methodMap[entry.method] || 'pix',
-                    p_brand: entry.brand,
+                    p_brand: String(entry.brand || ''),
                     p_installments: entry.installments,
-                    p_command_id: commandId,
-                    p_studio_id: activeStudioId,
+                    p_command_id: String(commandId),
+                    p_studio_id: String(activeStudioId),
                     p_net_value: entry.net,
                     p_fee_amount: entry.fee,
-                    p_client_id: command.client_id,
+                    p_client_id: command.client_id ? String(command.client_id) : '',
+                    p_professional_id: command.professional_id ? String(command.professional_id) : '',
                     p_description: `Checkout Comanda #${commandId.split('-')[0].toUpperCase()}`
                 });
                 
                 if (rpcError) throw rpcError;
 
-                // 2. Registra o histórico detalhado do pagamento (command_payments)
                 const { error: payError } = await supabase.from('command_payments').insert([{
                     command_id: commandId,
                     studio_id: activeStudioId,
@@ -224,7 +223,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 if (payError) throw payError;
             }
 
-            // 3. Fecha a comanda
             await supabase.from('commands').update({ 
                 status: 'paid', 
                 closed_at: new Date().toISOString(),
