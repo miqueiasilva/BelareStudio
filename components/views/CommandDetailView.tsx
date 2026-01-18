@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
     ChevronLeft, CreditCard, Smartphone, Banknote, 
@@ -27,9 +26,6 @@ interface PaymentEntry {
     method_id: string;
     amount: number;
     brand: string;
-    rate: number;
-    fee: number;
-    net: number;
     installments: number;
 }
 
@@ -109,7 +105,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     useEffect(() => { fetchSystemData(); }, [commandId, activeStudioId]);
 
     const totals = useMemo(() => {
-        if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0, totalNet: 0 };
+        // FIX: Added 'totalAfterDiscount' to the initial fallback return object to maintain type consistency.
+        if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0, totalNet: 0, totalAfterDiscount: 0 };
         const subtotal = Number(command.total_amount || 0);
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
@@ -121,7 +118,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const totalNet = paidSource.reduce((acc, p) => acc + Number(p.net || p.net_amount || 0), 0);
         
         const remaining = Math.max(0, totalAfterDiscount - paid);
-        return { subtotal, total: isClosed ? paid : totalAfterDiscount, paid, remaining: isClosed ? 0 : remaining, totalNet };
+        // FIX: Added 'totalAfterDiscount' to the returned object from useMemo to resolve the property access error on line 319.
+        return { subtotal, total: isClosed ? paid : totalAfterDiscount, paid, remaining: isClosed ? 0 : remaining, totalNet, totalAfterDiscount };
     }, [command, discount, addedPayments, historyPayments, isSuccessfullyClosed]);
 
     const professionalName = useMemo(() => {
@@ -147,15 +145,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeCategory || isNaN(val) || val <= 0 || !selectedMethodObj) return;
         
         const isFeeFree = activeCategory === 'pix' || activeCategory === 'money';
-        let finalRate = 0;
-        if (!isFeeFree) {
-            finalRate = (selectedInstallments === 1) 
-                ? Number(selectedMethodObj.rate_cash || 0) 
-                : Number(selectedMethodObj.installment_rates?.[selectedInstallments.toString()] || selectedMethodObj.rate_installment_12x || 0);
-        }
-
-        const feeAmount = val * (finalRate / 100);
-        const netAmount = val - feeAmount;
 
         const newPayment: PaymentEntry = {
             id: Math.random().toString(36).substring(2, 9),
@@ -163,9 +152,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             method_id: selectedMethodObj.id,
             amount: val,
             brand: isFeeFree ? 'DIRETO' : (selectedMethodObj?.brand || 'OUTROS'),
-            rate: finalRate,
-            fee: feeAmount,
-            net: netAmount,
             installments: selectedInstallments
         };
         setAddedPayments(prev => [...prev, newPayment]);
@@ -181,7 +167,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
-                // RPC ATÔMICA: Faz o cálculo interno no backend e insere em ambas as tabelas
+                // RPC INTELIGENTE: O Backend calcula taxas e insere em ambas as tabelas
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: entry.amount,
                     p_brand: String(entry.brand || 'DIRETO'),
@@ -196,18 +182,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 
                 if (rpcError) throw rpcError;
             }
-
-            // O status da comanda e fechamento agora são tratados pela RPC de forma segura.
             
             if (isMounted.current) {
                 setIsSuccessfullyClosed(true);
                 setAddedPayments([]);
-                setToast({ message: "Pagamento processado e auditado pelo servidor!", type: 'success' });
+                setToast({ message: "Pagamento processado com auditoria do banco!", type: 'success' });
                 fetchSystemData();
             }
         } catch (e: any) {
             if (isMounted.current) {
-                setToast({ message: `Erro Crítico: ${e.message}`, type: 'error' });
+                // Exibe a mensagem exata vinda do banco (Trigger) ou do RPC
+                setToast({ message: `Falha: ${e.message}`, type: 'error' });
                 setIsFinishing(false);
             }
         }
@@ -217,7 +202,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
-            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+            {toast && <Toast message={toast.type === 'success' ? toast.message : ''} type={toast.type} onClose={() => setToast(null)} />}
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center z-20 shadow-sm flex-shrink-0">
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-colors"><ChevronLeft size={24} /></button>
@@ -235,7 +220,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             <div className="bg-emerald-600 rounded-[40px] p-10 text-white shadow-2xl animate-in zoom-in-95 duration-500 flex flex-col items-center text-center">
                                 <CheckCircle2 size={64} className="mb-4" />
                                 <h2 className="text-3xl font-black uppercase tracking-widest">Pagamento Confirmado</h2>
-                                <p className="text-emerald-100 mt-2">Os valores líquidos foram auditados e creditados no caixa.</p>
+                                <p className="text-emerald-100 mt-2">Valores auditados e creditados no caixa.</p>
                             </div>
                         )}
 
@@ -302,7 +287,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                         {p.installments > 1 && ` (${p.installments}x)`}
                                                     </p>
                                                     <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">
-                                                        Líquido Auditado: R$ {(p.net || p.net_amount || 0).toFixed(2)}
+                                                        Auditado pelo Banco
                                                     </p>
                                                 </div>
                                             </div>
@@ -332,9 +317,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     )}
                                 </div>
                                 <div className="pt-6 border-t border-white/10">
-                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Total Líquido (Auditado pelo Banco)</p>
-                                    <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.totalNet.toFixed(2)}</h2>
-                                    <p className="text-[10px] font-bold text-slate-500 mt-2">TOTAL BRUTO: R$ {totals.paid.toFixed(2)}</p>
+                                    <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Liquidação (Auditoria Ativa)</p>
+                                    <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.totalAfterDiscount.toFixed(2)}</h2>
+                                    <p className="text-[10px] font-bold text-slate-500 mt-2">VALOR BRUTO: R$ {totals.paid.toFixed(2)}</p>
                                 </div>
                             </div>
                         </div>
