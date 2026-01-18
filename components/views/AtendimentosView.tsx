@@ -130,6 +130,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
     const [isJaciBotOpen, setIsJaciBotOpen] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+    // FIX: Added missing useState call and corrected type syntax to resolve arithmetic/symbol/type errors.
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
     const [pendingConflict, setPendingConflict] = useState<{ newApp: LegacyAppointment, conflictWith: any } | null>(null);
     const [viewMode, setViewMode] = useState<'profissional' | 'andamento' | 'pagamento'>('profissional');
@@ -145,7 +146,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
     const getValidUUID = (id: any): string | null => {
         if (!id || typeof id !== 'string') return null;
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         return uuidRegex.test(id) ? id : null;
     };
 
@@ -277,8 +278,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         // Higienização de identificadores
         const studioUuid = getValidUUID(activeStudioId);
         const client_id_raw = appointment.client?.id;
-        const professionalUuid = getValidUUID(appointment.professional.id);
-        const serviceUuid = getValidUUID(appointment.service.id);
+        const professionalUuid = getValidUUID(appointment.professional?.id);
+        const serviceUuid = getValidUUID(appointment.service?.id);
 
         if (!studioUuid) {
             setToast({ message: "Identificador de unidade inválido.", type: 'error' });
@@ -287,12 +288,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
         setIsLoadingData(true);
         try {
-            // CORREÇÃO CRUCIAL: Mapeando client_id explicitamente no insert da comanda
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
                     studio_id: studioUuid,
-                    client_id: client_id_raw || null, // Vínculo essencial para o checkout
+                    client_id: client_id_raw || null, 
                     status: 'open',
                     total_amount: appointment.service.price
                 }])
@@ -300,7 +300,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             if (cmdError) throw cmdError;
 
-            // Inserção dos itens da comanda vinculados ao serviço do agendamento
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
@@ -316,7 +315,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             if (itemError) throw itemError;
 
-            // Atualiza status do agendamento original
             await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
             
             setToast({ message: `Comanda gerada para ${appointment.client?.nome || 'Cliente'}! 💳`, type: 'success' });
@@ -461,7 +459,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         {columns.map((col, idx) => (
                             <div key={col.id} className={`relative border-r border-slate-200 cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`} style={{ minHeight: `${timeSlotsLabels.length * SLOT_PX_HEIGHT}px` }} onClick={(e) => { if (e.target === e.currentTarget) { const prof = col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0]; const date = col.type === 'date' ? (col.data as Date) : currentDate; handleGridClick(e, prof, date); } }}>
                                 {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
-                                {filteredAppointments.filter(app => { if (periodType === 'Semana') return isSameDay(app.start, col.data as Date); if (app.type === 'block' && (app.professional.id === null || String(app.professional.id) === 'null')) return true; return String(app.professional.id) === String(col.id); }).map(app => {
+                                {filteredAppointments.filter(app => { if (periodType === 'Semana') return isSameDay(app.start, col.data as Date); if (app.type === 'block' && (!app.professional || app.professional.id === null || String(app.professional.id) === 'null')) return true; return app.professional && String(app.professional.id) === String(col.id); }).map(app => {
                                     const durationMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
                                     const isShort = durationMinutes <= 25;
                                     const cardColor = app.type === 'block' ? '#f87171' : (app.service.color || '#3b82f6');

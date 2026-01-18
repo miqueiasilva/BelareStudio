@@ -1,3 +1,4 @@
+
 import { 
     format, addDays, isSameDay, addMinutes, 
     isAfter, isBefore, getDay, 
@@ -109,7 +110,6 @@ const PublicBookingPreview: React.FC = () => {
     const [isBookingOpen, setIsBookingOpen] = useState(false);
     const [isClientAppsOpen, setIsClientAppsOpen] = useState(false);
     const [bookingStep, setBookingStep] = useState(1); 
-    // FIX: Added missing selectedProfessional state and its setter.
     const [selectedProfessional, setSelectedProfessional] = useState<any>(null);
 
     // Regras de Agendamento Dinâmicas
@@ -233,7 +233,7 @@ const PublicBookingPreview: React.FC = () => {
     };
 
     const generateAvailableSlots = async (date: Date, professional: any) => {
-        if (!studio || selectedServices.length === 0) return;
+        if (!studio || selectedServices.length === 0 || !professional) return;
         setIsLoadingSlots(true);
         setSelectedTime(null);
 
@@ -278,7 +278,6 @@ const PublicBookingPreview: React.FC = () => {
                 }
 
                 const hasOverlap = busyAppointments?.some(app => {
-                    // FIX: Manual parseISO replacement using new Date().
                     const appStart = new Date(app.date);
                     const appEnd = addMinutes(appStart, app.duration);
                     const slotStart = currentPointer;
@@ -306,7 +305,7 @@ const PublicBookingPreview: React.FC = () => {
     }, [selectedDate, selectedProfessional, bookingStep, selectedServices, rules]);
 
     const handleSubmitBooking = async () => {
-        if (!clientName || !clientPhone || !selectedTime) return;
+        if (!clientName || !clientPhone || !selectedTime || !selectedProfessional) return;
         setIsFinalizing(true);
 
         try {
@@ -338,7 +337,6 @@ const PublicBookingPreview: React.FC = () => {
             const totalValue = selectedServices.reduce((acc, s) => acc + Number(s.preco), 0);
             const serviceNames = selectedServices.map(s => s.nome || s.name).join(' + ');
 
-            // Enviar estritamente professional_id. resource_id gerado no DB como espelho.
             const { error: apptErr } = await supabase
                 .from('appointments')
                 .insert([{
