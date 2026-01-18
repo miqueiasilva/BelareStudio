@@ -165,7 +165,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
-                // RPC ATUALIZADA: Incluindo p_payment_method_config_id para evitar erro 400
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: entry.amount,
                     p_brand: String(entry.brand || 'DIRETO'),
@@ -176,7 +175,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     p_method: methodMap[entry.method] || 'pix',
                     p_professional_id: command.professional_id ? String(command.professional_id) : null,
                     p_studio_id: String(activeStudioId),
-                    p_payment_method_config_id: String(entry.method_id) // Parâmetro adicionado
+                    p_payment_method_config_id: String(entry.method_id)
                 });
                 
                 if (rpcError) throw rpcError;
@@ -198,6 +197,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={40} /></div>;
 
+    // Proteção final: Se após carregar não houver objeto command
+    if (!command) return <div className="h-full flex flex-col items-center justify-center bg-slate-50 text-slate-400 p-8 text-center"><AlertCircle size={48} className="mb-4" /> <p className="font-bold">Comanda não encontrada.</p> <button onClick={onBack} className="mt-4 text-orange-500 font-bold underline">Voltar para a lista</button></div>;
+
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -205,7 +207,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-colors"><ChevronLeft size={24} /></button>
                     <div>
-                        <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500">#{command.id.toString().split('-')[0].toUpperCase()}</span></h1>
+                        <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500">#{command.id?.toString().split('-')[0].toUpperCase() || '---'}</span></h1>
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Controle de Baixa Financeira</p>
                     </div>
                 </div>

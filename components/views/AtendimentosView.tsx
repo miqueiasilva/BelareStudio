@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
@@ -64,8 +63,8 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
                                 <CalendarDays size={24} />
                             </div>
                             <div className="flex-1 min-w-0">
-                                <p className="font-black text-slate-800 truncate">{conflictApp.client_name}</p>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{conflictApp.service_name}</p>
+                                <p className="font-black text-slate-800 truncate">{conflictApp?.client_name || 'Cliente'}</p>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{conflictApp?.service_name || 'Serviço'}</p>
                             </div>
                         </div>
                     </div>
@@ -130,8 +129,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
     const [isJaciBotOpen, setIsJaciBotOpen] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-    
-    // CORREÇÃO: Inicialização correta do useState
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
     
     const [pendingConflict, setPendingConflict] = useState<{ newApp: LegacyAppointment, conflictWith: any } | null>(null);
@@ -146,7 +143,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastRequestId = useRef(0);
 
-    // CORREÇÃO: Regex de UUID ajustada para o padrão 8-4-4-4-12
     const getValidUUID = (id: any): string | null => {
         if (!id || typeof id !== 'string') return null;
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -278,7 +274,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const handleConvertToCommand = async (appointment: LegacyAppointment) => {
         if (!activeStudioId || !appointment?.id) return;
 
-        // Higienização de identificadores
         const studioUuid = getValidUUID(activeStudioId);
         const client_id_raw = appointment.client?.id;
         const professionalUuid = getValidUUID(appointment.professional?.id);
@@ -399,7 +394,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     };
 
     return (
-        <div className="flex h-full bg-white relative flex-col font-sans text-left">
+        <div className="h-full bg-white relative flex-col font-sans text-left">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
             <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-30 shadow-sm">
@@ -460,9 +455,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                             ))}
                         </div>
                         {columns.map((col, idx) => (
-                            <div key={col.id} className={`relative border-r border-slate-200 cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`} style={{ minHeight: `${timeSlotsLabels.length * SLOT_PX_HEIGHT}px` }} onClick={(e) => { if (e.target === e.currentTarget) { const prof = col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0]; const date = col.type === 'date' ? (col.data as Date) : currentDate; handleGridClick(e, prof, date); } }}>
+                            <div key={col.id} className={`relative border-r border-slate-200 cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`} style={{ minHeight: `${timeSlotsLabels.length * SLOT_PX_HEIGHT}px` }} onClick={(e) => { if (e.target === e.currentTarget) { /* FIX: Add missing avatarUrl property to the fallback professional object to match LegacyProfessional type */ const prof = col.type === 'professional' ? (col.data as LegacyProfessional) : (resources[0] || {id: 0, name: 'S/ Profissional', avatarUrl: ''}); const date = col.type === 'date' ? (col.data as Date) : currentDate; handleGridClick(e, prof, date); } }}>
                                 {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
-                                {filteredAppointments.filter(app => { if (periodType === 'Semana') return isSameDay(app.start, col.data as Date); if (app.type === 'block' && (!app.professional || app.professional.id === null || String(app.professional.id) === 'null')) return true; return app.professional && String(app.professional.id) === String(col.id); }).map(app => {
+                                {filteredAppointments.filter(app => { 
+                                    if (periodType === 'Semana') return isSameDay(app.start, col.data as Date); 
+                                    if (app.type === 'block' && (!app.professional || app.professional?.id === null || String(app.professional?.id) === 'null')) return true; 
+                                    return app.professional && String(app.professional?.id) === String(col.id); 
+                                }).map(app => {
                                     const durationMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
                                     const isShort = durationMinutes <= 25;
                                     const cardColor = app.type === 'block' ? '#f87171' : (app.service?.color || '#3b82f6');
@@ -493,7 +492,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     <div className="fixed inset-0 z-50" onClick={() => setSelectionMenu(null)} />
                     <div className="fixed z-[60] bg-white rounded-2xl shadow-2xl border border-slate-100 w-64 py-2 animate-in fade-in zoom-in-95 duration-150" style={{ top: Math.min(selectionMenu.y, window.innerHeight - 200), left: Math.min(selectionMenu.x, window.innerWidth - 260) }}>
                         <button onClick={() => { setModalState({ type: 'appointment', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"><div className="p-1.5 bg-orange-100 rounded-lg text-orange-600"><CalendarIcon size={16} /></div> Novo Agendamento</button>
-                        <button onClick={() => { setModalState({ type: 'sale', data: { professionalId: selectionMenu.professional.id } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-green-50 hover:text-green-600 transition-colors"><div className="p-1.5 bg-green-100 rounded-lg text-green-600"><ShoppingBag size={16} /></div> Nova Venda</button>
+                        <button onClick={() => { setModalState({ type: 'sale', data: { professionalId: selectionMenu.professional?.id } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-green-50 hover:text-green-600 transition-colors"><div className="p-1.5 bg-green-100 rounded-lg text-green-600"><ShoppingBag size={16} /></div> Nova Venda</button>
                         <button onClick={() => { setModalState({ type: 'block', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition-colors"><div className="p-1.5 bg-rose-100 rounded-lg text-orange-600"><Ban size={16} /></div> Bloqueio</button>
                     </div>
                 </>
