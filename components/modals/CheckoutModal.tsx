@@ -32,7 +32,6 @@ interface CheckoutModalProps {
     isOpen: boolean;
     onClose: () => void;
     appointment: {
-        // FIX: Updated id type to string | number to match LegacyAppointment.id
         id: number | string;
         client_id?: number | string;
         client_name: string;
@@ -111,32 +110,38 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const currentMethod = useMemo(() => dbPaymentMethods.find(m => m.id === selectedMethodId), [dbPaymentMethods, selectedMethodId]);
 
     const handleConfirmPayment = async (e?: React.MouseEvent) => {
-        if (e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
+        if (e) { e.preventDefault(); e.stopPropagation(); }
 
         if (!currentMethod || !activeStudioId || isLoading) return;
         setIsLoading(true);
 
         try {
-            // Mapeamento técnico conforme regra da RPC pay_latest_open_command_v6
             const methodMapping: Record<string, string> = { 'pix': 'pix', 'money': 'cash', 'credit': 'credit', 'debit': 'debit' };
 
-            // CHAMADA À NOVA RPC INTELIGENTE
-            const { error: rpcError } = await supabase.rpc('pay_latest_open_command_v6', {
+            const payload = {
+                p_studio_id: String(activeStudioId),
+                p_professional_id: appointment.professional_id ? String(appointment.professional_id) : null,
                 p_amount: appointment.price,
                 p_method: methodMapping[selectedCategory] || 'pix',
                 p_brand: currentMethod.brand || 'default',
-                p_installments: installments
-            });
+                p_installments: installments,
+                p_command_id: null,
+                p_client_id: appointment.client_id ? Number(appointment.client_id) : null,
+                p_description: `Atendimento: ${appointment.service_name}`
+            };
+
+            // LOG DE INTERCEPTAÇÃO REQUISITADO
+            console.log('RPC Call: register_payment_transaction_v2');
+            console.log('Payload:', payload);
+            Object.entries(payload).forEach(([k, v]) => console.log(`Field: ${k} | Value: ${v} | Type: ${typeof v}`));
+
+            const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
 
             if (rpcError) {
-                console.error("Erro na liquidação (pay_latest_open_command_v6):", rpcError);
+                console.error("Erro na liquidação (register_payment_transaction_v2):", rpcError);
                 throw rpcError;
             }
 
-            // Marca o agendamento original como concluído no frontend
             await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
             
             if (isMounted.current) {
@@ -145,8 +150,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             }
         } catch (error: any) {
             if (isMounted.current) {
-                const detailedError = `[${error.message}] Details: ${error.details || 'N/A'}. Hint: ${error.hint || 'N/A'}`;
-                console.error("Falha Crítica no Checkout:", detailedError);
                 setToast({ message: `Falha na Liquidação: ${error.message}`, type: 'error' });
                 setIsLoading(false);
             }

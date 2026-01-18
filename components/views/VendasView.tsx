@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
     Search, ShoppingCart, Plus, Minus, Trash2, CreditCard, 
@@ -141,19 +140,26 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
         try {
             const methodMapping: Record<string, string> = { 'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit' };
 
-            // CHAMADA À NOVA RPC: pay_latest_open_command_v6
-            const { error: rpcError } = await supabase.rpc('pay_latest_open_command_v6', {
+            const payload = {
+                p_studio_id: String(activeStudioId),
+                p_professional_id: null,
                 p_amount: total,
                 p_method: methodMapping[paymentMethod] || 'pix',
                 p_brand: '',
-                p_installments: 1
-            });
+                p_installments: 1,
+                p_command_id: null,
+                p_client_id: null,
+                p_description: 'Venda Rápida (PDV)'
+            };
 
-            if (rpcError) {
-                const detailedError = `[${rpcError.message}] Details: ${rpcError.details || 'N/A'}. Hint: ${rpcError.hint || 'N/A'}`;
-                console.error("Falha no PDV:", detailedError);
-                throw rpcError;
-            }
+            // LOG DE INTERCEPTAÇÃO REQUISITADO
+            console.log('RPC Call: register_payment_transaction_v2');
+            console.log('Payload:', payload);
+            Object.entries(payload).forEach(([k, v]) => console.log(`Field: ${k} | Value: ${v} | Type: ${typeof v}`));
+
+            const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
+
+            if (rpcError) throw rpcError;
 
             setLastTransaction({ amount: total, payment_method: paymentMethod });
             setToast({ message: "Venda finalizada com sucesso!", type: 'success' });

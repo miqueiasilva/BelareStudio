@@ -161,21 +161,27 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         
         setIsFinishing(true);
         try {
-            const methodMap: Record<string, string> = { 'money': 'money', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
+            const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
-                const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                const payload = {
+                    p_studio_id: String(activeStudioId),
+                    p_professional_id: command.professional_id ? String(command.professional_id) : null,
                     p_amount: entry.amount,
                     p_method: methodMap[entry.method] || 'pix',
                     p_brand: String(entry.brand || 'DIRETO'),
                     p_installments: entry.installments,
-                    p_description: `Checkout Comanda #${commandId.split('-')[0].toUpperCase()}`,
-                    p_client_id: command.client_id ? String(command.client_id) : null,
                     p_command_id: String(commandId),
-                    p_studio_id: String(activeStudioId),
-                    p_professional_id: command.professional_id ? String(command.professional_id) : null,
-                    p_payment_method_config_id: String(entry.method_id)
-                });
+                    p_client_id: command.client_id ? Number(command.client_id) : null,
+                    p_description: `Checkout Comanda #${commandId.split('-')[0].toUpperCase()}`
+                };
+
+                // LOG DE INTERCEPTAÇÃO REQUISITADO
+                console.log('RPC Call: register_payment_transaction_v2');
+                console.log('Payload:', payload);
+                Object.entries(payload).forEach(([k, v]) => console.log(`Field: ${k} | Value: ${v} | Type: ${typeof v}`));
+
+                const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
                 
                 if (rpcError) throw rpcError;
             }
