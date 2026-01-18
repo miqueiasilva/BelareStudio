@@ -111,10 +111,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         
         const isClosed = command.status === 'paid' || isSuccessfullyClosed;
-        const paidSource = isClosed ? historyPayments : addedPayments;
         
-        const paid = paidSource.reduce((acc, p) => acc + Number(p.amount || p.gross_amount || 0), 0);
-        const totalNet = paidSource.reduce((acc, p) => acc + Number(p.net || p.net_amount || 0), 0);
+        const paid = (isClosed ? historyPayments : addedPayments).reduce((acc, p) => acc + Number(p.amount || p.gross_amount || 0), 0);
+        const totalNet = (isClosed ? historyPayments : addedPayments).reduce((acc, p) => acc + Number(p.net || p.net_amount || 0), 0);
         
         const remaining = Math.max(0, totalAfterDiscount - paid);
         return { subtotal, total: isClosed ? paid : totalAfterDiscount, paid, remaining: isClosed ? 0 : remaining, totalNet, totalAfterDiscount };
@@ -162,19 +161,19 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         
         setIsFinishing(true);
         try {
-            const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
+            const methodMap: Record<string, string> = { 'money': 'money', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: entry.amount,
+                    p_method: methodMap[entry.method] || 'pix',
                     p_brand: String(entry.brand || 'DIRETO'),
+                    p_installments: entry.installments,
+                    p_description: `Checkout Comanda #${commandId.split('-')[0].toUpperCase()}`,
                     p_client_id: command.client_id ? String(command.client_id) : null,
                     p_command_id: String(commandId),
-                    p_description: `Checkout Comanda #${commandId.split('-')[0].toUpperCase()}`,
-                    p_installments: entry.installments,
-                    p_method: methodMap[entry.method] || 'pix',
-                    p_professional_id: command.professional_id ? String(command.professional_id) : null,
                     p_studio_id: String(activeStudioId),
+                    p_professional_id: command.professional_id ? String(command.professional_id) : null,
                     p_payment_method_config_id: String(entry.method_id)
                 });
                 
@@ -197,7 +196,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={40} /></div>;
 
-    // Proteção final: Se após carregar não houver objeto command
     if (!command) return <div className="h-full flex flex-col items-center justify-center bg-slate-50 text-slate-400 p-8 text-center"><AlertCircle size={48} className="mb-4" /> <p className="font-bold">Comanda não encontrada.</p> <button onClick={onBack} className="mt-4 text-orange-500 font-bold underline">Voltar para a lista</button></div>;
 
     return (
@@ -286,9 +284,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                         {(p.payment_channel || p.method || 'PAGAMENTO').toUpperCase()} {p.brand && `• ${p.brand}`}
                                                         {p.installments > 1 && ` (${p.installments}x)`}
                                                     </p>
-                                                    <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">
-                                                        Auditado pelo Banco
-                                                    </p>
+                                                    {isSuccessfullyClosed && (
+                                                        <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">
+                                                            Auditado pelo Banco
+                                                        </p>
+                                                    )}
                                                 </div>
                                             </div>
                                             <div className="text-right">
@@ -319,7 +319,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 <div className="pt-6 border-t border-white/10">
                                     <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Liquidação (Auditoria Ativa)</p>
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.totalAfterDiscount.toFixed(2)}</h2>
-                                    <p className="text-[10px] font-bold text-slate-500 mt-2">VALOR BRUTO: R$ {totals.paid.toFixed(2)}</p>
+                                    <p className="text-[10px] font-bold text-slate-500 mt-2">VALOR PAGO: R$ {totals.paid.toFixed(2)}</p>
                                 </div>
                             </div>
                         </div>
@@ -343,7 +343,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                         ))}
                                     </div>
                                 )}
-                                <button onClick={(e) => handleFinishPayment(e)} disabled={isFinishing || totals.remaining > 0.05 || (isSuccessfullyClosed ? historyPayments : addedPayments).length === 0} className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all ${totals.remaining < 0.05 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-2xl hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}>{isFinishing ? <Loader2 className="animate-spin" size={24} /> : <><CheckCircle size={24} /> LIQUIDAR COMANDA</>}</button>
+                                <button onClick={(e) => handleFinishPayment(e)} disabled={isFinishing || totals.remaining > 0.05 || addedPayments.length === 0} className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all ${totals.remaining < 0.05 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-2xl hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}>{isFinishing ? <Loader2 className="animate-spin" size={24} /> : <><CheckCircle size={24} /> LIQUIDAR COMANDA</>}</button>
                             </div>
                         )}
                         {isSuccessfullyClosed && (
