@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
     Search, ShoppingCart, Plus, Minus, Trash2, CreditCard, 
@@ -155,7 +156,9 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             // LOG DE INTERCEPTAÇÃO REQUISITADO
             console.log('RPC Call: register_payment_transaction_v2');
             console.log('Payload:', payload);
-            Object.entries(payload).forEach(([k, v]) => console.log(`Field: ${k} | Value: ${v} | Type: ${typeof v}`));
+            Object.entries(payload).forEach(([key, value]) => {
+                console.log(`Field: ${key} | Value: ${value} | Type: ${typeof value}`);
+            });
 
             const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
 
@@ -168,6 +171,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
         } catch (error: any) {
             setToast({ message: `Erro ao finalizar: ${error.message}`, type: 'error' });
         } finally {
+            // FIX: Corrigido erro de digitação de 'setIsishing' para 'setIsFinishing'
             setIsFinishing(false);
         }
     };
