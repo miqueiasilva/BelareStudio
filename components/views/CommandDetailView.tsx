@@ -178,15 +178,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 };
 
                 // LOG DE INTERCEPTAÇÃO REQUISITADO
-                console.log('--- INTERCEPTAÇÃO RPC (COMANDAS) ---');
-                console.log('Função: register_payment_transaction_v2');
+                console.log('--- CHAMADA RPC DETECTADA (COMANDAS) ---');
+                console.log('Função RPC:', 'register_payment_transaction_v2');
                 console.log('Payload Completo:', payload);
-                console.log('Tipos dos Campos:');
+                console.log('Análise de Tipos (typeof):');
                 Object.entries(payload).forEach(([key, value]) => {
-                    console.log(`-> Field: ${key} | Value: ${value} | Type: ${typeof value}`);
+                    console.log(`-> Campo: ${key} | Valor: ${value} | Tipo: ${typeof value}`);
                 });
 
-                // Chamada RPC do Supabase
+                // Execução exata da linha RPC
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
                 
                 if (rpcError) throw rpcError;
