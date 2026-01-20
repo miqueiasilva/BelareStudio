@@ -28,31 +28,30 @@ interface PaymentEntry {
     installments: number;
 }
 
-// Normalizador de métodos de pagamento conforme regra 3.2
 const normalizeMethods = (methods: any[]) => {
     return (methods ?? []).map((m: any) => ({
         id: m.id,
         label: m.name,
-        type: (m.type ?? m.method_type ?? '').toLowerCase(), // pix, cash, debit, credit...
-        brand: m.brand,
-        feePercent: Number(m.fee_percentage ?? 0),
-        feeFixed: Number(m.fee_fixed ?? 0),
-        allowInstallments: !!m.allow_installments,
-        maxInstallments: Number(m.max_installments ?? 1),
+        type: (m.type || m.method_type || '').toLowerCase(),
+        brand: m.brand || 'OUTRAS',
+        max_installments: Number(m.max_installments || 1)
     }));
 };
 
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
     const { activeStudioId } = useStudio();
     const isMounted = useRef(true);
-    const [command, setCommand] = useState<any>(null);
+    
     const [loading, setLoading] = useState(true);
     const [isFinishing, setIsFinishing] = useState(false);
     const [isSuccessfullyClosed, setIsSuccessfullyClosed] = useState(false);
     
-    const [resolvedClientName, setResolvedClientName] = useState<string>('Consumidor Final');
+    // Estados do Contexto (RPC get_checkout_context)
+    const [command, setCommand] = useState<any>(null);
+    const [client, setClient] = useState<any>(null);
+    const [professional, setProfessional] = useState<any>(null);
+    const [items, setItems] = useState<any[]>([]);
     const [dbMethods, setDbMethods] = useState<any[]>([]);
-    const [addedPayments, setAddedPayments] = useState<PaymentEntry[]>([]);
     const [historyPayments, setHistoryPayments] = useState<any[]>([]); 
     
     const [activeCategory, setActiveCategory] = useState<'credit' | 'debit' | 'pix' | 'money' | null>(null);
@@ -61,6 +60,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [amountToPay, setAmountToPay] = useState<string>('0');
     
     const [discount, setDiscount] = useState<string>('0');
+    const [addedPayments, setAddedPayments] = useState<PaymentEntry[]>([]);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
     useEffect(() => {
@@ -72,32 +72,37 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
-            // REGRA 3.1: Front só chama RPC e renderiza. Removidos selects diretos.
-            const { data, error: rpcError } = await supabase.rpc("get_checkout_context", {
+            // PASSO 5 - Corrigir a rota / query do detalhe utilizando RPC
+            const { data, error } = await supabase.rpc("get_checkout_context", {
                 p_studio_id: activeStudioId,
-                p_command_id: commandId,
+                p_command_id: commandId
             });
 
-            if (rpcError) throw rpcError;
-            if (!data?.ok) throw new Error(data?.error ?? "Erro ao carregar contexto de checkout");
+            if (error) throw error;
+            if (!data?.ok) throw new Error(data?.error || "Erro ao carregar contexto");
 
             if (isMounted.current) {
                 setCommand(data.command);
-                setDbMethods(normalizeMethods(data.methods)); // REGRA 3.2: Normalização
+                setClient(data.client);
+                setProfessional(data.professional);
+                setItems(data.items || []);
+                setDbMethods(normalizeMethods(data.methods));
                 
-                // Histórico de pagamentos (se retornado pelo RPC ou via view de auditoria segura)
-                const { data: paymentsRes } = await supabase.from('v_command_payments_history').select('*').eq('command_id', commandId);
+                // Busca histórico de pagamentos via view auditada
+                const { data: paymentsRes } = await supabase
+                    .from('v_command_payments_history')
+                    .select('*')
+                    .eq('command_id', commandId);
+                
                 setHistoryPayments(paymentsRes || []);
                 
-                if (data.command.status === 'paid') setIsSuccessfullyClosed(true);
-
-                const clientObj = data.client;
-                const clientName = clientObj?.nome || clientObj?.name || clientObj?.nickname || clientObj?.apelido || 'Consumidor Final';
-                setResolvedClientName(clientName);
+                if (data.command.status === 'paid') {
+                    setIsSuccessfullyClosed(true);
+                }
             }
         } catch (e: any) {
             console.error("Fetch Context Error:", e);
-            if (isMounted.current) setToast({ message: e.message || "Erro ao sincronizar dados.", type: 'error' });
+            if (isMounted.current) setToast({ message: "Erro ao sincronizar comanda.", type: 'error' });
         } finally {
             if (isMounted.current) setLoading(false);
         }
@@ -106,7 +111,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     useEffect(() => { fetchSystemData(); }, [commandId, activeStudioId]);
 
     const totals = useMemo(() => {
-        if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0, totalNet: 0, totalAfterDiscount: 0 };
+        if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0, totalAfterDiscount: 0 };
         const subtotal = Number(command.total_amount || 0);
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
@@ -115,15 +120,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const paid = (isClosed ? historyPayments : addedPayments).reduce((acc, p) => acc + Number(p.amount || p.gross_amount || 0), 0);
         const remaining = Math.max(0, totalAfterDiscount - paid);
         
-        return { subtotal, total: isClosed ? paid : totalAfterDiscount, paid, remaining: isClosed ? 0 : remaining, totalAfterDiscount };
+        return { subtotal, total: isClosed ? paid : totalAfterDiscount, paid, remaining, totalAfterDiscount };
     }, [command, discount, addedPayments, historyPayments, isSuccessfullyClosed]);
 
     const handleInitPayment = (category: 'credit' | 'debit' | 'pix' | 'money') => {
         setActiveCategory(category);
         setAmountToPay(totals.remaining.toFixed(2));
         setSelectedInstallments(1);
-        const defaultMethod = dbMethods.find(m => m.type === category || (category === 'money' && m.type === 'cash'));
-        setSelectedMethodObj(defaultMethod || null);
+        const firstOfCategory = dbMethods.find(m => m.type === category);
+        setSelectedMethodObj(firstOfCategory || null);
     };
 
     const handleConfirmPartialPayment = () => {
@@ -135,7 +140,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             method: activeCategory,
             method_id: selectedMethodObj.id,
             amount: val,
-            brand: selectedMethodObj?.brand || 'DIRETO',
+            brand: selectedMethodObj.brand || 'DIRETO',
             installments: selectedInstallments
         };
         setAddedPayments(prev => [...prev, newPayment]);
@@ -158,7 +163,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     p_method: methodMap[entry.method] || 'pix',
                     p_brand: String(entry.brand || 'DIRETO'),
                     p_installments: Number(entry.installments),
-                    p_command_id: String(commandId), // UUID garantido pela navegação
+                    p_command_id: String(commandId),
                     p_client_id: command.client_id ? Number(command.client_id) : null,
                     p_description: `Checkout Comanda #${commandId.split('-')[0].toUpperCase()}`
                 };
@@ -178,10 +183,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setIsSuccessfullyClosed(true);
                 setAddedPayments([]);
                 setToast({ message: "Pagamento processado com sucesso!", type: 'success' });
-                fetchSystemData();
+                await fetchSystemData();
             }
         } catch (e: any) {
-            console.error("Checkout Error:", e);
             if (isMounted.current) {
                 setToast({ message: `Falha: ${e.message}`, type: 'error' });
                 setIsFinishing(false);
@@ -190,6 +194,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={40} /></div>;
+
+    const categories = [
+        { id: 'pix', label: 'Pix', icon: Smartphone, color: 'text-teal-600', bg: 'bg-teal-50' },
+        { id: 'money', label: 'Dinheiro', icon: Banknote, color: 'text-green-600', bg: 'bg-green-50' },
+        { id: 'credit', label: 'Crédito', icon: CreditCard, color: 'text-blue-600', bg: 'bg-blue-50' },
+        { id: 'debit', label: 'Débito', icon: CreditCard, color: 'text-cyan-600', bg: 'bg-cyan-50' },
+    ];
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
@@ -222,17 +233,21 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </header>
                             <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
                                 <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-2xl flex items-center justify-center shadow-sm border border-orange-100"><User size={24} /></div>
+                                    <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-2xl flex items-center justify-center shadow-sm border border-orange-100">
+                                        <User size={24} />
+                                    </div>
                                     <div>
                                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Cliente</p>
-                                        <p className="font-black text-slate-700 text-lg leading-tight">{resolvedClientName}</p>
+                                        <p className="font-black text-slate-700 text-lg leading-tight">{client?.nome || 'Consumidor Final'}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shadow-sm border border-orange-100"><Scissors size={24} /></div>
+                                    <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shadow-sm border border-orange-100">
+                                        <Briefcase size={24} />
+                                    </div>
                                     <div>
                                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Profissional Responsável</p>
-                                        <p className="font-black text-slate-700 text-lg leading-tight">{command.team_members?.name || 'Venda Direta'}</p>
+                                        <p className="font-black text-slate-700 text-lg leading-tight">{professional?.name || 'Venda Direta'}</p>
                                     </div>
                                 </div>
                             </div>
@@ -244,7 +259,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">Serviços e Itens</h3>
                             </header>
                             <div className="divide-y divide-slate-50">
-                                {command.command_items?.map((item: any) => (
+                                {items.map((item: any) => (
                                     <div key={item.id} className="p-6 flex justify-between items-center">
                                         <div><p className="font-black text-slate-700">{item.title}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} un x R$ {Number(item.price).toFixed(2)}</p></div>
                                         <p className="font-black text-slate-800">R$ {(item.price * item.quantity).toFixed(2)}</p>
@@ -256,27 +271,37 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-5 bg-slate-800 text-white flex justify-between items-center">
                                 <h3 className="font-black text-sm uppercase tracking-widest">Canais de Pagamento</h3>
-                                <span className="text-[10px] font-black bg-white/10 px-3 py-1 rounded-full">PAGO: R$ {totals.paid.toFixed(2)}</span>
+                                <span className="text-[10px] font-black bg-white/10 px-3 py-1 rounded-full">RECEBIDO: R$ {totals.paid.toFixed(2)}</span>
                             </header>
                             <div className="divide-y divide-slate-50">
-                                {(isSuccessfullyClosed ? historyPayments : addedPayments).map((p: any, idx: number) => (
-                                    <div key={p.id || idx} className="p-6 flex items-center justify-between">
-                                        <div className="flex items-center gap-4">
-                                            <div className="p-3 bg-slate-50 rounded-2xl text-slate-400">
-                                                {['PIX', 'pix'].includes(p.method) ? <Smartphone size={20}/> : <Coins size={20}/>}
+                                {(isSuccessfullyClosed ? historyPayments : addedPayments).length === 0 ? (
+                                    <div className="p-10 text-center text-slate-300 italic text-sm">Aguardando lançamento de pagamento...</div>
+                                ) : (
+                                    (isSuccessfullyClosed ? historyPayments : addedPayments).map((p: any, idx: number) => (
+                                        <div key={p.id || idx} className="p-6 flex items-center justify-between">
+                                            <div className="flex items-center gap-4">
+                                                <div className="p-3 bg-slate-50 rounded-2xl text-slate-400">
+                                                    {['PIX', 'pix'].includes(p.method || p.payment_channel) ? <Smartphone size={20}/> : <Coins size={20}/>}
+                                                </div>
+                                                <div>
+                                                    <p className="font-black text-slate-700 text-sm uppercase">
+                                                        {(p.method || p.payment_channel || 'PAGAMENTO').toUpperCase()} {p.brand && `• ${p.brand}`}
+                                                        {p.installments > 1 && ` (${p.installments}x)`}
+                                                    </p>
+                                                    {isSuccessfullyClosed && (
+                                                        <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">Auditado</p>
+                                                    )}
+                                                </div>
                                             </div>
-                                            <div>
-                                                <p className="font-black text-slate-700 text-sm uppercase">{(p.method || 'PAGAMENTO').toUpperCase()} {p.brand && `• ${p.brand}`}</p>
-                                                {isSuccessfullyClosed && <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">Auditado</p>}
+                                            <div className="text-right">
+                                                <p className="font-black text-slate-800">R$ {(p.amount || p.gross_amount || 0).toFixed(2)}</p>
+                                                {!isSuccessfullyClosed && (
+                                                    <button onClick={() => setAddedPayments(prev => prev.filter(i => i.id !== p.id))} className="text-[10px] text-rose-500 font-bold hover:underline">Remover</button>
+                                                )}
                                             </div>
                                         </div>
-                                        <div className="text-right">
-                                            <p className="font-black text-slate-800">R$ {(p.amount || p.gross_amount || 0).toFixed(2)}</p>
-                                            {!isSuccessfullyClosed && <button onClick={() => setAddedPayments(prev => prev.filter(i => i.id !== p.id))} className="text-[10px] text-rose-500 font-bold hover:underline">Remover</button>}
-                                        </div>
-                                    </div>
-                                ))}
-                                {(isSuccessfullyClosed ? historyPayments : addedPayments).length === 0 && <div className="p-10 text-center text-slate-300 italic text-sm">Nenhum pagamento registrado</div>}
+                                    ))
+                                )}
                             </div>
                         </div>
                     </div>
@@ -296,7 +321,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 <div className="pt-6 border-t border-white/10">
                                     <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Total a Liquidar</p>
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.totalAfterDiscount.toFixed(2)}</h2>
-                                    <p className="text-[10px] font-bold text-slate-500 mt-2">RESTANTE: R$ {totals.remaining.toFixed(2)}</p>
+                                    <p className="text-[10px] font-bold text-slate-500 mt-2">VALOR PAGO: R$ {totals.paid.toFixed(2)}</p>
                                 </div>
                             </div>
                         </div>
@@ -309,29 +334,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             <h4 className="text-[10px] font-black uppercase text-orange-600 tracking-widest">Configurar {activeCategory}</h4>
                                             <button onClick={() => setActiveCategory(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X size={18}/></button>
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor do Pagamento</label>
-                                            <div className="relative">
-                                                <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span>
-                                                <input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all" />
-                                            </div>
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Operadora / Bandeira</label>
-                                            <select value={selectedMethodObj?.id || ''} onChange={e => setSelectedMethodObj(dbMethods.find(m => m.id === e.target.value))} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 font-bold text-slate-700 outline-none">
-                                                {dbMethods.filter(m => m.type === activeCategory || (activeCategory === 'money' && m.type === 'cash')).map(m => (<option key={m.id} value={m.id}>{m.label} {m.brand ? `(${m.brand})` : ''}</option>))}
-                                            </select>
-                                        </div>
+                                        <div className="space-y-2"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor do Pagamento</label><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all" /></div></div>
+                                        <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Operadora / Bandeira</label><select value={selectedMethodObj?.id || ''} onChange={e => setSelectedMethodObj(dbMethods.find(m => m.id === e.target.value))} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 font-bold text-slate-700 outline-none">{dbMethods.filter(m => m.type === activeCategory || (activeCategory === 'money' && m.type === 'cash')).map(m => (<option key={m.id} value={m.id}>{m.label} {m.brand ? `(${m.brand})` : ''}</option>))}</select></div>
                                         <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">Registrar Pagamento</button>
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-2 gap-3">
-                                        {[
-                                            { id: 'pix', label: 'Pix', icon: Smartphone },
-                                            { id: 'money', label: 'Dinheiro', icon: Banknote },
-                                            { id: 'credit', label: 'Crédito', icon: CreditCard },
-                                            { id: 'debit', label: 'Débito', icon: CreditCard },
-                                        ].map(pm => (
+                                        {categories.map(pm => (
                                             <button key={pm.id} onClick={() => handleInitPayment(pm.id as any)} className="flex flex-col items-center justify-center p-6 rounded-[32px] border-2 border-slate-50 bg-slate-50/50 text-slate-400 hover:border-orange-200 hover:bg-white transition-all active:scale-95 group"><pm.icon size={28} className="mb-3 group-hover:text-orange-500 transition-colors" /><span className="text-[10px] font-black uppercase tracking-tighter">{pm.label}</span></button>
                                         ))}
                                     </div>
