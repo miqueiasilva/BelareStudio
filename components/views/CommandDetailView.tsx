@@ -36,7 +36,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [isFinishing, setIsFinishing] = useState(false);
     const [isSuccessfullyClosed, setIsSuccessfullyClosed] = useState(false);
     
-    // Estados do Contexto via RPC get_checkout_context
+    // Estados do Contexto unificado via RPC (JSON)
     const [command, setCommand] = useState<any>(null);
     const [client, setClient] = useState<any>(null);
     const [professional, setProfessional] = useState<any>(null);
@@ -62,19 +62,19 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
-            // ✅ PASSO 5 — Corrigir a rota / query: Usando RPC get_checkout_context
-            // Elimina o Erro 400 do PostgREST ao tentar dar select em relações complexas
+            // ✅ CORREÇÃO 5.1: Usando RPC para evitar Erro 400 (relation professionals does not exist)
             const { data, error } = await supabase.rpc('get_checkout_context', {
                 p_command_id: commandId
             });
 
             if (error) throw error;
-            if (!data || !data.ok) throw new Error(data?.error || "Falha ao obter contexto");
+            if (!data) throw new Error("Falha ao obter contexto da comanda.");
 
             if (isMounted.current) {
+                // Mapeando dados do JSON retornado pelo RPC
                 setCommand(data.command);
                 setClient(data.client);
-                setProfessional(data.professional);
+                setProfessional(data.professional); // team_members
                 setItems(data.items || []);
                 
                 // Normaliza métodos de pagamento para a UI
@@ -87,7 +87,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 }));
                 setDbMethods(normalizedMethods);
                 
-                // Busca histórico via View segura de Auditoria
+                // Busca histórico via View auditada
                 const { data: historyRes } = await supabase
                     .from('v_command_payments_history')
                     .select('*')
@@ -155,9 +155,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const methodMap: Record<string, string> = { 'money': 'cash', 'credit': 'credit', 'debit': 'debit', 'pix': 'pix' };
 
             for (const entry of addedPayments) {
-                // ✅ Correção: Usando exclusivamente o RPC para gravar pagamentos.
-                // O RPC resolve o problema de 'column method does not exist' ao gerenciar 
-                // as colunas reais internamente (payment_method, method_id, etc).
+                // ✅ CORREÇÃO: Usando estritamente register_payment_transaction_v2
+                // Isso evita erros de colunas inexistentes como 'method' no command_payments
                 const payload = {
                     p_studio_id: String(activeStudioId),
                     p_professional_id: command.professional_id ? String(command.professional_id) : null,
@@ -170,7 +169,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     p_description: `Checkout Comanda #${commandId.split('-')[0].toUpperCase()}`
                 };
 
-                // Logs de auditoria para o console (Auditoria Senior)
+                // Logs de auditoria senior
                 console.log('--- RPC register_payment_transaction_v2 ---');
                 console.log('Payload:', payload);
 
@@ -194,13 +193,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={40} /></div>;
-
-    const categories = [
-        { id: 'pix', label: 'Pix', icon: Smartphone, color: 'text-teal-600', bg: 'bg-teal-50' },
-        { id: 'money', label: 'Dinheiro', icon: Banknote, color: 'text-green-600', bg: 'bg-green-50' },
-        { id: 'credit', label: 'Crédito', icon: CreditCard, color: 'text-blue-600', bg: 'bg-blue-50' },
-        { id: 'debit', label: 'Débito', icon: CreditCard, color: 'text-cyan-600', bg: 'bg-cyan-50' },
-    ];
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
@@ -335,12 +327,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             <button onClick={() => setActiveCategory(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X size={18}/></button>
                                         </div>
                                         <div className="space-y-2"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor do Pagamento</label><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all" /></div></div>
-                                        <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Operadora / Bandeira</label><select value={selectedMethodObj?.id || ''} onChange={e => setSelectedMethodObj(dbMethods.find(m => m.id === e.target.value))} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 font-bold text-slate-700 outline-none">{dbMethods.filter(m => m.type === activeCategory || (activeCategory === 'money' && m.type === 'cash')).map(m => (<option key={m.id} value={m.id}>{m.name} {m.brand ? `(${m.brand})` : ''}</option>))}</select></div>
+                                        <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Operadora / Bandeira</label><select value={selectedMethodObj?.id || ''} onChange={e => setSelectedMethodObj(dbMethods.find(m => m.id === e.target.value))} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 font-bold text-slate-700 outline-none">{dbMethods.filter(m => m.type === activeCategory || (activeCategory === 'money' && m.type === 'cash')).map(m => (<option key={m.id} value={m.id}>{m.label} {m.brand ? `(${m.brand})` : ''}</option>))}</select></div>
                                         <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">Registrar Pagamento</button>
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-2 gap-3">
-                                        {categories.map(pm => (
+                                        {[
+                                            { id: 'pix', label: 'Pix', icon: Smartphone },
+                                            { id: 'money', label: 'Dinheiro', icon: Banknote },
+                                            { id: 'credit', label: 'Crédito', icon: CreditCard },
+                                            { id: 'debit', label: 'Débito', icon: CreditCard },
+                                        ].map(pm => (
                                             <button key={pm.id} onClick={() => handleInitPayment(pm.id as any)} className="flex flex-col items-center justify-center p-6 rounded-[32px] border-2 border-slate-50 bg-slate-50/50 text-slate-400 hover:border-orange-200 hover:bg-white transition-all active:scale-95 group"><pm.icon size={28} className="mb-3 group-hover:text-orange-500 transition-colors" /><span className="text-[10px] font-black uppercase tracking-tighter">{pm.label}</span></button>
                                         ))}
                                     </div>
