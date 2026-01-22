@@ -11,7 +11,7 @@ import {
     ChevronRight, CalendarRange, Filter as FilterIcon, History, CheckCircle
 } from 'lucide-react';
 import { 
-    format, addDays, endOfDay, endOfMonth, isSameDay, isValid 
+    format, addDays, endOfDay, endOfMonth, isSameDay, isValid, parseISO, parse 
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
@@ -26,11 +26,33 @@ const formatCurrency = (value: number) => {
     }).format(value);
 };
 
-// Helper para evitar RangeError: Invalid time value
+/**
+ * Parsing de data ultra-seguro para evitar RangeError: Invalid time value
+ */
+const safeDate = (value: any): Date | null => {
+    if (!value) return null;
+    if (value instanceof Date) return isValid(value) ? value : null;
+
+    if (typeof value === "string") {
+        // ISO Completo ou Data Pura (2026-01-22)
+        if (value.includes("T") || /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+            const d = parseISO(value);
+            return isValid(d) ? d : null;
+        }
+        // Horário puro (14:30) - Converte para data de hoje com esse horário
+        if (/^\d{2}:\d{2}(:\d{2})?$/.test(value)) {
+            const d = parse(value.slice(0,5), "HH:mm", new Date());
+            return isValid(d) ? d : null;
+        }
+        const d = new Date(value);
+        return isValid(d) ? d : null;
+    }
+    return null;
+};
+
 const safeFormatTime = (dateValue: any) => {
-    if (!dateValue) return '--:--';
-    const d = new Date(dateValue);
-    return isValid(d) ? format(d, 'HH:mm') : '--:--';
+    const d = safeDate(dateValue);
+    return d ? format(d, 'HH:mm') : '--:--';
 };
 
 const StatCard = ({ title, value, icon: Icon, colorClass, subtext }: any) => (
@@ -173,13 +195,16 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         return () => { mounted = false; };
     }, [dateRange, activeStudioId]);
 
-    // Busca Recebimentos Recentes via RPC
+    // Busca Recebimentos Recentes via RPC sincronizado
     useEffect(() => {
         if (!activeStudioId) return;
         const fetchRecentPayments = async () => {
             setLoadingPayments(true);
             try {
-                const { data, error } = await supabase.rpc("get_recent_payments", { p_limit: 10 });
+                const { data, error } = await supabase.rpc("get_recent_payments_by_studio", { 
+                    p_studio_id: activeStudioId,
+                    p_limit: 10 
+                });
                 if (error) throw error;
                 setRecentPayments(data || []);
             } catch (e) {

@@ -18,11 +18,18 @@ const statusMap: Record<string, { label: string; color: string; bg: string }> = 
     em_espera: { label: 'Em Espera', color: 'text-slate-600', bg: 'bg-slate-100' }
 };
 
-// Helper para evitar RangeError: Invalid time value
+/**
+ * Função de formatação segura para prevenir "RangeError: Invalid time value"
+ */
 const safeFormat = (dateValue: any, fmt: string) => {
     if (!dateValue) return '--:--';
-    const d = new Date(dateValue);
-    return isValid(d) ? format(d, fmt) : '--:--';
+    try {
+        const d = new Date(dateValue);
+        if (!isValid(d)) return '--:--';
+        return format(d, fmt);
+    } catch (e) {
+        return '--:--';
+    }
 };
 
 interface TodayScheduleWidgetProps {
@@ -78,7 +85,7 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
                                         <div className="flex items-center justify-between mb-0.5">
                                             <span className="text-xs font-black text-slate-800">
                                                 {safeFormat(app.date, 'HH:mm')}
-                                                {dateLabel !== 'Hoja' && <span className="ml-1 opacity-40 text-[9px]">({safeFormat(app.date, 'dd/MM')})</span>}
+                                                {dateLabel !== 'Hoje' && <span className="ml-1 opacity-40 text-[9px]">({safeFormat(app.date, 'dd/MM')})</span>}
                                             </span>
                                             <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter ${statusInfo.bg} ${statusInfo.color}`}>
                                                 {statusInfo.label}

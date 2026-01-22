@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
@@ -267,12 +268,25 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!isAdmin && appointment.status === 'concluido') { setToast({ message: "Permissão Negada: Apenas o Gestor pode alterar registros concluídos.", type: 'error' }); return; }
         if (appointment.status === 'concluido' && newStatus !== 'concluido') { if (!window.confirm("Atenção: O lançamento financeiro será ESTORNADO do caixa. Continuar?")) return; await supabase.from('financial_transactions').delete().eq('appointment_id', id); }
         const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
-        if (!error) { setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a)); } else { fetchAppointments(); }
+        if (!error) { 
+            setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a)); 
+            // CORREÇÃO: Força recarregamento total para sincronizar integridade
+            fetchAppointments();
+        } else { fetchAppointments(); }
         setActiveAppointmentDetail(null);
     };
 
     const handleConvertToCommand = async (appointment: LegacyAppointment) => {
         if (!activeStudioId || !appointment?.id) return;
+
+        // VERIFICAÇÃO DE INTEGRIDADE LOCAL ANTES DO RPC
+        // Assume que resources (profissionais da unidade) é a fonte da verdade
+        const isProfessionalInStudio = resources.some(r => String(r.id) === String(appointment.professional?.id));
+        if (!isProfessionalInStudio) {
+            setToast({ message: "ERRO DE INTEGRIDADE: Este profissional não pertence a esta unidade. Por favor, reatribua o atendimento antes de finalizar.", type: 'error' });
+            fetchAppointments(); // Força reload para mostrar dados reais
+            return;
+        }
 
         const studioUuid = getValidUUID(activeStudioId);
         const client_id_raw = appointment.client?.id;
@@ -314,6 +328,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             if (itemError) throw itemError;
 
             await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
+            
+            // CORREÇÃO: Sincronização imediata pós-sucesso para evitar estados obsoletos
+            await fetchAppointments();
             
             setToast({ message: `Comanda gerada para ${appointment.client?.nome || 'Cliente'}! 💳`, type: 'success' });
             setActiveAppointmentDetail(null);
