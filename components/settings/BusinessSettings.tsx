@@ -110,10 +110,19 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
         if (!activeStudioId) return;
         setIsSaving(true);
         try {
+            // ✅ CORREÇÃO: Utilizando RPC para salvar configurações de horários conforme solicitado
+            const { error: rpcError } = await supabase.rpc('save_business_settings', {
+                p_settings: formData.business_hours
+            });
+
+            if (rpcError) throw rpcError;
+
+            // Salva o restante das configurações via upsert tradicional
             const payload = { ...formData, id: activeStudioId, updated_at: new Date() };
             const { error } = await supabase.from('business_settings').upsert(payload);
             if (error) throw error;
-            setToast({ message: "Perfil atualizado!", type: 'success' });
+
+            setToast({ message: "Perfil e horários atualizados! ✅", type: 'success' });
             setTimeout(onBack, 1000);
         } catch (err: any) {
             setToast({ message: `Erro ao salvar: ${err.message}`, type: 'error' });

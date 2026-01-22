@@ -4,7 +4,7 @@ import {
     Search, ShoppingCart, Plus, Minus, Trash2, CreditCard, 
     Banknote, Smartphone, CheckCircle, Package, Scissors, 
     Calendar, User, X, Printer, ArrowRight, Loader2,
-    Eraser
+    Eraser, Briefcase, ChevronDown
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
@@ -69,6 +69,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+    const [selectedProfessionalId, setSelectedProfessionalId] = useState<string>('');
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
     const [discount, setDiscount] = useState<string>('');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -77,6 +78,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
     const [dbServices, setDbServices] = useState<any[]>([]);
     const [dbProducts, setDbProducts] = useState<any[]>([]);
     const [dbAppointments, setDbAppointments] = useState<any[]>([]);
+    const [dbProfessionals, setDbProfessionals] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isFinishing, setIsFinishing] = useState(false);
 
@@ -88,17 +90,20 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             const startOfToday = new Date(today.setHours(0, 0, 0, 0)).toISOString();
             const endOfToday = new Date(today.setHours(23, 59, 59, 999)).toISOString();
 
-            const [servicesRes, productsRes, appointmentsRes] = await Promise.all([
+            // ✅ Carregar lista de profissionais conforme solicitado
+            const [servicesRes, productsRes, appointmentsRes, profsRes] = await Promise.all([
                 supabase.from('services').select('*').eq('studio_id', activeStudioId).eq('ativo', true).order('nome'),
                 supabase.from('products').select('*').eq('studio_id', activeStudioId).eq('ativo', true).order('name'),
-                supabase.from('appointments').select('*').eq('studio_id', activeStudioId).gte('date', startOfToday).lte('date', endOfToday).neq('status', 'cancelado').order('date')
+                supabase.from('appointments').select('*').eq('studio_id', activeStudioId).gte('date', startOfToday).lte('date', endOfToday).neq('status', 'cancelado').order('date'),
+                supabase.from('professionals').select('uuid_id, name').eq('studio_id', activeStudioId).order('name')
             ]);
 
             if (servicesRes.data) setDbServices(servicesRes.data);
             if (productsRes.data) setDbProducts(productsRes.data);
             if (appointmentsRes.data) setDbAppointments(appointmentsRes.data);
+            if (profsRes.data) setDbProfessionals(profsRes.data);
         } catch (e) {
-            setToast({ message: "Erro ao sincronizar produtos.", type: 'error' });
+            setToast({ message: "Erro ao sincronizar dados do PDV.", type: 'error' });
         } finally {
             setIsLoading(false);
         }
@@ -110,6 +115,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
         setCart([]);
         setDiscount('');
         setSelectedClient(null);
+        setSelectedProfessionalId('');
         setPaymentMethod('pix');
         setLastTransaction(null);
         setSearchTerm('');
@@ -143,7 +149,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
 
             const payload = {
                 p_studio_id: String(activeStudioId),
-                p_professional_id: null,
+                p_professional_id: selectedProfessionalId || null,
                 p_amount: Number(total),
                 p_method: methodMapping[paymentMethod] || 'pix',
                 p_brand: '',
@@ -156,11 +162,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             // LOG DE INTERCEPTAÇÃO REQUISITADO
             console.log('--- RPC INVOCATION: register_payment_transaction_v2 ---');
             console.log('Payload:', payload);
-            Object.entries(payload).forEach(([key, value]) => {
-                console.log(`Field: ${key} | Value: ${value} | Type: ${typeof value}`);
-            });
 
-            // Execução exata da linha RPC
             const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
 
             if (rpcError) throw rpcError;
@@ -205,9 +207,9 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             <div className="flex-1 flex flex-col min-w-0 border-r border-slate-200">
                 <div className="bg-white p-4 border-b border-slate-200 space-y-4">
                     <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
-                        <button onClick={() => setActiveTab('servicos')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'servicos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-50'}`}><Scissors size={16} /> Serviços</button>
-                        <button onClick={() => setActiveTab('produtos')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'produtos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-50'}`}><Package size={16} /> Produtos</button>
-                        <button onClick={() => setActiveTab('agenda')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'agenda' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-50'}`}><Calendar size={16} /> Agenda</button>
+                        <button onClick={() => setActiveTab('servicos')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'servicos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}><Scissors size={16} /> Serviços</button>
+                        <button onClick={() => setActiveTab('produtos')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'produtos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}><Package size={16} /> Produtos</button>
+                        <button onClick={() => setActiveTab('agenda')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'agenda' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}><Calendar size={16} /> Agenda</button>
                     </div>
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
@@ -257,7 +259,26 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                     )}
                 </div>
 
-                <div className="bg-slate-50/80 p-6 border-t border-slate-200 space-y-4">
+                <div className="bg-slate-50/80 p-6 border-t border-slate-200 space-y-6">
+                    {/* Seletor de Profissional */}
+                    <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Profissional da Venda</label>
+                        <div className="relative group">
+                            <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-orange-500 transition-colors" size={16} />
+                            <select 
+                                value={selectedProfessionalId}
+                                onChange={e => setSelectedProfessionalId(e.target.value)}
+                                className="w-full pl-11 pr-10 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition-all font-bold text-slate-700 appearance-none cursor-pointer shadow-sm"
+                            >
+                                <option value="">Nenhum (Venda Direta)</option>
+                                {dbProfessionals.map(p => (
+                                    <option key={p.uuid_id} value={p.uuid_id}>{p.name}</option>
+                                ))}
+                            </select>
+                            <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={16} />
+                        </div>
+                    </div>
+
                     <div className="flex justify-between items-center border-t pt-4">
                         <span className="text-xs font-black uppercase text-slate-400">Total</span>
                         <span className="text-3xl font-black text-slate-800">R$ {total.toFixed(2)}</span>
