@@ -38,7 +38,6 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
     const logoInputRef = useRef<HTMLInputElement>(null);
 
     const [formData, setFormData] = useState<any>({
-        id: null,
         business_name: '',
         cnpj_cpf: '',
         phone: '',
@@ -77,48 +76,42 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
         return sanitized;
     };
 
-    useEffect(() => {
+    const fetchProfile = async () => {
         if (!activeStudioId) return;
-        const fetchSettings = async () => {
-            setIsLoading(true);
-            try {
-                // ✅ Utilizando RPC para buscar o perfil completo conforme solicitado
-                const { data, error } = await supabase.rpc('get_business_profile');
-                
-                if (error) throw error;
-                
-                if (data) {
-                    setFormData({
-                        id: activeStudioId,
-                        business_name: data.business_name ?? '',
-                        cnpj_cpf: data.cnpj_cpf ?? '',
-                        phone: data.phone ?? '',
-                        email: data.email ?? '',
-                        description: data.description ?? '',
-                        zip_code: data.zip_code ?? '',
-                        street: data.street ?? '',
-                        number: data.number ?? '',
-                        district: data.district ?? '',
-                        city: data.city ?? '',
-                        state: data.state ?? '',
-                        instagram_handle: data.instagram_handle ?? '',
-                        primary_color: data.primary_color ?? '#f97316',
-                        logo_url: data.logo_url ?? '',
-                        cover_url: data.cover_url ?? '',
-                        portfolio_urls: data.portfolio_urls ?? [],
-                        business_hours: sanitizeBusinessHours(data.business_hours)
-                    });
-                } else {
-                    setFormData(p => ({ ...p, business_hours: sanitizeBusinessHours({}) }));
-                }
-            } catch (err) {
-                console.error("Erro ao carregar dados do perfil:", err);
-                setToast({ message: "Erro ao carregar dados.", type: 'error' });
-            } finally {
-                setIsLoading(false);
+        try {
+            const { data, error } = await supabase.rpc('get_business_profile');
+            if (error) throw error;
+            if (data) {
+                setFormData({
+                    business_name: data.business_name ?? '',
+                    cnpj_cpf: data.cnpj_cpf ?? '',
+                    phone: data.phone ?? '',
+                    email: data.email ?? '',
+                    description: data.description ?? '',
+                    zip_code: data.zip_code ?? '',
+                    street: data.street ?? '',
+                    number: data.number ?? '',
+                    district: data.district ?? '',
+                    city: data.city ?? '',
+                    state: data.state ?? '',
+                    instagram_handle: data.instagram_handle ?? '',
+                    primary_color: data.primary_color ?? '#f97316',
+                    logo_url: data.logo_url ?? '',
+                    cover_url: data.cover_url ?? '',
+                    portfolio_urls: data.portfolio_urls ?? [],
+                    business_hours: sanitizeBusinessHours(data.business_hours)
+                });
             }
-        };
-        fetchSettings();
+        } catch (err) {
+            console.error("Erro ao carregar perfil:", err);
+            setToast({ message: "Erro ao carregar dados.", type: 'error' });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchProfile();
     }, [activeStudioId]);
 
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, type: 'cover' | 'logo') => {
@@ -139,7 +132,8 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
         if (!activeStudioId) return;
         setIsSaving(true);
         try {
-            const { error: rpcError } = await supabase.rpc('save_business_profile', {
+            // ✅ Utilizando o RPC save_business_profile conforme a assinatura solicitada
+            const { error } = await supabase.rpc('save_business_profile', {
                 p_business_name: formData.business_name,
                 p_cnpj_cpf: formData.cnpj_cpf,
                 p_phone: formData.phone,
@@ -155,15 +149,27 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                 p_primary_color: formData.primary_color,
                 p_logo_url: formData.logo_url,
                 p_cover_url: formData.cover_url,
-                p_portfolio_urls: formData.portfolio_urls || [],
+                p_portfolio_urls: formData.portfolio_urls,
                 p_business_hours: formData.business_hours
             });
 
-            if (rpcError) throw rpcError;
+            if (error) throw error;
 
-            setToast({ message: "Perfil e horários salvos com sucesso! ✅", type: 'success' });
-            setTimeout(onBack, 1000);
+            // ✅ Recarrega para garantir que UI está 100% igual ao banco
+            const { data: refreshData, error: refreshError } = await supabase.rpc('get_business_profile');
+            if (refreshError) throw refreshError;
+            
+            if (refreshData) {
+                setFormData(prev => ({
+                    ...prev,
+                    business_hours: sanitizeBusinessHours(refreshData.business_hours)
+                }));
+            }
+
+            setToast({ message: "Perfil atualizado com sucesso! ✅", type: 'success' });
+            setTimeout(onBack, 1500);
         } catch (err: any) {
+            console.error(err);
             setToast({ message: `Erro ao salvar: ${err.message}`, type: 'error' });
         } finally { setIsSaving(false); }
     };
@@ -386,7 +392,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
             <div className="fixed bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-white via-white to-transparent flex justify-center pointer-events-none z-50">
                 <button onClick={handleSave} disabled={isSaving} className="pointer-events-auto min-w-[240px] px-12 py-5 bg-slate-800 hover:bg-slate-900 text-white font-black rounded-[24px] shadow-2xl flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50">
                     {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                    {isSaving ? 'Gravando...' : 'Salvar Perfil do Estúdio'}
+                    {isSaving ? 'Sincronizando...' : 'Salvar Perfil do Estúdio'}
                 </button>
             </div>
         </div>
