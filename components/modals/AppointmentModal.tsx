@@ -80,18 +80,19 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     if (!activeStudioId) return;
     setLoadingProfessionals(true);
     try {
-      // ✅ CORREÇÃO: Utilizando a tabela professionals e a coluna uuid_id
+      // ✅ UNIFICAÇÃO: Busca da tabela professionals nominal para garantir id_uuid canônico
       const { data, error: sbError } = await supabase
         .from('professionals')
-        .select('id:uuid_id, name, photo_url, role, active, services_enabled')
+        .select('id_uuid, name, photo_url, role, active, services_enabled')
         .eq('studio_id', activeStudioId)
+        .eq('active', true)
         .order('name');
 
       if (sbError) throw sbError;
 
       if (data) {
         const mapped: LegacyProfessional[] = data.map((p: any) => ({
-          id: p.id,
+          id: p.id_uuid, // ✅ ID Canônico
           name: p.name,
           avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
           role: p.role,
@@ -111,12 +112,17 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     fetchProfessionals();
   }, [activeStudioId]);
 
+  // ✅ REGRA DE FILTRO: Só mostra serviços habilitados para o profissional selecionado
   const filteredServicesToSelect = useMemo(() => {
     if (!formData.professional) return [];
     const profSkills = formData.professional.services_enabled;
+    
+    // Se o profissional tiver habilidades cadastradas, filtra estritamente
     if (profSkills && Array.isArray(profSkills) && profSkills.length > 0) {
       return dbServices.filter(s => profSkills.includes(s.id));
     }
+    
+    // Fallback: Se não houver filtro cadastrado, mostra todos (comportamento permissivo configurável)
     return dbServices;
   }, [dbServices, formData.professional]);
 
@@ -263,6 +269,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
 
   const handleSelectProfessional = (professional: LegacyProfessional) => {
+    // Ao trocar o profissional, limpamos os serviços caso ele não faça os serviços selecionados anteriormente
     if (formData.professional?.id !== professional.id) {
         setSelectedServices([]);
         setManualPrice(0);
@@ -313,11 +320,12 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             </div>
           </div>
           <div className="space-y-2">
-             <label className="text-xs font-bold text-slate-500 uppercase">Serviços <span className="text-red-500">*</span></label>
+             <label className="text-xs font-bold text-slate-500 uppercase">Serviços Habilitados <span className="text-red-500">*</span></label>
              {selectedServices.map((service, index) => (
                 <div key={index} className="flex items-center justify-between bg-slate-50 p-3 rounded-lg border border-slate-200 group"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center"><Tag className="w-4 h-4" /></div><div><p className="text-sm font-semibold text-slate-800">{service.name}</p><p className="text-xs text-slate-500">R$ {service.price.toFixed(2)} • {service.duration} min</p></div></div><button onClick={() => handleRemoveService(index)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={16} /></button></div>
              ))}
              <button onClick={() => setSelectionModal('service')} disabled={loadingServices || !formData.professional} className="w-full py-2 border border-dashed border-blue-300 rounded-lg text-blue-600 text-sm font-semibold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">{loadingServices ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlusCircle size={16} />}{!formData.professional ? 'Selecione um profissional primeiro' : (loadingServices ? 'Carregando...' : 'Adicionar Serviço')}</button>
+             {!formData.professional && <p className="text-[10px] text-slate-400 italic">A lista de serviços é filtrada pelas habilidades de cada profissional.</p>}
           </div>
           <div className="flex items-center gap-4">
               <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 shadow-sm h-[64px]"><div className="p-1.5 bg-green-50 rounded text-green-600"><DollarSign className="w-4 h-4" /></div><div className="flex flex-col w-full"><span className="text-[10px] text-slate-400 uppercase font-bold tracking-wide">Valor Total</span><input type="number" value={manualPrice} onChange={(e) => setManualPrice(Number(e.target.value))} className="font-bold text-slate-800 bg-transparent outline-none w-full p-0 border-none focus:ring-0 text-sm" /></div></div>

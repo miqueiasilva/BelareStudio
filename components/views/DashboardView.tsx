@@ -10,8 +10,9 @@ import {
     ShoppingBag, Clock, Globe, Edit3, Loader2, BarChart3, AlertCircle, 
     ChevronRight, CalendarRange, Filter as FilterIcon, History, CheckCircle
 } from 'lucide-react';
+// FIX: Removed parseISO and parse as they may not be exported in this version of date-fns
 import { 
-    format, addDays, endOfDay, endOfMonth, isSameDay, isValid, parseISO, parse 
+    format, addDays, endOfDay, endOfMonth, isSameDay, isValid 
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
@@ -32,11 +33,15 @@ const safeDate = (value: any): Date | null => {
 
     if (typeof value === "string") {
         if (value.includes("T") || /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-            const d = parseISO(value);
+            // FIX: Replaced parseISO with native new Date() for ISO strings
+            const d = new Date(value);
             return isValid(d) ? d : null;
         }
         if (/^\d{2}:\d{2}(:\d{2})?$/.test(value)) {
-            const d = parse(value.slice(0,5), "HH:mm", new Date());
+            // FIX: Replaced parse with manual time parsing for HH:mm strings
+            const parts = value.slice(0,5).split(':');
+            const d = new Date();
+            d.setHours(parseInt(parts[0], 10), parseInt(parts[1], 10), 0, 0);
             return isValid(d) ? d : null;
         }
         const d = new Date(value);

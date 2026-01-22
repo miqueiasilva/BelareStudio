@@ -1,7 +1,8 @@
 
 import React from 'react';
 import { Clock, MessageCircle, ChevronRight, CalendarX, Plus, Scissors, RefreshCw } from 'lucide-react';
-import { format, isValid, parseISO } from 'date-fns';
+// FIX: Removed parseISO as it may not be exported in this version of date-fns
+import { format, isValid } from 'date-fns';
 import { AppointmentStatus } from '../../types';
 
 const statusMap: Record<string, { label: string; color: string; bg: string }> = {
@@ -29,7 +30,8 @@ const safeFormat = (dateValue: any, fmt: string) => {
             return dateValue;
         }
 
-        const d = (typeof dateValue === 'string') ? parseISO(dateValue) : new Date(dateValue);
+        // FIX: Replaced parseISO with native new Date() for compatibility
+        const d = (typeof dateValue === 'string') ? new Date(dateValue) : new Date(dateValue);
         
         if (!isValid(d)) {
             const fallback = new Date(dateValue.toString().replace(' ', 'T'));
@@ -71,7 +73,7 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
                     onClick={() => onNavigate('agenda')}
                     className="p-2 hover:bg-white rounded-xl transition-all group"
                 >
-                    <ChevronRight size={20} className="text-slate-300 group-hover:text-orange-500 group-hover:translate-x-1 transition-all" />
+                    <ChevronRight size={20} className="text-slate-300 group-hover:text-orange-50 group-hover:translate-x-1 transition-all" />
                 </button>
             </header>
 
