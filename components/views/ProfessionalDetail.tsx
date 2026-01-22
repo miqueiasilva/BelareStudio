@@ -75,6 +75,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
 
             const normalized = {
                 ...initialProf,
+                nome: (initialProf as any).nome || initialProf.name || '',
                 cpf: (initialProf as any).cpf || '',
                 pix_key: (initialProf as any).pix_key || '',
                 bio: (initialProf as any).bio || '',
@@ -82,7 +83,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 phone: (initialProf as any).phone || '',
                 birth_date: (initialProf as any).birth_date || '',
                 order_index: (initialProf as any).order_index ?? 0,
-                // Tenta commission_rate depois commission_percent
                 commission_rate: (initialProf as any).commission_rate ?? (initialProf as any).commission_percent ?? 30,
                 permissions: (initialProf as any).permissions || { view_calendar: true, edit_calendar: true },
                 services_enabled: (initialProf as any).services_enabled || [],
@@ -109,7 +109,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
             const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
             if (uploadError) throw uploadError;
             const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
-            await supabase.from('team_members').update({ photo_url: publicUrl }).eq('id', prof.id);
+            await supabase.from('professionals').update({ photo_url: publicUrl }).eq('id_uuid', prof.id);
             setProf(prev => ({ ...prev, photo_url: publicUrl }));
             alert("Foto de perfil atualizada!");
         } catch (error: any) {
@@ -125,7 +125,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         setIsLoading(true);
         try {
             const payload = {
-                name: prof.name || 'Sem nome',
+                nome: prof.nome || 'Sem nome',
                 role: prof.role || 'Profissional',
                 phone: prof.phone || null,
                 email: prof.email || null,
@@ -135,7 +135,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 active: !!prof.active,
                 birth_date: prof.birth_date === "" ? null : prof.birth_date,
                 order_index: parseInt(String(prof.order_index)) || 0,
-                // Salva como commission_rate conforme schema real
                 commission_rate: isNaN(parseFloat(String(prof.commission_rate))) ? 0 : parseFloat(String(prof.commission_rate)),
                 permissions: prof.permissions,
                 services_enabled: prof.services_enabled,
@@ -146,7 +145,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 resource_id: prof.resource_id ? prof.resource_id : null,
                 studio_id: activeStudioId
             };
-            const { error } = await supabase.from('team_members').update(payload).eq('id', prof.id).eq('studio_id', activeStudioId);
+            const { error } = await supabase.from('professionals').update(payload).eq('id_uuid', prof.id).eq('studio_id', activeStudioId);
             if (error) throw error;
             alert("Dados salvos com sucesso! ✅");
             onSave();
@@ -162,7 +161,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         if (!window.confirm("Excluir este colaborador permanentemente?")) return;
         setIsLoading(true);
         try {
-            const { error } = await supabase.from('team_members').delete().eq('id', prof.id).eq('studio_id', activeStudioId);
+            const { error } = await supabase.from('professionals').delete().eq('id_uuid', prof.id).eq('studio_id', activeStudioId);
             if (error) throw error;
             onBack();
         } catch (error: any) {
@@ -172,7 +171,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         }
     };
 
-    // FIX: Updated id type to string | number
     const toggleService = (id: string | number) => {
         const current = prof.services_enabled || [];
         const next = current.includes(id) ? current.filter((sId: string | number) => sId !== id) : [...current, id];
@@ -201,7 +199,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"><ChevronLeft size={24} /></button>
                     <div>
-                        <h2 className="text-xl font-bold text-slate-800">{prof.name}</h2>
+                        <h2 className="text-xl font-bold text-slate-800">{prof.nome}</h2>
                         <p className="text-xs text-slate-500 font-medium uppercase tracking-widest">{prof.role}</p>
                     </div>
                 </div>
@@ -248,11 +246,10 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                             {prof.photo_url ? <img src={prof.photo_url} className="w-full h-full object-cover" alt="Avatar" /> : <User size={64} className="m-12 text-slate-300" />}
                                             <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                 {isLoading ? <Loader2 className="text-white animate-spin" size={20} /> : <Camera className="text-white" />}
-                                                <span className="text-[10px] text-white font-black uppercase mt-2">Trocar Foto</span>
                                             </div>
                                         </div>
                                         <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*" />
-                                        <h3 className="font-black text-slate-800 text-lg">{prof.name}</h3>
+                                        <h3 className="font-black text-slate-800 text-lg">{prof.nome}</h3>
                                         <p className="text-xs font-bold text-slate-400 uppercase mt-1 tracking-widest">{prof.role}</p>
                                     </div>
                                 </Card>
@@ -280,7 +277,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                             <div className="lg:col-span-2 space-y-6">
                                 <Card title="Informações Pessoais">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <EditField label="Nome Completo" name="name" value={prof.name} onChange={handleInputChange} icon={User} span="md:col-span-2" />
+                                        <EditField label="Nome Completo" name="nome" value={prof.nome} onChange={handleInputChange} icon={User} span="md:col-span-2" />
                                         <EditField label="Cargo / Especialidade" name="role" value={prof.role} onChange={handleInputChange} />
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-wider">Sala de Atendimento</label>
@@ -352,7 +349,6 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                             <div className="p-8 bg-gradient-to-br from-orange-50 to-orange-100 rounded-[32px] border border-orange-200 text-center">
                                 <label className="block text-[10px] font-black text-orange-800 uppercase tracking-widest mb-4">Taxa de Comissão Padrão (%)</label>
                                 <div className="relative inline-block"><input type="number" step="0.01" value={prof.commission_rate} onChange={handleInputChange} name="commission_rate" className="w-40 border-2 border-orange-300 rounded-3xl px-6 py-5 text-5xl font-black text-orange-600 outline-none focus:border-orange-500 bg-white shadow-inner text-center" /><span className="absolute right-4 top-1/2 -translate-y-1/2 text-2xl font-black text-orange-300">%</span></div>
-                                <p className="text-xs text-orange-700 font-medium mt-6">Este valor será a base para o cálculo de todos os serviços realizados por este profissional no módulo de Remunerações.</p>
                             </div>
                         </Card>
                     )}

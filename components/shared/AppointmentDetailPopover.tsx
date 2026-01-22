@@ -228,8 +228,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                     service_name: appointment.service.name,
                     price: appointment.service.price,
                     // FIX: Cast professional_id to string to match CheckoutModalProps
-                    professional_id: String(appointment.professional.id),
-                    professional_name: appointment.professional.name
+                    professional_id: String(appointment.professional.id)
                 }}
                 onSuccess={() => {
                     onUpdateStatus(appointment.id, 'concluido');

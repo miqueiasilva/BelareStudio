@@ -127,20 +127,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfDay(currentDate);
             }
 
-            // ✅ CORREÇÃO 409: Join explícito pela FK nominal para evitar conflito de PostgREST
+            // ✅ CORREÇÃO 409 & 400: Join explícito e uso de 'nome' em vez de 'name' se falhar
             const { data: apptRes, error: apptErr } = await supabase
                 .from('appointments')
                 .select(`
                     *,
                     professional:professionals!appointments_professional_same_studio_fk (
-                        id_uuid, name, photo_url
+                        id_uuid, nome, photo_url
                     )
                 `)
                 .eq('studio_id', activeStudioId)
                 .gte('date', rangeStart.toISOString())
                 .lte('date', rangeEnd.toISOString())
                 .neq('status', 'cancelado')
-                .order('date', { ascending: true }); // ✅ CORREÇÃO 400: Ordenação por coluna real
+                .order('date', { ascending: true });
 
             const { data: blocksRes, error: blocksErr } = await supabase
                 .from('schedule_blocks')
@@ -166,8 +166,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 setAppointments([...mappedAppts, ...mappedBlocks]);
             }
         } catch (e: any) { 
-            console.error("AtendimentosView: Erro ao carregar dados.", e);
-            if (isMounted.current) setToast({ message: "Sincronização pendente. Verifique sua conexão.", type: 'error' });
+            console.error("AtendimentosView: Falha na sincronização.", e);
+            if (isMounted.current) setToast({ message: "Sincronização pendente. Verifique as configurações de rede.", type: 'error' });
         } finally { 
             if (isMounted.current) setIsLoadingData(false); 
         }
@@ -176,27 +176,29 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const fetchResources = async () => {
         if (authLoading || !user || !activeStudioId) return;
         try {
-            // ✅ CORREÇÃO: Usando a tabela professionals unificada
+            // ✅ CORREÇÃO 400: Alterado 'name' para 'nome' e garantido 'id_uuid'
             const { data, error } = await supabase
                 .from('professionals')
-                .select('id_uuid, name, photo_url, role, active, show_in_calendar, order_index, services_enabled')
+                .select('id_uuid, nome, photo_url, role, active, show_in_calendar, order_index, services_enabled')
                 .eq('active', true)
                 .eq('studio_id', activeStudioId)
-                .order('name', { ascending: true });
+                .order('nome', { ascending: true });
             
             if (error) throw error;
             if (data && isMounted.current) {
                 const mapped = data.filter((m: any) => m.show_in_calendar !== false).map((p: any) => ({ 
                     id: p.id_uuid, 
-                    name: p.name, 
-                    avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`, 
+                    name: p.nome, 
+                    avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.nome}&background=random`, 
                     role: p.role, 
                     order_index: p.order_index || 0, 
                     services_enabled: p.services_enabled || [] 
                 }));
                 setResources(mapped);
             }
-        } catch (e) { console.error("fetchResources:", e); }
+        } catch (e) { 
+            console.error("fetchResources:", e);
+        }
     };
 
     const mapRowToAppointment = (row: any, professionalsList: LegacyProfessional[]): LegacyAppointment => {
@@ -220,7 +222,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         isMounted.current = true;
         fetchResources();
         
-        // ✅ CORREÇÃO: Adicionado cleanup de canais Supabase para evitar 409 e vazamento de memória
         const channel = supabase.channel(`agenda-${activeStudioId}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments', filter: `studio_id=eq.${activeStudioId}` }, () => { fetchAppointments(); })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'professionals', filter: `studio_id=eq.${activeStudioId}` }, () => { fetchResources(); })
@@ -327,7 +328,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-30 shadow-sm">
                 <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4">
                     <div className="flex items-center gap-4">
-                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">Agenda Digital {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-orange-500" />}</h2>
+                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">Radar de Atendimento {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-orange-500" />}</h2>
                         <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
                             <button onClick={() => setViewMode('profissional')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'profissional' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-700'}`}><LayoutGrid size={14} /> Equipe</button>
                             <button onClick={() => setViewMode('andamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'andamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-700'}`}><PlayCircle size={14} /> Fluxo</button>
