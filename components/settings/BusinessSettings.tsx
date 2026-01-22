@@ -33,7 +33,6 @@ function getDefaultBusinessHours() {
     };
 }
 
-// FIX: Defined DEFAULT_DAY constant to resolve the error on line 339
 const DEFAULT_DAY = { 
     enabled: false, 
     start: "08:00", 
@@ -122,7 +121,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
             if (error) throw error;
             const { data: { publicUrl } } = supabase.storage.from('business-media').getPublicUrl(fileName);
             setForm(prev => ({ ...prev, [type === 'cover' ? 'cover_url' : 'logo_url']: publicUrl }));
-            setToast({ message: "Imagem enviada!", type: 'success' });
+            setToast({ message: "Imagem enviada com sucesso!", type: 'success' });
         } finally { setIsUploading(null); }
     };
 
@@ -130,6 +129,7 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
         if (!activeStudioId) return;
         setIsSaving(true);
         try {
+            // ✅ Execução do salvamento via RPC conforme assinatura solicitada
             const { error } = await supabase.rpc('save_business_profile', {
                 p_business_name: form.business_name,
                 p_cnpj_cpf: form.cnpj_cpf,
@@ -150,19 +150,48 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                 p_business_hours: businessHours
             });
 
-            if (error) throw error;
-
-            // Recarrega para garantir que UI está 100% igual ao banco
-            const { data: refreshData } = await supabase.rpc('get_business_profile');
-            if (refreshData) {
-                setBusinessHours(refreshData.business_hours ?? getDefaultBusinessHours());
+            if (error) {
+                console.error(error);
+                setToast({ message: "Erro ao salvar o perfil.", type: 'error' });
+                return;
             }
 
-            setToast({ message: "Perfil e horários sincronizados! ✅", type: 'success' });
+            // ✅ Recarrega para garantir que UI está 100% igual ao banco
+            const { data, error: fetchError } = await supabase.rpc('get_business_profile');
+            
+            if (fetchError) throw fetchError;
+
+            if (data) {
+                setBusinessHours(data.business_hours ?? getDefaultBusinessHours());
+                // Também sincronizamos o restante do formulário para garantir consistência total
+                setForm({
+                    business_name: data.business_name ?? '',
+                    cnpj_cpf: data.cnpj_cpf ?? '',
+                    phone: data.phone ?? '',
+                    email: data.email ?? '',
+                    description: data.description ?? '',
+                    zip_code: data.zip_code ?? '',
+                    street: data.street ?? '',
+                    number: data.number ?? '',
+                    district: data.district ?? '',
+                    city: data.city ?? '',
+                    state: data.state ?? '',
+                    instagram_handle: data.instagram_handle ?? '',
+                    primary_color: data.primary_color ?? '#f97316',
+                    logo_url: data.logo_url ?? '',
+                    cover_url: data.cover_url ?? '',
+                    portfolio_urls: data.portfolio_urls ?? []
+                });
+            }
+
+            setToast({ message: "Perfil atualizado com sucesso! ✅", type: 'success' });
+            
+            // Retorno automático após feedback visual
             setTimeout(onBack, 1500);
+
         } catch (err: any) {
             console.error(err);
-            setToast({ message: `Falha ao salvar: ${err.message}`, type: 'error' });
+            setToast({ message: `Falha crítica ao gravar: ${err.message}`, type: 'error' });
         } finally { setIsSaving(false); }
     };
 
