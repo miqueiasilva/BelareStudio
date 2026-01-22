@@ -80,20 +80,21 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     if (!activeStudioId) return;
     setLoadingProfessionals(true);
     try {
-      // ✅ CORREÇÃO: Utilizando a tabela professionals e a coluna uuid_id
+      // CORREÇÃO: Utilizando a tabela professionals e colunas nome/id_uuid
       const { data, error: sbError } = await supabase
         .from('professionals')
-        .select('id:uuid_id, name, photo_url, role, active, services_enabled')
+        .select('id_uuid, nome, photo_url, role, active, services_enabled')
         .eq('studio_id', activeStudioId)
-        .order('name');
+        .eq('active', true)
+        .order('nome');
 
       if (sbError) throw sbError;
 
       if (data) {
         const mapped: LegacyProfessional[] = data.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
+          id: p.id_uuid,
+          name: p.nome,
+          avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.nome}&background=random`,
           role: p.role,
           services_enabled: p.services_enabled || []
         }));
@@ -111,14 +112,22 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     fetchProfessionals();
   }, [activeStudioId]);
 
+  // OBJETIVO 1: FILTRAGEM DE SERVIÇOS POR PROFISSIONAL
   const filteredServicesToSelect = useMemo(() => {
     if (!formData.professional) return [];
-    const profSkills = formData.professional.services_enabled;
-    if (profSkills && Array.isArray(profSkills) && profSkills.length > 0) {
-      return dbServices.filter(s => profSkills.includes(s.id));
-    }
-    return dbServices;
-  }, [dbServices, formData.professional]);
+    
+    const professional = dbProfessionals.find(p => String(p.id) === String(formData.professional?.id));
+    const enabledIds = professional?.services_enabled || [];
+
+    // Se o profissional não tiver nenhum serviço habilitado (lista vazia), tratamos como "não configurado" 
+    // ou "não possui permissão para serviços".
+    if (enabledIds.length === 0) return [];
+
+    // Filtra dbServices garantindo que o ID do serviço esteja contido em enabledIds (normalizado p/ string)
+    return dbServices.filter(service => 
+      enabledIds.some(id => String(id) === String(service.id))
+    );
+  }, [dbServices, dbProfessionals, formData.professional]);
 
   useEffect(() => {
       setFormData({
@@ -263,6 +272,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
 
   const handleSelectProfessional = (professional: LegacyProfessional) => {
+    // Ao trocar o profissional, invalidamos os serviços atuais se eles não forem compatíveis
     if (formData.professional?.id !== professional.id) {
         setSelectedServices([]);
         setManualPrice(0);
@@ -313,7 +323,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             </div>
           </div>
           <div className="space-y-2">
-             <label className="text-xs font-bold text-slate-500 uppercase">Serviços <span className="text-red-500">*</span></label>
+             <label className="text-xs font-bold text-slate-500 uppercase">Serviços Disponíveis p/ Profissional <span className="text-red-500">*</span></label>
              {selectedServices.map((service, index) => (
                 <div key={index} className="flex items-center justify-between bg-slate-50 p-3 rounded-lg border border-slate-200 group"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center"><Tag className="w-4 h-4" /></div><div><p className="text-sm font-semibold text-slate-800">{service.name}</p><p className="text-xs text-slate-500">R$ {service.price.toFixed(2)} • {service.duration} min</p></div></div><button onClick={() => handleRemoveService(index)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={16} /></button></div>
              ))}
