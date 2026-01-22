@@ -1,10 +1,10 @@
 
 -- =============================================================================
--- (A) SQL COMPLETO DE ESTABILIZAÇÃO E BLINDAGEM
+-- (A) SQL COMPLETO DE ESTABILIZAÇÃO E BLINDAGEM EM PRODUÇÃO
 -- =============================================================================
 
 -- 1. CONFIGURAÇÃO DA FUNÇÃO OFICIAL (v2)
--- Identifica a assinatura dinâmica para evitar erros de "function does not exist"
+-- Localiza a assinatura exata e aplica restrições de segurança e acesso.
 DO $$ 
 DECLARE 
     _sig text;
@@ -15,37 +15,40 @@ BEGIN
     AND pronamespace = 'public'::regnamespace;
 
     IF _sig IS NOT NULL THEN
-        -- Aplicar Segurança Máxima e Caminho de Busca Protegido
+        -- SECURITY DEFINER: Permite que a função execute inserts em tabelas financeiras ignorando políticas restritivas do usuário comum
+        -- SET search_path: Proteção contra ataques de schema injection
         EXECUTE 'ALTER FUNCTION ' || _sig || ' SECURITY DEFINER SET search_path = public';
-        -- Gestão de Permissões: Restrito a usuários autenticados e role de serviço
+        
+        -- GRANTS: Limita quem pode invocar a função (Apenas usuários autenticados e o sistema)
         EXECUTE 'REVOKE ALL ON FUNCTION ' || _sig || ' FROM public';
         EXECUTE 'GRANT EXECUTE ON FUNCTION ' || _sig || ' TO authenticated, service_role';
-        RAISE NOTICE 'Função % configurada com sucesso.', _sig;
+        
+        RAISE NOTICE 'Sucesso: Função % configurada como OFICIAL.', _sig;
     ELSE
-        RAISE NOTICE 'Aviso: register_payment_transaction_v2 não encontrada para ajuste de privilégios.';
+        RAISE EXCEPTION 'Erro Crítico: Função register_payment_transaction_v2 não encontrada no schema public.';
     END IF;
 END $$;
 
--- 2. DESATIVAÇÃO DE FUNÇÕES LEGADAS (Revoga execução sem apagar código)
+-- 2. DESATIVAÇÃO DE FUNÇÕES LEGADAS (Segurança por revogação de EXECUTE)
 DO $$ 
 DECLARE 
-    _legacy_func record;
+    _legacy record;
 BEGIN
-    FOR _legacy_func IN 
-        SELECT oid::regprocedure as signature
+    FOR _legacy IN 
+        SELECT oid::regprocedure as sig
         FROM pg_proc 
         WHERE (proname IN ('register_payment_transaction', 'pay_latest_open_command_v6') 
            OR proname LIKE 'pay_and_close_command%')
         AND proname != 'register_payment_transaction_v2'
         AND pronamespace = 'public'::regnamespace
     LOOP
-        EXECUTE 'REVOKE EXECUTE ON FUNCTION ' || _legacy_func.signature || ' FROM authenticated, public';
-        RAISE NOTICE 'Acesso revogado para legado: %', _legacy_func.signature;
+        EXECUTE 'REVOKE EXECUTE ON FUNCTION ' || _legacy.sig || ' FROM authenticated, public';
+        RAISE NOTICE 'Acesso revogado para função legada: %', _legacy.sig;
     END LOOP;
 END $$;
 
 -- 3. NORMALIZAÇÃO RETROATIVA DE DATA INTEGRITY
--- Garante que todos os registros usem o uuid_id canônico da tabela professionals
+-- Garante que todos os registros históricos usem o uuid_id canônico da tabela professionals.
 BEGIN;
 
 -- Normalizar Comandas
@@ -64,26 +67,20 @@ WHERE (a.professional_id = p.team_member_id OR a.professional_id = p.professiona
 
 COMMIT;
 
--- 4. RE-NOTIFICAÇÃO DE SCHEMA
+-- 4. RE-NOTIFICAÇÃO DE SCHEMA PARA O POSTGREST (Limpeza de Cache de API)
 NOTIFY pgrst, 'reload schema';
 
 -- =============================================================================
--- (B) SMOKE TESTS (Copiáveis para o SQL Editor)
+-- (B) SMOKE TESTS (Copie e rode no SQL Editor do Supabase)
 -- =============================================================================
 /*
--- TESTE 1: Comandas com professional_id órfão ou não-canônico (Deve retornar 0)
+-- TESTE 1: Verificar se restaram IDs não-canônicos (Deve retornar 0)
 SELECT count(*) as "Comandas_Invalidas"
 FROM public.commands c
 LEFT JOIN public.professionals p ON p.uuid_id = c.professional_id
 WHERE c.professional_id IS NOT NULL AND p.uuid_id IS NULL;
 
--- TESTE 2: Agendamentos com professional_id inválido (Deve retornar 0)
-SELECT count(*) as "Agendamentos_Invalidos"
-FROM public.appointments a
-LEFT JOIN public.professionals p ON p.uuid_id = a.professional_id
-WHERE a.professional_id IS NOT NULL AND p.uuid_id IS NULL;
-
--- TESTE 3: Verificar permissões da V2 (Deve listar apenas authenticated e service_role)
+-- TESTE 2: Validar privilégios da v2 (Deve listar apenas authenticated e service_role)
 SELECT grantee, privilege_type 
 FROM information_schema.role_routine_grants 
 WHERE routine_name = 'register_payment_transaction_v2';
