@@ -10,9 +10,8 @@ import {
     ShoppingBag, Clock, Globe, Edit3, Loader2, BarChart3, AlertCircle, 
     ChevronRight, CalendarRange, Filter as FilterIcon, History, CheckCircle
 } from 'lucide-react';
-// FIX: Removed parseISO and parse as they may not be exported in this version of date-fns
 import { 
-    format, addDays, endOfDay, endOfMonth, isSameDay, isValid 
+    format, addDays, endOfDay, endOfMonth, isSameDay, isValid, parseISO, parse 
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
@@ -27,21 +26,22 @@ const formatCurrency = (value: number) => {
     }).format(value);
 };
 
+/**
+ * Parsing de data ultra-seguro para evitar RangeError: Invalid time value
+ */
 const safeDate = (value: any): Date | null => {
     if (!value) return null;
     if (value instanceof Date) return isValid(value) ? value : null;
 
     if (typeof value === "string") {
+        // ISO Completo ou Data Pura (2026-01-22)
         if (value.includes("T") || /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-            // FIX: Replaced parseISO with native new Date() for ISO strings
-            const d = new Date(value);
+            const d = parseISO(value);
             return isValid(d) ? d : null;
         }
+        // Horário puro (14:30) - Converte para data de hoje com esse horário
         if (/^\d{2}:\d{2}(:\d{2})?$/.test(value)) {
-            // FIX: Replaced parse with manual time parsing for HH:mm strings
-            const parts = value.slice(0,5).split(':');
-            const d = new Date();
-            d.setHours(parseInt(parts[0], 10), parseInt(parts[1], 10), 0, 0);
+            const d = parse(value.slice(0,5), "HH:mm", new Date());
             return isValid(d) ? d : null;
         }
         const d = new Date(value);
@@ -89,6 +89,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const [financialGoal, setFinancialGoal] = useState(0);
     const [monthRevenueTotal, setMonthRevenueTotal] = useState(0);
     
+    // Filtro de Período
     const [filter, setFilter] = useState<'hoje' | 'semana' | 'mes' | 'custom'>('hoje');
     const [customStart, setCustomStart] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -99,21 +100,48 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
             case 'hoje':
                 const startToday = new Date(now);
                 startToday.setHours(0, 0, 0, 0);
-                return { start: startToday.toISOString(), end: endOfDay(now).toISOString(), label: 'Hoje' };
+                return { 
+                    start: startToday.toISOString(), 
+                    end: endOfDay(now).toISOString(),
+                    label: 'Hoje'
+                };
             case 'semana':
                 const startWeek = addDays(now, -7);
                 startWeek.setHours(0, 0, 0, 0);
-                return { start: startWeek.toISOString(), end: endOfDay(now).toISOString(), label: 'Últimos 7 dias' };
+                return { 
+                    start: startWeek.toISOString(), 
+                    end: endOfDay(now).toISOString(),
+                    label: 'Últimos 7 dias'
+                };
             case 'mes':
                 const startMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-                return { start: startMonth.toISOString(), end: endOfMonth(now).toISOString(), label: 'Este Mês' };
+                return { 
+                    start: startMonth.toISOString(), 
+                    end: endOfMonth(now).toISOString(),
+                    label: 'Este Mês'
+                };
+            case 'custom':
+                const startCustom = new Date(customStart);
+                startCustom.setHours(0, 0, 0, 0);
+                const endCustom = new Date(customEnd);
+                endCustom.setHours(23, 59, 59, 999);
+                return {
+                    start: startCustom.toISOString(),
+                    end: endCustom.toISOString(),
+                    label: `Período: ${format(new Date(customStart), 'dd/MM')} a ${format(new Date(customEnd), 'dd/MM')}`
+                };
             default:
                 const sToday = new Date(now);
                 sToday.setHours(0, 0, 0, 0);
-                return { start: sToday.toISOString(), end: endOfDay(now).toISOString(), label: 'Hoje' };
+                return { 
+                    start: sToday.toISOString(), 
+                    end: endOfDay(now).toISOString(),
+                    label: 'Hoje'
+                };
         }
-    }, [filter]);
+    }, [filter, customStart, customEnd]);
 
+    // --- CARREGAMENTO DE DADOS ---
     useEffect(() => {
         if (!activeStudioId) return;
         let mounted = true;
@@ -122,22 +150,19 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
             try {
                 if (mounted) setIsLoading(true);
 
-                // QUERY ESTABILIZADA: Explicit FK para evitar 409
+                // Busca Atendimentos
                 const { data: appts, error: apptsError } = await supabase
                     .from('appointments')
-                    .select(`
-                        *,
-                        professional:professionals!appointments_professional_same_studio_fk (
-                            id_uuid, name, photo_url
-                        )
-                    `)
+                    .select('*')
                     .eq('studio_id', activeStudioId)
                     .gte('date', dateRange.start)
-                    .lte('date', dateRange.end);
+                    .lte('date', dateRange.end)
+                    .order('date', { ascending: true });
 
                 if (apptsError) throw apptsError;
                 if (mounted) setAppointments(appts || []);
 
+                // Busca Faturamento do Mês para Meta
                 const now = new Date();
                 const startMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
                 const { data: monthData } = await supabase
@@ -150,6 +175,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 
                 if (mounted) setMonthRevenueTotal(monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0);
 
+                // Busca Configurações (Meta)
                 const { data: settings } = await supabase
                     .from('studio_settings')
                     .select('revenue_goal')
@@ -159,7 +185,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 if (mounted) setFinancialGoal(settings?.revenue_goal || 5000);
 
             } catch (e) {
-                console.error("Dashboard fetchData error:", e);
+                console.error("Erro dashboard:", e);
             } finally {
                 if (mounted) setIsLoading(false);
             }
@@ -169,6 +195,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         return () => { mounted = false; };
     }, [dateRange, activeStudioId]);
 
+    // Busca Recebimentos Recentes via RPC sincronizado
     useEffect(() => {
         if (!activeStudioId) return;
         const fetchRecentPayments = async () => {
@@ -181,7 +208,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 if (error) throw error;
                 setRecentPayments(data || []);
             } catch (e) {
-                console.error("fetchRecentPayments error:", e);
+                console.error("Erro ao buscar pagamentos recentes:", e);
             } finally {
                 setLoadingPayments(false);
             }
@@ -189,6 +216,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         fetchRecentPayments();
     }, [activeStudioId]);
 
+    // KPIs Dinâmicos
     const kpis = useMemo(() => {
         const revenue = appointments
             .filter(a => a.status === 'concluido')

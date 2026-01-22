@@ -1,87 +1,156 @@
 
 -- =============================================================================
--- (A) SQL COMPLETO DE ESTABILIZAÇÃO E BLINDAGEM EM PRODUÇÃO
+-- 1. LIMPEZA RADICAL DE FUNÇÕES CONFLITANTES
 -- =============================================================================
-
--- 1. CONFIGURAÇÃO DA FUNÇÃO OFICIAL (v2)
--- Localiza a assinatura exata e aplica restrições de segurança e acesso.
 DO $$ 
 DECLARE 
-    _sig text;
+    _routine record;
 BEGIN
-    SELECT oid::regprocedure::text INTO _sig 
-    FROM pg_proc 
-    WHERE proname = 'register_payment_transaction_v2' 
-    AND pronamespace = 'public'::regnamespace;
-
-    IF _sig IS NOT NULL THEN
-        -- SECURITY DEFINER: Permite que a função execute inserts em tabelas financeiras ignorando políticas restritivas do usuário comum
-        -- SET search_path: Proteção contra ataques de schema injection
-        EXECUTE 'ALTER FUNCTION ' || _sig || ' SECURITY DEFINER SET search_path = public';
-        
-        -- GRANTS: Limita quem pode invocar a função (Apenas usuários autenticados e o sistema)
-        EXECUTE 'REVOKE ALL ON FUNCTION ' || _sig || ' FROM public';
-        EXECUTE 'GRANT EXECUTE ON FUNCTION ' || _sig || ' TO authenticated, service_role';
-        
-        RAISE NOTICE 'Sucesso: Função % configurada como OFICIAL.', _sig;
-    ELSE
-        RAISE EXCEPTION 'Erro Crítico: Função register_payment_transaction_v2 não encontrada no schema public.';
-    END IF;
-END $$;
-
--- 2. DESATIVAÇÃO DE FUNÇÕES LEGADAS (Segurança por revogação de EXECUTE)
-DO $$ 
-DECLARE 
-    _legacy record;
-BEGIN
-    FOR _legacy IN 
-        SELECT oid::regprocedure as sig
+    FOR _routine IN 
+        SELECT oid::regprocedure as signature
         FROM pg_proc 
-        WHERE (proname IN ('register_payment_transaction', 'pay_latest_open_command_v6') 
-           OR proname LIKE 'pay_and_close_command%')
-        AND proname != 'register_payment_transaction_v2'
+        WHERE (proname = 'register_payment_transaction' 
+           OR proname = 'register_payment_transaction_v2'
+           OR proname = 'pay_and_close_command'
+           OR proname = 'pay_latest_open_command_v6')
         AND pronamespace = 'public'::regnamespace
     LOOP
-        EXECUTE 'REVOKE EXECUTE ON FUNCTION ' || _legacy.sig || ' FROM authenticated, public';
-        RAISE NOTICE 'Acesso revogado para função legada: %', _legacy.sig;
+        EXECUTE 'DROP FUNCTION ' || _routine.signature || ' CASCADE';
     END LOOP;
 END $$;
 
--- 3. NORMALIZAÇÃO RETROATIVA DE DATA INTEGRITY
--- Garante que todos os registros históricos usem o uuid_id canônico da tabela professionals.
-BEGIN;
+-- =============================================================================
+-- 2. FUNÇÃO MESTRA: register_payment_transaction_v2 (ISOLADA E SEGURA)
+-- =============================================================================
+CREATE OR REPLACE FUNCTION public.register_payment_transaction_v2(
+  p_studio_id uuid,
+  p_professional_id uuid,
+  p_amount numeric,
+  p_method text,
+  p_brand text,
+  p_installments integer,
+  p_command_id uuid DEFAULT NULL,
+  p_client_id bigint DEFAULT NULL,
+  p_description text DEFAULT NULL
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_payment_id uuid;
+  v_transaction_id uuid;
+  v_config_id uuid;
+  v_fee_rate numeric := 0;
+  v_fee_amount numeric := 0;
+  v_net_value numeric;
+  v_total_command_value numeric;
+  v_total_paid_so_far numeric;
+  v_installment_rates jsonb;
+BEGIN
+  -- 1. Resolução Interna de Taxas (Evita lookup externo/loop)
+  SELECT id, rate_cash, installment_rates 
+  INTO v_config_id, v_fee_rate, v_installment_rates
+  FROM public.payment_methods_config
+  WHERE studio_id = p_studio_id 
+    AND type = p_method 
+    AND (brand = p_brand OR brand IS NULL OR p_brand = '')
+    AND is_active = true
+  ORDER BY (brand = p_brand) DESC
+  LIMIT 1;
 
--- Normalizar Comandas
-UPDATE public.commands c
-SET professional_id = p.uuid_id
-FROM public.professionals p
-WHERE (c.professional_id = p.team_member_id OR c.professional_id = p.professional_uuid)
-  AND c.professional_id != p.uuid_id;
+  -- Ajuste de taxa para parcelamento
+  IF p_installments > 1 AND v_installment_rates ? p_installments::text THEN
+    v_fee_rate := (v_installment_rates->>p_installments::text)::numeric;
+  END IF;
 
--- Normalizar Agendamentos
-UPDATE public.appointments a
-SET professional_id = p.uuid_id
-FROM public.professionals p
-WHERE (a.professional_id = p.team_member_id OR a.professional_id = p.professional_uuid)
-  AND a.professional_id != p.uuid_id;
+  v_fee_amount := p_amount * (COALESCE(v_fee_rate, 0) / 100.0);
+  v_net_value  := p_amount - v_fee_amount;
 
-COMMIT;
+  -- 2. Registro no Fluxo de Caixa (financial_transactions)
+  -- Inserção explícita ignorando triggers via lógica interna se necessário
+  INSERT INTO public.financial_transactions (
+    amount,
+    net_value,
+    fee_amount,
+    payment_method,
+    type,
+    category,
+    description,
+    status,
+    date,
+    client_id,
+    command_id,
+    professional_id,
+    studio_id
+  ) VALUES (
+    p_amount,
+    v_net_value,
+    v_fee_amount,
+    p_method,
+    'income',
+    'Serviço',
+    COALESCE(p_description, 'Venda via Checkout V2'),
+    'pago',
+    NOW(),
+    p_client_id,
+    p_command_id,
+    p_professional_id,
+    p_studio_id
+  ) RETURNING id INTO v_transaction_id;
 
--- 4. RE-NOTIFICAÇÃO DE SCHEMA PARA O POSTGREST (Limpeza de Cache de API)
+  -- 3. Registro do Pagamento vinculado à Comanda (se houver)
+  IF p_command_id IS NOT NULL THEN
+    INSERT INTO public.command_payments (
+      amount,
+      net_value,
+      fee_amount,
+      fee_rate,
+      method_id,
+      command_id,
+      studio_id,
+      status,
+      brand,
+      installments,
+      professional_id,
+      financial_transaction_id,
+      created_at
+    ) VALUES (
+      p_amount,
+      v_net_value,
+      v_fee_amount,
+      COALESCE(v_fee_rate, 0),
+      v_config_id,
+      p_command_id,
+      p_studio_id,
+      'paid',
+      p_brand,
+      p_installments,
+      p_professional_id,
+      v_transaction_id,
+      NOW()
+    ) RETURNING id INTO v_payment_id;
+
+    -- 4. Verificação de Quitação da Comanda
+    SELECT total_amount INTO v_total_command_value FROM public.commands WHERE id = p_command_id;
+    SELECT COALESCE(SUM(amount), 0) INTO v_total_paid_so_far FROM public.command_payments WHERE command_id = p_command_id AND status = 'paid';
+
+    IF v_total_paid_so_far >= v_total_command_value THEN
+        UPDATE public.commands SET status = 'paid', closed_at = NOW() WHERE id = p_command_id;
+    END IF;
+  END IF;
+
+  RETURN json_build_object(
+    'success', true,
+    'transaction_id', v_transaction_id,
+    'payment_id', v_payment_id,
+    'command_id', p_command_id
+  );
+END;
+$$;
+
+-- Grant permissions
+GRANT EXECUTE ON FUNCTION public.register_payment_transaction_v2 TO authenticated;
+GRANT EXECUTE ON FUNCTION public.register_payment_transaction_v2 TO service_role;
+
 NOTIFY pgrst, 'reload schema';
-
--- =============================================================================
--- (B) SMOKE TESTS (Copie e rode no SQL Editor do Supabase)
--- =============================================================================
-/*
--- TESTE 1: Verificar se restaram IDs não-canônicos (Deve retornar 0)
-SELECT count(*) as "Comandas_Invalidas"
-FROM public.commands c
-LEFT JOIN public.professionals p ON p.uuid_id = c.professional_id
-WHERE c.professional_id IS NOT NULL AND p.uuid_id IS NULL;
-
--- TESTE 2: Validar privilégios da v2 (Deve listar apenas authenticated e service_role)
-SELECT grantee, privilege_type 
-FROM information_schema.role_routine_grants 
-WHERE routine_name = 'register_payment_transaction_v2';
-*/
