@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { LegacyAppointment, Client, LegacyProfessional, LegacyService } from '../../types';
-// Added AlertTriangle, Save, and Scissors to the imports
 import { ChevronLeft, User, Calendar, Tag, Clock, DollarSign, Info, PlusCircle, Repeat, X, Loader2, AlertCircle, Briefcase, CheckSquare, Mail, Trash2, Edit2, AlertTriangle, Save, Scissors } from 'lucide-react';
 import { format, addMinutes } from 'date-fns';
 import SelectionModal from './SelectionModal';
@@ -77,7 +76,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
   useEffect(() => { fetchData(); }, [activeStudioId]);
 
-  // ✅ OBJETIVO D: Filtro dinâmico e rígido de serviços por profissional
   const filteredServicesToSelect = useMemo(() => {
     if (!formData.professional?.id) return [];
     const prof = dbProfessionals.find(p => String(p.id) === String(formData.professional?.id));
@@ -122,7 +120,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
   const handleSelectProfessional = (prof: LegacyProfessional) => {
     setFormData(prev => ({ ...prev, professional: prof }));
-    setSelectedServices([]); // Reseta serviços ao trocar profissional
+    setSelectedServices([]); 
     setSelectionModal(null);
   };
 
@@ -138,7 +136,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           {error && <div className="p-3 bg-red-50 text-red-700 text-xs font-bold rounded-lg flex items-center gap-2"><AlertTriangle size={14}/> {error}</div>}
           
           <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase">Cliente</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cliente</label>
             <button onClick={() => setSelectionModal('client')} className="w-full flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
                 <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold">{formData.client?.nome?.charAt(0) || 'C'}</div>
                 <span className="font-bold text-slate-700">{formData.client?.nome || 'Selecionar Cliente'}</span>
@@ -147,17 +145,17 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase">Data</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data</label>
                 <input type="date" value={formData.start ? format(new Date(formData.start), 'yyyy-MM-dd') : ''} onChange={e => setFormData({...formData, start: new Date(e.target.value + 'T' + format(formData.start!, 'HH:mm'))})} className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 font-bold" />
             </div>
             <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase">Horário</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horário</label>
                 <input type="time" value={formData.start ? format(new Date(formData.start), 'HH:mm') : ''} onChange={e => { const [h,m] = e.target.value.split(':'); const d = new Date(formData.start!); d.setHours(Number(h), Number(m)); setFormData({...formData, start: d}); }} className="w-full bg-slate-50 border border-slate-100 rounded-xl p-3 font-bold" />
             </div>
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase">Profissional</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Profissional</label>
             <button onClick={() => setSelectionModal('professional')} className="w-full flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
                 <div className="w-10 h-10 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center"><Briefcase size={20}/></div>
                 <span className="font-bold text-slate-700">{formData.professional?.name || 'Selecionar Profissional'}</span>
@@ -165,9 +163,9 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           </div>
 
           <div className="space-y-2">
-             <label className="text-[10px] font-black text-slate-400 uppercase">Serviços Habilitados</label>
+             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Serviços Habilitados</label>
              {selectedServices.map((s, i) => (
-                <div key={i} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100"><span className="text-sm font-bold text-slate-700">{s.name}</span><button onClick={() => setSelectedServices(prev => prev.filter((_, idx) => idx !== i))} className="text-rose-50"><X size={16}/></button></div>
+                <div key={i} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100"><span className="text-sm font-bold text-slate-700">{s.name}</span><button onClick={() => setSelectedServices(prev => prev.filter((_, idx) => idx !== i))} className="text-rose-500"><X size={16}/></button></div>
              ))}
              <button disabled={!formData.professional?.id} onClick={() => setSelectionModal('service')} className="w-full p-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold hover:border-orange-200 hover:text-orange-500 transition-all flex items-center justify-center gap-2">
                 <PlusCircle size={20}/> {formData.professional?.id ? 'Adicionar Serviço' : 'Escolha o profissional primeiro'}

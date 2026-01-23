@@ -96,10 +96,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
     
-    const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
-    const [colWidth, setColWidth] = useState(220);
-    const [isAutoWidth, setIsAutoWidth] = useState(false);
-    const [timeSlot, setTimeSlot] = useState(30);
+    const [colWidth] = useState(220);
+    const [timeSlot] = useState(30);
     const isMounted = useRef(true);
     const appointmentRefs = useRef(new Map<number | string, HTMLDivElement | null>());
     const lastRequestId = useRef(0);
@@ -118,16 +116,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfMonth(currentDate);
             } else {
                 rangeStart = startOfDay(currentDate);
-                rangeEnd = endOfDay(currentDate);
+                rangeEnd = addDays(rangeStart, 1); // Fim exclusivo (Início do próximo dia)
             }
 
-            // ✅ OBJETIVO A: Filtragem rigorosa por start_at para evitar cards sumindo
+            // ✅ OBJETIVO 2: Filtragem obrigatória por start_at para consistência total
             const { data: apptRes, error: apptErr } = await supabase
                 .from('appointments')
                 .select(`*, professional:team_members(id, name, photo_url)`)
                 .eq('studio_id', activeStudioId)
                 .gte('start_at', rangeStart.toISOString())
-                .lte('start_at', rangeEnd.toISOString())
+                .lt('start_at', rangeEnd.toISOString())
                 .neq('status', 'cancelado')
                 .order('start_at', { ascending: true });
 
@@ -136,7 +134,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 .select('*')
                 .eq('studio_id', activeStudioId)
                 .gte('start_time', rangeStart.toISOString())
-                .lte('start_time', rangeEnd.toISOString());
+                .lt('start_time', rangeEnd.toISOString());
 
             if (apptErr) throw apptErr;
             if (blocksErr) throw blocksErr;
@@ -229,6 +227,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const startAt = app.start;
             const endAt = new Date(startAt.getTime() + (app.service.duration || 30) * 60000);
 
+            // ✅ OBJETIVO 1: Preencher obrigatoriamente start_at e end_at (ISO UTC)
             const payload = { 
                 studio_id: activeStudioId, 
                 client_id: app.client?.id, 
@@ -240,23 +239,27 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 value: app.service.price, 
                 duration: app.service.duration, 
                 date: startAt.toISOString(), 
-                start_at: startAt.toISOString(), // ✅ OBRIGATÓRIO PARA O RADAR
-                end_at: endAt.toISOString(),     // ✅ OBRIGATÓRIO PARA O RADAR
+                start_at: startAt.toISOString(),
+                end_at: endAt.toISOString(),
                 status: app.status || 'agendado', 
                 notes: app.notas, 
                 origem: app.origem || 'interno' 
             };
             
             const { data, error } = app.id && appointments.some(a => a.id === app.id)
-                ? await supabase.from('appointments').update(payload).eq('id', app.id).select('id, start_at')
-                : await supabase.from('appointments').insert([payload]).select('id, start_at');
+                ? await supabase.from('appointments').update(payload).eq('id', app.id).select('id, start_at, end_at')
+                : await supabase.from('appointments').insert([payload]).select('id, start_at, end_at');
 
             if (error) throw error;
-            if (!data?.[0]?.start_at) throw new Error("Erro na gravação dos horários.");
+            
+            // ✅ OBJETIVO 3: Validar retorno e aguardar fetchAppointments antes de fechar
+            if (!data?.[0]?.start_at || !data?.[0]?.end_at) {
+                throw new Error("Agendamento salvo com campos de tempo nulos no banco.");
+            }
 
+            await fetchAppointments(); 
             setToast({ message: 'Agendamento salvo com sucesso!', type: 'success' });
             setModalState(null);
-            await fetchAppointments(); // ✅ Sincronização aguardada
         } catch (e: any) { 
             setToast({ message: "Erro ao salvar: " + e.message, type: 'error' });
         } finally { 
@@ -275,7 +278,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         const profA = newResources[index];
         const profB = newResources[targetIndex];
 
-        // ✅ SWAP DE ORDEM
+        // ✅ OBJETIVO 5: Swap persistido no banco
         const oldIndexA = profA.order_index || 0;
         const oldIndexB = profB.order_index || 0;
 
@@ -295,6 +298,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     };
 
     const handleGridClick = (col: any, timeIdx: number, e: React.MouseEvent) => {
+        // ✅ OBJETIVO 4: Garantir que o container receba clique e identifique professional/data
         e.stopPropagation();
         const minutesToAdd = timeIdx * timeSlot;
         const baseDate = periodType === 'Semana' ? new Date(col.data) : new Date(currentDate);
@@ -309,22 +313,36 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         });
     };
 
+    // FIX: Added missing 'columns' definition to manage columns dynamically based on periodType.
     const columns = useMemo(() => {
         if (periodType === 'Semana') {
             const start = startOfDay(addDays(currentDate, -(currentDate.getDay() || 7) + 1));
-            return eachDayOfInterval({ start, end: endOfWeek(currentDate, { weekStartsOn: 1 }) }).map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date' as const, data: day }));
+            const end = endOfWeek(currentDate, { weekStartsOn: 1 });
+            return eachDayOfInterval({ start, end }).map(day => ({
+                id: day.toISOString(),
+                title: format(day, 'EEEE, dd/MM', { locale: pt }),
+                data: day,
+                type: 'day'
+            }));
         }
-        return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional' as const, data: p }));
-    }, [periodType, currentDate, resources]);
+        return resources.map(res => ({
+            id: res.id,
+            title: res.name,
+            photo: res.avatarUrl,
+            data: res,
+            type: 'professional'
+        }));
+    }, [periodType, resources, currentDate]);
 
+    // FIX: Added missing 'timeSlotsLabels' to generate the time axis labels for the grid.
     const timeSlotsLabels = useMemo(() => {
         const labels = [];
-        for (let i = 0; i < (END_HOUR - START_HOUR) * 60 / timeSlot; i++) {
-            const minutes = i * timeSlot;
-            labels.push(`${String(START_HOUR + Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`);
+        for (let hour = START_HOUR; hour < END_HOUR; hour++) {
+            labels.push(`${String(hour).padStart(2, '0')}:00`);
+            labels.push(`${String(hour).padStart(2, '0')}:30`);
         }
         return labels;
-    }, [timeSlot]);
+    }, []);
 
     return (
         <div className="h-full bg-white relative flex-col font-sans text-left overflow-hidden flex">
@@ -335,16 +353,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">Radar de Atendimento {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-orange-500" />}</h2>
                     <div className="flex items-center gap-2">
                         <button onClick={() => setIsPeriodModalOpen(true)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50">{periodType} <ChevronDown size={16} /></button>
-                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-6 rounded-xl shadow-lg">Novo Horário</button>
+                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all active:scale-95">Novo Horário</button>
                     </div>
                 </div>
                 <div className="flex items-center gap-4">
-                    <button onClick={() => setCurrentDate(new Date())} className="text-xs font-bold bg-slate-100 px-4 py-2 rounded-lg hover:bg-slate-200">Hoje</button>
+                    <button onClick={() => setCurrentDate(new Date())} className="text-xs font-bold bg-slate-100 px-4 py-2 rounded-lg hover:bg-slate-200 transition-colors uppercase tracking-widest">Hoje</button>
                     <div className="flex items-center gap-1">
                         <button onClick={() => setCurrentDate(prev => addDays(prev, -1))} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronLeft size={20} /></button>
                         <button onClick={() => setCurrentDate(prev => addDays(prev, 1))} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronRight size={20} /></button>
                     </div>
-                    <span className="text-orange-500 font-black text-lg capitalize">{format(currentDate, "EEEE, dd 'de' MMMM", { locale: pt })}</span>
+                    <span className="text-orange-500 font-black text-lg capitalize tracking-tight">{format(currentDate, "EEEE, dd 'de' MMMM", { locale: pt })}</span>
                 </div>
             </header>
 
@@ -379,7 +397,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         {columns.map((col) => (
                             <div key={col.id} className="relative border-r border-slate-200 cursor-crosshair bg-white" style={{ minHeight: `${timeSlotsLabels.length * SLOT_PX_HEIGHT}px` }}>
                                 {timeSlotsLabels.map((_, i) => (
-                                    <div key={i} onClick={(e) => handleGridClick(col, i, e)} className="h-20 border-b border-slate-100/50 border-dashed hover:bg-orange-50/30 transition-colors"></div>
+                                    <div key={i} onClick={(e) => handleGridClick(col, i, e)} className="h-20 border-b border-slate-100/50 border-dashed hover:bg-orange-50/30 transition-colors z-0"></div>
                                 ))}
                                 {appointments.filter(app => { 
                                     if (periodType === 'Semana') return isSameDay(app.start, col.data as Date); 
@@ -387,7 +405,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                 }).map(app => {
                                     const color = app.type === 'block' ? '#94a3b8' : (app.service?.color || '#3b82f6');
                                     return (
-                                        <div key={app.id} ref={(el) => { if (app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} onClick={(e) => { e.stopPropagation(); if (app.type === 'appointment') setActiveAppointmentDetail(app); }} className="rounded shadow-sm border-l-4 p-2 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card border-r border-b border-slate-200/50" style={{ ...getAppointmentPosition(app.start, app.end, timeSlot), borderLeftColor: color, backgroundColor: `${color}15` }}>
+                                        <div key={app.id} ref={(el) => { if (app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} onClick={(e) => { e.stopPropagation(); if (app.type === 'appointment') setActiveAppointmentDetail(app); }} className="rounded shadow-sm border-l-4 p-2 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card border-r border-b border-slate-200/50 z-20" style={{ ...getAppointmentPosition(app.start, app.end, timeSlot), borderLeftColor: color, backgroundColor: `${color}15` }}>
                                             <p className="text-[9px] font-black text-slate-400 uppercase leading-none mb-1">{format(app.start, 'HH:mm')}</p>
                                             <p className="text-xs font-bold text-slate-800 truncate leading-tight">{app.client?.nome || 'Bloqueado'}</p>
                                             <p className="text-[9px] text-slate-500 truncate mt-1">{app.service?.name}</p>
@@ -401,7 +419,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 </div>
 
                 {selectionMenu && (
-                    <div className="fixed z-[200] bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 min-w-[200px] animate-in zoom-in-95" style={{ top: selectionMenu.y, left: selectionMenu.x }} onClick={(e) => e.stopPropagation()}>
+                    <div className="fixed z-[200] bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 min-w-[200px] animate-in zoom-in-95 duration-200" style={{ top: selectionMenu.y, left: selectionMenu.x }} onClick={(e) => e.stopPropagation()}>
+                        <div className="px-4 py-2 border-b border-slate-50 mb-1">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Escolher Ação</p>
+                            <p className="text-xs font-bold text-slate-700">{format(selectionMenu.time, 'HH:mm')} • {selectionMenu.professional.name}</p>
+                        </div>
                         <button onClick={() => { setModalState({ type: 'appointment', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-orange-50 hover:text-orange-600 rounded-xl transition-all"><CalendarIcon size={18} /> Novo Agendamento</button>
                         <button onClick={() => { setModalState({ type: 'block', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"><Ban size={18} /> Bloquear Horário</button>
                     </div>
