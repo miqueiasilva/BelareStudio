@@ -267,11 +267,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             if (error) throw error;
             
+            // ✅ OBJETIVO A: Sincronização obrigatória e aguardada
+            await fetchAppointments();
+            
             setToast({ message: 'Agendamento salvo!', type: 'success' });
             setModalState(null);
-            
-            // Garantir que a agenda recarregue após o POST
-            await fetchAppointments();
         } catch (e: any) { 
             setToast({ message: "Erro ao salvar agendamento.", type: 'error' });
         } finally { 
@@ -317,6 +317,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     }, [timeSlot]);
 
     const handleGridClick = (col: any, timeIdx: number, e: React.MouseEvent) => {
+        // ✅ OBJETIVO B: Handler de clique na grade
         const minutesToAdd = timeIdx * timeSlot;
         const baseDate = periodType === 'Semana' ? new Date(col.data) : new Date(currentDate);
         baseDate.setHours(START_HOUR, 0, 0, 0);

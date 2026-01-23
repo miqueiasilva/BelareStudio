@@ -111,17 +111,15 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     fetchProfessionals();
   }, [activeStudioId]);
 
-  // OBJETIVO D: FILTRAGEM DE SERVIÇOS POR PROFISSIONAL
+  // ✅ OBJETIVO D: FILTRAGEM DE SERVIÇOS POR PROFISSIONAL
   const filteredServicesToSelect = useMemo(() => {
     if (!formData.professional) return [];
     
-    // Encontra o profissional na lista do DB para pegar os services_enabled atualizados
     const profInDb = dbProfessionals.find(p => String(p.id) === String(formData.professional?.id));
     const enabledIds = profInDb?.services_enabled || [];
 
     if (enabledIds.length === 0) return [];
 
-    // Filtra dbServices garantindo que o ID do serviço esteja contido em enabledIds (normalizado p/ string)
     return dbServices.filter(service => 
       enabledIds.some(id => String(id) === String(service.id))
     );
@@ -270,7 +268,6 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
 
   const handleSelectProfessional = (professional: LegacyProfessional) => {
-    // Se mudar o profissional, resetamos os serviços selecionados para garantir que sejam os DELE
     if (formData.professional?.id !== professional.id) {
         setSelectedServices([]);
         setManualPrice(0);
@@ -287,7 +284,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           <button onClick={onClose} className="text-slate-500 hover:text-slate-800"><ChevronLeft size={24} /></button>
           <h3 className="text-lg font-bold text-slate-800">{formData.id ? 'Editar Agendamento' : 'Novo Agendamento'}</h3>
         </header>
-        <main className="flex-1 p-6 space-y-5 overflow-y-auto">
+        <main className="flex-1 p-6 space-y-5 overflow-y-auto text-left">
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700 text-sm animate-pulse">
                 <AlertCircle size={16} />
