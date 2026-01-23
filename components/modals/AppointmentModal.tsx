@@ -80,10 +80,10 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     if (!activeStudioId) return;
     setLoadingProfessionals(true);
     try {
-      // CORREÇÃO: Utilizando uuid_id e name conforme o schema real da view professionals
+      // CORREÇÃO: Utilizando a tabela 'team_members' com a coluna 'id' (UUID)
       const { data, error: sbError } = await supabase
-        .from('professionals')
-        .select('uuid_id, name, photo_url, role, active, services_enabled')
+        .from('team_members')
+        .select('id, name, photo_url, role, active, services_enabled')
         .eq('studio_id', activeStudioId)
         .eq('active', true)
         .order('name');
@@ -92,7 +92,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
       if (data) {
         const mapped: LegacyProfessional[] = data.map((p: any) => ({
-          id: p.uuid_id,
+          id: p.id,
           name: p.name,
           avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
           role: p.role,

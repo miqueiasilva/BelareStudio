@@ -90,12 +90,12 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             const startOfToday = new Date(today.setHours(0, 0, 0, 0)).toISOString();
             const endOfToday = new Date(today.setHours(23, 59, 59, 999)).toISOString();
 
-            // ✅ CARREGANDO LISTA DE PROFISSIONAIS: select uuid_id, name conforme solicitado
+            // ✅ CARREGANDO LISTA DE PROFISSIONAIS: select id, name conforme o schema da tabela team_members
             const [servicesRes, productsRes, appointmentsRes, profsRes] = await Promise.all([
                 supabase.from('services').select('*').eq('studio_id', activeStudioId).eq('ativo', true).order('nome'),
                 supabase.from('products').select('*').eq('studio_id', activeStudioId).eq('ativo', true).order('name'),
                 supabase.from('appointments').select('*').eq('studio_id', activeStudioId).gte('date', startOfToday).lte('date', endOfToday).neq('status', 'cancelado').order('date'),
-                supabase.from('professionals').select('uuid_id, name').eq('studio_id', activeStudioId).order('name')
+                supabase.from('team_members').select('id, name').eq('studio_id', activeStudioId).eq('active', true).order('name')
             ]);
 
             if (servicesRes.data) setDbServices(servicesRes.data);
@@ -268,7 +268,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                             >
                                 <option value="">Nenhum (Venda Direta)</option>
                                 {dbProfessionals.map(p => (
-                                    <option key={p.uuid_id} value={p.uuid_id}>{p.name}</option>
+                                    <option key={p.id} value={p.id}>{p.name}</option>
                                 ))}
                             </select>
                             <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={16} />

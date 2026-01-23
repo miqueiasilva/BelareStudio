@@ -127,13 +127,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfDay(currentDate);
             }
 
-            // CORREÇÃO: Usando uuid_id e name conforme o schema real da view professionals
+            // CORREÇÃO: Utilizando join com team_members para evitar problemas de views desatualizadas
             const { data: apptRes, error: apptErr } = await supabase
                 .from('appointments')
                 .select(`
                     *,
-                    professional:professionals!appointments_professional_same_studio_fk (
-                        uuid_id, name, photo_url
+                    professional:team_members (
+                        id, name, photo_url
                     )
                 `)
                 .eq('studio_id', activeStudioId)
@@ -175,10 +175,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const fetchResources = async () => {
         if (authLoading || !user || !activeStudioId) return;
         try {
-            // CORREÇÃO: Usando uuid_id e name conforme o schema real da view professionals
+            // CORREÇÃO: Utilizando a tabela base team_members e nomes de colunas padrão id/name
             const { data, error } = await supabase
-                .from('professionals')
-                .select('uuid_id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled')
+                .from('team_members')
+                .select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled')
                 .eq('active', true)
                 .eq('studio_id', activeStudioId)
                 .order('name', { ascending: true });
@@ -186,7 +186,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             if (error) throw error;
             if (data && isMounted.current) {
                 const mapped = data.filter((m: any) => m.show_in_calendar !== false).map((p: any) => ({ 
-                    id: p.uuid_id, 
+                    id: p.id, 
                     name: p.name, 
                     avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`, 
                     role: p.role, 
