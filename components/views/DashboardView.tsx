@@ -5,14 +5,10 @@ import JaciBotAssistant from '../shared/JaciBotAssistant';
 import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import WeeklyChart from '../charts/WeeklyChart';
 import { getDashboardInsight } from '../../services/geminiService';
+import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Edit3, Loader2, BarChart3, AlertCircle, ChevronRight, CalendarRange, Filter as FilterIcon } from 'lucide-react';
+// FIX: Grouping date-fns imports and removing problematic members startOfDay, subDays, startOfMonth.
 import { 
-    DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, 
-    ShoppingBag, Clock, Globe, Edit3, Loader2, BarChart3, AlertCircle, 
-    ChevronRight, CalendarRange, Filter as FilterIcon, History, CheckCircle
-} from 'lucide-react';
-// FIX: Grouping date-fns imports and removing problematic members parseISO and parse.
-import { 
-    format, addDays, endOfDay, endOfMonth, isSameDay, isValid
+    format, addDays, endOfDay, endOfMonth, isSameDay 
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
@@ -25,39 +21,6 @@ const formatCurrency = (value: number) => {
         currency: 'BRL',
         maximumFractionDigits: 0
     }).format(value);
-};
-
-/**
- * Parsing de data ultra-seguro para evitar RangeError: Invalid time value
- */
-const safeDate = (value: any): Date | null => {
-    if (!value) return null;
-    if (value instanceof Date) return isValid(value) ? value : null;
-
-    if (typeof value === "string") {
-        // ISO Completo ou Data Pura (2026-01-22)
-        if (value.includes("T") || /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-            // FIX: Manual parseISO replacement using native Date constructor.
-            const d = new Date(value);
-            return isValid(d) ? d : null;
-        }
-        // Horário puro (14:30) - Converte para data de hoje com esse horário
-        if (/^\d{2}:\d{2}(:\d{2})?$/.test(value)) {
-            // FIX: Manual parse replacement using native Date methods.
-            const [h, m] = value.slice(0,5).split(':').map(Number);
-            const d = new Date();
-            d.setHours(h, m, 0, 0);
-            return isValid(d) ? d : null;
-        }
-        const d = new Date(value);
-        return isValid(d) ? d : null;
-    }
-    return null;
-};
-
-const safeFormatTime = (dateValue: any) => {
-    const d = safeDate(dateValue);
-    return d ? format(d, 'HH:mm') : '--:--';
 };
 
 const StatCard = ({ title, value, icon: Icon, colorClass, subtext }: any) => (
@@ -89,8 +52,6 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const { activeStudioId } = useStudio();
     const [isLoading, setIsLoading] = useState(true);
     const [appointments, setAppointments] = useState<any[]>([]);
-    const [recentPayments, setRecentPayments] = useState<any[]>([]);
-    const [loadingPayments, setLoadingPayments] = useState(false);
     const [financialGoal, setFinancialGoal] = useState(0);
     const [monthRevenueTotal, setMonthRevenueTotal] = useState(0);
     
@@ -98,11 +59,16 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const [filter, setFilter] = useState<'hoje' | 'semana' | 'mes' | 'custom'>('hoje');
     const [customStart, setCustomStart] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
+    
+    // Estados temporários para o filtro personalizado (UX de confirmação)
+    const [tempStart, setTempStart] = useState(customStart);
+    const [tempEnd, setTempEnd] = useState(customEnd);
 
     const dateRange = useMemo(() => {
         const now = new Date();
         switch (filter) {
             case 'hoje':
+                // FIX: Manual startOfDay replacement.
                 const startToday = new Date(now);
                 startToday.setHours(0, 0, 0, 0);
                 return { 
@@ -111,6 +77,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     label: 'Hoje'
                 };
             case 'semana':
+                // FIX: Manual subDays and startOfDay replacement.
                 const startWeek = addDays(now, -7);
                 startWeek.setHours(0, 0, 0, 0);
                 return { 
@@ -119,6 +86,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     label: 'Últimos 7 dias'
                 };
             case 'mes':
+                // FIX: Manual startOfMonth replacement.
                 const startMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
                 return { 
                     start: startMonth.toISOString(), 
@@ -126,6 +94,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     label: 'Este Mês'
                 };
             case 'custom':
+                // FIX: Manual startOfDay replacement.
                 const startCustom = new Date(customStart);
                 startCustom.setHours(0, 0, 0, 0);
                 const endCustom = new Date(customEnd);
@@ -151,11 +120,10 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         if (!activeStudioId) return;
         let mounted = true;
 
-        const fetchData = async () => {
+        const fetchDashboardData = async () => {
             try {
                 if (mounted) setIsLoading(true);
 
-                // Busca Atendimentos
                 const { data: appts, error: apptsError } = await supabase
                     .from('appointments')
                     .select('*')
@@ -167,78 +135,78 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 if (apptsError) throw apptsError;
                 if (mounted) setAppointments(appts || []);
 
-                // Busca Faturamento do Mês para Meta
                 const now = new Date();
+                // FIX: Manual startOfMonth replacement.
                 const startMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-                const { data: monthData } = await supabase
+                const startMonthStr = startMonth.toISOString();
+                const endMonthStr = endOfMonth(now).toISOString();
+                
+                const { data: monthData, error: monthError } = await supabase
                     .from('appointments')
                     .select('value')
                     .eq('studio_id', activeStudioId)
                     .eq('status', 'concluido')
-                    .gte('date', startMonth.toISOString())
-                    .lte('date', endOfMonth(now).toISOString());
+                    .gte('date', startMonthStr)
+                    .lte('date', endMonthStr);
                 
-                if (mounted) setMonthRevenueTotal(monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0);
+                if (monthError) throw monthError;
+                
+                const totalMonthRev = monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0;
+                if (mounted) setMonthRevenueTotal(totalMonthRev);
 
-                // Busca Configurações (Meta)
-                const { data: settings } = await supabase
+                const { data: settings, error: settingsError } = await supabase
                     .from('studio_settings')
                     .select('revenue_goal')
-                    .eq('id', activeStudioId)
+                    .eq('id', activeStudioId) // Supondo que id do studio_settings seja o activeStudioId
                     .maybeSingle();
                 
-                if (mounted) setFinancialGoal(settings?.revenue_goal || 5000);
+                if (settingsError) throw settingsError;
+                
+                if (mounted) {
+                    setFinancialGoal(settings?.revenue_goal || 5000);
+                }
 
             } catch (e) {
-                console.error("Erro dashboard:", e);
+                console.error("Erro crítico ao sincronizar dashboard:", e);
             } finally {
                 if (mounted) setIsLoading(false);
             }
         };
 
-        fetchData();
-        return () => { mounted = false; };
-    }, [dateRange, activeStudioId]);
+        fetchDashboardData();
 
-    // Busca Recebimentos Recentes via RPC sincronizado
-    useEffect(() => {
-        if (!activeStudioId) return;
-        const fetchRecentPayments = async () => {
-            setLoadingPayments(true);
-            try {
-                const { data, error } = await supabase.rpc("get_recent_payments_by_studio", { 
-                    p_studio_id: activeStudioId,
-                    p_limit: 10 
-                });
-                if (error) throw error;
-                setRecentPayments(data || []);
-            } catch (e) {
-                console.error("Erro ao buscar pagamentos recentes:", e);
-            } finally {
-                setLoadingPayments(false);
-            }
+        return () => {
+            mounted = false;
         };
-        fetchRecentPayments();
-    }, [activeStudioId]);
+    }, [dateRange, activeStudioId]);
 
     // KPIs Dinâmicos
     const kpis = useMemo(() => {
         const revenue = appointments
             .filter(a => a.status === 'concluido')
             .reduce((acc, a) => acc + (Number(a.value) || 0), 0);
+        
         const scheduled = appointments.filter(a => a.status !== 'cancelado').length;
         const completed = appointments.filter(a => a.status === 'concluido').length;
+
         return { revenue, scheduled, completed };
     }, [appointments]);
 
+    // Lógica de Meta Financeira
     const goalMetrics = useMemo(() => {
         const goalProgress = financialGoal > 0 ? (monthRevenueTotal / financialGoal) * 100 : 0;
+        const displayGoal = financialGoal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
         return {
             progress: goalProgress,
-            display: financialGoal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+            display: displayGoal,
             visual: Math.min(goalProgress, 100)
         };
     }, [monthRevenueTotal, financialGoal]);
+
+    const handleApplyCustomFilter = () => {
+        setCustomStart(tempStart);
+        setCustomEnd(tempEnd);
+    };
 
     if (isLoading) {
         return (
@@ -266,10 +234,13 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 </div>
 
                 <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                        <button onClick={() => setFilter('hoje')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'hoje' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>Hoje</button>
-                        <button onClick={() => setFilter('semana')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'semana' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>7 Dias</button>
-                        <button onClick={() => setFilter('mes')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'mes' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>Mês</button>
+                    <div className="flex flex-col gap-2 items-end">
+                        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                            <button onClick={() => setFilter('hoje')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'hoje' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>Hoje</button>
+                            <button onClick={() => setFilter('semana')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'semana' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>7 Dias</button>
+                            <button onClick={() => setFilter('mes')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'mes' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>Mês</button>
+                            <button onClick={() => setFilter('custom')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'custom' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>Personalizado</button>
+                        </div>
                     </div>
                     <button onClick={() => onNavigate('agenda')} className="px-4 py-2.5 bg-orange-500 text-white font-black rounded-xl hover:bg-orange-600 transition shadow-lg flex items-center gap-2 text-sm active:scale-95">
                         <PlusCircle size={18} /> Novo Agendamento
@@ -309,40 +280,11 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         <QuickAction icon={Clock} label="Agenda" color="bg-orange-500" onClick={() => onNavigate('agenda')} />
                     </div>
                     <JaciBotAssistant fetchInsight={getDashboardInsight} />
-                    
-                    <Card title="Recebimentos Recentes" icon={<History size={18} className="text-orange-500" />}>
-                        {loadingPayments ? (
-                            <div className="py-10 flex justify-center"><Loader2 className="animate-spin text-orange-500" /></div>
-                        ) : recentPayments.length === 0 ? (
-                            <div className="py-10 text-center text-slate-400 flex flex-col items-center">
-                                <History className="opacity-10 mb-2" size={48} />
-                                <p className="text-xs font-black uppercase tracking-widest">Nenhum recebimento hoje</p>
-                            </div>
-                        ) : (
-                            <div className="divide-y divide-slate-50">
-                                {recentPayments.map((p) => (
-                                    <div key={p.id} className="py-4 flex items-center justify-between group hover:bg-slate-50/50 transition-colors rounded-xl px-2">
-                                        <div className="flex items-center gap-4">
-                                            <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
-                                                <CheckCircle size={20} />
-                                            </div>
-                                            <div className="min-w-0">
-                                                <p className="text-sm font-black text-slate-700 truncate">{p.description || 'Recebimento'}</p>
-                                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
-                                                    {p.client_name || 'Consumidor Final'} • {p.payment_method?.toUpperCase() || 'PIX'}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-sm font-black text-emerald-600 leading-none">+{formatCurrency(Number(p.amount))}</p>
-                                            <p className="text-[9px] text-slate-400 font-black mt-1 uppercase tracking-tighter">
-                                                {safeFormatTime(p.date)}
-                                            </p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                    <Card title="Atividade Recente" icon={<BarChart3 size={18} className="text-orange-500" />}>
+                        <div className="py-10 text-center text-slate-400 flex flex-col items-center">
+                            <TrendingUp className="opacity-10 mb-2" size={48} />
+                            <p className="text-sm font-bold uppercase tracking-widest">Análise em processamento...</p>
+                        </div>
                     </Card>
                 </div>
                 <div className="lg:col-span-1">

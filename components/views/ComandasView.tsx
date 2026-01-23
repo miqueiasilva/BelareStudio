@@ -5,7 +5,7 @@ import {
     DollarSign, Coffee, Scissors, Trash2, ShoppingBag, X,
     CreditCard, Banknote, Smartphone, CheckCircle, Loader2,
     Receipt, History, LayoutGrid, CheckCircle2, AlertCircle,
-    Eye, Edit2, Briefcase, ChevronRight
+    Eye, Edit2
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
@@ -28,10 +28,8 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction, onNavigat
     const [currentTab, setCurrentTab] = useState<'open' | 'paid'>('open');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
+    const [isSelectionOpen, setIsSelectionOpen] = useState(false);
     const [isClientSearchOpen, setIsClientSearchOpen] = useState(false);
-    const [isProfSelectionOpen, setIsProfSelectionOpen] = useState(false);
-    const [selectedClientForNewCommand, setSelectedClientForNewCommand] = useState<Client | null>(null);
-    const [dbProfessionals, setDbProfessionals] = useState<any[]>([]);
     
     const [catalog, setCatalog] = useState<any[]>([]);
 
@@ -54,50 +52,36 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction, onNavigat
         }
     };
 
-    const fetchCatalogAndProfs = async () => {
+    const fetchCatalog = async () => {
         if (!activeStudioId) return;
-        // ✅ CARREGANDO LISTA DE PROFISSIONAIS: select uuid_id, name conforme solicitado
-        const [svcs, prods, profs] = await Promise.all([
+        const [svcs, prods] = await Promise.all([
             supabase.from('services').select('id, nome, preco').eq('studio_id', activeStudioId).eq('ativo', true),
-            supabase.from('products').select('id, name, price').eq('studio_id', activeStudioId).eq('active', true),
-            supabase.from('professionals').select('uuid_id, name').eq('studio_id', activeStudioId).order('name')
+            supabase.from('products').select('id, name, price').eq('studio_id', activeStudioId).eq('active', true)
         ]);
         const items = [
             ...(svcs.data || []).map(s => ({ id: s.id, name: `[Serviço] ${s.nome}`, price: s.preco, type: 'servico' })),
             ...(prods.data || []).map(p => ({ id: p.id, name: `[Produto] ${p.name}`, price: p.price, type: 'produto' }))
         ];
         setCatalog(items);
-        setDbProfessionals(profs.data || []);
     };
 
-    useEffect(() => { fetchCommands(); fetchCatalogAndProfs(); }, [currentTab, activeStudioId]);
+    useEffect(() => { fetchCommands(); fetchCatalog(); }, [currentTab, activeStudioId]);
 
-    const handleStartNewCommandFlow = (client: Client) => {
-        setSelectedClientForNewCommand(client);
+    const handleCreateCommand = async (client: Client) => {
+        if (!activeStudioId) return;
         setIsClientSearchOpen(false);
-        setIsProfSelectionOpen(true);
-    };
-
-    const handleCreateCommand = async (professional: any) => {
-        if (!activeStudioId || !selectedClientForNewCommand) return;
-        setIsProfSelectionOpen(false);
         try {
             const { data, error } = await supabase
                 .from('commands')
-                .insert([{ 
-                    studio_id: activeStudioId, 
-                    client_id: selectedClientForNewCommand.id, 
-                    professional_id: professional.uuid_id,
-                    status: 'open' 
-                }])
+                .insert([{ studio_id: activeStudioId, client_id: client.id, status: 'open' }])
                 .select('*, clients(*), command_items(*)')
                 .single();
             if (error) throw error;
             setTabs(prev => [data, ...prev]);
-            setToast({ message: `Comanda aberta para ${selectedClientForNewCommand.nome}!`, type: 'success' });
+            setToast({ message: `Comanda aberta!`, type: 'success' });
+            // Navega automaticamente para os detalhes da nova comanda
             onNavigateToCommand(data.id);
         } catch (e: any) { setToast({ message: "Erro ao abrir comanda.", type: 'error' }); }
-        finally { setSelectedClientForNewCommand(null); }
     };
 
     const handleDeleteCommand = async (e: React.MouseEvent, commandId: string) => {
@@ -210,19 +194,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction, onNavigat
                     </div>
                 )}
             </main>
-            
-            {isClientSearchOpen && <ClientSearchModal onClose={() => setIsClientSearchOpen(false)} onSelect={handleStartNewCommandFlow} onNewClient={() => {}} />}
-            
-            {isProfSelectionOpen && (
-                <SelectionModal 
-                    title="Quem está atendendo?"
-                    items={dbProfessionals.map(p => ({ id: p.uuid_id, name: p.name, uuid_id: p.uuid_id }))}
-                    onClose={() => setIsProfSelectionOpen(false)}
-                    onSelect={handleCreateCommand}
-                    searchPlaceholder="Buscar profissional..."
-                    renderItemIcon={() => <Briefcase size={20}/>}
-                />
-            )}
+            {isClientSearchOpen && <ClientSearchModal onClose={() => setIsClientSearchOpen(false)} onSelect={handleCreateCommand} onNewClient={() => {}} />}
         </div>
     );
 };

@@ -39,7 +39,6 @@ interface CheckoutModalProps {
         price: number;
         professional_id?: number | string; 
         professional_name: string;
-        studio_id?: string;
     };
     onSuccess: () => void;
 }
@@ -75,10 +74,11 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         if (!activeStudioId) return;
         setIsFetching(true);
         try {
+            // ✅ CORREÇÃO: Utilizando a tabela professionals e a coluna uuid_id
             const [profsRes, methodsRes] = await Promise.all([
                 supabase
                     .from('professionals')
-                    .select('uuid_id, name, studio_id')
+                    .select('id:uuid_id, name')
                     .eq('studio_id', activeStudioId)
                     .order('name'),
                 supabase.from('payment_methods_config').select('*').eq('is_active', true)
@@ -122,18 +122,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         if (e) { e.preventDefault(); e.stopPropagation(); }
 
         if (!currentMethod || !activeStudioId || isLoading) return;
-
-        // TRAVA DE SEGURANÇA: Validar se professional_id pertence ao estúdio atual
-        // Isso previne o Erro 400 se o agendamento estiver com dados obsoletos
-        const targetProfId = appointment.professional_id ? String(appointment.professional_id) : null;
-        if (targetProfId) {
-            const isProfValid = dbProfessionals.some(p => String(p.uuid_id) === targetProfId);
-            if (!isProfValid) {
-                setToast({ message: "Sincronização necessária: Este profissional não pertence a esta unidade. Por favor, recarregue a página.", type: 'error' });
-                return;
-            }
-        }
-
         setIsLoading(true);
 
         try {
@@ -141,7 +129,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
             const payload = {
                 p_studio_id: String(activeStudioId),
-                p_professional_id: targetProfId,
+                p_professional_id: appointment.professional_id ? String(appointment.professional_id) : null,
                 p_amount: Number(appointment.price),
                 p_method: methodMapping[selectedCategory] || 'pix',
                 p_brand: String(currentMethod.brand || 'default'),
@@ -150,6 +138,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 p_client_id: appointment.client_id ? Number(appointment.client_id) : null,
                 p_description: `Atendimento: ${appointment.service_name}`
             };
+
+            // LOG DE INTERCEPTAÇÃO REQUISITADO
+            console.log('--- RPC INVOCATION: register_payment_transaction_v2 ---');
+            console.log('Payload:', payload);
 
             const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
 
@@ -234,7 +226,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
                 <footer className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
                     <button onClick={onClose} className="flex-1 py-4 text-slate-500 font-black uppercase tracking-widest text-xs hover:bg-slate-200 rounded-2xl">Cancelar</button>
-                    <button onClick={(e) => handleConfirmPayment(e)} disabled={isLoading || !currentMethod} className="flex-[2] bg-slate-800 hover:bg-slate-900 text-white font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50">{isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />} Confirmar Recebimento</button>
+                    <button onClick={(e) => handleConfirmPayment(e)} disabled={isLoading || !currentMethod} className="flex-[2] bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50">{isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />} Confirmar Recebimento</button>
                 </footer>
             </div>
         </div>
