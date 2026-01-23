@@ -137,8 +137,7 @@ const ServicosView: React.FC = () => {
         }
     };
 
-    // FIX: Updated id type to string | number
-    const handleDelete = async (id: string | number) => {
+    const handleDelete = async (id: number) => {
         if (window.confirm("Deseja realmente excluir este serviço?")) {
             const { error } = await supabase.from('services').delete().eq('id', id);
             if (!error) { 
@@ -282,20 +281,17 @@ const ServicosView: React.FC = () => {
                     </div>
                 ) : (
                     <div className="flex gap-6 pb-10 min-h-full items-start">
-                        {/* FIX: Cast items from Object.entries to resolve 'unknown' type issues with length and map */}
-                        {(Object.entries(groupedServices) as [string, Service[]][])?.map(([category, items]) => (
+                        {Object.entries(groupedServices)?.map(([category, items]) => (
                             <div key={category} className="flex-shrink-0 w-80 flex flex-col">
                                 <header className="flex items-center justify-between mb-4 px-2">
                                     <h3 className="font-black text-slate-500 text-[10px] uppercase tracking-[0.2em] flex items-center gap-2">
                                         <Tag size={14} className="text-orange-500" />
                                         {category}
-                                        {/* FIX: Type assertion to resolve property 'length' does not exist on type 'unknown' */}
-                                        <span className="bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-lg ml-1 font-black">{(items as any)?.length || 0}</span>
+                                        <span className="bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-lg ml-1 font-black">{items?.length || 0}</span>
                                     </h3>
                                 </header>
                                 <div className="space-y-4">
-                                    {/* FIX: Type assertion to resolve property 'map' does not exist on type 'unknown' */}
-                                    {(items as any)?.map(s => (
+                                    {items?.map(s => (
                                         <div key={s.id} className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-sm hover:shadow-md hover:border-orange-200 transition-all group relative overflow-hidden cursor-pointer" onClick={() => { setEditingService(s); setIsModalOpen(true); }}>
                                             <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: s.cor_hex || '#f97316' }}></div>
                                             <h4 className="font-black text-slate-800 leading-tight group-hover:text-orange-600 transition-colors mb-4">{s.nome}</h4>

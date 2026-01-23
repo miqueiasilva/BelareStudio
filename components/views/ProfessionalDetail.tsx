@@ -57,7 +57,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
     const [allServices, setAllServices] = useState<Service[]>([]);
     const [allRooms, setAllRooms] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
-    const [isUploading, setIsUploading] = useState<'cover' | 'logo' | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
     const [activeTab, setActiveTab] = useState<'perfil' | 'servicos' | 'horarios' | 'comissoes' | 'permissoes'>('perfil');
     
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -101,7 +101,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !prof?.id) return;
-        setIsLoading(true);
+        setIsUploading(true);
         try {
             const fileExt = file.name.split('.').pop();
             const fileName = `prof_${prof.id}_${Date.now()}.${fileExt}`;
@@ -115,7 +115,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         } catch (error: any) {
             alert(`Falha no upload: ${error.message}`);
         } finally {
-            setIsLoading(false);
+            setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
@@ -172,10 +172,9 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         }
     };
 
-    // FIX: Updated id type to string | number
-    const toggleService = (id: string | number) => {
+    const toggleService = (id: number) => {
         const current = prof.services_enabled || [];
-        const next = current.includes(id) ? current.filter((sId: string | number) => sId !== id) : [...current, id];
+        const next = current.includes(id) ? current.filter((sId: number) => sId !== id) : [...current, id];
         setProf({ ...prof, services_enabled: next });
     };
 
@@ -247,7 +246,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                                         >
                                             {prof.photo_url ? <img src={prof.photo_url} className="w-full h-full object-cover" alt="Avatar" /> : <User size={64} className="m-12 text-slate-300" />}
                                             <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                {isLoading ? <Loader2 className="text-white animate-spin" size={20} /> : <Camera className="text-white" />}
+                                                {isUploading ? <Loader2 className="text-white animate-spin" size={20} /> : <Camera className="text-white" />}
                                                 <span className="text-[10px] text-white font-black uppercase mt-2">Trocar Foto</span>
                                             </div>
                                         </div>

@@ -15,7 +15,7 @@ interface PaymentMethod {
     type: 'credit' | 'debit' | 'pix' | 'money';
     brand?: string;
     rate_cash: number | string; 
-    rate_installment_12x: number | string;
+    rate_installment_12x: number | string; // Restaurada propriedade específica do schema
     allow_installments: boolean;
     max_installments: number;
     installment_rates: Record<string, number | string>; 
@@ -23,6 +23,7 @@ interface PaymentMethod {
 }
 
 const CARD_BRANDS = ['VISA', 'MASTER', 'ELO', 'HIPER', 'AMEX', 'OUTRAS'];
+const INSTALLMENT_OPTIONS = Array.from({ length: 11 }, (_, i) => i + 2); // 2x até 12x
 
 const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [methods, setMethods] = useState<PaymentMethod[]>([]);
@@ -71,18 +72,9 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 }
             }
 
-            // Mapeamento SENIOR para o campo method_type do banco
-            const methodTypeMapping: Record<string, string> = {
-                'credit': 'card',
-                'debit': 'card',
-                'pix': 'transfer',
-                'money': 'money'
-            };
-
             const payload: any = {
                 name: editingMethod.name,
                 type: editingMethod.type,
-                method_type: methodTypeMapping[editingMethod.type] || 'other', // Novo campo exigido
                 brand: (editingMethod.type === 'credit' || editingMethod.type === 'debit') ? editingMethod.brand : null,
                 rate_cash: parseFloat(String(editingMethod.rate_cash || 0)),
                 rate_installment_12x: editingMethod.type === 'credit' ? parseFloat(String(editingMethod.rate_installment_12x || 0)) : 0,
@@ -103,7 +95,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             if (error) throw error;
 
-            setToast({ message: 'Configurações de taxas sincronizadas com o banco!', type: 'success' });
+            setToast({ message: 'Configurações de taxas atualizadas!', type: 'success' });
             setEditingMethod(null);
             fetchMethods();
         } catch (err: any) {
@@ -125,7 +117,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             if (error) throw error;
             fetchMethods();
-            if (editingMethod?.id === id) setEditingMethod(null);
+            setEditingMethod(null);
             setToast({ message: "Método removido.", type: 'info' });
         } catch (err: any) {
             setToast({ message: "Erro ao excluir: " + err.message, type: 'error' });
@@ -203,20 +195,8 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 <div className="p-3 bg-slate-50 rounded-2xl group-hover:bg-orange-50 group-hover:text-orange-600 transition-colors">
                                     {getIcon(method.type)}
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <button 
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (method.id) handleDelete(method.id);
-                                        }}
-                                        className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
-                                        title="Excluir Método"
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
-                                    <div className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter ${method.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                                        {method.is_active ? 'Ativo' : 'Pausado'}
-                                    </div>
+                                <div className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter ${method.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                    {method.is_active ? 'Ativo' : 'Pausado'}
                                 </div>
                             </div>
                             

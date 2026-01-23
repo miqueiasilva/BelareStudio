@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 // FIX: Use legacy types with aliases to match mock data structure and resolve type errors.
 import { LegacyAppointment as Appointment, LegacyProfessional as Professional, Client, LegacyService as Service, AppointmentStatus } from '../../types';
@@ -140,11 +141,9 @@ const TimelineIndicator = () => {
 
 
 const AdminDashboard: React.FC = () => {
-    // FIX: Updated visibleProfessionals state type to (string | number)[] to match the id type in LegacyProfessional.
-    const [visibleProfessionals, setVisibleProfessionals] = useState<(string | number)[]>(professionals.map(p => p.id));
+    const [visibleProfessionals, setVisibleProfessionals] = useState<number[]>(professionals.map(p => p.id));
 
-    // FIX: Updated handleProfessionalToggle parameter type to string | number to match the id type in LegacyProfessional.
-    const handleProfessionalToggle = (id: string | number) => {
+    const handleProfessionalToggle = (id: number) => {
         setVisibleProfessionals(prev =>
             prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]
         );

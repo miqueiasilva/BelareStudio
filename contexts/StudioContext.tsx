@@ -33,23 +33,15 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
   };
 
   const refreshStudios = async () => {
-    if (!supabase) {
-      setLoading(false);
-      return;
-    }
-
     try {
       setLoading(true);
 
-      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
-      if (sessionErr) throw sessionErr;
-      
+      const { data: sessionData } = await supabase.auth.getSession();
       const user = sessionData?.session?.user;
       
       if (!user) {
         setStudios([]);
         setActiveStudioIdState(null);
-        setLoading(false);
         return;
       }
 
@@ -65,7 +57,6 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
         setStudios([]);
         setActiveStudioIdState(null);
         localStorage.removeItem(STORAGE_KEY);
-        setLoading(false);
         return;
       }
 
@@ -80,7 +71,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
       if (sErr) throw sErr;
 
       // 3. Mapeia combinando as informações
-      const mappedStudios = (studiosData || []).map(s => ({
+      const mappedStudios = studiosData.map(s => ({
         id: s.id,
         name: s.name,
         role: memberships.find(m => m.studio_id === s.id)?.role
@@ -89,23 +80,16 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
       setStudios(mappedStudios);
 
       // 4. Gerencia qual studio está ativo
-      if (mappedStudios.length > 0) {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        const savedStillValid = saved && mappedStudios.some((s) => s.id === saved);
-        
-        if (!savedStillValid) {
-          setActiveStudioId(mappedStudios[0].id);
-        } else {
-          setActiveStudioIdState(saved!);
-        }
+      const saved = localStorage.getItem(STORAGE_KEY);
+      const savedStillValid = saved && mappedStudios.some((s) => s.id === saved);
+      
+      if (!savedStillValid) {
+        setActiveStudioId(mappedStudios[0].id);
       } else {
-        setActiveStudioIdState(null);
-        localStorage.removeItem(STORAGE_KEY);
+        setActiveStudioIdState(saved!);
       }
-    } catch (err: any) {
-      console.error("[StudioProvider] refreshStudios error:", err?.message);
-      setStudios([]);
-      setActiveStudioIdState(null);
+    } catch (err) {
+      console.error("[StudioProvider] refreshStudios error:", err);
     } finally {
       setLoading(false);
     }
@@ -114,24 +98,13 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
   useEffect(() => {
     refreshStudios();
 
-    // Safety Timeout: Se em 5 segundos não carregar as unidades, libera a UI
-    const timer = setTimeout(() => {
-      if (loading) {
-        console.warn("[StudioContext] Tempo limite de carregamento atingido.");
-        setLoading(false);
-      }
-    }, 5000);
-
-    if (!supabase) return () => clearTimeout(timer);
-
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
         refreshStudios();
       } else if (event === 'SIGNED_OUT') {
         setStudios([]);
         setActiveStudioIdState(null);
         localStorage.removeItem(STORAGE_KEY);
-        setLoading(false);
       }
     });
 
@@ -143,7 +116,6 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
     return () => {
       sub.subscription.unsubscribe();
       window.removeEventListener("storage", onStorage);
-      clearTimeout(timer);
     };
   }, []);
 

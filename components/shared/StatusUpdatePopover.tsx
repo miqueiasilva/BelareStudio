@@ -7,8 +7,7 @@ interface StatusUpdatePopoverProps {
   appointment: LegacyAppointment;
   targetElement: HTMLElement | null;
   onClose: () => void;
-  // FIX: Updated appointmentId type to string | number to match LegacyAppointment.id
-  onUpdateStatus: (appointmentId: string | number, newStatus: AppointmentStatus) => void;
+  onUpdateStatus: (appointmentId: number, newStatus: AppointmentStatus) => void;
 }
 
 const statusOptions: { key: AppointmentStatus; label: string; icon: React.ReactNode }[] = [

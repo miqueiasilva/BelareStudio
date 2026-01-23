@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BelareStudio - Gestão Inteligente</title>
 
-    <!-- Tailwind CSS CDN (Restaurado para garantir o funcionamento do layout) -->
+    <!-- Tailwind is handled by Vite via PostCSS, but keeping CDN for fallback if config misses -->
     <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- Fonts -->
@@ -31,6 +31,7 @@
         scrollbar-width: none;
       }
     </style>
+    <!-- v1.0.1 Fix: Importmap removed to prevent React version conflict -->
 <script type="importmap">
 {
   "imports": {

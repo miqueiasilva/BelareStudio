@@ -39,7 +39,7 @@ const ReceiptModal = ({ transaction, onClose, onNewSale }: { transaction: any, o
             <div className="p-6 space-y-4">
                 <div className="text-center space-y-1 border-b border-slate-100 pb-4">
                     <p className="text-xs text-slate-400 uppercase font-bold">Valor Total</p>
-                    <p className="text-3xl font-extrabold text-slate-800">R$ {Number(transaction.amount || 0).toFixed(2)}</p>
+                    <p className="text-3xl font-extrabold text-slate-800">R$ {Number(transaction.amount).toFixed(2)}</p>
                     <p className="text-sm text-slate-500 capitalize">{transaction.payment_method?.replace('_', ' ') || 'Pix'}</p>
                 </div>
 
@@ -47,6 +47,10 @@ const ReceiptModal = ({ transaction, onClose, onNewSale }: { transaction: any, o
                     <div className="flex justify-between">
                         <span>Data:</span>
                         <span className="font-medium">{format(new Date(), 'dd/MM/yyyy HH:mm')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span>Resumo:</span>
+                        <span className="font-medium truncate max-w-[200px]">{transaction.description?.replace('Venda PDV: ', '')}</span>
                     </div>
                 </div>
 
@@ -113,7 +117,15 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
         setPaymentMethod('pix');
         setLastTransaction(null);
         setSearchTerm('');
+        setToast({ message: "Ambiente pronto para nova venda! 🧼", type: 'info' });
     };
+
+    const filteredItems = useMemo(() => {
+        const term = searchTerm.toLowerCase();
+        if (activeTab === 'servicos') return dbServices.filter(s => (s.nome || '').toLowerCase().includes(term));
+        if (activeTab === 'produtos') return dbProducts.filter(p => (p.name || '').toLowerCase().includes(term));
+        return dbAppointments.filter(a => (a.client_name || '').toLowerCase().includes(term));
+    }, [activeTab, searchTerm, dbServices, dbProducts, dbAppointments]);
 
     const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
     const discountValue = parseFloat(discount) || 0;
@@ -134,29 +146,42 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
         });
     };
 
+    const updateQuantity = (index: number, delta: number) => {
+        setCart(prev => {
+            const newCart = [...prev];
+            const item = newCart[index];
+            item.quantity += delta;
+            if (item.quantity <= 0) return prev.filter((_, i) => i !== index);
+            return newCart;
+        });
+    };
+
     const handleFinishSale = async () => {
         if (cart.length === 0 || isFinishing || !activeStudioId) return;
         setIsFinishing(true);
 
         try {
-            const methodMapping: Record<string, string> = { 'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit' };
+            const itemsResumo = cart.map(i => `${i.quantity}x ${i.name}`).join(', ');
+            const description = selectedClient ? `Venda PDV - ${selectedClient.nome}: ${itemsResumo}` : `Venda PDV: ${itemsResumo}`;
 
-            // CHAMADA À NOVA RPC: pay_latest_open_command_v6
-            const { error: rpcError } = await supabase.rpc('pay_latest_open_command_v6', {
-                p_amount: total,
-                p_method: methodMapping[paymentMethod] || 'pix',
-                p_brand: '',
-                p_installments: 1
-            });
+            const transactionData = {
+                studio_id: activeStudioId,
+                description,
+                amount: total,
+                net_value: total, // Para vendas PDV sem integração complexa de taxa JIT
+                type: 'income',
+                category: cart.some(i => i.type === 'produto') ? 'produto' : 'servico',
+                payment_method: paymentMethod,
+                client_id: selectedClient?.id || null,
+                status: 'pago',
+                date: new Date().toISOString()
+            };
 
-            if (rpcError) {
-                const detailedError = `[${rpcError.message}] Details: ${rpcError.details || 'N/A'}. Hint: ${rpcError.hint || 'N/A'}`;
-                console.error("Falha no PDV:", detailedError);
-                throw rpcError;
-            }
+            const { data: transaction, error: transError } = await supabase.from('financial_transactions').insert([transactionData]).select().single();
+            if (transError) throw transError;
 
-            setLastTransaction({ amount: total, payment_method: paymentMethod });
-            setToast({ message: "Venda finalizada com sucesso!", type: 'success' });
+            setLastTransaction(transaction);
+            setToast({ message: "Venda registrada!", type: 'success' });
             fetchPOSData(); 
 
         } catch (error: any) {
@@ -166,18 +191,11 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
         }
     };
 
-    const filteredItems = useMemo(() => {
-        const term = searchTerm.toLowerCase();
-        if (activeTab === 'servicos') return dbServices.filter(s => (s.nome || '').toLowerCase().includes(term));
-        if (activeTab === 'produtos') return dbProducts.filter(p => (p.name || '').toLowerCase().includes(term));
-        return dbAppointments.filter(a => (a.client_name || '').toLowerCase().includes(term));
-    }, [activeTab, searchTerm, dbServices, dbProducts, dbAppointments]);
-
     const paymentMethodsConfig = [
-        { id: 'pix', label: 'Pix', icon: Smartphone, color: 'text-teal-500' },
-        { id: 'cartao_credito', label: 'Crédito', icon: CreditCard, color: 'text-blue-500' },
-        { id: 'cartao_debito', label: 'Débito', icon: CreditCard, color: 'text-cyan-500' },
-        { id: 'dinheiro', label: 'Dinheiro', icon: Banknote, color: 'text-green-500' },
+        { id: 'pix', label: 'Pix', icon: Smartphone, color: 'bg-teal-500' },
+        { id: 'cartao_credito', label: 'Crédito', icon: CreditCard, color: 'bg-blue-500' },
+        { id: 'cartao_debito', label: 'Débito', icon: CreditCard, color: 'bg-cyan-500' },
+        { id: 'dinheiro', label: 'Dinheiro', icon: Banknote, color: 'bg-green-500' },
     ];
 
     return (
@@ -195,9 +213,9 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             <div className="flex-1 flex flex-col min-w-0 border-r border-slate-200">
                 <div className="bg-white p-4 border-b border-slate-200 space-y-4">
                     <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
-                        <button onClick={() => setActiveTab('servicos')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'servicos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-50'}`}><Scissors size={16} /> Serviços</button>
-                        <button onClick={() => setActiveTab('produtos')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'produtos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-50'}`}><Package size={16} /> Produtos</button>
-                        <button onClick={() => setActiveTab('agenda')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'agenda' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-50'}`}><Calendar size={16} /> Agenda</button>
+                        <button onClick={() => setActiveTab('servicos')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'servicos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}><Scissors size={16} /> Serviços</button>
+                        <button onClick={() => setActiveTab('produtos')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'produtos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}><Package size={16} /> Produtos</button>
+                        <button onClick={() => setActiveTab('agenda')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'agenda' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}><Calendar size={16} /> Agenda</button>
                     </div>
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
@@ -230,6 +248,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
             <div className="w-full md:w-[420px] bg-white flex flex-col shadow-2xl z-10">
                 <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                     <div><h3 className="font-black text-slate-800 uppercase tracking-tighter text-lg flex items-center gap-2"><ShoppingCart className="text-orange-500" size={22} /> Carrinho</h3><p className="text-[10px] text-slate-400 font-bold uppercase">{cart.length} itens</p></div>
+                    {selectedClient && <div className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full font-black text-[10px] flex items-center gap-2">{selectedClient.nome} <X size={12} className="cursor-pointer" onClick={() => setSelectedClient(null)}/></div>}
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -240,14 +259,19 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                             <div key={item.uuid} className="flex items-center gap-4 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm animate-in slide-in-from-right-4">
                                 <div className="flex-1 min-w-0"><p className="font-black text-slate-800 text-sm truncate">{item.name}</p><p className="text-[10px] text-slate-400 font-bold">R$ {item.price.toFixed(2)}</p></div>
                                 <div className="flex items-center bg-slate-50 rounded-2xl p-1 border border-slate-100">
-                                    <button onClick={() => setCart(cart.filter((_, i) => i !== index))} className="p-2 text-slate-200 hover:text-rose-500"><Trash2 size={16} /></button>
+                                    <button onClick={() => updateQuantity(index, -1)} className="p-2 text-slate-400 hover:text-rose-500"><Minus size={14} /></button>
+                                    <span className="w-8 text-center text-xs font-black text-slate-800">{item.quantity}</span>
+                                    <button onClick={() => updateQuantity(index, 1)} className="p-2 text-slate-400 hover:text-emerald-500"><Plus size={14} /></button>
                                 </div>
+                                <button onClick={() => setCart(cart.filter((_, i) => i !== index))} className="p-2 text-slate-200 hover:text-rose-500"><Trash2 size={16} /></button>
                             </div>
                         ))
                     )}
                 </div>
 
                 <div className="bg-slate-50/80 p-6 border-t border-slate-200 space-y-4">
+                    <div className="flex justify-between text-xs font-bold text-slate-500 uppercase tracking-widest"><span>Subtotal</span><span className="text-slate-800 font-black">R$ {subtotal.toFixed(2)}</span></div>
+                    <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase tracking-widest"><span>Desconto</span><input type="number" value={discount} onChange={e => setDiscount(e.target.value)} className="w-24 px-2 py-1 text-right border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-100" placeholder="0,00" /></div>
                     <div className="flex justify-between items-center border-t pt-4">
                         <span className="text-xs font-black uppercase text-slate-400">Total</span>
                         <span className="text-3xl font-black text-slate-800">R$ {total.toFixed(2)}</span>
@@ -263,6 +287,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                     </div>
 
                     <div className="flex gap-3 pt-2">
+                        <button onClick={() => { if(window.confirm("Limpar carrinho?")) resetSaleState(); }} className="p-4 bg-white border border-slate-200 text-slate-300 hover:text-rose-500 rounded-2xl transition-all"><Eraser size={24} /></button>
                         <button onClick={handleFinishSale} disabled={cart.length === 0 || isFinishing} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-black py-4 rounded-2xl shadow-xl flex items-center justify-center gap-3 text-lg uppercase transition-all disabled:opacity-50">
                             {isFinishing ? <Loader2 className="animate-spin" /> : <><CheckCircle size={24} /> Finalizar Venda</>}
                         </button>

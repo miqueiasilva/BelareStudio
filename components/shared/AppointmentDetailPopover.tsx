@@ -15,10 +15,8 @@ interface AppointmentDetailPopoverProps {
   targetElement: HTMLElement | null;
   onClose: () => void;
   onEdit: (appointment: LegacyAppointment) => void;
-  // FIX: Updated id type to string | number
-  onDelete: (id: string | number) => void;
-  // FIX: Updated appointmentId type to string | number
-  onUpdateStatus: (appointmentId: string | number, newStatus: AppointmentStatus) => void;
+  onDelete: (id: number) => void;
+  onUpdateStatus: (appointmentId: number, newStatus: AppointmentStatus) => void;
   onConvertToCommand?: (appointment: LegacyAppointment) => void;
 }
 
@@ -95,8 +93,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     };
   }, [onClose, targetElement, isCheckoutOpen]);
 
-  // FIX: Updated id type to string | number
-  const handleStatusUpdateWrapper = (id: string | number, status: AppointmentStatus) => {
+  const handleStatusUpdateWrapper = (id: number, status: AppointmentStatus) => {
     onUpdateStatus(id, status);
     setIsStatusPopoverOpen(false);
     onClose();

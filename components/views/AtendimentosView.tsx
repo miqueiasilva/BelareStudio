@@ -8,10 +8,11 @@ import {
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
     CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle
 } from 'lucide-react';
+// FIX: Grouping date-fns imports and removing problematic members startOfDay, startOfWeek, startOfMonth.
 import { 
     format, addDays, addWeeks, addMonths, eachDayOfInterval, 
     isSameDay, isWithinInterval, isSameMonth, addMinutes, 
-    endOfDay, endOfWeek, endOfMonth, startOfDay
+    endOfDay, endOfWeek, endOfMonth 
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
@@ -52,7 +53,7 @@ const ConflictAlertModal = ({ newApp, conflictApp, onConfirm, onCancel }: any) =
                     <div className="w-20 h-20 bg-orange-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-200 animate-bounce">
                         <AlertTriangle size={40} />
                     </div>
-                    <h2 className="text-2xl font-black text-slate-800 leading-tight">Conflito de Horário!</h2>
+                    <h2 className="text-2xl font-black text-slate-800 leading-tight">Conflito de Horário Detectado!</h2>
                 </div>
                 <div className="p-8 space-y-6">
                     <div className="space-y-4">
@@ -83,9 +84,18 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
+
     const top = Math.floor(startMinutesSinceDayStart * pixelsPerMinute);
     const height = Math.max(20, Math.floor(durationMinutes * pixelsPerMinute));
-    return { position: 'absolute' as const, top: `${top}px`, height: `${height}px`, width: '100%', zIndex: 20, left: '0px' };
+    
+    return { 
+        position: 'absolute' as const,
+        top: `${top}px`, 
+        height: `${height}px`,
+        width: '100%', 
+        zIndex: 20,
+        left: '0px'
+    };
 };
 
 const TimelineIndicator = ({ timeSlot }: { timeSlot: number }) => {
@@ -131,105 +141,184 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [isJaciBotOpen, setIsJaciBotOpen] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
+
     const [pendingConflict, setPendingConflict] = useState<{ newApp: LegacyAppointment, conflictWith: any } | null>(null);
     const [viewMode, setViewMode] = useState<'profissional' | 'andamento' | 'pagamento'>('profissional');
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [colWidth, setColWidth] = useState(220);
     const [isAutoWidth, setIsAutoWidth] = useState(false);
     const [timeSlot, setTimeSlot] = useState(30);
+
     const isMounted = useRef(true);
-    const appointmentRefs = useRef(new Map<number | string, HTMLDivElement | null>());
+    const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
     const gridScrollRef = useRef<HTMLDivElement>(null); 
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastRequestId = useRef(0);
 
-    const getValidUUID = (id: any): string | null => {
-        if (!id || typeof id !== 'string') return null;
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        return uuidRegex.test(id) ? id : null;
-    };
-
     const fetchAppointments = async () => {
         if (!isMounted.current || authLoading || !user || !activeStudioId) return;
+        
         const requestId = ++lastRequestId.current;
         if (abortControllerRef.current) abortControllerRef.current.abort();
         abortControllerRef.current = new AbortController();
         setIsLoadingData(true);
+
         try {
             let rangeStart: Date, rangeEnd: Date;
             if (periodType === 'Semana') {
-                rangeStart = startOfDay(currentDate);
+                rangeStart = new Date(currentDate);
                 const day = rangeStart.getDay();
                 const diff = (day < 1 ? -6 : 1) - day;
                 rangeStart.setDate(rangeStart.getDate() + diff);
+                rangeStart.setHours(0, 0, 0, 0);
+                
                 rangeEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
             } else if (periodType === 'Mês') {
                 rangeStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1, 0, 0, 0, 0);
                 rangeEnd = endOfMonth(currentDate);
             } else {
-                rangeStart = startOfDay(currentDate);
+                rangeStart = new Date(currentDate);
+                rangeStart.setHours(0, 0, 0, 0);
                 rangeEnd = endOfDay(currentDate);
             }
 
-            // CORREÇÃO CRÍTICA: Busca usando 'start_at' para garantir integridade com o insert
             const [apptRes, blocksRes] = await Promise.all([
-                supabase.from('appointments').select('*').eq('studio_id', activeStudioId).gte('start_at', rangeStart.toISOString()).lte('start_at', rangeEnd.toISOString()).neq('status', 'cancelado').abortSignal(abortControllerRef.current.signal),
-                supabase.from('schedule_blocks').select('*').eq('studio_id', activeStudioId).gte('start_time', rangeStart.toISOString()).lte('start_time', rangeEnd.toISOString()).abortSignal(abortControllerRef.current.signal)
+                supabase
+                    .from('appointments')
+                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origem')
+                    .eq('studio_id', activeStudioId)
+                    .gte('date', rangeStart.toISOString())
+                    .lte('date', rangeEnd.toISOString())
+                    .neq('status', 'cancelado') 
+                    .abortSignal(abortControllerRef.current.signal),
+                supabase
+                    .from('schedule_blocks')
+                    .select('*')
+                    .eq('studio_id', activeStudioId)
+                    .gte('start_time', rangeStart.toISOString())
+                    .lte('start_time', rangeEnd.toISOString())
+                    .abortSignal(abortControllerRef.current.signal)
             ]);
-            
+
             if (apptRes.error) throw apptRes.error;
             if (blocksRes.error) throw blocksRes.error;
 
             if (isMounted.current && requestId === lastRequestId.current) {
-                const mappedAppts = (apptRes.data || []).map(row => ({ ...mapRowToAppointment(row, resources), type: 'appointment' }));
-                const mappedBlocks = (blocksRes.data || []).map(row => ({ id: row.id, start: new Date(row.start_time), end: new Date(row.end_time), professional: { id: row.professional_id }, service: { name: row.reason, color: '#fca5a5' }, status: 'bloqueado', type: 'block' }));
+                const mappedAppts = (apptRes.data || []).map(row => ({
+                    ...mapRowToAppointment(row, resources),
+                    type: 'appointment'
+                }));
+
+                const mappedBlocks = (blocksRes.data || []).map(row => ({
+                    id: row.id,
+                    start: new Date(row.start_time),
+                    end: new Date(row.end_time),
+                    professional: { id: row.professional_id }, 
+                    service: { name: row.reason, color: '#fca5a5' },
+                    status: 'bloqueado',
+                    type: 'block'
+                }));
+
                 setAppointments([...mappedAppts, ...mappedBlocks]);
             }
-        } catch (e: any) { if (e.name !== 'AbortError') console.error("Fetch Agenda Error:", e); } finally { if (isMounted.current) setIsLoadingData(false); }
+        } catch (e: any) { 
+            if (e.name !== 'AbortError') console.error("Fetch Agenda Error:", e); 
+        } finally { 
+            if (isMounted.current) setIsLoadingData(false); 
+        }
     };
 
     const fetchResources = async () => {
         if (authLoading || !user || !activeStudioId) return;
         try {
-            const { data, error } = await supabase.from('team_members').select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled').eq('active', true).eq('studio_id', activeStudioId).order('order_index', { ascending: true }).order('name', { ascending: true });
+            const { data, error } = await supabase
+                .from('team_members')
+                .select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled') 
+                .eq('active', true)
+                .eq('studio_id', activeStudioId)
+                .order('order_index', { ascending: true }) 
+                .order('name', { ascending: true });
             if (error) throw error;
             if (data && isMounted.current) {
-                const mapped = data.filter((m: any) => m.show_in_calendar !== false).map((p: any) => ({ id: p.id, name: p.name, avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`, role: p.role, order_index: p.order_index || 0, services_enabled: p.services_enabled || [] }));
+                const mapped = data.filter((m: any) => m.show_in_calendar !== false).map((p: any) => ({
+                    id: p.id, name: p.name, avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
+                    role: p.role, order_index: p.order_index || 0, services_enabled: p.services_enabled || [] 
+                }));
                 setResources(mapped);
             }
         } catch (e) { console.error(e); }
     };
 
-    useEffect(() => { if (!authLoading && user && resources.length > 0) fetchAppointments(); }, [currentDate, periodType, resources, user, authLoading, activeStudioId]);
+    useEffect(() => {
+        if (!authLoading && user && resources.length > 0) {
+            fetchAppointments();
+        }
+    }, [currentDate, periodType, resources, user, authLoading, activeStudioId]);
 
     useEffect(() => {
         isMounted.current = true;
         fetchResources();
-        const channel = supabase.channel('agenda-live').on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => { if (isMounted.current) fetchAppointments(); }).on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, () => { if (isMounted.current) fetchResources(); }).on('postgres_changes', { event: '*', schema: 'public', table: 'schedule_blocks' }, () => { if (isMounted.current) fetchAppointments(); }).subscribe();
-        return () => { isMounted.current = false; if (abortControllerRef.current) abortControllerRef.current.abort(); supabase.removeChannel(channel).catch(console.error); };
+        
+        const channel = supabase.channel('agenda-live')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => { if (isMounted.current) fetchAppointments(); })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, () => { if (isMounted.current) fetchResources(); })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'schedule_blocks' }, () => { if (isMounted.current) fetchAppointments(); })
+            .subscribe();
+
+        return () => {
+            isMounted.current = false;
+            if (abortControllerRef.current) abortControllerRef.current.abort();
+            supabase.removeChannel(channel).catch(console.error);
+        };
     }, [activeStudioId]);
 
     const handleReorderProfessional = useCallback(async (e: React.MouseEvent, currentIndex: number, direction: 'left' | 'right') => {
-        if (e) { e.preventDefault(); e.stopPropagation(); }
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
         const targetIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
         if (targetIndex < 0 || targetIndex >= resources.length) return;
+
         const newResources = [...resources];
         const temp = newResources[currentIndex];
         newResources[currentIndex] = newResources[targetIndex];
         newResources[targetIndex] = temp;
+
         setResources(newResources);
+
         try {
-            const updates = [{ id: newResources[currentIndex].id, order_index: currentIndex }, { id: newResources[targetIndex].id, order_index: targetIndex }];
-            for (const up of updates) { await supabase.from('team_members').update({ order_index: up.order_index }).eq('id', up.id); }
-        } catch (e) { fetchResources(); }
+            const updates = [
+                { id: newResources[currentIndex].id, order_index: currentIndex },
+                { id: newResources[targetIndex].id, order_index: targetIndex }
+            ];
+
+            for (const up of updates) {
+                await supabase.from('team_members').update({ order_index: up.order_index }).eq('id', up.id);
+            }
+        } catch (e) {
+            console.error("Falha ao salvar nova ordem:", e);
+            fetchResources(); 
+        }
     }, [resources]);
 
     const mapRowToAppointment = (row: any, professionalsList: LegacyProfessional[]): LegacyAppointment => {
-        const start = new Date(row.start_at || row.date);
+        const start = new Date(row.date);
         const dur = row.duration || 30;
+        
         let prof = professionalsList.find(p => String(p.id) === String(row.professional_id));
-        if (!prof && row.professional_name) { prof = professionalsList.find(p => p.name.toLowerCase() === row.professional_name.toLowerCase()); }
-        return { id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus, notas: row.notes || '', origem: row.origem || 'interno', client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true }, professional: prof || professionalsList[0] || { id: 0, name: row.professional_name, avatarUrl: '' }, service: { id: row.service_id, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : (row.service_color || '#3b82f6') } } as LegacyAppointment;
+        if (!prof && row.professional_name) {
+            prof = professionalsList.find(p => p.name.toLowerCase() === row.professional_name.toLowerCase());
+        }
+
+        return {
+            id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
+            notas: row.notes || '', origem: row.origem || 'interno',
+            client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
+            professional: prof || professionalsList[0] || { id: 0, name: row.professional_name, avatarUrl: '' },
+            service: { id: 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : (row.service_color || '#3b82f6') }
+        } as LegacyAppointment;
     };
 
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
@@ -237,130 +326,205 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         setIsLoadingData(true);
         try {
             if (!force) {
-                const startDay = new Date(app.start); startDay.setHours(0, 0, 0, 0);
-                const endDay = new Date(app.start); endDay.setHours(23, 59, 59, 999);
-                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('studio_id', activeStudioId).eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('start_at', startDay.toISOString()).lte('start_at', endDay.toISOString());
-                const conflict = existingOnDay?.find(row => { if (app.id && row.id === app.id) return false; return (app.start < addMinutes(new Date(row.start_at || row.date), row.duration || 30)) && (app.end > new Date(row.start_at || row.date)); });
+                const startDay = new Date(app.start);
+                startDay.setHours(0, 0, 0, 0);
+                const endDay = new Date(app.start);
+                endDay.setHours(23, 59, 59, 999);
+
+                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('studio_id', activeStudioId).eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startDay.toISOString()).lte('date', endDay.toISOString());
+                const conflict = existingOnDay?.find(row => {
+                    if (app.id && row.id === app.id) return false;
+                    return (app.start < addMinutes(new Date(row.date), row.duration || 30)) && (app.end > new Date(row.date));
+                });
                 if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
             }
-            const payload = { studio_id: activeStudioId, client_id: app.client?.id, client_name: app.client?.nome, professional_id: app.professional.id, professional_name: app.professional.name, service_name: app.service.name, value: app.service.price, duration: app.service.duration, date: app.start.toISOString(), start_at: app.start.toISOString(), end_at: app.end.toISOString(), status: app.status, notes: app.notas, origem: app.origem || 'interno' };
             
-            if (app.id && appointments.some(a => a.id === app.id)) { 
-                await supabase.from('appointments').update(payload).eq('id', app.id); 
-            } else { 
-                await supabase.from('appointments').insert([payload]); 
+            const payload = { 
+                studio_id: activeStudioId,
+                client_id: app.client?.id,
+                client_name: app.client?.nome, 
+                professional_id: app.professional.id, 
+                professional_name: app.professional.name, 
+                service_name: app.service.name, 
+                value: app.service.price, 
+                duration: app.service.duration, 
+                date: app.start.toISOString(), 
+                status: app.status, 
+                notes: app.notas, 
+                origem: app.origem || 'interno' 
+            };
+            
+            if (app.id && appointments.some(a => a.id === app.id)) {
+                await supabase.from('appointments').update(payload).eq('id', app.id);
+            } else {
+                await supabase.from('appointments').insert([payload]);
             }
 
-            // CORREÇÃO CRÍTICA: Aguardar o fetch antes de fechar o modal
-            await fetchAppointments();
-            
             setToast({ message: 'Agendamento salvo!', type: 'success' });
-            setModalState(null); 
-            setPendingConflict(null);
+            setModalState(null); setPendingConflict(null);
+            fetchAppointments();
         } catch (e) { 
-            console.error("Save Error:", e);
-        } finally { 
-            setIsLoadingData(false); 
-        }
+            setToast({ message: 'Erro ao salvar.', type: 'error' }); 
+            fetchAppointments(); 
+        } finally { setIsLoadingData(false); }
     };
 
     const handleDeleteBlock = async (e: React.MouseEvent, blockId: string | number) => {
         e.stopPropagation();
         if (!window.confirm("Remover este bloqueio de horário?")) return;
+
         try {
             const { error } = await supabase.from('schedule_blocks').delete().eq('id', blockId);
             if (error) throw error;
             setAppointments(prev => prev.filter(a => a.id !== blockId));
             setToast({ message: 'Horário liberado!', type: 'info' });
-        } catch (e: any) { setToast({ message: 'Erro ao remover bloqueio.', type: 'error' }); }
+        } catch (e: any) {
+            setToast({ message: 'Erro ao remover bloqueio.', type: 'error' });
+        }
     };
 
-    const handleUpdateStatus = async (id: number | string, newStatus: AppointmentStatus) => {
+    const handleUpdateStatus = async (id: number, newStatus: AppointmentStatus) => {
         const appointment = appointments.find(a => a.id === id);
         if (!appointment) return;
+        
         const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
-        if (!isAdmin && appointment.status === 'concluido') { setToast({ message: "Permissão Negada: Apenas o Gestor pode alterar registros concluídos.", type: 'error' }); return; }
-        if (appointment.status === 'concluido' && newStatus !== 'concluido') { if (!window.confirm("Atenção: O lançamento financeiro será ESTORNADO do caixa. Continuar?")) return; await supabase.from('financial_transactions').delete().eq('appointment_id', id); }
+        if (!isAdmin && appointment.status === 'concluido') {
+            setToast({ message: "Permissão Negada: Apenas o Gestor pode alterar registros concluídos.", type: 'error' });
+            return;
+        }
+
+        if (appointment.status === 'concluido' && newStatus !== 'concluido') {
+            if (!window.confirm("Atenção: O lançamento financeiro será ESTORNADO do caixa. Continuar?")) return;
+            await supabase.from('financial_transactions').delete().eq('appointment_id', id);
+        }
+        
         const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
-        if (!error) { setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a)); } else { fetchAppointments(); }
+        if (!error) {
+            setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
+        } else {
+            fetchAppointments();
+        }
         setActiveAppointmentDetail(null);
     };
 
     const handleConvertToCommand = async (appointment: LegacyAppointment) => {
-        if (!activeStudioId || !appointment?.id) return;
-        const studioUuid = getValidUUID(activeStudioId);
-        const client_id_raw = appointment.client?.id;
-        const professionalUuid = getValidUUID(appointment.professional?.id);
-        const serviceUuid = getValidUUID(appointment.service?.id);
-
-        if (!studioUuid) {
-            setToast({ message: "Identificador de unidade inválido.", type: 'error' });
-            return;
-        }
-
+        if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
+            // CRIAR COMANDA
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
-                    studio_id: studioUuid,
-                    client_id: client_id_raw || null, 
+                    studio_id: activeStudioId,
+                    client_id: appointment.client?.id,
                     status: 'open',
                     total_amount: appointment.service.price
                 }])
-                .select().single();
+                .select()
+                .single();
 
-            if (cmdError) throw cmdError;
+            if (cmdError) {
+                console.error("Erro ao criar comanda:", cmdError.message, cmdError.details);
+                throw cmdError;
+            }
 
+            // Validação simples de UUID para service_id para evitar erro de restrição se vier de mock numérico
+            const isUUID = (val: any) => typeof val === 'string' && val.length > 20;
+
+            // CRIAR ITEM DA COMANDA: price e quantity (SCHEMA REAL FIX)
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
                     command_id: command.id,
                     appointment_id: appointment.id,
-                    service_id: serviceUuid,
-                    studio_id: studioUuid, 
+                    service_id: isUUID(appointment.service.id) ? String(appointment.service.id) : null,
+                    studio_id: activeStudioId, 
                     title: appointment.service.name,
                     price: appointment.service.price,
                     quantity: 1,
-                    professional_id: professionalUuid
+                    professional_id: appointment.professional.id
                 }]);
 
-            if (itemError) throw itemError;
+            if (itemError) {
+                console.error("Erro ao criar item da comanda:", itemError.message, itemError.details);
+                throw itemError;
+            }
 
-            await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
-            await fetchAppointments();
-            
-            setToast({ message: `Comanda gerada para ${appointment.client?.nome || 'Cliente'}! 💳`, type: 'success' });
+            const { error: apptUpdateError } = await supabase
+                .from('appointments')
+                .update({ status: 'concluido' })
+                .eq('id', appointment.id);
+
+            if (apptUpdateError) throw apptUpdateError;
+
+            setToast({ message: `Comanda gerada com sucesso! Redirecionando... 💳`, type: 'success' });
             setActiveAppointmentDetail(null);
             
             if (onNavigateToCommand) {
                 onNavigateToCommand(command.id);
             }
         } catch (e: any) {
-            setToast({ message: "Erro ao converter atendimento: " + (e.message || "Falha DB"), type: 'error' });
+            console.error("Falha ao gerar comanda (detalhes):", e);
+            setToast({ message: "Erro ao converter agendamento em comanda.", type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
     };
 
-    const handleDeleteAppointmentFull = async (id: number | string) => {
+    const handleDeleteAppointmentFull = async (id: number) => {
         const appointment = appointments.find(a => a.id === id);
         if (!appointment) return;
+
         const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
         const isFinished = appointment.status === 'concluido';
-        if (!isAdmin && isFinished) { setToast({ message: "Permissão Negada: Apenas o Gestor pode excluir registros com faturamento.", type: 'error' }); return; }
-        const confirmMsg = isFinished ? "⚠️ AÇÃO AUDITADA: Este registro possui faturamento. Prosseguir com a exclusão?" : "Deseja realmente apagar este agendamento?";
+
+        if (!isAdmin && isFinished) {
+            setToast({ 
+                message: "Permissão Negada: Apenas o Gestor pode excluir registros com financeiro lançado.", 
+                type: 'error' 
+            });
+            return;
+        }
+
+        const confirmMsg = isFinished 
+            ? "⚠️ AÇÃO AUDITADA: Este registro possui financeiro vinculado. A exclusão removerá o recebimento e gerará um Log de Segurança. Prosseguir?"
+            : "Deseja realmente apagar este agendamento?";
+
         if (!window.confirm(confirmMsg)) return;
+        
         setIsLoadingData(true);
         try {
-            if (isFinished) { await supabase.from('audit_logs').insert([{ actor_id: user?.id, actor_name: user?.nome, action_type: 'DELETE', entity: 'appointments', entity_id: String(id), old_value: { client: appointment.client?.nome, service: appointment.service.name, value: appointment.service.price } }]); }
+            if (isFinished) {
+                await supabase.from('audit_logs').insert([{
+                    actor_id: user?.id,
+                    actor_name: user?.nome,
+                    action_type: 'DELETE',
+                    entity: 'appointments',
+                    entity_id: String(id),
+                    old_value: {
+                        client: appointment.client?.nome,
+                        service: appointment.service.name,
+                        value: appointment.service.price,
+                        date: appointment.start.toISOString(),
+                        professional: appointment.professional.name,
+                        status: appointment.status
+                    }
+                }]);
+            }
+
             await supabase.from('financial_transactions').delete().eq('appointment_id', id);
             const { error: apptError } = await supabase.from('appointments').delete().eq('id', id);
             if (apptError) throw apptError;
+
             setAppointments(prev => prev.filter(p => p.id !== id));
             setToast({ message: 'Registro removido.', type: 'info' });
             setActiveAppointmentDetail(null);
-        } catch (e: any) { setToast({ message: "Falha ao excluir registro.", type: 'error' }); } finally { setIsLoadingData(false); }
+        } catch (e: any) {
+            console.error("Falha na exclusão:", e);
+            setToast({ message: "Falha ao excluir registro.", type: 'error' });
+        } finally {
+            setIsLoadingData(false);
+        }
     };
 
     const handleDateChange = (direction: number) => {
@@ -371,8 +535,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
     const columns = useMemo(() => {
         if (periodType === 'Semana') {
-            const start = new Date(currentDate); const day = start.getDay(); const diff = (day < 1 ? -6 : 1) - day;
-            start.setDate(start.getDate() + diff); start.setHours(0, 0, 0, 0);
+            const start = new Date(currentDate);
+            const day = start.getDay();
+            const diff = (day < 1 ? -6 : 1) - day;
+            start.setDate(start.getDate() + diff);
+            start.setHours(0, 0, 0, 0);
+
             return eachDayOfInterval({ start, end: endOfWeek(currentDate, { weekStartsOn: 1 }) }).map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date' as const, data: day }));
         }
         return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional' as const, data: p }));
@@ -382,8 +550,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         let baseList = appointments.filter(a => {
             if (periodType === 'Dia' || periodType === 'Lista') return isSameDay(a.start, currentDate);
             if (periodType === 'Semana') {
-                const start = new Date(currentDate); const day = start.getDay(); const diff = (day < 1 ? -6 : 1) - day;
-                start.setDate(start.getDate() + diff); start.setHours(0, 0, 0, 0);
+                const start = new Date(currentDate);
+                const day = start.getDay();
+                const diff = (day < 1 ? -6 : 1) - day;
+                start.setDate(start.getDate() + diff);
+                start.setHours(0, 0, 0, 0);
+
                 return isWithinInterval(a.start, { start, end: endOfWeek(currentDate, { weekStartsOn: 1 }) });
             }
             return isSameMonth(a.start, currentDate);
@@ -417,9 +589,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     <div className="flex items-center gap-4">
                         <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">Agenda {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}</h2>
                         <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-                            <button onClick={() => setViewMode('profissional')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'profissional' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-700'}`}><LayoutGrid size={14} /> Equipe</button>
-                            <button onClick={() => setViewMode('andamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'andamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-700'}`}><PlayCircle size={14} /> Andamento</button>
-                            <button onClick={() => setViewMode('pagamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'pagamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-700'}`}><CreditCard size={14} /> Pagamento</button>
+                            <button onClick={() => setViewMode('profissional')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'profissional' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><LayoutGrid size={14} /> Equipe</button>
+                            <button onClick={() => setViewMode('andamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'andamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><PlayCircle size={14} /> Andamento</button>
+                            <button onClick={() => setViewMode('pagamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'pagamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}><CreditCard size={14} /> Pagamento</button>
                         </div>
                     </div>
                     <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
@@ -438,7 +610,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 </div>
             </header>
 
-            <div ref={gridScrollRef} className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar">
+            <div 
+                ref={gridScrollRef}
+                className="flex-1 overflow-auto bg-slate-50 relative custom-scrollbar"
+            >
                 <div className="min-w-fit">
                     <div className="grid sticky top-0 z-[50] border-b border-slate-200 bg-white shadow-sm" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                         <div className="sticky left-0 z-[60] bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-[4px_0_24px_rgba(0,0,0,0.05)]"><Maximize2 size={16} className="text-slate-300" /></div>
@@ -453,8 +628,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                 </div>
                                 {periodType === 'Dia' && col.type === 'professional' && (
                                     <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                                        <button onClick={(e) => handleReorderProfessional(e, idx, 'left')} className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500 active:scale-95 transition-all"><ChevronLeft size={14} /></button>
-                                        <button onClick={(e) => handleReorderProfessional(e, idx, 'right')} className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500 active:scale-95 transition-all"><ChevronRight size={14} /></button>
+                                        <button 
+                                            onClick={(e) => handleReorderProfessional(e, idx, 'left')}
+                                            className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500 active:scale-95 transition-all"
+                                        >
+                                            <ChevronLeft size={14} />
+                                        </button>
+                                        <button 
+                                            onClick={(e) => handleReorderProfessional(e, idx, 'right')}
+                                            className="p-1 bg-white border border-slate-200 rounded shadow-sm text-slate-400 hover:text-orange-500 active:scale-95 transition-all"
+                                        >
+                                            <ChevronRight size={14} />
+                                        </button>
                                     </div>
                                 )}
                             </div>
@@ -462,6 +647,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     </div>
 
                     <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
+                        
                         <div className="sticky left-0 z-[50] bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
                             {timeSlotsLabels.map(time => (
                                 <div key={time} className="h-20 text-right pr-3 text-[10px] text-slate-400 font-black relative border-b border-slate-100/50 border-dashed bg-white">
@@ -469,28 +655,86 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                 </div>
                             ))}
                         </div>
+
                         {columns.map((col, idx) => (
-                            <div key={col.id} className={`relative border-r border-slate-200 cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`} style={{ minHeight: `${timeSlotsLabels.length * SLOT_PX_HEIGHT}px` }} onClick={(e) => { if (e.target === e.currentTarget) { const prof = col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0]; const date = col.type === 'date' ? (col.data as Date) : currentDate; handleGridClick(e, prof, date); } }}>
+                            <div 
+                                key={col.id} 
+                                className={`relative border-r border-slate-200 cursor-crosshair ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/[0.03]'}`}
+                                style={{ minHeight: `${timeSlotsLabels.length * SLOT_PX_HEIGHT}px` }}
+                                onClick={(e) => {
+                                    if (e.target === e.currentTarget) {
+                                        const prof = col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0];
+                                        const date = col.type === 'date' ? (col.data as Date) : currentDate;
+                                        handleGridClick(e, prof, date);
+                                    }
+                                }}
+                            >
                                 {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
-                                {filteredAppointments.filter(app => { if (periodType === 'Semana') return isSameDay(app.start, col.data as Date); if (app.type === 'block' && (!app.professional || app.professional.id === null || String(app.professional.id) === 'null')) return true; return app.professional && String(app.professional.id) === String(col.id); }).map(app => {
-                                    const durationMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
-                                    const isShort = durationMinutes <= 25;
-                                    const cardColor = app.type === 'block' ? '#f87171' : (app.service.color || '#3b82f6');
-                                    return (
-                                        <div key={app.id} ref={(el) => { if (el && app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} onClick={(e) => { e.stopPropagation(); if (app.type === 'appointment') { setActiveAppointmentDetail(app); } }} className="rounded-none shadow-sm border-l-4 p-1.5 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card !m-0 border-r border-b border-slate-200/50" style={{ ...getAppointmentPosition(app.start, app.end, timeSlot), borderLeftColor: cardColor, backgroundColor: `${cardColor}15` }}>
-                                            <div className="absolute top-1 right-1 flex gap-0.5 z-10">
-                                                {app.status === 'concluido' && <DollarSign size={10} className="text-emerald-600 font-bold" strokeWidth={3} />}
-                                                {['confirmado', 'confirmado_whatsapp'].includes(app.status) && <CheckCircle size={10} className="text-blue-600" strokeWidth={3} />}
-                                                {app.type === 'block' && <ShieldAlert size={10} className="text-rose-400" />}
+                                
+                                {filteredAppointments
+                                    .filter(app => {
+                                        if (periodType === 'Semana') return isSameDay(app.start, col.data as Date);
+                                        if (app.type === 'block' && (app.professional.id === null || String(app.professional.id) === 'null')) {
+                                            return true;
+                                        }
+                                        return String(app.professional.id) === String(col.id); 
+                                    })
+                                    .map(app => {
+                                        const durationMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
+                                        const isShort = durationMinutes <= 25;
+                                        const cardColor = app.type === 'block' ? '#f87171' : (app.service.color || '#3b82f6');
+                                        
+                                        return (
+                                            <div 
+                                                key={app.id} 
+                                                ref={(el) => { if (el && app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} 
+                                                onClick={(e) => { 
+                                                    e.stopPropagation(); 
+                                                    if (app.type === 'appointment') {
+                                                        setActiveAppointmentDetail(app); 
+                                                    }
+                                                }} 
+                                                className="rounded-none shadow-sm border-l-4 p-1.5 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card !m-0 border-r border-b border-slate-200/50"
+                                                style={{ 
+                                                    ...getAppointmentPosition(app.start, app.end, timeSlot),
+                                                    borderLeftColor: cardColor,
+                                                    backgroundColor: `${cardColor}15`
+                                                }}
+                                            >
+                                                <div className="absolute top-1 right-1 flex gap-0.5 z-10">
+                                                    {app.status === 'concluido' && <DollarSign size={10} className="text-emerald-600 font-bold" strokeWidth={3} />}
+                                                    {['confirmado', 'confirmado_whatsapp'].includes(app.status) && <CheckCircle size={10} className="text-blue-600" strokeWidth={3} />}
+                                                    {app.type === 'block' && <ShieldAlert size={10} className="text-rose-400" />}
+                                                </div>
+
+                                                <div className="flex flex-col h-full justify-between relative z-0 pointer-events-none">
+                                                    <div>
+                                                        <p className="text-[10px] font-medium text-slate-500 leading-none mb-0.5">
+                                                            {format(app.start, 'HH:mm')} - {format(app.end, 'HH:mm')}
+                                                        </p>
+                                                        <p className="text-xs font-bold text-slate-800 truncate leading-tight">
+                                                            {app.type === 'block' ? 'INDISPONÍVEL' : (app.client?.nome || 'Bloqueado')}
+                                                        </p>
+                                                    </div>
+                                                    {!isShort && (
+                                                        <p className="text-[10px] text-slate-500 truncate leading-none mt-auto opacity-80">
+                                                            {app.service.name}
+                                                        </p>
+                                                    )}
+                                                </div>
+
+                                                {app.type === 'block' && (
+                                                    <button 
+                                                        onClick={(e) => handleDeleteBlock(e, app.id)}
+                                                        className="absolute bottom-1 right-1 p-1 bg-rose-500 text-white rounded opacity-0 group-hover/card:opacity-100 transition-all shadow-md z-30 pointer-events-auto"
+                                                        title="Remover Bloqueio"
+                                                    >
+                                                        <Trash2 size={10} />
+                                                    </button>
+                                                )}
                                             </div>
-                                            <div className="flex flex-col h-full justify-between relative z-0 pointer-events-none">
-                                                <div><p className="text-[10px] font-medium text-slate-500 leading-none mb-0.5">{format(app.start, 'HH:mm')} - {format(app.end, 'HH:mm')}</p><p className="text-xs font-bold text-slate-800 truncate leading-tight">{app.type === 'block' ? 'INDISPONÍVEL' : (app.client?.nome || 'Bloqueado')}</p></div>
-                                                {!isShort && <p className="text-[10px] text-slate-500 truncate leading-none mt-auto opacity-80">{app.service.name}</p>}
-                                            </div>
-                                            {app.type === 'block' && <button onClick={(e) => handleDeleteBlock(e, app.id)} className="absolute bottom-1 right-1 p-1 bg-rose-500 text-white rounded opacity-0 group-hover/card:opacity-100 transition-all shadow-md z-30 pointer-events-auto" title="Remover Bloqueio"><Trash2 size={10} /></button>}
-                                        </div>
-                                    );
-                                })}
+                                        );
+                                    })}
                             </div>
                         ))}
                         <TimelineIndicator timeSlot={timeSlot} />
@@ -502,9 +746,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 <>
                     <div className="fixed inset-0 z-50" onClick={() => setSelectionMenu(null)} />
                     <div className="fixed z-[60] bg-white rounded-2xl shadow-2xl border border-slate-100 w-64 py-2 animate-in fade-in zoom-in-95 duration-150" style={{ top: Math.min(selectionMenu.y, window.innerHeight - 200), left: Math.min(selectionMenu.x, window.innerWidth - 260) }}>
-                        <button onClick={() => { setModalState({ type: 'appointment', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"><div className="p-1.5 bg-orange-100 rounded-lg text-orange-600"><CalendarIcon size={16} /></div> Novo Agendamento</button>
-                        <button onClick={() => { setModalState({ type: 'sale', data: { professionalId: selectionMenu.professional.id } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-green-50 hover:text-green-600 transition-colors"><div className="p-1.5 bg-green-100 rounded-lg text-green-600"><ShoppingBag size={16} /></div> Nova Venda</button>
-                        <button onClick={() => { setModalState({ type: 'block', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition-colors"><div className="p-1.5 bg-rose-100 rounded-lg text-orange-600"><Ban size={16} /></div> Bloqueio</button>
+                        <button onClick={() => { setModalState({ type: 'appointment', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-orange-50 hover:text-orange-600 transition-colors">
+                            <div className="p-1.5 bg-orange-100 rounded-lg text-orange-600"><CalendarIcon size={16} /></div> Novo Agendamento
+                        </button>
+                        <button onClick={() => { setModalState({ type: 'sale', data: { professionalId: selectionMenu.professional.id } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-green-50 hover:text-green-600 transition-colors">
+                            <div className="p-1.5 bg-green-100 rounded-lg text-green-600"><ShoppingBag size={16} /></div> Nova Venda
+                        </button>
+                        <button onClick={() => { setModalState({ type: 'block', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition-colors">
+                            <div className="p-1.5 bg-rose-100 rounded-lg text-orange-600"><Ban size={16} /></div> Bloqueio
+                        </button>
                     </div>
                 </>
             )}
@@ -512,14 +762,26 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             {isConfigModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsConfigModalOpen(false)}></div>
-                    <div className="relative w-full max-w-sm bg-white rounded-[32px] shadow-2xl overflow-hidden p-8 animate-in zoom-in-95 duration-200"><header className="flex justify-between items-center mb-8"><h3 className="font-extrabold text-slate-800">Grade</h3><button onClick={() => setIsConfigModalOpen(false)}><X size={20} /></button></header><div className="space-y-4"><label className="text-sm font-black text-slate-700 uppercase">Largura: {colWidth}px</label><input type="range" min="150" max="450" step="10" value={colWidth} onChange={e => setColWidth(Number(e.target.value))} className="w-full" /></div></div>
+                    <div className="relative w-full max-w-sm bg-white rounded-[32px] shadow-2xl overflow-hidden p-8 animate-in zoom-in-95 duration-200">
+                        <header className="flex justify-between items-center mb-8"><h3 className="font-extrabold text-slate-800">Grade</h3><button onClick={() => setIsConfigModalOpen(false)}><X size={20} /></button></header>
+                        <div className="space-y-4">
+                            <label className="text-sm font-black text-slate-700 uppercase">Largura: {colWidth}px</label>
+                            <input type="range" min="150" max="450" step="10" value={colWidth} onChange={e => setColWidth(Number(e.target.value))} className="w-full" />
+                        </div>
+                    </div>
                 </div>
             )}
 
             {isPeriodModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPeriodModalOpen(false)}></div>
-                    <div className="relative w-full max-w-xs bg-white rounded-[32px] shadow-2xl overflow-hidden p-4 animate-in zoom-in-95 duration-200"><div className="space-y-2">{['Dia', 'Semana', 'Mês', 'Lista'].map((item) => (<button key={item} onClick={() => { setPeriodType(item as any); setIsPeriodModalOpen(false); }} className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl text-sm font-bold ${periodType === item ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-slate-50'}`}>{item}{periodType === item && <Check size={18} />}</button>))}</div></div>
+                    <div className="relative w-full max-w-xs bg-white rounded-[32px] shadow-2xl overflow-hidden p-4 animate-in zoom-in-95 duration-200">
+                        <div className="space-y-2">
+                            {['Dia', 'Semana', 'Mês', 'Lista'].map((item) => (
+                                <button key={item} onClick={() => { setPeriodType(item as any); setIsPeriodModalOpen(false); }} className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl text-sm font-bold ${periodType === item ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-slate-50'}`}>{item}{periodType === item && <Check size={18} />}</button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             )}
 

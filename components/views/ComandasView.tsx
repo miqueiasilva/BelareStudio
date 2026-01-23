@@ -4,8 +4,7 @@ import {
     Search, Plus, Clock, User, FileText, 
     DollarSign, Coffee, Scissors, Trash2, ShoppingBag, X,
     CreditCard, Banknote, Smartphone, CheckCircle, Loader2,
-    Receipt, History, LayoutGrid, CheckCircle2, AlertCircle,
-    Eye, Edit2
+    Receipt, History, LayoutGrid, CheckCircle2, AlertCircle
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
@@ -15,12 +14,7 @@ import SelectionModal from '../modals/SelectionModal';
 import ClientSearchModal from '../modals/ClientSearchModal';
 import { differenceInMinutes, format } from 'date-fns';
 
-interface ComandasViewProps {
-    onAddTransaction: (t: FinancialTransaction) => void;
-    onNavigateToCommand: (id: string) => void;
-}
-
-const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction, onNavigateToCommand }) => {
+const ComandasView: React.FC<any> = ({ onAddTransaction }) => {
     const { activeStudioId } = useStudio();
     const [tabs, setTabs] = useState<Command[]>([]);
     const [loading, setLoading] = useState(true);
@@ -30,6 +24,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction, onNavigat
 
     const [isSelectionOpen, setIsSelectionOpen] = useState(false);
     const [isClientSearchOpen, setIsClientSearchOpen] = useState(false);
+    const [activeTabId, setActiveTabId] = useState<string | null>(null);
     
     const [catalog, setCatalog] = useState<any[]>([]);
 
@@ -79,28 +74,7 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction, onNavigat
             if (error) throw error;
             setTabs(prev => [data, ...prev]);
             setToast({ message: `Comanda aberta!`, type: 'success' });
-            // Navega automaticamente para os detalhes da nova comanda
-            onNavigateToCommand(data.id);
         } catch (e: any) { setToast({ message: "Erro ao abrir comanda.", type: 'error' }); }
-    };
-
-    const handleDeleteCommand = async (e: React.MouseEvent, commandId: string) => {
-        e.stopPropagation();
-        if (!window.confirm("Deseja realmente excluir esta comanda e todos os seus itens? Esta ação é irreversível.")) return;
-
-        try {
-            const { error } = await supabase
-                .from('commands')
-                .delete()
-                .eq('id', commandId);
-
-            if (error) throw error;
-
-            setTabs(prev => prev.filter(t => t.id !== commandId));
-            setToast({ message: "Comanda excluída com sucesso!", type: 'info' });
-        } catch (e: any) {
-            setToast({ message: "Erro ao excluir comanda.", type: 'error' });
-        }
     };
 
     const filteredTabs = tabs.filter(t => (t.clients?.nome || '').toLowerCase().includes(searchTerm.toLowerCase()));
@@ -127,66 +101,22 @@ const ComandasView: React.FC<ComandasViewProps> = ({ onAddTransaction, onNavigat
                         {filteredTabs.map(tab => (
                             <div key={tab.id} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[400px]">
                                 <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
-                                    <h3 className="font-black text-slate-800 text-sm truncate">{tab.clients?.nome || 'Consumidor Final'}</h3>
-                                    <span className="text-[10px] font-black text-slate-400">#{String(tab.id).split('-')[0].toUpperCase()}</span>
+                                    <h3 className="font-black text-slate-800 text-sm truncate">{tab.clients?.nome}</h3>
+                                    <span className="text-[10px] font-black text-slate-400">#{tab.id.split('-')[0].toUpperCase()}</span>
                                 </div>
-                                <div className="flex-1 p-5 overflow-y-auto custom-scrollbar">
-                                    {tab.command_items.length === 0 ? (
-                                        <div className="h-full flex flex-col items-center justify-center text-slate-300 italic text-xs">
-                                            Nenhum item lançado
+                                <div className="flex-1 p-5 overflow-y-auto">
+                                    {tab.command_items.map(item => (
+                                        <div key={item.id} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
+                                            <span className="text-xs font-bold text-slate-600 truncate flex-1 pr-2">{item.title}</span>
+                                            {/* CORREÇÃO: Usando 'price' */}
+                                            <span className="text-xs font-black text-slate-800">R$ {Number(item.price).toFixed(2)}</span>
                                         </div>
-                                    ) : (
-                                        tab.command_items.map(item => (
-                                            <div key={item.id} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
-                                                <span className="text-xs font-bold text-slate-600 truncate flex-1 pr-2">{item.title}</span>
-                                                <span className="text-xs font-black text-slate-800">R$ {Number(item.price).toFixed(2)}</span>
-                                            </div>
-                                        ))
-                                    )}
+                                    ))}
                                 </div>
                                 <div className="p-5 bg-slate-50/50 border-t border-slate-50">
                                     <div className="flex justify-between items-end">
-                                        <div>
-                                            <p className="text-[9px] font-black uppercase text-slate-400 mb-1">Total</p>
-                                            <p className="text-2xl font-black text-slate-800">R$ {Number(tab.total_amount).toFixed(2)}</p>
-                                        </div>
-                                        
-                                        <div className="flex gap-2">
-                                            {currentTab === 'open' && (
-                                                <>
-                                                    <button 
-                                                        onClick={(e) => handleDeleteCommand(e, String(tab.id))}
-                                                        className="p-3 bg-white border border-slate-200 text-rose-500 rounded-xl shadow-sm hover:bg-rose-50 transition-all"
-                                                        title="Excluir Comanda"
-                                                    >
-                                                        <Trash2 size={20}/>
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => onNavigateToCommand(String(tab.id))}
-                                                        className="p-3 bg-white border border-slate-200 text-slate-600 rounded-xl shadow-sm hover:bg-slate-50 transition-all"
-                                                        title="Editar Itens"
-                                                    >
-                                                        <Edit2 size={20}/>
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => onNavigateToCommand(String(tab.id))}
-                                                        className="p-3 bg-emerald-600 text-white rounded-xl shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all"
-                                                        title="Liquidar Venda"
-                                                    >
-                                                        <Receipt size={20}/>
-                                                    </button>
-                                                </>
-                                            )}
-                                            {currentTab === 'paid' && (
-                                                <button 
-                                                    onClick={() => onNavigateToCommand(String(tab.id))}
-                                                    className="p-3 bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-200 transition-all"
-                                                    title="Ver Detalhes"
-                                                >
-                                                    <Eye size={20}/>
-                                                </button>
-                                            )}
-                                        </div>
+                                        <div><p className="text-[9px] font-black uppercase text-slate-400 mb-1">Total</p><p className="text-2xl font-black text-slate-800">R$ {Number(tab.total_amount).toFixed(2)}</p></div>
+                                        {tab.status === 'open' && <button className="p-3 bg-emerald-600 text-white rounded-xl shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all"><Receipt size={20}/></button>}
                                     </div>
                                 </div>
                             </div>

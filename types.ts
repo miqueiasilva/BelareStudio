@@ -39,9 +39,8 @@ export type TransactionCategory = string;
 export type PaymentMethod = 'pix' | 'cartao_credito' | 'cartao_debito' | 'dinheiro' | 'transferencia' | 'boleto';
 
 export interface ScheduleBlock {
-  // Allow string or number for IDs
-  id: string | number;
-  professional_id: string | number | null; 
+  id: string;
+  professional_id: string | null; 
   start_time: string; 
   end_time: string;   
   reason: string;
@@ -49,8 +48,7 @@ export interface ScheduleBlock {
 }
 
 export interface Client {
-  // Allow string or number for IDs
-  id?: number | string;
+  id?: number;
   nome: string;
   whatsapp?: string;
   telefone?: string;
@@ -78,13 +76,12 @@ export interface Client {
 }
 
 export interface LegacyProfessional {
-  // Allow string or number for IDs
-  id: number | string;
+  id: number;
   name: string;
   avatarUrl: string;
   role?: string;
   order_index?: number;
-  services_enabled?: (number | string)[];
+  services_enabled?: number[];
   commission_rate?: number;
   active?: boolean;
   online_booking?: boolean;
@@ -94,8 +91,7 @@ export interface LegacyProfessional {
 }
 
 export interface LegacyService {
-  // Allow string or number for IDs
-  id: number | string;
+  id: number;
   name: string;
   duration: number;
   price: number;
@@ -104,8 +100,7 @@ export interface LegacyService {
 }
 
 export interface Service {
-  // Allow string or number for IDs
-  id: number | string;
+  id: number;
   nome: string;
   duracao_min: number;
   preco: number;
@@ -116,8 +111,7 @@ export interface Service {
 }
 
 export interface LegacyAppointment {
-  // Allow string or number for IDs
-  id: number | string;
+  id: number;
   client?: Client;
   professional: LegacyProfessional;
   service: LegacyService;
@@ -129,8 +123,7 @@ export interface LegacyAppointment {
 }
 
 export interface FinancialTransaction {
-  // Allow string or number for IDs
-  id: number | string;
+  id: number;
   description: string;
   amount: number;
   type: TransactionType;
@@ -138,31 +131,29 @@ export interface FinancialTransaction {
   date: Date | string;
   paymentMethod: PaymentMethod;
   status: 'pago' | 'pendente';
-  professionalId?: number | string;
-  appointment_id?: number | string;
-  client_id?: number | string;
+  professionalId?: number;
+  appointment_id?: number;
+  client_id?: number;
 }
 
 export interface CommandItem {
-    // Allow string or number for IDs
-    id: string | number;
-    command_id: string | number;
-    service_id?: string | number;
-    product_id?: string | number;
-    appointment_id?: number | string;
+    id: string;
+    command_id: string;
+    service_id?: string;
+    product_id?: string;
+    appointment_id?: number;
     title: string;
     price: number; 
     quantity: number; 
     created_at: string;
-    professional_id?: string | number;
-    studio_id?: string | number;
+    professional_id?: string;
+    studio_id?: string;
 }
 
 export interface Command {
-    // Allow string or number for IDs
-    id: string | number;
-    client_id: number | string;
-    studio_id: string | number;
+    id: string;
+    client_id: number;
+    studio_id: string;
     status: 'open' | 'paid' | 'canceled';
     total_amount: number;
     created_at: string;
@@ -172,8 +163,7 @@ export interface Command {
 }
 
 export interface ChatMessage {
-  // Allow string or number for IDs
-  id: string | number;
+  id: string;
   sender: 'user' | 'client' | 'system';
   text: string;
   timestamp: Date | string;
@@ -181,9 +171,8 @@ export interface ChatMessage {
 }
 
 export interface ChatConversation {
-  // Allow string or number for IDs
-  id: number | string;
-  clientId: number | string;
+  id: number;
+  clientId: number;
   clientName: string;
   clientAvatar?: string;
   lastMessage: string;
@@ -194,8 +183,7 @@ export interface ChatConversation {
 }
 
 export interface Product {
-  // Allow string or number for IDs
-  id: number | string;
+  id: number;
   name: string;
   sku?: string;
   price: number;
@@ -209,13 +197,12 @@ export interface Product {
 }
 
 export interface Supplier {
-  // Allow string or number for IDs
-  id: string | number;
+  id: string;
   name: string;
   contact_person?: string;
   phone?: string;
   email?: string;
-  studio_id: string | number;
+  studio_id: string;
 }
 
 export interface OnlineBookingConfig {
@@ -248,8 +235,7 @@ export interface AnalyticsData {
 }
 
 export interface Review {
-  // Allow string or number for IDs
-  id: number | string;
+  id: number;
   clientName: string;
   rating: number;
   comment: string;

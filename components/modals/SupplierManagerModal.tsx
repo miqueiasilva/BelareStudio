@@ -65,8 +65,7 @@ const SupplierManagerModal: React.FC<SupplierManagerModalProps> = ({ onClose }) 
         }
     };
 
-    // FIX: Updated id type to string | number
-    const handleDelete = async (id: string | number) => {
+    const handleDelete = async (id: string) => {
         if (!confirm("Remover este fornecedor? Produtos associados não serão apagados.")) return;
         try {
             const { error } = await supabase.from('suppliers').delete().eq('id', id);
@@ -129,7 +128,7 @@ const SupplierManagerModal: React.FC<SupplierManagerModalProps> = ({ onClose }) 
                                             {s.email && <span className="flex items-center gap-1"><Mail size={10} /> {s.email}</span>}
                                         </div>
                                     </div>
-                                    <button onClick={() => handleDelete(s.id)} className="p-2.5 text-rose-300 hover:text-rose-50 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100">
+                                    <button onClick={() => handleDelete(s.id)} className="p-2.5 text-rose-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100">
                                         <Trash2 size={18} />
                                     </button>
                                 </div>

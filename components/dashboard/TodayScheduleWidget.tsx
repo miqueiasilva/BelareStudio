@@ -4,9 +4,8 @@ import { Clock, MessageCircle, ChevronRight, CalendarX, Plus, Scissors } from 'l
 import { format } from 'date-fns';
 import { AppointmentStatus } from '../../types';
 
-const statusMap: Record<string, { label: string; color: string; bg: string }> = {
+const statusMap: Record<AppointmentStatus, { label: string; color: string; bg: string }> = {
     agendado: { label: 'Pendente', color: 'text-amber-700', bg: 'bg-amber-100' },
-    pendente: { label: 'Pendente', color: 'text-amber-700', bg: 'bg-amber-100' },
     confirmado: { label: 'Confirmado', color: 'text-emerald-700', bg: 'bg-emerald-100' },
     confirmado_whatsapp: { label: 'Confirmado WA', color: 'text-teal-700', bg: 'bg-teal-100' },
     chegou: { label: 'Na Recepção', color: 'text-purple-700', bg: 'bg-purple-100' },
@@ -54,50 +53,47 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
             <div className="flex-1 p-5 overflow-y-auto custom-scrollbar text-left">
                 {activeApps.length > 0 ? (
                     <div className="space-y-6 relative before:absolute before:left-[15px] before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-100">
-                        {activeApps.map((app) => {
-                            const statusInfo = statusMap[app.status] || { label: app.status || 'Status', color: 'text-slate-500', bg: 'bg-slate-100' };
-                            return (
-                                <div key={app.id} className="relative flex items-start gap-4 group animate-in fade-in slide-in-from-left-2 duration-300">
-                                    {/* Dot Indicator */}
-                                    <div className="z-10 mt-1.5 w-8 h-8 rounded-full bg-white border-2 border-slate-100 flex items-center justify-center flex-shrink-0 group-hover:border-orange-200 transition-colors">
-                                        <div className={`w-2.5 h-2.5 rounded-full ${
-                                            app.status === 'em_atendimento' ? 'bg-indigo-500 animate-pulse' : 
-                                            app.status === 'concluido' ? 'bg-slate-300' : 
-                                            'bg-orange-500'
-                                        }`}></div>
-                                    </div>
-
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between mb-0.5">
-                                            <span className="text-xs font-black text-slate-800">
-                                                {format(new Date(app.date), 'HH:mm')}
-                                                {dateLabel !== 'Hoje' && <span className="ml-1 opacity-40 text-[9px]">({format(new Date(app.date), 'dd/MM')})</span>}
-                                            </span>
-                                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter ${statusInfo.bg} ${statusInfo.color}`}>
-                                                {statusInfo.label}
-                                            </span>
-                                        </div>
-                                        
-                                        <h4 className="text-sm font-bold text-slate-700 truncate flex items-center gap-2">
-                                            {app.client_name || 'Bloqueado'}
-                                            {app.status === 'em_atendimento' && <Scissors size={10} className="text-indigo-600 animate-bounce" />}
-                                        </h4>
-                                        
-                                        <p className="text-[11px] text-slate-400 font-medium truncate">
-                                            {app.service_name} • {app.professional_name}
-                                        </p>
-                                    </div>
-
-                                    <button 
-                                        className="p-2 text-slate-300 hover:text-green-500 hover:bg-green-50 rounded-xl transition-all"
-                                        title="Enviar WhatsApp"
-                                        onClick={() => window.open(`https://wa.me/55${app.client_whatsapp?.replace(/\D/g, '')}`, '_blank')}
-                                    >
-                                        <MessageCircle size={18} />
-                                    </button>
+                        {activeApps.map((app) => (
+                            <div key={app.id} className="relative flex items-start gap-4 group animate-in fade-in slide-in-from-left-2 duration-300">
+                                {/* Dot Indicator */}
+                                <div className="z-10 mt-1.5 w-8 h-8 rounded-full bg-white border-2 border-slate-100 flex items-center justify-center flex-shrink-0 group-hover:border-orange-200 transition-colors">
+                                    <div className={`w-2.5 h-2.5 rounded-full ${
+                                        app.status === 'em_atendimento' ? 'bg-indigo-500 animate-pulse' : 
+                                        app.status === 'concluido' ? 'bg-slate-300' : 
+                                        'bg-orange-500'
+                                    }`}></div>
                                 </div>
-                            );
-                        })}
+
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between mb-0.5">
+                                        <span className="text-xs font-black text-slate-800">
+                                            {format(new Date(app.date), 'HH:mm')}
+                                            {dateLabel !== 'Hoje' && <span className="ml-1 opacity-40 text-[9px]">({format(new Date(app.date), 'dd/MM')})</span>}
+                                        </span>
+                                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter ${statusMap[app.status as AppointmentStatus]?.bg} ${statusMap[app.status as AppointmentStatus]?.color}`}>
+                                            {statusMap[app.status as AppointmentStatus]?.label}
+                                        </span>
+                                    </div>
+                                    
+                                    <h4 className="text-sm font-bold text-slate-700 truncate flex items-center gap-2">
+                                        {app.client_name || 'Bloqueado'}
+                                        {app.status === 'em_atendimento' && <Scissors size={10} className="text-indigo-600 animate-bounce" />}
+                                    </h4>
+                                    
+                                    <p className="text-[11px] text-slate-400 font-medium truncate">
+                                        {app.service_name} • {app.professional_name}
+                                    </p>
+                                </div>
+
+                                <button 
+                                    className="p-2 text-slate-300 hover:text-green-500 hover:bg-green-50 rounded-xl transition-all"
+                                    title="Enviar WhatsApp"
+                                    onClick={() => window.open(`https://wa.me/55${app.client_whatsapp?.replace(/\D/g, '')}`, '_blank')}
+                                >
+                                    <MessageCircle size={18} />
+                                </button>
+                            </div>
+                        ))}
                     </div>
                 ) : (
                     <div className="h-full flex flex-col items-center justify-center text-center py-10">

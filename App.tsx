@@ -59,27 +59,21 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Tela de splash durante inicialização
   if (authLoading || studioLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
           <p className="text-slate-500 font-medium font-sans">Sincronizando dados...</p>
-          <p className="text-[10px] text-slate-300 font-bold uppercase tracking-widest">Aguardando resposta do servidor</p>
         </div>
       </div>
     );
   }
 
-  // Rotas Púbicas via Hash ou Pathname
   if (hash === '#/public-preview') return <Suspense fallback={<ViewLoader />}><PublicBookingPreview /></Suspense>;
   if (pathname === '/reset-password' || hash === '#/reset-password') return <Suspense fallback={<ViewLoader />}><ResetPasswordView /></Suspense>;
-  
-  // Se não houver usuário autenticado, renderiza LoginView (não redireciona fisicamente)
   if (!user) return <LoginView />;
 
-  // Verificação de Unidade Ativa para acesso ao sistema
   if (!activeStudioId) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
@@ -89,7 +83,7 @@ const AppContent: React.FC = () => {
           </div>
           <h2 className="text-2xl font-black text-slate-800 leading-tight">Nenhum Studio vinculado</h2>
           <p className="text-slate-500 mt-4 font-medium leading-relaxed">
-            Seu usuário ainda não possui permissão de acesso a nenhuma unidade ativa.
+            Seu usuário ainda não possui permissão de acesso a nenhuma unidade do <b>BelareStudio</b>.
           </p>
           <div className="mt-10 space-y-3">
              <button onClick={() => window.location.reload()} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl transition-all active:scale-95">Tentar Novamente</button>
@@ -108,7 +102,6 @@ const AppContent: React.FC = () => {
   };
 
   const renderView = () => {
-    // Verificação de permissão
     if (!hasAccess(user.papel as UserRole, currentView)) {
         return <DashboardView onNavigate={setCurrentView} />;
     }
@@ -127,7 +120,7 @@ const AppContent: React.FC = () => {
             case 'configuracoes': return <ConfiguracoesView />;
             case 'remuneracoes': return <RemuneracoesView />;
             case 'vendas': return <VendasView onAddTransaction={handleAddTransaction} />;
-            case 'comandas': return <ComandasView onAddTransaction={handleAddTransaction} onNavigateToCommand={navigateToCommand} />;
+            case 'comandas': return <ComandasView onAddTransaction={handleAddTransaction} />;
             case 'comanda_detalhe': return <CommandDetailView commandId={activeCommandId!} onBack={() => setCurrentView('comandas')} />;
             case 'caixa': return <CaixaView />;
             case 'produtos': return <ProdutosView />;

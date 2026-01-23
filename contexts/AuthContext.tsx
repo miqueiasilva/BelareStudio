@@ -27,18 +27,18 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
   
+  // Refs para controle de estabilidade (Protocolo de Estabilidade)
   const lastProcessedId = useRef<string | null>(null);
   const isMounted = useRef(true);
 
+  // Helper para buscar perfil detalhado
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
-      const { data: profData, error: profErr } = await supabase
+      const { data: profData } = await supabase
         .from('professionals')
         .select('role, photo_url, permissions, name')
         .eq('email', authUser.email)
         .maybeSingle();
-
-      if (profErr) throw profErr;
 
       if (profData) {
         return {
@@ -50,13 +50,11 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         };
       }
 
-      const { data: profileData, error: profileErr } = await supabase
+      const { data: profileData } = await supabase
         .from('profiles')
         .select('full_name, papel, avatar_url')
         .eq('id', authUser.id)
         .maybeSingle();
-      
-      if (profileErr) throw profileErr;
 
       return {
         ...authUser,
@@ -65,37 +63,22 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         avatar_url: profileData?.avatar_url || authUser.user_metadata?.avatar_url
       };
     } catch (e) {
-      console.error("AuthContext: Perfil básico (fallback).");
       return { 
         ...authUser, 
         papel: 'profissional', 
-        nome: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Usuário' 
+        nome: authUser.user_metadata?.full_name || 'Usuário' 
       };
-    }
-  };
-
-  const signOut = async () => {
-    try {
-      lastProcessedId.current = null;
-      if (supabase) await supabase.auth.signOut();
-    } catch (e) {
-      console.error("Erro durante signOut:", e);
-    } finally {
-      localStorage.clear(); 
-      sessionStorage.clear();
-      if (isMounted.current) {
-        setUser(null);
-        setLoading(false);
-      }
     }
   };
 
   useEffect(() => {
     isMounted.current = true;
 
+    // Listener Único para todo o ciclo de vida da Autenticação
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       const currentId = currentSession?.user?.id || null;
 
+      // Estabilidade: Evita processar o mesmo ID múltiplas vezes (Corrige o loop de 4 disparos)
       if (currentId === lastProcessedId.current && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED') {
         setLoading(false);
         return;
@@ -112,27 +95,26 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
       }
 
       try {
-        setLoading(true);
         const appUser = await fetchProfile(currentSession.user);
         if (isMounted.current) {
           setUser(appUser);
         }
       } catch (err) {
         console.error("AuthContext: Erro ao carregar perfil:", err);
-        if (isMounted.current) setUser(null);
       } finally {
-        if (isMounted.current) setLoading(false);
+        if (isMounted.current) {
+          setLoading(false);
+        }
       }
     });
 
-    // RELAXED SAFETY TIMEOUT (20s): Apenas libera o loading se o Supabase demorar.
-    // Não redireciona e não faz logout automático para evitar Erro 404.
+    // Safety Timeout para evitar travamento da UI em falhas de rede severas
     const safetyTimer = setTimeout(() => {
       if (isMounted.current && loading) {
-        console.warn("AuthContext: Sincronização lenta detectada (20s). Liberando interface...");
+        console.warn("AuthContext: Safety timeout atingido. Liberando UI.");
         setLoading(false);
       }
-    }, 20000);
+    }, 5000);
 
     return () => {
       isMounted.current = false;
@@ -146,6 +128,19 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const signInWithGoogle = async () => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${window.location.origin}/` } });
   const resetPassword = async (email: string) => supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
   const updatePassword = async (newPassword: string) => supabase.auth.updateUser({ password: newPassword });
+  
+  const signOut = async () => {
+    try {
+      lastProcessedId.current = null;
+      await supabase.auth.signOut();
+    } finally {
+      localStorage.clear(); 
+      sessionStorage.clear();
+      setUser(null);
+      setLoading(false);
+      window.location.href = '/login'; 
+    }
+  };
 
   const value = useMemo(() => ({ 
     user, 
