@@ -66,6 +66,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           name: p.name,
           avatarUrl: p.photo_url,
           role: p.role,
+          resource_id: p.resource_id,
           services_enabled: p.services_enabled || []
         })));
       }
@@ -76,11 +77,15 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
   useEffect(() => { fetchData(); }, [activeStudioId]);
 
+  // Filtro Rígido de Serviços por Profissional
   const filteredServicesToSelect = useMemo(() => {
     if (!formData.professional?.id) return [];
     const prof = dbProfessionals.find(p => String(p.id) === String(formData.professional?.id));
     const enabledIds = prof?.services_enabled || [];
-    if (enabledIds.length === 0) return [];
+    
+    // Se o profissional não tiver serviços habilitados marcados, assume "todos" ou exibe vazio conforme regra
+    if (enabledIds.length === 0) return dbServices; 
+    
     return dbServices.filter(s => enabledIds.includes(s.id));
   }, [dbServices, dbProfessionals, formData.professional]);
 
@@ -97,6 +102,11 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     if (selectedServices.length === 0) return setError('Selecione ao menos um serviço.');
     if (!formData.professional?.id) return setError('Selecione um profissional.');
 
+    const prof = dbProfessionals.find(p => String(p.id) === String(formData.professional?.id));
+    if (!prof?.resource_id) {
+        return setError('Este membro da equipe não possui vínculo técnico (resource_id).');
+    }
+
     setIsSaving(true);
     try {
         const compositeService: LegacyService = {
@@ -109,6 +119,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
         const finalAppointment = {
             ...formData,
             service: compositeService,
+            start: formData.start,
+            end: addMinutes(new Date(formData.start!), manualDuration),
             notas: formData.notas
         } as LegacyAppointment;
 
@@ -120,6 +132,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
   const handleSelectProfessional = (prof: LegacyProfessional) => {
     setFormData(prev => ({ ...prev, professional: prof }));
+    // Reseta serviços selecionados se eles não estiverem na lista do novo profissional
     setSelectedServices([]); 
     setSelectionModal(null);
   };
@@ -163,11 +176,11 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           </div>
 
           <div className="space-y-2">
-             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Serviços Habilitados</label>
+             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Serviços Disponíveis</label>
              {selectedServices.map((s, i) => (
                 <div key={i} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100"><span className="text-sm font-bold text-slate-700">{s.name}</span><button onClick={() => setSelectedServices(prev => prev.filter((_, idx) => idx !== i))} className="text-rose-500"><X size={16}/></button></div>
              ))}
-             <button disabled={!formData.professional?.id} onClick={() => setSelectionModal('service')} className="w-full p-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold hover:border-orange-200 hover:text-orange-500 transition-all flex items-center justify-center gap-2">
+             <button disabled={!formData.professional?.id} onClick={() => setSelectionModal('service')} className="w-full p-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold hover:border-orange-200 hover:text-orange-500 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
                 <PlusCircle size={20}/> {formData.professional?.id ? 'Adicionar Serviço' : 'Escolha o profissional primeiro'}
              </button>
              {formData.professional?.id && filteredServicesToSelect.length === 0 && !loadingServices && (
@@ -182,7 +195,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
                 <span className="text-xl font-black text-slate-800">R$ {manualPrice.toFixed(2)}</span>
             </div>
             <button onClick={handleSave} disabled={isSaving} className="w-full py-4 bg-orange-500 text-white rounded-2xl font-black shadow-xl shadow-orange-100 flex items-center justify-center gap-2 disabled:opacity-50">
-                {isSaving ? <Loader2 className="animate-spin" size={20}/> : <Save size={20}/>} Salvar Agendamento
+                {isSaving ? <Loader2 className="animate-spin" size={20}/> : <Save size={20}/>} Confirmar Agendamento
             </button>
         </footer>
 

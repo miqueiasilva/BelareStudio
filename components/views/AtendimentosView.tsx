@@ -29,20 +29,6 @@ const START_HOUR = 8;
 const END_HOUR = 20; 
 const SLOT_PX_HEIGHT = 80; 
 
-const STATUS_PRIORITY: Record<string, number> = {
-    'em_atendimento': 1,
-    'chegou': 2,
-    'confirmado_whatsapp': 3,
-    'confirmado': 4,
-    'agendado': 5,
-    'pendente': 5, 
-    'em_espera': 6,
-    'concluido': 7,
-    'faltou': 8,
-    'cancelado': 9,
-    'bloqueado': 10
-};
-
 const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
     const startMinutesSinceDayStart = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
@@ -92,7 +78,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
     const [modalState, setModalState] = useState<{ type: 'appointment' | 'block' | 'sale'; data: any } | null>(null);
     const [activeAppointmentDetail, setActiveAppointmentDetail] = useState<LegacyAppointment | null>(null);
-    const [isJaciBotOpen, setIsJaciBotOpen] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
     
@@ -100,170 +85,151 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [timeSlot] = useState(30);
     const isMounted = useRef(true);
     const appointmentRefs = useRef(new Map<number | string, HTMLDivElement | null>());
-    const lastRequestId = useRef(0);
 
     const fetchAppointments = async () => {
-        if (!isMounted.current || authLoading || !user || !activeStudioId) return;
-        const requestId = ++lastRequestId.current;
+        if (!isMounted.current || authLoading || !activeStudioId) return;
         setIsLoadingData(true);
-        try {
-            let rangeStart: Date, rangeEnd: Date;
-            if (periodType === 'Semana') {
-                rangeStart = startOfDay(addDays(currentDate, -(currentDate.getDay() || 7) + 1));
-                rangeEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
-            } else if (periodType === 'Mês') {
-                rangeStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1, 0, 0, 0, 0);
-                rangeEnd = endOfMonth(currentDate);
-            } else {
-                rangeStart = startOfDay(currentDate);
-                rangeEnd = addDays(rangeStart, 1); // Fim exclusivo (Início do próximo dia)
-            }
+        console.log("Radar: Iniciando fetch de dados...");
 
-            // ✅ OBJETIVO 2: Filtragem obrigatória por start_at para consistência total
-            const { data: apptRes, error: apptErr } = await supabase
-                .from('appointments')
-                .select(`*, professional:team_members(id, name, photo_url)`)
+        try {
+            // Ajuste de Timezone Local -> UTC ISO
+            const dayStart = new Date(currentDate);
+            dayStart.setHours(0,0,0,0);
+            const dayEnd = new Date(dayStart);
+            dayEnd.setDate(dayEnd.getDate() + 1);
+
+            // 1. Fetch Profissionais (Fonte de Verdade p/ Colunas)
+            const { data: teamData, error: teamErr } = await supabase
+                .from('team_members')
+                .select('id, name, photo_url, order_index, show_in_calendar, services_enabled, resource_id')
                 .eq('studio_id', activeStudioId)
-                .gte('start_at', rangeStart.toISOString())
-                .lt('start_at', rangeEnd.toISOString())
+                .eq('active', true)
+                .eq('show_in_calendar', true)
+                .order('order_index', { ascending: true });
+
+            if (teamErr) throw teamErr;
+
+            const mappedProfs = (teamData || []).map(p => ({
+                id: p.id,
+                name: p.name,
+                avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
+                resource_id: p.resource_id,
+                services_enabled: p.services_enabled || [],
+                order_index: p.order_index
+            }));
+            setResources(mappedProfs);
+
+            // 2. Fetch Agendamentos (Sem embed p/ evitar erro 400)
+            const { data: apptData, error: apptErr } = await supabase
+                .from('appointments')
+                .select('*')
+                .eq('studio_id', activeStudioId)
+                .gte('start_at', dayStart.toISOString())
+                .lt('start_at', dayEnd.toISOString())
                 .neq('status', 'cancelado')
                 .order('start_at', { ascending: true });
 
-            const { data: blocksRes, error: blocksErr } = await supabase
+            if (apptErr) throw apptErr;
+
+            // Merge Manual p/ exibir agendamentos nas colunas corretas via resource_id
+            const mergedApps = (apptData || []).map(app => {
+                const prof = mappedProfs.find(p => p.resource_id === app.professional_id);
+                const start = new Date(app.start_at || app.date);
+                return {
+                    ...app,
+                    type: 'appointment',
+                    start,
+                    end: app.end_at ? new Date(app.end_at) : new Date(start.getTime() + (app.duration || 30) * 60000),
+                    professional: prof || { name: app.professional_name || 'Desconhecido', id: app.professional_id },
+                    service: { name: app.service_name, price: Number(app.value), duration: app.duration, color: app.service_color || '#3b82f6' },
+                    client: { nome: app.client_name, id: app.client_id }
+                };
+            });
+
+            // 3. Fetch Bloqueios
+            const { data: blockData } = await supabase
                 .from('schedule_blocks')
                 .select('*')
                 .eq('studio_id', activeStudioId)
-                .gte('start_time', rangeStart.toISOString())
-                .lt('start_time', rangeEnd.toISOString());
+                .gte('start_time', dayStart.toISOString())
+                .lt('start_time', dayEnd.toISOString());
 
-            if (apptErr) throw apptErr;
-            if (blocksErr) throw blocksErr;
+            const mergedBlocks = (blockData || []).map(b => {
+                const prof = mappedProfs.find(p => p.resource_id === b.professional_id);
+                return {
+                    id: b.id,
+                    type: 'block',
+                    start: new Date(b.start_time),
+                    end: new Date(b.end_time),
+                    professional: prof || { id: b.professional_id },
+                    service: { name: b.reason || 'Bloqueado', color: '#64748b' },
+                    status: 'bloqueado'
+                };
+            });
 
-            if (isMounted.current && requestId === lastRequestId.current) {
-                const mappedAppts = (apptRes || []).map(row => ({ ...mapRowToAppointment(row, resources), type: 'appointment' }));
-                const mappedBlocks = (blocksRes || []).map(row => ({ 
-                    id: row.id, 
-                    start: new Date(row.start_time), 
-                    end: new Date(row.end_time), 
-                    professional: { id: row.professional_id }, 
-                    service: { name: row.reason, color: '#fca5a5' }, 
-                    status: 'bloqueado', 
-                    type: 'block' 
-                }));
-                setAppointments([...mappedAppts, ...mappedBlocks]);
-            }
-        } catch (e: any) { 
-            console.error("fetchAppointments Failure:", e);
-        } finally { 
-            if (isMounted.current) setIsLoadingData(false); 
+            setAppointments([...mergedApps, ...mergedBlocks]);
+            console.log(`Radar: ${mergedApps.length} agendamentos e ${mergedBlocks.length} bloqueios carregados.`);
+
+        } catch (e: any) {
+            console.error("Radar Error:", e.message);
+            setToast({ message: "Erro ao sincronizar agenda: " + e.message, type: 'error' });
+        } finally {
+            setIsLoadingData(false);
         }
     };
 
-    const fetchResources = async () => {
-        if (authLoading || !user || !activeStudioId) return;
-        try {
-            const { data, error } = await supabase
-                .from('team_members')
-                .select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled')
-                .eq('active', true)
-                .eq('show_in_calendar', true)
-                .eq('studio_id', activeStudioId)
-                .order('order_index', { ascending: true });
-            
-            if (error) throw error;
-            if (data && isMounted.current) {
-                setResources(data.map((p: any) => ({ 
-                    id: p.id, 
-                    name: p.name, 
-                    avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`, 
-                    role: p.role, 
-                    order_index: p.order_index || 0, 
-                    services_enabled: p.services_enabled || [] 
-                })));
-            }
-        } catch (e) { 
-            console.error("fetchResources Error:", e);
-        }
-    };
-
-    const mapRowToAppointment = (row: any, professionalsList: LegacyProfessional[]): LegacyAppointment => {
-        const start = new Date(row.start_at || row.date);
-        const dur = row.duration || 30;
-        let prof = professionalsList.find(p => String(p.id) === String(row.professional_id));
-        return { 
-            id: row.id, 
-            start, 
-            end: new Date(start.getTime() + dur * 60000), 
-            status: row.status as AppointmentStatus, 
-            notas: row.notes || '', 
-            client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true }, 
-            professional: prof || { id: row.professional_id, name: row.professional_name || 'Profissional', avatarUrl: '' }, 
-            service: { id: row.service_id, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : (row.service_color || '#3b82f6') } 
-        } as LegacyAppointment;
-    };
-
-    useEffect(() => {
-        isMounted.current = true;
-        fetchResources();
-        return () => { isMounted.current = false; };
-    }, [activeStudioId]);
-
-    useEffect(() => { 
-        if (resources.length > 0) fetchAppointments(); 
-    }, [currentDate, periodType, resources]);
-
-    const handleUpdateStatus = async (id: number | string, newStatus: AppointmentStatus) => {
-        const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
-        if (!error) {
-            setToast({ message: "Status atualizado!", type: 'success' });
-            fetchAppointments();
-        }
-    };
+    useEffect(() => { fetchAppointments(); }, [currentDate, activeStudioId]);
 
     const handleSaveAppointment = async (app: LegacyAppointment) => {
         if (!activeStudioId) return;
+        
+        // Validação de Vínculo UUID
+        const teamMember = resources.find(r => r.id === app.professional.id);
+        if (!teamMember?.resource_id) {
+            console.error("Radar Save Error: Profissional sem resource_id vinculado.", app.professional);
+            setToast({ message: "Este profissional não possui vínculo UUID. Verifique o cadastro da equipe.", type: 'error' });
+            return;
+        }
+
         setIsLoadingData(true);
         try {
-            const startAt = app.start;
-            const endAt = new Date(startAt.getTime() + (app.service.duration || 30) * 60000);
-
-            // ✅ OBJETIVO 1: Preencher obrigatoriamente start_at e end_at (ISO UTC)
-            const payload = { 
-                studio_id: activeStudioId, 
-                client_id: app.client?.id, 
-                client_name: app.client?.nome, 
-                professional_id: app.professional.id, 
-                professional_name: app.professional.name, 
+            const payload = {
+                studio_id: activeStudioId,
+                client_id: app.client?.id || null,
+                client_name: app.client?.nome || 'Consumidor Final',
+                professional_id: teamMember.resource_id, // Mapeamento crucial para FK
+                professional_name: teamMember.name,
                 service_id: app.service.id,
-                service_name: app.service.name, 
-                value: app.service.price, 
-                duration: app.service.duration, 
-                date: startAt.toISOString(), 
-                start_at: startAt.toISOString(),
-                end_at: endAt.toISOString(),
-                status: app.status || 'agendado', 
-                notes: app.notas, 
-                origem: app.origem || 'interno' 
+                service_name: app.service.name,
+                value: app.service.price,
+                duration: app.service.duration,
+                start_at: app.start.toISOString(),
+                end_at: app.end.toISOString(),
+                date: app.start.toISOString(),
+                status: app.status || 'agendado',
+                notes: app.notas,
+                origem: 'Radar Interno'
             };
-            
-            const { data, error } = app.id && appointments.some(a => a.id === app.id)
-                ? await supabase.from('appointments').update(payload).eq('id', app.id).select('id, start_at, end_at')
-                : await supabase.from('appointments').insert([payload]).select('id, start_at, end_at');
 
-            if (error) throw error;
-            
-            // ✅ OBJETIVO 3: Validar retorno e aguardar fetchAppointments antes de fechar
-            if (!data?.[0]?.start_at || !data?.[0]?.end_at) {
-                throw new Error("Agendamento salvo com campos de tempo nulos no banco.");
+            console.log("Radar Save: Enviando payload...", payload);
+
+            const { data, error } = app.id && typeof app.id === 'number' && app.id > 1000000000000 // Detecção simplista de novo vs edit
+                ? await supabase.from('appointments').insert([payload]).select()
+                : await supabase.from('appointments').upsert([{ ...payload, id: app.id }]).select();
+
+            if (error) {
+                console.error("Supabase REST Error:", error.message, error.details, error.hint);
+                throw error;
             }
 
-            await fetchAppointments(); 
-            setToast({ message: 'Agendamento salvo com sucesso!', type: 'success' });
+            console.log("Radar Save Success:", data);
+            setToast({ message: "Agendamento gravado!", type: 'success' });
             setModalState(null);
-        } catch (e: any) { 
-            setToast({ message: "Erro ao salvar: " + e.message, type: 'error' });
-        } finally { 
-            setIsLoadingData(false); 
+            await fetchAppointments(); // Sincronização imediata
+        } catch (e: any) {
+            setToast({ message: "Falha ao salvar: " + e.message, type: 'error' });
+        } finally {
+            setIsLoadingData(false);
         }
     };
 
@@ -274,75 +240,52 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         const targetIndex = direction === 'left' ? index - 1 : index + 1;
         if (targetIndex < 0 || targetIndex >= resources.length) return;
 
+        const profA = resources[index];
+        const profB = resources[targetIndex];
+
+        // Swap local para feedback instantâneo
         const newResources = [...resources];
-        const profA = newResources[index];
-        const profB = newResources[targetIndex];
-
-        // ✅ OBJETIVO 5: Swap persistido no banco
-        const oldIndexA = profA.order_index || 0;
-        const oldIndexB = profB.order_index || 0;
-
-        profA.order_index = oldIndexB;
-        profB.order_index = oldIndexA;
-
-        setResources([...newResources].sort((a,b) => (a.order_index || 0) - (b.order_index || 0)));
+        const oldIndex = profA.order_index;
+        profA.order_index = profB.order_index;
+        profB.order_index = oldIndex;
+        newResources[index] = profB;
+        newResources[targetIndex] = profA;
+        setResources(newResources);
 
         try {
-            await Promise.all([
-                supabase.from('team_members').update({ order_index: profA.order_index }).eq('id', profA.id),
-                supabase.from('team_members').update({ order_index: profB.order_index }).eq('id', profB.id)
-            ]);
+            const { error: err1 } = await supabase.from('team_members').update({ order_index: profA.order_index }).eq('id', profA.id);
+            const { error: err2 } = await supabase.from('team_members').update({ order_index: profB.order_index }).eq('id', profB.id);
+            if (err1 || err2) throw new Error("Falha ao persistir ordem.");
         } catch (e) {
-            fetchResources(); // Reverte em caso de falha
+            fetchAppointments(); // Reverte em caso de erro
         }
     };
 
     const handleGridClick = (col: any, timeIdx: number, e: React.MouseEvent) => {
-        // ✅ OBJETIVO 4: Garantir que o container receba clique e identifique professional/data
         e.stopPropagation();
         const minutesToAdd = timeIdx * timeSlot;
-        const baseDate = periodType === 'Semana' ? new Date(col.data) : new Date(currentDate);
-        baseDate.setHours(START_HOUR, 0, 0, 0);
-        const targetTime = addMinutes(baseDate, minutesToAdd);
+        const targetTime = addMinutes(startOfDay(currentDate), (START_HOUR * 60) + minutesToAdd);
         
         setSelectionMenu({
             x: e.clientX,
             y: e.clientY,
             time: targetTime,
-            professional: col.type === 'professional' ? col.data : resources[0]
+            professional: col.data
         });
     };
 
-    // FIX: Added missing 'columns' definition to manage columns dynamically based on periodType.
     const columns = useMemo(() => {
-        if (periodType === 'Semana') {
-            const start = startOfDay(addDays(currentDate, -(currentDate.getDay() || 7) + 1));
-            const end = endOfWeek(currentDate, { weekStartsOn: 1 });
-            return eachDayOfInterval({ start, end }).map(day => ({
-                id: day.toISOString(),
-                title: format(day, 'EEEE, dd/MM', { locale: pt }),
-                data: day,
-                type: 'day'
-            }));
-        }
-        return resources.map(res => ({
-            id: res.id,
-            title: res.name,
-            photo: res.avatarUrl,
-            data: res,
-            type: 'professional'
-        }));
-    }, [periodType, resources, currentDate]);
+        return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional' as const, data: p }));
+    }, [resources]);
 
-    // FIX: Added missing 'timeSlotsLabels' to generate the time axis labels for the grid.
     const timeSlotsLabels = useMemo(() => {
         const labels = [];
-        for (let hour = START_HOUR; hour < END_HOUR; hour++) {
-            labels.push(`${String(hour).padStart(2, '0')}:00`);
-            labels.push(`${String(hour).padStart(2, '0')}:30`);
+        for (let i = 0; i < (END_HOUR - START_HOUR) * 60 / timeSlot; i++) {
+            const minutes = i * timeSlot;
+            labels.push(`${String(START_HOUR + Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`);
         }
         return labels;
-    }, []);
+    }, [timeSlot]);
 
     return (
         <div className="h-full bg-white relative flex-col font-sans text-left overflow-hidden flex">
@@ -352,8 +295,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4">
                     <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">Radar de Atendimento {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-orange-500" />}</h2>
                     <div className="flex items-center gap-2">
-                        <button onClick={() => setIsPeriodModalOpen(true)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50">{periodType} <ChevronDown size={16} /></button>
-                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all active:scale-95">Novo Horário</button>
+                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-6 rounded-xl shadow-lg">Agendar Agora</button>
                     </div>
                 </div>
                 <div className="flex items-center gap-4">
@@ -376,12 +318,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                     {(col as any).photo && <img src={(col as any).photo} className="w-8 h-8 rounded-full object-cover" />}
                                     <span className="text-[11px] font-black text-slate-800 truncate">{col.title}</span>
                                 </div>
-                                {periodType === 'Dia' && (
-                                    <div className="absolute -bottom-2 flex gap-1 opacity-0 group-hover/header:opacity-100 transition-opacity z-[60]">
-                                        <button onClick={(e) => { e.stopPropagation(); moveProfessional(col.id, 'left'); }} className="p-1 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-orange-500 shadow-sm"><ChevronLeft size={12}/></button>
-                                        <button onClick={(e) => { e.stopPropagation(); moveProfessional(col.id, 'right'); }} className="p-1 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-orange-500 shadow-sm"><ChevronRight size={12}/></button>
-                                    </div>
-                                )}
+                                <div className="absolute -bottom-2 flex gap-1 opacity-0 group-hover/header:opacity-100 transition-opacity z-[60]">
+                                    <button onClick={(e) => { e.stopPropagation(); moveProfessional(col.id, 'left'); }} className="p-1 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-orange-500 shadow-sm"><ChevronLeft size={12}/></button>
+                                    <button onClick={(e) => { e.stopPropagation(); moveProfessional(col.id, 'right'); }} className="p-1 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-orange-500 shadow-sm"><ChevronRight size={12}/></button>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -399,13 +339,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                 {timeSlotsLabels.map((_, i) => (
                                     <div key={i} onClick={(e) => handleGridClick(col, i, e)} className="h-20 border-b border-slate-100/50 border-dashed hover:bg-orange-50/30 transition-colors z-0"></div>
                                 ))}
-                                {appointments.filter(app => { 
-                                    if (periodType === 'Semana') return isSameDay(app.start, col.data as Date); 
-                                    return String(app.professional?.id) === String(col.id); 
-                                }).map(app => {
+                                {appointments.filter(app => String(app.professional?.id) === String(col.id)).map(app => {
                                     const color = app.type === 'block' ? '#94a3b8' : (app.service?.color || '#3b82f6');
                                     return (
-                                        <div key={app.id} ref={(el) => { if (app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} onClick={(e) => { e.stopPropagation(); if (app.type === 'appointment') setActiveAppointmentDetail(app); }} className="rounded shadow-sm border-l-4 p-2 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card border-r border-b border-slate-200/50 z-20" style={{ ...getAppointmentPosition(app.start, app.end, timeSlot), borderLeftColor: color, backgroundColor: `${color}15` }}>
+                                        <div 
+                                            key={app.id} 
+                                            ref={(el) => { if (app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} 
+                                            onClick={(e) => { e.stopPropagation(); if (app.type === 'appointment') setActiveAppointmentDetail(app); }} 
+                                            className="rounded shadow-sm border-l-4 p-2 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card border-r border-b border-slate-200/50 z-20" 
+                                            style={{ ...getAppointmentPosition(app.start, app.end, timeSlot), borderLeftColor: color, backgroundColor: `${color}15` }}
+                                        >
                                             <p className="text-[9px] font-black text-slate-400 uppercase leading-none mb-1">{format(app.start, 'HH:mm')}</p>
                                             <p className="text-xs font-bold text-slate-800 truncate leading-tight">{app.client?.nome || 'Bloqueado'}</p>
                                             <p className="text-[9px] text-slate-500 truncate mt-1">{app.service?.name}</p>
@@ -437,7 +380,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     onClose={() => setActiveAppointmentDetail(null)} 
                     onEdit={(app) => { setModalState({ type: 'appointment', data: app }); setActiveAppointmentDetail(null); }} 
                     onDelete={async (id) => { if(confirm("Apagar horário?")) { await supabase.from('appointments').delete().eq('id', id); fetchAppointments(); setActiveAppointmentDetail(null); } }} 
-                    onUpdateStatus={handleUpdateStatus}
+                    onUpdateStatus={async (id, status) => { await supabase.from('appointments').update({ status }).eq('id', id); fetchAppointments(); }}
                 />
             )}
             {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />}

@@ -91,6 +91,8 @@ export interface LegacyProfessional {
   permissions?: any;
   work_schedule?: any;
   pix_key?: string; 
+  // FIX: Added resource_id to fix "Property 'resource_id' does not exist on type 'LegacyProfessional'" errors.
+  resource_id?: string | null;
 }
 
 export interface LegacyService {
@@ -149,7 +151,7 @@ export interface CommandItem {
     command_id: string | number;
     service_id?: string | number;
     product_id?: string | number;
-    appointment_id?: number | string;
+    appointment_id?: string | number;
     title: string;
     price: number; 
     quantity: number; 
