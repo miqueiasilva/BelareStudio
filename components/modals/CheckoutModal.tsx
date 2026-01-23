@@ -32,6 +32,7 @@ interface CheckoutModalProps {
     isOpen: boolean;
     onClose: () => void;
     appointment: {
+        // FIX: Updated id type to string | number to match LegacyAppointment.id
         id: number | string;
         client_id?: number | string;
         client_name: string;
@@ -71,22 +72,14 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     };
 
     const loadSystemData = async () => {
-        if (!activeStudioId) return;
         setIsFetching(true);
         try {
-            // ✅ CORREÇÃO: Utilizando a tabela professionals e a coluna uuid_id
             const [profsRes, methodsRes] = await Promise.all([
-                supabase
-                    .from('professionals')
-                    .select('id:uuid_id, name')
-                    .eq('studio_id', activeStudioId)
-                    .order('name'),
+                supabase.from('team_members').select('id, name').order('name'),
                 supabase.from('payment_methods_config').select('*').eq('is_active', true)
             ]);
-
             if (profsRes.error) throw profsRes.error;
             if (methodsRes.error) throw methodsRes.error;
-
             if (isMounted.current) {
                 setDbProfessionals(profsRes.data || []);
                 setDbPaymentMethods(methodsRes.data || []);
@@ -97,8 +90,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 }
             }
         } catch (err: any) {
-            console.error("Erro ao carregar dados do checkout:", err);
-            if (isMounted.current) setToast({ message: "Erro ao sincronizar dados.", type: 'error' });
+            if (isMounted.current) setToast({ message: "Erro ao sincronizar taxas.", type: 'error' });
         } finally {
             if (isMounted.current) setIsFetching(false);
         }
@@ -107,7 +99,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     useEffect(() => {
         if (isOpen) loadSystemData();
         else resetLocalState();
-    }, [isOpen, activeStudioId]);
+    }, [isOpen]);
 
     const filteredMethods = useMemo(() => dbPaymentMethods.filter(m => m.type === selectedCategory), [dbPaymentMethods, selectedCategory]);
 
@@ -119,37 +111,32 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const currentMethod = useMemo(() => dbPaymentMethods.find(m => m.id === selectedMethodId), [dbPaymentMethods, selectedMethodId]);
 
     const handleConfirmPayment = async (e?: React.MouseEvent) => {
-        if (e) { e.preventDefault(); e.stopPropagation(); }
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
 
         if (!currentMethod || !activeStudioId || isLoading) return;
         setIsLoading(true);
 
         try {
+            // Mapeamento técnico conforme regra da RPC pay_latest_open_command_v6
             const methodMapping: Record<string, string> = { 'pix': 'pix', 'money': 'cash', 'credit': 'credit', 'debit': 'debit' };
 
-            const payload = {
-                p_studio_id: String(activeStudioId),
-                p_professional_id: appointment.professional_id ? String(appointment.professional_id) : null,
-                p_amount: Number(appointment.price),
+            // CHAMADA À NOVA RPC INTELIGENTE
+            const { error: rpcError } = await supabase.rpc('pay_latest_open_command_v6', {
+                p_amount: appointment.price,
                 p_method: methodMapping[selectedCategory] || 'pix',
-                p_brand: String(currentMethod.brand || 'default'),
-                p_installments: Number(installments),
-                p_command_id: null,
-                p_client_id: appointment.client_id ? Number(appointment.client_id) : null,
-                p_description: `Atendimento: ${appointment.service_name}`
-            };
-
-            // LOG DE INTERCEPTAÇÃO REQUISITADO
-            console.log('--- RPC INVOCATION: register_payment_transaction_v2 ---');
-            console.log('Payload:', payload);
-
-            const { error: rpcError } = await supabase.rpc('register_payment_transaction_v2', payload);
+                p_brand: currentMethod.brand || 'default',
+                p_installments: installments
+            });
 
             if (rpcError) {
-                console.error("Erro na liquidação:", rpcError);
+                console.error("Erro na liquidação (pay_latest_open_command_v6):", rpcError);
                 throw rpcError;
             }
 
+            // Marca o agendamento original como concluído no frontend
             await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
             
             if (isMounted.current) {
@@ -158,6 +145,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             }
         } catch (error: any) {
             if (isMounted.current) {
+                const detailedError = `[${error.message}] Details: ${error.details || 'N/A'}. Hint: ${error.hint || 'N/A'}`;
+                console.error("Falha Crítica no Checkout:", detailedError);
                 setToast({ message: `Falha na Liquidação: ${error.message}`, type: 'error' });
                 setIsLoading(false);
             }
@@ -206,7 +195,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     {isFetching ? (<div className="py-4 flex justify-center"><Loader2 className="animate-spin text-orange-500" /></div>) : filteredMethods.length > 0 ? (
                         <div className="space-y-4 text-left">
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Operadora Selecionada</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Operadora Selecionada</label>
                                 <select value={selectedMethodId} onChange={(e) => setSelectedMethodId(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700">
                                     {filteredMethods.map(m => (<option key={m.id} value={m.id}>{m.name} {m.brand ? `(${m.brand})` : ''}</option>))}
                                 </select>
