@@ -127,12 +127,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfDay(currentDate);
             }
 
+            // CORREÇÃO: Usando uuid_id e name conforme o schema real da view professionals
             const { data: apptRes, error: apptErr } = await supabase
                 .from('appointments')
                 .select(`
                     *,
                     professional:professionals!appointments_professional_same_studio_fk (
-                        id_uuid, nome, photo_url
+                        uuid_id, name, photo_url
                     )
                 `)
                 .eq('studio_id', activeStudioId)
@@ -174,19 +175,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const fetchResources = async () => {
         if (authLoading || !user || !activeStudioId) return;
         try {
+            // CORREÇÃO: Usando uuid_id e name conforme o schema real da view professionals
             const { data, error } = await supabase
                 .from('professionals')
-                .select('id_uuid, nome, photo_url, role, active, show_in_calendar, order_index, services_enabled')
+                .select('uuid_id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled')
                 .eq('active', true)
                 .eq('studio_id', activeStudioId)
-                .order('nome', { ascending: true });
+                .order('name', { ascending: true });
             
             if (error) throw error;
             if (data && isMounted.current) {
                 const mapped = data.filter((m: any) => m.show_in_calendar !== false).map((p: any) => ({ 
-                    id: p.id_uuid, 
-                    name: p.nome, 
-                    avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.nome}&background=random`, 
+                    id: p.uuid_id, 
+                    name: p.name, 
+                    avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`, 
                     role: p.role, 
                     order_index: p.order_index || 0, 
                     services_enabled: p.services_enabled || [] 

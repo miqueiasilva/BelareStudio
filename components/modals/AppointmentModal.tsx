@@ -80,21 +80,21 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     if (!activeStudioId) return;
     setLoadingProfessionals(true);
     try {
-      // CORREÇÃO: Utilizando a tabela professionals e colunas nome/id_uuid
+      // CORREÇÃO: Utilizando uuid_id e name conforme o schema real da view professionals
       const { data, error: sbError } = await supabase
         .from('professionals')
-        .select('id_uuid, nome, photo_url, role, active, services_enabled')
+        .select('uuid_id, name, photo_url, role, active, services_enabled')
         .eq('studio_id', activeStudioId)
         .eq('active', true)
-        .order('nome');
+        .order('name');
 
       if (sbError) throw sbError;
 
       if (data) {
         const mapped: LegacyProfessional[] = data.map((p: any) => ({
-          id: p.id_uuid,
-          name: p.nome,
-          avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.nome}&background=random`,
+          id: p.uuid_id,
+          name: p.name,
+          avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
           role: p.role,
           services_enabled: p.services_enabled || []
         }));
