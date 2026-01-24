@@ -338,38 +338,67 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
             }
             
-            // PAYLOAD REFINADO COM CASTING DE TIPOS E CAMPOS EXTRAS
-            const payload = { 
+            // PAYLOAD CORRIGIDO - Remove FKs inválidas e usa apenas os campos obrigatórios
+            const payload: any = { 
                 studio_id: activeStudioId,
-                client_id: app.client?.id ? Number(app.client.id) : null,
-                client_name: app.client?.nome || null, 
+                client_name: app.client?.nome || 'Cliente sem cadastro', 
                 professional_id: String(app.professional.id), 
                 professional_name: app.professional.name, 
                 service_name: app.service.name, 
                 value: Number(app.service.price), 
-                duration: String(app.service.duration), 
+                duration: Number(app.service.duration), 
                 date: app.start.toISOString(), 
                 status: app.status, 
                 notes: app.notas || null, 
                 origem: app.origem || 'interno',
-                service_color: app.service.color || '#3b82f6',
-                origin: app.origem || 'manual'
+                origin: app.origem || 'manual',
+                service_color: app.service.color || '#3b82f6'
             };
+
+            // APENAS adiciona client_id se o cliente existir de verdade no banco
+            if (app.client?.id && app.client.id > 0) {
+                const { data: clientExists } = await supabase
+                    .from('clients')
+                    .select('id')
+                    .eq('id', app.client.id)
+                    .single();
+                
+                if (clientExists) {
+                    payload.client_id = Number(app.client.id);
+                }
+            }
+
+            // APENAS adiciona service_id se o serviço existir de verdade no banco
+            if (app.service?.id && app.service.id > 0) {
+                const { data: serviceExists } = await supabase
+                    .from('services')
+                    .select('id')
+                    .eq('id', app.service.id)
+                    .single();
+                
+                if (serviceExists) {
+                    payload.service_id = Number(app.service.id);
+                }
+            }
             
             if (app.id && appointments.some(a => a.id === app.id)) {
-                await supabase.from('appointments').update(payload).eq('id', app.id);
+                const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
+                if (error) throw error;
             } else {
-                await supabase.from('appointments').insert([payload]);
+                const { error } = await supabase.from('appointments').insert([payload]);
+                if (error) throw error;
             }
 
             setToast({ message: 'Agendamento salvo!', type: 'success' });
-            setModalState(null); setPendingConflict(null);
+            setModalState(null); 
+            setPendingConflict(null);
             await fetchAppointments();
         } catch (e: any) { 
-            console.error('Erro detalhado no salvamento:', e);
-            setToast({ message: `Erro: ${e.message || 'Falha ao salvar'}`, type: 'error' }); 
-            await fetchAppointments(); 
-        } finally { setIsLoadingData(false); }
+            console.error('Erro detalhado:', e);
+            setToast({ message: `Erro ao salvar: ${e.message}`, type: 'error' }); 
+        } finally { 
+            setIsLoadingData(false); 
+        }
     };
 
     const handleDeleteBlock = async (e: React.MouseEvent, blockId: string | number) => {
