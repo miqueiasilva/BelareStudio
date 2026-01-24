@@ -1,4 +1,3 @@
-
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 // Helper para timeout obrigatório de 10s em todas as requisições (Anti-Hang)
@@ -86,4 +85,9 @@ export async function testConnection() {
         console.error("Supabase Connection Error:", e);
         return false;
     }
+}
+
+// Expor supabase globalmente para debug
+if (typeof window !== 'undefined') {
+    (window as any).supabase = supabase;
 }

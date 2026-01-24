@@ -185,16 +185,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 rangeEnd = endOfMonth(currentDate);
             }
 
-            console.log('📅 Buscando agendamentos:', {
-                periodType,
-                rangeStart: format(rangeStart, "yyyy-MM-dd'T'HH:mm:ssXXX"),
-                rangeEnd: format(rangeEnd, "yyyy-MM-dd'T'HH:mm:ssXXX"),
-                currentDate: currentDate.toISOString()
-            });
-
             // FIX: Usar comparação de string de data com offset (ISO formatada) para coincidir com o payload salvo
             const startStr = format(rangeStart, "yyyy-MM-dd'T'HH:mm:ssXXX");
             const endStr = format(rangeEnd, "yyyy-MM-dd'T'HH:mm:ssXXX");
+
+            console.log('📅 Buscando agendamentos:', {
+                periodType,
+                rangeStart: startStr,
+                rangeEnd: endStr,
+                currentDate: currentDate.toISOString()
+            });
 
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
