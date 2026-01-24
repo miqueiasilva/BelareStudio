@@ -155,7 +155,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const lastRequestId = useRef(0);
 
     const fetchAppointments = async () => {
-        if (!isMounted.current || authLoading || !user || !activeStudioId) return;
+        if (!isMounted.current || authLoading || !user || !activeStudioId) {
+            console.log('❌ fetchAppointments abortado:', { isMounted: isMounted.current, authLoading, user: !!user, activeStudioId });
+            return;
+        }
         
         const requestId = ++lastRequestId.current;
         if (abortControllerRef.current) abortControllerRef.current.abort();
@@ -164,22 +167,30 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
         try {
             let rangeStart: Date, rangeEnd: Date;
-            if (periodType === 'Semana') {
+            
+            if (periodType === 'Dia') {
+                rangeStart = new Date(currentDate);
+                rangeStart.setHours(0, 0, 0, 0);
+                rangeEnd = new Date(currentDate);
+                rangeEnd.setHours(23, 59, 59, 999);
+            } else if (periodType === 'Semana') {
                 rangeStart = new Date(currentDate);
                 const day = rangeStart.getDay();
                 const diff = (day < 1 ? -6 : 1) - day;
                 rangeStart.setDate(rangeStart.getDate() + diff);
                 rangeStart.setHours(0, 0, 0, 0);
-                
                 rangeEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
-            } else if (periodType === 'Mês') {
+            } else {
                 rangeStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1, 0, 0, 0, 0);
                 rangeEnd = endOfMonth(currentDate);
-            } else {
-                rangeStart = new Date(currentDate);
-                rangeStart.setHours(0, 0, 0, 0);
-                rangeEnd = endOfDay(currentDate);
             }
+
+            console.log('📅 Buscando agendamentos:', {
+                periodType,
+                rangeStart: rangeStart.toISOString(),
+                rangeEnd: rangeEnd.toISOString(),
+                currentDate: currentDate.toISOString()
+            });
 
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
@@ -188,7 +199,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     .eq('studio_id', activeStudioId)
                     .gte('date', rangeStart.toISOString())
                     .lte('date', rangeEnd.toISOString())
-                    .neq('status', 'cancelado') 
+                    .neq('status', 'cancelado')
                     .abortSignal(abortControllerRef.current.signal),
                 supabase
                     .from('schedule_blocks')
@@ -198,6 +209,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     .lte('start_time', rangeEnd.toISOString())
                     .abortSignal(abortControllerRef.current.signal)
             ]);
+
+            console.log('📦 Resultados:', {
+                appointments: apptRes.data?.length || 0,
+                blocks: blocksRes.data?.length || 0,
+                apptError: apptRes.error,
+                apptData: apptRes.data
+            });
 
             if (apptRes.error) throw apptRes.error;
             if (blocksRes.error) throw blocksRes.error;
@@ -212,18 +230,19 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     id: row.id,
                     start: new Date(row.start_time),
                     end: new Date(row.end_time),
-                    professional: { id: row.professional_id }, 
+                    professional: { id: row.professional_id },
                     service: { name: row.reason, color: '#fca5a5' },
                     status: 'bloqueado',
                     type: 'block'
                 }));
 
+                console.log('✅ Setando appointments:', mappedAppts.length + mappedBlocks.length);
                 setAppointments([...mappedAppts, ...mappedBlocks]);
             }
-        } catch (e: any) { 
-            if (e.name !== 'AbortError') console.error("Fetch Agenda Error:", e); 
-        } finally { 
-            if (isMounted.current) setIsLoadingData(false); 
+        } catch (e: any) {
+            if (e.name !== 'AbortError') console.error("💥 Fetch Agenda Error:", e);
+        } finally {
+            if (isMounted.current) setIsLoadingData(false);
         }
     };
 
