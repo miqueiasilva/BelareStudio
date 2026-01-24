@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
@@ -323,79 +324,49 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
         if (!activeStudioId) return;
         setIsLoadingData(true);
+        
         try {
-            if (!force) {
-                const startDay = new Date(app.start);
-                startDay.setHours(0, 0, 0, 0);
-                const endDay = new Date(app.start);
-                endDay.setHours(23, 59, 59, 999);
-
-                const { data: existingOnDay } = await supabase.from('appointments').select('*').eq('studio_id', activeStudioId).eq('professional_id', app.professional.id).neq('status', 'cancelado').gte('date', startDay.toISOString()).lte('date', endDay.toISOString());
-                const conflict = existingOnDay?.find(row => {
-                    if (app.id && row.id === app.id) return false;
-                    return (app.start < addMinutes(new Date(row.date), Number(row.duration) || 30)) && (app.end > new Date(row.date));
-                });
-                if (conflict) { setPendingConflict({ newApp: app, conflictWith: conflict }); setIsLoadingData(false); return; }
-            }
-            
-            // PAYLOAD CORRIGIDO - Remove FKs inválidas e usa apenas os campos obrigatórios
-            const payload: any = { 
+            // Payload super simplificado - APENAS campos essenciais para evitar falhas de FK ou tipos
+            const payload = { 
                 studio_id: activeStudioId,
-                client_name: app.client?.nome || 'Cliente sem cadastro', 
                 professional_id: String(app.professional.id), 
+                client_name: app.client?.nome || 'Cliente', 
                 professional_name: app.professional.name, 
                 service_name: app.service.name, 
-                value: Number(app.service.price), 
-                duration: Number(app.service.duration), 
+                value: Number(app.service.price) || 0, 
+                duration: Number(app.service.duration) || 30, 
                 date: app.start.toISOString(), 
-                status: app.status, 
-                notes: app.notas || null, 
-                origem: app.origem || 'interno',
-                origin: app.origem || 'manual',
+                status: app.status || 'agendado', 
+                notes: app.notas || '', 
                 service_color: app.service.color || '#3b82f6'
             };
-
-            // APENAS adiciona client_id se o cliente existir de verdade no banco
-            if (app.client?.id && app.client.id > 0) {
-                const { data: clientExists } = await supabase
-                    .from('clients')
-                    .select('id')
-                    .eq('id', app.client.id)
-                    .single();
-                
-                if (clientExists) {
-                    payload.client_id = Number(app.client.id);
-                }
-            }
-
-            // APENAS adiciona service_id se o serviço existir de verdade no banco
-            if (app.service?.id && app.service.id > 0) {
-                const { data: serviceExists } = await supabase
-                    .from('services')
-                    .select('id')
-                    .eq('id', app.service.id)
-                    .single();
-                
-                if (serviceExists) {
-                    payload.service_id = Number(app.service.id);
-                }
-            }
+            
+            console.log('Tentando salvar agendamento:', payload);
             
             if (app.id && appointments.some(a => a.id === app.id)) {
                 const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
                 if (error) throw error;
             } else {
-                const { error } = await supabase.from('appointments').insert([payload]);
+                const { data, error } = await supabase.from('appointments').insert([payload]).select();
                 if (error) throw error;
+                console.log('Agendamento inserido com sucesso:', data);
             }
 
-            setToast({ message: 'Agendamento salvo!', type: 'success' });
+            setToast({ message: '✅ Agendamento salvo com sucesso!', type: 'success' });
             setModalState(null); 
             setPendingConflict(null);
+            
+            // CRÍTICO: Aguarda a atualização da agenda para garantir sincronia visual
             await fetchAppointments();
+            
         } catch (e: any) { 
-            console.error('Erro detalhado:', e);
-            setToast({ message: `Erro ao salvar: ${e.message}`, type: 'error' }); 
+            console.error('ERRO AO SALVAR AGENDAMENTO:', e);
+            setToast({ 
+                message: `❌ Erro: ${e.message || e.hint || 'Falha na comunicação com o banco'}`, 
+                type: 'error' 
+            }); 
+            // Tenta atualizar mesmo com erro para recuperar o estado consistente
+            await fetchAppointments();
         } finally { 
             setIsLoadingData(false); 
         }
@@ -793,10 +764,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsConfigModalOpen(false)}></div>
                     <div className="relative w-full max-w-sm bg-white rounded-[32px] shadow-2xl overflow-hidden p-8 animate-in zoom-in-95 duration-200">
-                        <header className="flex justify-between items-center mb-8"><h3 className="font-extrabold text-slate-800">Grade</h3><button onClick={() => setIsConfigModalOpen(false)}><X size={20} /></button></header>
+                        <header className="flex justify-between items-center mb-8"><h3 className="font-extrabold text-slate-800">Configuração de Grade</h3><button onClick={() => setIsConfigModalOpen(false)}><X size={20} /></button></header>
                         <div className="space-y-4">
-                            <label className="text-sm font-black text-slate-700 uppercase">Largura: {colWidth}px</label>
-                            <input type="range" min="150" max="450" step="10" value={colWidth} onChange={e => setColWidth(Number(e.target.value))} className="w-full" />
+                            <label className="text-sm font-black text-slate-700 uppercase">Largura das Colunas: {colWidth}px</label>
+                            <input type="range" min="150" max="450" step="10" value={colWidth} onChange={e => setColWidth(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-500" />
                         </div>
                     </div>
                 </div>
@@ -808,7 +779,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     <div className="relative w-full max-w-xs bg-white rounded-[32px] shadow-2xl overflow-hidden p-4 animate-in zoom-in-95 duration-200">
                         <div className="space-y-2">
                             {['Dia', 'Semana', 'Mês', 'Lista'].map((item) => (
-                                <button key={item} onClick={() => { setPeriodType(item as any); setIsPeriodModalOpen(false); }} className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl text-sm font-bold ${periodType === item ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-slate-50'}`}>{item}{periodType === item && <Check size={18} />}</button>
+                                <button key={item} onClick={() => { setPeriodType(item as any); setIsPeriodModalOpen(false); }} className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl text-sm font-bold transition-all ${periodType === item ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-slate-50'}`}>{item}{periodType === item && <Check size={18} />}</button>
                             ))}
                         </div>
                     </div>
