@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
     Plus, Scissors, Clock, DollarSign, Edit2, Trash2, 
@@ -287,11 +286,13 @@ const ServicosView: React.FC = () => {
                                     <h3 className="font-black text-slate-500 text-[10px] uppercase tracking-[0.2em] flex items-center gap-2">
                                         <Tag size={14} className="text-orange-500" />
                                         {category}
-                                        <span className="bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-lg ml-1 font-black">{items?.length || 0}</span>
+                                        {/* FIX: Explicitly casting 'items' to Service[] to fix the 'unknown' type error */}
+                                        <span className="bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-lg ml-1 font-black">{(items as Service[])?.length || 0}</span>
                                     </h3>
                                 </header>
                                 <div className="space-y-4">
-                                    {items?.map(s => (
+                                    {/* FIX: Explicitly casting 'items' to Service[] to fix the 'unknown' type error */}
+                                    {(items as Service[])?.map(s => (
                                         <div key={s.id} className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-sm hover:shadow-md hover:border-orange-200 transition-all group relative overflow-hidden cursor-pointer" onClick={() => { setEditingService(s); setIsModalOpen(true); }}>
                                             <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: s.cor_hex || '#f97316' }}></div>
                                             <h4 className="font-black text-slate-800 leading-tight group-hover:text-orange-600 transition-colors mb-4">{s.nome}</h4>
