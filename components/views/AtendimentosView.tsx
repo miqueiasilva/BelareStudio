@@ -187,26 +187,30 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             console.log('📅 Buscando agendamentos:', {
                 periodType,
-                rangeStart: rangeStart.toISOString(),
-                rangeEnd: rangeEnd.toISOString(),
+                rangeStart: format(rangeStart, "yyyy-MM-dd'T'HH:mm:ssXXX"),
+                rangeEnd: format(rangeEnd, "yyyy-MM-dd'T'HH:mm:ssXXX"),
                 currentDate: currentDate.toISOString()
             });
+
+            // FIX: Usar comparação de string de data com offset (ISO formatada) para coincidir com o payload salvo
+            const startStr = format(rangeStart, "yyyy-MM-dd'T'HH:mm:ssXXX");
+            const endStr = format(rangeEnd, "yyyy-MM-dd'T'HH:mm:ssXXX");
 
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments')
                     .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origem')
                     .eq('studio_id', activeStudioId)
-                    .gte('date', rangeStart.toISOString())
-                    .lte('date', rangeEnd.toISOString())
+                    .gte('date', startStr)
+                    .lte('date', endStr)
                     .neq('status', 'cancelado')
                     .abortSignal(abortControllerRef.current.signal),
                 supabase
                     .from('schedule_blocks')
                     .select('*')
                     .eq('studio_id', activeStudioId)
-                    .gte('start_time', rangeStart.toISOString())
-                    .lte('start_time', rangeEnd.toISOString())
+                    .gte('start_time', startStr)
+                    .lte('start_time', endStr)
                     .abortSignal(abortControllerRef.current.signal)
             ]);
 
