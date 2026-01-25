@@ -55,14 +55,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // A) Busca Contexto via View (Fonte de Verdade Única para o PDV)
-            const { data: viewData, error: viewError } = await supabase
-                .from('v_checkout_context')
-                .select('*')
-                .eq('command_id', commandId)
-                .order('payment_created_at', { ascending: false });
+            // A) Busca Contexto via RPC (V3) - Fonte de Verdade para o PDV
+            const { data: rpcData, error: rpcError } = await supabase
+                .rpc('get_checkout_context_v3', { p_command_id: commandId });
 
-            if (viewError) throw viewError;
+            if (rpcError) throw rpcError;
 
             // B) Busca Itens da Comanda
             const { data: cmdData, error: cmdError } = await supabase
@@ -79,7 +76,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (cmdError) throw cmdError;
 
-            // Busca configurações de taxas (PDV)
+            // Busca configurações de taxas PDV
             const { data: configs } = await supabase
                 .from('payment_methods_config')
                 .select('*')
@@ -88,29 +85,33 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             setAvailableConfigs(configs || []);
 
-            if (viewData && viewData.length > 0) {
-                const ctx = viewData[0]; // Registro mais recente
+            if (rpcData && rpcData.length > 0) {
+                // A RPC retorna um array, pegamos a primeira linha para o contexto geral
+                const row = rpcData[0];
                 
-                // BLINDAGEM NO FRONT: Se o status na View for 'paid', travamos a UI
-                const alreadyPaid = ctx.command_status === 'paid';
+                // Mapeamento Cirúrgico conforme especificação
+                const profName = row.professional_display_name || row.professional_name || "Profissional não atribuído";
+                const clientName = row.client_display_name || row.client_name || "Cliente sem cadastro";
+
+                const alreadyPaid = row.command_status === 'paid';
                 setIsLocked(alreadyPaid);
 
                 setCommand({
                     ...cmdData,
-                    status: ctx.command_status,
+                    status: row.command_status,
                     client: { 
-                        nome: ctx.client_display_name || ctx.client_name || 'Consumidor Final', 
-                        whatsapp: ctx.client_phone || ctx.client_whatsapp 
+                        nome: clientName, 
+                        whatsapp: row.client_phone || row.client_whatsapp 
                     },
                     professional: { 
-                        name: ctx.professional_display_name || ctx.professional_name || 'Geral / Studio'
+                        name: profName
                     }
                 });
 
-                // C) Mapeamento de Pagamento (Regra 6: Apenas o mais recente se já pago)
-                const validPayments = viewData
-                    .filter(p => p.payment_id)
-                    .map(p => ({
+                // C) Mapeia pagamentos já realizados
+                const validPayments = rpcData
+                    .filter((p: any) => p.payment_id)
+                    .map((p: any) => ({
                         id: p.payment_id,
                         method: p.method_type as PaymentMethod,
                         amount: p.payment_amount,
