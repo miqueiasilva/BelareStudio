@@ -55,7 +55,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // A) Busca Contexto Unificado via VIEW filtrando por command_id
+            // A) Busca Contexto via View (Fonte de Verdade Única para o PDV)
             const { data: viewData, error: viewError } = await supabase
                 .from('v_checkout_context')
                 .select('*')
@@ -89,8 +89,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setAvailableConfigs(configs || []);
 
             if (viewData && viewData.length > 0) {
-                const ctx = viewData[0]; // Considera apenas o registro mais recente para contexto/lock
+                const ctx = viewData[0]; // Registro mais recente
                 
+                // BLINDAGEM NO FRONT: Se o status na View for 'paid', travamos a UI
                 const alreadyPaid = ctx.command_status === 'paid';
                 setIsLocked(alreadyPaid);
 
@@ -98,31 +99,30 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     ...cmdData,
                     status: ctx.command_status,
                     client: { 
-                        nome: ctx.client_name, 
+                        nome: ctx.client_display_name || ctx.client_name || 'Consumidor Final', 
                         whatsapp: ctx.client_phone || ctx.client_whatsapp 
                     },
                     professional: { 
-                        name: ctx.professional_name // Binding do Profissional da View
+                        name: ctx.professional_display_name || ctx.professional_name || 'Geral / Studio'
                     }
                 });
 
-                // C) Mapeamento de Pagamento (Regra 6: Apenas o mais recente)
-                if (ctx.payment_id) {
-                    const latestPayment: PaymentEntry = {
-                        id: ctx.payment_id,
-                        method: ctx.method_type as PaymentMethod,
-                        amount: ctx.payment_amount,
-                        installments: ctx.installments || 1,
-                        method_id: ctx.method_id,
-                        fee_rate: ctx.fee_rate || 0,
-                        fee_value: ctx.fee_value || 0,
-                        net_amount: ctx.net_amount || ctx.payment_amount,
-                        brand: ctx.method_brand || ctx.brand
-                    };
-                    setAddedPayments([latestPayment]);
-                } else {
-                    setAddedPayments([]);
-                }
+                // C) Mapeamento de Pagamento (Regra 6: Apenas o mais recente se já pago)
+                const validPayments = viewData
+                    .filter(p => p.payment_id)
+                    .map(p => ({
+                        id: p.payment_id,
+                        method: p.method_type as PaymentMethod,
+                        amount: p.payment_amount,
+                        installments: p.installments || 1,
+                        method_id: p.method_id,
+                        fee_rate: p.fee_rate || 0,
+                        fee_value: p.fee_value || 0,
+                        net_amount: p.net_amount || p.payment_amount,
+                        brand: p.method_brand || p.brand
+                    }));
+                
+                setAddedPayments(validPayments);
             } else {
                 setCommand(cmdData);
             }
@@ -198,7 +198,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             net_amount: netAmount
         };
 
-        setAddedPayments([newPayment]); // No Checkout V5 simplificado, consideramos um pagamento por vez
+        setAddedPayments(prev => [...prev, newPayment]);
         setActiveMethod(null);
     };
 
@@ -253,6 +253,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             if (closeError) throw closeError;
 
             setToast({ message: "Checkout finalizado!", type: 'success' });
+            setIsLocked(true);
             setTimeout(onBack, 1500);
 
         } catch (e: any) {
@@ -265,7 +266,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         return (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50">
                 <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
-                <p className="text-[10px] font-black uppercase tracking-[0.2em]">Carregando Checkout...</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em]">Sincronizando Checkout...</p>
             </div>
         );
     }
@@ -433,11 +434,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* SELETOR DE MÉTODOS - Bloqueado se já pago */}
+                        {/* SELETOR DE MÉTODOS */}
                         <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
                             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2">
-                                {isLocked ? <Lock size={14} className="text-emerald-500" /> : <Tag size={14} className="text-orange-500" />} 
-                                {isLocked ? 'Pagamento Confirmado' : 'Selecionar Pagamento'}
+                                {isLocked ? <Lock size={14} className="text-emerald-500" /> : <Tag size={14} className="text-orange-500" />}
+                                {isLocked ? 'Checkout Concluído' : 'Selecionar Pagamento'}
                             </h4>
                             
                             {!isLocked ? (
@@ -514,10 +515,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-100">
                                         <CheckCircle size={32} />
                                     </div>
-                                    <div>
-                                        <p className="text-emerald-800 font-black text-lg uppercase tracking-tighter">Checkout Concluído</p>
-                                        <p className="text-emerald-600 text-[10px] font-bold uppercase tracking-widest">Os valores já foram processados no caixa.</p>
-                                    </div>
+                                    <p className="text-emerald-800 font-black text-lg uppercase tracking-tighter">Venda Finalizada</p>
+                                    <p className="text-emerald-600 text-xs font-bold leading-tight">Esta comanda já foi liquidada e os lançamentos financeiros foram registrados.</p>
                                 </div>
                             )}
                             
@@ -526,7 +525,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 disabled={isLocked || isFinishing || totals.remaining > 0 || addedPayments.length === 0} 
                                 className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${!isLocked && totals.remaining === 0 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'}`}
                             >
-                                {isFinishing ? (<Loader2 size={24} className="animate-spin" />) : isLocked ? (<><CheckCircle size={24} /> Checkout Finalizado</>) : (<><CheckCircle size={24} /> {totals.remaining > 0 ? `Restam R$ ${totals.remaining.toFixed(2)}` : 'Fechar Checkout'}</>)}
+                                {isFinishing ? (<Loader2 size={24} className="animate-spin" />) : isLocked ? (<><CheckCircle size={24} /> Pago</>) : (<><CheckCircle size={24} /> {totals.remaining > 0 ? `Restam R$ ${totals.remaining.toFixed(2)}` : 'Fechar Checkout'}</>)}
                             </button>
                         </div>
                     </div>
