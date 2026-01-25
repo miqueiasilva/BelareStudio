@@ -16,6 +16,7 @@ export type ViewState =
   | 'produtos' 
   | 'servicos' 
   | 'public_preview' 
+  | 'marketing'
   | 'equipe';
 
 export type UserRole = 'admin' | 'gestor' | 'recepcao' | 'profissional';
@@ -219,7 +220,6 @@ export interface OnlineBookingConfig {
   showStudioInSearch: boolean;
 }
 
-// FIX: Added missing AnalyticsData interface
 export interface AnalyticsData {
   pageViews: {
     profile: number;

@@ -29,6 +29,7 @@ const CaixaView = lazy(() => import('./components/views/CaixaView'));
 const ProdutosView = lazy(() => import('./components/views/ProdutosView'));
 const ServicosView = lazy(() => import('./components/views/ServicosView'));
 const EquipeView = lazy(() => import('./components/views/EquipeView'));
+const MarketingView = lazy(() => import('./components/views/MarketingView'));
 const PublicBookingPreview = lazy(() => import('./components/views/PublicBookingPreview'));
 
 import { mockTransactions } from './data/mockData';
@@ -126,6 +127,7 @@ const AppContent: React.FC = () => {
             case 'produtos': return <ProdutosView />;
             case 'servicos': return <ServicosView />;
             case 'equipe': return <EquipeView />;
+            case 'marketing': return <MarketingView />;
             case 'public_preview':
               window.location.hash = '/public-preview';
               return null;

@@ -5,7 +5,7 @@ import {
     Phone, Scissors, ShoppingBag, Receipt,
     Percent, Calendar, ShoppingCart, X, Coins,
     ArrowRight, ShieldCheck, Tag, CreditCard as CardIcon,
-    User, UserCheck, Trash2, Lock
+    User, UserCheck, Trash2, Lock, MoreVertical, AlertTriangle
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -21,7 +21,7 @@ interface CommandDetailViewProps {
 
 interface PaymentEntry {
     id: string;
-    method: PaymentMethod;
+    method: string;
     amount: number;
     brand?: string;
     installments: number;
@@ -41,11 +41,10 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [isLocked, setIsLocked] = useState(false);
     
     const [addedPayments, setAddedPayments] = useState<PaymentEntry[]>([]);
-    const [activeMethod, setActiveMethod] = useState<PaymentMethod | null>(null);
+    const [activeMethod, setActiveMethod] = useState<string | null>(null);
     const [selectedBrand, setSelectedBrand] = useState<string>('Visa');
     const [selectedInstallments, setSelectedInstallments] = useState<number>(1);
     const [amountToPay, setAmountToPay] = useState<string>('0');
-    
     const [discount, setDiscount] = useState<string>('0');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [availableConfigs, setAvailableConfigs] = useState<any[]>([]);
@@ -55,17 +54,18 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // 1. Busca Contexto via RPC v2 (Fonte da Verdade para Nomes)
+            // 1. Busca Contexto via RPC v2
             const { data: rpcData, error: rpcError } = await supabase
                 .rpc('get_checkout_context_v2', { p_command_id: commandId });
 
             if (rpcError) throw rpcError;
 
-            // 2. Busca Itens da Comanda
+            // 2. Busca Detalhes da Comanda com campos limpos
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select(`
                     *,
+                    clients(id, nome, whatsapp),
                     command_items (
                         *,
                         professional:team_members(id, name)
@@ -76,7 +76,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (cmdError) throw cmdError;
 
-            // Busca configurações de taxas PDV
             const { data: configs } = await supabase
                 .from('payment_methods_config')
                 .select('*')
@@ -86,65 +85,57 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setAvailableConfigs(configs || []);
 
             if (rpcData && rpcData.length > 0) {
-                const context = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+                const context = rpcData[0];
                 
-                // Mapeamento Cirúrgico de Nomes conforme especificação
-                const clientName = context.client_display_name ?? context.client_name ?? "Cliente sem cadastro";
-                const professionalName = context.professional_display_name ?? context.professional_name ?? "Profissional não atribuído";
-                const professionalPhoto = context.professional_photo_url ?? null;
-
-                const alreadyPaid = context.command_status === 'paid';
-                setIsLocked(alreadyPaid);
+                // UNIFICAÇÃO DE NOMES - Garantia absoluta de strings para evitar Error #31
+                const clientName = String(context.client_display_name || cmdData.clients?.nome || "Consumidor Final");
+                const professionalName = String(context.professional_display_name || cmdData.command_items?.[0]?.professional?.name || "Geral / Studio");
+                const alreadyPaid = context.command_status === 'paid' || cmdData.status === 'paid';
 
                 setCommand({
                     ...cmdData,
-                    status: context.command_status,
-                    professional_id: context.professional_id || cmdData.professional_id,
-                    client_id: context.client_id || cmdData.client_id,
-                    client: { 
-                        nome: clientName, 
-                        whatsapp: context.client_phone ?? context.client_whatsapp ?? null 
-                    },
-                    professional: { 
-                        name: professionalName,
-                        photo_url: professionalPhoto
-                    }
+                    status: String(context.command_status || cmdData.status),
+                    display_client_name: clientName,
+                    display_professional_name: professionalName,
                 });
 
-                // Mapeia pagamentos realizados (se houver)
+                setIsLocked(alreadyPaid);
+
                 const validPayments = rpcData
                     .filter((p: any) => p.payment_id)
                     .map((p: any) => ({
-                        id: p.payment_id,
-                        method: p.method_type as PaymentMethod,
-                        amount: p.payment_amount,
-                        installments: p.installments || 1,
-                        method_id: p.method_id,
-                        fee_rate: p.fee_rate || 0,
-                        fee_value: p.fee_value || 0,
-                        net_amount: p.net_amount || p.payment_amount,
-                        brand: p.method_brand || p.brand
+                        id: String(p.payment_id),
+                        method: String(p.method_type || 'pix'),
+                        amount: Number(p.payment_amount),
+                        installments: Number(p.installments || 1),
+                        method_id: String(p.method_id),
+                        fee_rate: Number(p.fee_rate || 0),
+                        fee_value: Number(p.fee_value || 0),
+                        net_amount: Number(p.net_amount || p.payment_amount),
+                        brand: String(p.method_brand || p.brand || '')
                     }));
                 
                 setAddedPayments(validPayments);
             } else {
-                setCommand(cmdData);
+                setCommand({
+                    ...cmdData,
+                    display_client_name: String(cmdData.clients?.nome || "Consumidor Final"),
+                    display_professional_name: String(cmdData.command_items?.[0]?.professional?.name || "Geral / Studio"),
+                });
             }
         } catch (e: any) {
             console.error('[CHECKOUT_LOAD_ERROR]', e);
-            setToast({ message: "Erro ao carregar dados do checkout.", type: 'error' });
+            setToast({ message: "Erro ao carregar dados.", type: 'error' });
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => {
-        fetchContext();
-    }, [commandId, activeStudioId]);
+    useEffect(() => { fetchContext(); }, [commandId, activeStudioId]);
 
     const totals = useMemo(() => {
         if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0 };
-        const subtotal = command.command_items.reduce((acc: number, i: any) => acc + (Number(i.price || 0) * Number(i.quantity || 0)), 0);
+        const subtotal = command.command_items?.reduce((acc: number, i: any) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || 0;
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         const paid = addedPayments.reduce((acc, p) => acc + p.amount, 0);
@@ -152,7 +143,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         return { subtotal, total: totalAfterDiscount, paid, remaining };
     }, [command, discount, addedPayments]);
 
-    const handleInitPayment = (method: PaymentMethod) => {
+    const handleInitPayment = (method: string) => {
         if (isLocked) return;
         setActiveMethod(method);
         setAmountToPay(totals.remaining.toFixed(2));
@@ -161,43 +152,32 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     const handleConfirmPartialPayment = () => {
-        if (!activeMethod || !activeStudioId || isLocked) return;
-        const amount = parseFloat(amountToPay);
-        if (amount <= 0) return;
+        if (!activeMethod || isLocked) return;
+        const amount = parseFloat(amountToPay.replace(',', '.'));
+        if (isNaN(amount) || amount <= 0) return;
 
         const typeMap: Record<string, string> = {
-            'pix': 'pix',
-            'dinheiro': 'money',
-            'cartao_credito': 'credit',
-            'cartao_debito': 'debit'
+            'pix': 'pix', 'dinheiro': 'money', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
         };
 
         const config = availableConfigs.find(c => 
-            c.type === typeMap[activeMethod] && 
-            (c.type === 'pix' || c.type === 'money' || c.brand?.toLowerCase() === selectedBrand.toLowerCase())
+            c.type === (typeMap[activeMethod] || activeMethod) && 
+            (c.type === 'pix' || c.type === 'money' || String(c.brand).toLowerCase() === selectedBrand.toLowerCase())
         );
 
-        let feeRate = 0;
-        if (config) {
-            feeRate = Number(config.rate_cash || 0);
-            if (activeMethod === 'cartao_credito' && selectedInstallments > 1 && config.installment_rates) {
-                feeRate = Number(config.installment_rates[selectedInstallments.toString()] || config.rate_cash || 0);
-            }
-        }
-
+        const feeRate = Number(config?.rate_cash || 0);
         const feeValue = Number((amount * (feeRate / 100)).toFixed(2));
-        const netAmount = Number((amount - feeValue).toFixed(2));
 
         const newPayment: PaymentEntry = {
-            id: Math.random().toString(36).substring(2, 9),
-            method: activeMethod,
-            method_id: config?.id || 'manual',
+            id: Math.random().toString(36).substring(7),
+            method: String(activeMethod),
+            method_id: String(config?.id || 'manual'),
             amount: amount,
             installments: selectedInstallments,
-            brand: (activeMethod === 'cartao_credito' || activeMethod === 'cartao_debito') ? selectedBrand : undefined,
+            brand: String(selectedBrand),
             fee_rate: feeRate,
             fee_value: feeValue,
-            net_amount: netAmount
+            net_amount: amount - feeValue
         };
 
         setAddedPayments(prev => [...prev, newPayment]);
@@ -205,28 +185,30 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     const handleFinishCheckout = async () => {
-        if (!command || isFinishing || addedPayments.length === 0 || isLocked) return;
-        
+        if (!command || isFinishing || isLocked) return;
         setIsFinishing(true);
 
         try {
+            // Conversão estrita para tipos aceitos pelo RPC Postgres (UUIDs devem ser strings)
+            const studioId = String(activeStudioId);
+            const clientId = command.client_id ? String(command.client_id) : null;
+            const professionalId = (command.professional_id || command.command_items?.[0]?.professional_id) ? String(command.professional_id || command.command_items?.[0]?.professional_id) : null;
+
             for (const payment of addedPayments) {
-                // CORREÇÃO CRÍTICA: Parâmetros exatos conforme assinatura da função no print
-                // Garantindo que nada seja undefined e convertendo números explicitamente
                 const { data: transactionId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: Number(payment.amount),
                     p_category: 'servico',
-                    p_client_id: command.client_id || null,
-                    p_description: `Recebimento Comanda #${command.id.split('-')[0].toUpperCase()}`,
+                    p_client_id: clientId,
+                    p_description: String(`Recebimento Comanda #${command.id.substring(0, 8).toUpperCase()}`),
                     p_net_value: Number(payment.net_amount),
                     p_payment_method_id: payment.method_id === 'manual' ? null : payment.method_id,
-                    p_professional_id: command.professional_id || null,
-                    p_studio_id: activeStudioId,
+                    p_professional_id: professionalId,
+                    p_studio_id: studioId,
                     p_tax_rate: Number(payment.fee_rate),
                     p_type: 'income'
                 });
 
-                if (rpcError || !transactionId) throw new Error(rpcError?.message || "Erro ao gerar transação.");
+                if (rpcError) throw rpcError;
 
                 const { error: paymentError } = await supabase
                     .from('command_payments')
@@ -234,12 +216,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         command_id: command.id,
                         financial_transaction_id: transactionId,
                         method_id: payment.method_id === 'manual' ? null : payment.method_id,
-                        amount: payment.amount,
-                        method: payment.method,
-                        installments: payment.installments,
-                        fee_rate: payment.fee_rate,
-                        fee_amount: payment.fee_value,
-                        net_amount: payment.net_amount
+                        amount: Number(payment.amount),
+                        method: String(payment.method),
+                        installments: Number(payment.installments),
+                        fee_rate: Number(payment.fee_rate),
+                        fee_amount: Number(payment.fee_value),
+                        net_amount: Number(payment.net_amount)
                     }]);
 
                 if (paymentError) throw paymentError;
@@ -250,38 +232,26 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 .update({ 
                     status: 'paid', 
                     closed_at: new Date().toISOString(),
-                    total_amount: totals.total 
+                    total_amount: Number(totals.total) 
                 })
                 .eq('id', command.id);
 
             if (closeError) throw closeError;
 
-            setToast({ message: "Checkout finalizado!", type: 'success' });
+            setToast({ message: "Venda finalizada com sucesso!", type: 'success' });
             setIsLocked(true);
             setTimeout(onBack, 1500);
-
         } catch (e: any) {
             console.error('[FINISH_ERROR]', e);
-            setToast({ message: `Erro no fechamento: ${e.message}`, type: 'error' });
+            setToast({ message: `Erro: ${e.message || "Tente novamente"}`, type: 'error' });
+        } finally {
             setIsFinishing(false);
         }
     };
 
-    if (loading) {
-        return (
-            <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50">
-                <Loader2 className="animate-spin text-orange-500 mb-4" size={48} />
-                <p className="text-[10px] font-black uppercase tracking-[0.2em]">Sincronizando Checkout...</p>
-            </div>
-        );
-    }
+    if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
 
-    const paymentMethods = [
-        { id: 'pix', label: 'Pix', icon: Smartphone },
-        { id: 'dinheiro', label: 'Dinheiro', icon: Banknote },
-        { id: 'cartao_credito', label: 'Crédito', icon: CreditCard },
-        { id: 'cartao_debito', label: 'Débito', icon: CardIcon }
-    ];
+    const currentCommandIdDisplay = String(command?.id || '').substring(0, 8).toUpperCase();
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
@@ -289,113 +259,77 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center z-20 shadow-sm flex-shrink-0">
                 <div className="flex items-center gap-4">
-                    <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-colors">
-                        <ChevronLeft size={24} />
-                    </button>
+                    <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-all"><ChevronLeft size={24} /></button>
                     <div>
-                        <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                            Checkout <span className="text-orange-500 font-mono">#{command.id.split('-')[0].toUpperCase()}</span>
-                        </h1>
+                        <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500 font-mono">#{currentCommandIdDisplay}</span></h1>
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                            Profissional: {command.professional?.name || 'Não atribuído'}
+                            Atendente: {String(command?.display_professional_name || 'Geral')}
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-3">
-                    <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${command.status === 'open' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
-                        {command.status === 'open' ? 'Aberto' : 'Pago'}
-                    </div>
+                <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${command?.status === 'open' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
+                    {command?.status === 'open' ? 'Em aberto' : 'Finalizada'}
                 </div>
             </header>
 
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
                     <div className="lg:col-span-2 space-y-6">
-                        {/* HEADER DE DADOS DO CLIENTE */}
+                        {/* HEADER CLIENTE */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
-                            <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl shadow-inner border-4 border-white overflow-hidden">
-                                {command.professional?.photo_url ? (
-                                    <img src={command.professional.photo_url} className="w-full h-full object-cover" alt="Prof" />
-                                ) : (
-                                    command.client?.nome?.charAt(0).toUpperCase() || 'C'
-                                )}
+                            <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl uppercase">
+                                {String(command?.display_client_name || 'C').charAt(0)}
                             </div>
                             <div className="flex-1 text-center md:text-left">
-                                <h3 className="text-2xl font-black text-slate-800">{command.client?.nome || 'Consumidor Final'}</h3>
+                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{String(command?.display_client_name || 'Consumidor Final')}</h3>
                                 <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter">
-                                        <Phone size={14} className="text-orange-500" /> {command.client?.whatsapp || 'Sem contato'}
-                                    </div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter">
-                                        <User size={14} className="text-orange-500" /> Profissional: {command.professional?.name || '---'}
-                                    </div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter">
-                                        <Calendar size={14} className="text-orange-500" /> {format(new Date(command.created_at), "dd/MM 'às' HH:mm", { locale: pt })}
-                                    </div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Calendar size={14} className="text-orange-500" /> Aberta em: {command ? format(new Date(command.created_at), "dd/MM 'às' HH:mm", { locale: pt }) : '--'}</div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* LISTAGEM DE ITENS */}
+                        {/* ITENS */}
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
-                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2">
-                                    <ShoppingCart size={18} className="text-orange-500" /> Itens da Comanda
-                                </h3>
+                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Carrinho de Consumo</h3>
                             </header>
                             <div className="divide-y divide-slate-50">
-                                {command.command_items.map((item: any) => (
-                                    <div key={item.id} className="p-8 flex items-center justify-between group hover:bg-slate-50/50 transition-colors">
+                                {command?.command_items?.map((item: any) => (
+                                    <div key={item.id} className="p-8 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
                                         <div className="flex items-center gap-5">
-                                            <div className={`p-4 rounded-3xl ${item.product_id ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
-                                                {item.product_id ? <ShoppingBag size={24} /> : <Scissors size={24} />}
-                                            </div>
+                                            <div className={`p-4 rounded-3xl ${item.product_id ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>{item.product_id ? <ShoppingBag size={24} /> : <Scissors size={24} />}</div>
                                             <div>
-                                                <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
-                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-1">
-                                                    {item.quantity} un. x R$ {Number(item.price || 0).toFixed(2)}
-                                                </p>
+                                                <p className="font-black text-slate-800 text-lg leading-tight">{String(item.title)}</p>
+                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-1">{item.quantity} un. x R$ {Number(item.price || 0).toFixed(2)}</p>
                                             </div>
                                         </div>
-                                        <p className="font-black text-slate-800 text-xl">R$ {(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}</p>
+                                        <p className="font-black text-slate-800 text-xl">R$ {(Number(item.price || 0) * Number(item.quantity || 1)).toFixed(2)}</p>
                                     </div>
                                 ))}
                             </div>
                         </div>
 
-                        {/* PARCELAS DE RECEBIMENTO */}
+                        {/* PAGAMENTOS EFETUADOS */}
                         {addedPayments.length > 0 && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50">
-                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2">
-                                        <CheckCircle size={16} /> Parcelas de Recebimento
-                                    </h3>
+                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Recebimentos Registrados</h3>
                                 </header>
                                 <div className="divide-y divide-slate-50">
                                     {addedPayments.map(p => (
                                         <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-white">
                                             <div className="flex items-center gap-4">
-                                                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500">
-                                                    <Coins size={20} />
-                                                </div>
+                                                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500"><Coins size={20} /></div>
                                                 <div>
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-sm font-black text-slate-700 uppercase">{p.method.replace('_', ' ')}</span>
-                                                        {p.brand && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{p.brand} ({p.installments}x)</span>}
-                                                    </div>
-                                                    <div className="flex gap-3 mt-1">
-                                                        <span className="text-[9px] font-black text-rose-400 uppercase">Taxa: {p.fee_rate}% (-R$ {p.fee_value.toFixed(2)})</span>
-                                                        <span className="text-[9px] font-black text-emerald-500 uppercase">Líquido: R$ {p.net_amount.toFixed(2)}</span>
+                                                        <span className="text-sm font-black text-slate-700 uppercase">{String(p.method).replace('_', ' ')}</span>
+                                                        {p.brand && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{String(p.brand)} ({p.installments}x)</span>}
                                                     </div>
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-6">
-                                                <span className="font-black text-slate-800 text-lg">R$ {p.amount.toFixed(2)}</span>
-                                                {!isLocked && (
-                                                    <button onClick={() => setAddedPayments(prev => prev.filter(item => item.id !== p.id))} className="p-2 text-slate-200 hover:text-rose-500 transition-colors">
-                                                        <X size={20} strokeWidth={3} />
-                                                    </button>
-                                                )}
+                                                <span className="font-black text-slate-800 text-lg">R$ {Number(p.amount).toFixed(2)}</span>
+                                                {!isLocked && <button onClick={() => setAddedPayments(prev => prev.filter(item => item.id !== p.id))} className="p-2 text-slate-200 hover:text-rose-500 transition-colors"><X size={20} strokeWidth={3} /></button>}
                                             </div>
                                         </div>
                                     ))}
@@ -405,35 +339,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     </div>
 
                     <div className="space-y-6">
-                        {/* CARD DE TOTAIS */}
-                        <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden group">
-                            <div className="absolute -right-4 -top-4 opacity-5 group-hover:rotate-12 transition-transform duration-700">
-                                <Receipt size={200} />
-                            </div>
+                        {/* TOTAIS */}
+                        <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden">
                             <div className="relative z-10 space-y-6">
                                 <div className="space-y-2">
-                                    <div className="flex justify-between text-xs font-black uppercase tracking-widest text-slate-400">
-                                        <span>Subtotal</span>
-                                        <span>R$ {totals.subtotal.toFixed(2)}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400">
-                                            <Percent size={14} /> Desconto
-                                        </div>
-                                        <input 
-                                            type="number" 
-                                            value={discount}
-                                            disabled={isLocked}
-                                            onChange={e => setDiscount(e.target.value)}
-                                            className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500 transition-all disabled:opacity-50"
-                                        />
-                                    </div>
+                                    <div className="flex justify-between text-xs font-black uppercase tracking-widest text-slate-400"><span>Subtotal</span><span>R$ {totals.subtotal.toFixed(2)}</span></div>
+                                    <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400"><Percent size={14} /> Desconto</div><input type="number" value={discount} disabled={isLocked} onChange={e => setDiscount(e.target.value)} className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500 transition-all" /></div>
                                 </div>
                                 <div className="pt-6 border-t border-white/10">
-                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Total a Pagar</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total Final</p>
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.total.toFixed(2)}</h2>
                                 </div>
-                                
                                 {totals.paid > 0 && (
                                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10 space-y-3">
                                         <div className="flex justify-between text-xs font-bold"><span className="text-slate-400">Total Pago:</span><span className="text-emerald-400">R$ {totals.paid.toFixed(2)}</span></div>
@@ -443,75 +359,31 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* SELETOR DE MÉTODOS */}
+                        {/* SELETOR DE PAGAMENTO */}
                         <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2">
-                                {isLocked ? <Lock size={14} className="text-emerald-500" /> : <Tag size={14} className="text-orange-500" />}
-                                {isLocked ? 'Checkout Concluído' : 'Selecionar Pagamento'}
-                            </h4>
-                            
                             {!isLocked ? (
                                 <>
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Selecionar Pagamento</h4>
                                     {activeMethod ? (
                                         <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95 space-y-6">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">
-                                                    {activeMethod.replace('_', ' ')}
-                                                </span>
-                                                <button onClick={() => setActiveMethod(null)} className="text-slate-300 hover:text-slate-500"><X size={20}/></button>
-                                            </div>
-                                            
+                                            <div className="flex justify-between items-center"><span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">{String(activeMethod).replace('_', ' ')}</span><button onClick={() => setActiveMethod(null)} className="text-slate-300"><X size={20}/></button></div>
                                             <div className="space-y-4">
                                                 {(activeMethod === 'cartao_credito' || activeMethod === 'cartao_debito') && (
-                                                    <div className="space-y-1.5">
-                                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Bandeira</label>
-                                                        <div className="grid grid-cols-3 gap-2">
-                                                            {BRANDS.map(b => (
-                                                                <button 
-                                                                    key={b} 
-                                                                    onClick={() => setSelectedBrand(b)}
-                                                                    className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-tighter border-2 transition-all ${selectedBrand === b ? 'bg-orange-500 border-orange-500 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400 hover:border-orange-200'}`}
-                                                                >
-                                                                    {b}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
+                                                    <div className="grid grid-cols-3 gap-2">{BRANDS.map(b => (<button key={b} onClick={() => setSelectedBrand(b)} className={`py-2 rounded-xl text-[9px] font-black uppercase transition-all ${selectedBrand === b ? 'bg-orange-500 text-white' : 'bg-white border-slate-100 text-slate-400'}`}>{b}</button>))}</div>
                                                 )}
-
-                                                {activeMethod === 'cartao_credito' && (
-                                                    <div className="space-y-1.5">
-                                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Parcelas</label>
-                                                        <div className="flex items-center gap-4 bg-white border border-slate-200 rounded-2xl px-4 py-3">
-                                                            <input 
-                                                                type="range" min="1" max="12" 
-                                                                value={selectedInstallments}
-                                                                onChange={e => setSelectedInstallments(parseInt(e.target.value))}
-                                                                className="flex-1 accent-orange-500" 
-                                                            />
-                                                            <span className="font-black text-orange-600 text-lg w-10 text-right">{selectedInstallments}x</span>
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                <div className="relative">
-                                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span>
-                                                    <input 
-                                                        autoFocus
-                                                        type="number" 
-                                                        value={amountToPay} 
-                                                        onChange={e => setAmountToPay(e.target.value)} 
-                                                        className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:ring-4 focus:ring-orange-100"
-                                                    />
-                                                </div>
+                                                <div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none" /></div>
                                             </div>
-                                            
-                                            <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg">Confirmar Valor</button>
+                                            <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg">Confirmar</button>
                                         </div>
                                     ) : (
                                         <div className="grid grid-cols-2 gap-3">
-                                            {paymentMethods.map(pm => (
-                                                <button key={pm.id} onClick={() => handleInitPayment(pm.id as PaymentMethod)} className="flex flex-col items-center justify-center p-6 rounded-[32px] border-2 border-transparent bg-slate-50 text-slate-400 hover:border-slate-200 hover:bg-white transition-all active:scale-95 group">
+                                            {[
+                                                { id: 'pix', label: 'Pix', icon: Smartphone },
+                                                { id: 'dinheiro', label: 'Dinheiro', icon: Banknote },
+                                                { id: 'cartao_credito', label: 'Crédito', icon: CreditCard },
+                                                { id: 'cartao_debito', label: 'Débito', icon: CardIcon }
+                                            ].map(pm => (
+                                                <button key={pm.id} onClick={() => handleInitPayment(pm.id)} className="flex flex-col items-center justify-center p-6 rounded-[32px] bg-slate-50 text-slate-400 hover:border-orange-200 hover:bg-white transition-all active:scale-95 group">
                                                     <pm.icon size={28} className="mb-3 text-slate-300 group-hover:text-orange-500 transition-colors" />
                                                     <span className="text-[10px] font-black uppercase tracking-tighter">{pm.label}</span>
                                                 </button>
@@ -521,20 +393,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 </>
                             ) : (
                                 <div className="bg-emerald-50 p-8 rounded-[32px] border-2 border-emerald-100 text-center space-y-4">
-                                    <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-100">
-                                        <CheckCircle size={32} />
-                                    </div>
-                                    <p className="text-emerald-800 font-black text-lg uppercase tracking-tighter">Venda Finalizada</p>
-                                    <p className="text-emerald-600 text-xs font-bold leading-tight">Esta comanda já foi liquidada e os lançamentos financeiros foram registrados.</p>
+                                    <CheckCircle size={40} className="text-emerald-500 mx-auto" />
+                                    <p className="text-emerald-800 font-black text-lg uppercase tracking-tighter">Liquidada</p>
                                 </div>
                             )}
                             
                             <button 
                                 onClick={handleFinishCheckout} 
                                 disabled={isLocked || isFinishing || totals.remaining > 0 || addedPayments.length === 0} 
-                                className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest transition-all active:scale-95 shadow-2xl ${!isLocked && totals.remaining === 0 && addedPayments.length > 0 ? 'bg-emerald-600 text-white shadow-emerald-100 hover:bg-emerald-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'}`}
+                                className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest shadow-2xl transition-all ${!isLocked && totals.remaining === 0 && addedPayments.length > 0 ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
                             >
-                                {isFinishing ? (<Loader2 size={24} className="animate-spin" />) : isLocked ? (<><CheckCircle size={24} /> Pago</>) : (<><CheckCircle size={24} /> {totals.remaining > 0 ? `Restam R$ ${totals.remaining.toFixed(2)}` : 'Fechar Checkout'}</>)}
+                                {isFinishing ? (<Loader2 size={24} className="animate-spin" />) : isLocked ? (<><CheckCircle size={24} /> PAGO</>) : (<><CheckCircle size={24} /> FECHAR CHECKOUT</>)}
                             </button>
                         </div>
                     </div>

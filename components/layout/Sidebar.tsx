@@ -2,7 +2,7 @@
 import React from 'react';
 import { 
     Home, Calendar, MessageSquare, ShoppingCart, ClipboardList, ArrowRightLeft, Archive,
-    Star, Package, Users, Settings, BarChart, Globe, Banknote, LogOut, Briefcase
+    Star, Package, Users, Settings, BarChart, Globe, Banknote, LogOut, Briefcase, Sparkles
 } from 'lucide-react';
 import { ViewState, UserRole } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
@@ -38,6 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         { id: 'financeiro', icon: ArrowRightLeft, label: 'Fluxo de Caixa' },
         { id: 'relatorios', icon: BarChart, label: 'Relatórios' },
         { id: 'equipe', icon: Briefcase, label: 'Equipe' }, 
+        { id: 'marketing', icon: Sparkles, label: 'Marketing IA' },
         { id: 'remuneracoes', icon: Banknote, label: 'Remunerações' },
         { id: 'configuracoes', icon: Settings, label: 'Configurações' },
     ];

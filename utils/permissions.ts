@@ -17,7 +17,8 @@ const ROLE_PERMISSIONS: Record<UserRole, (ViewState | '*')[]> = {
         'caixa', 
         'servicos', 
         'produtos',
-        'whatsapp'
+        'whatsapp',
+        'marketing'
     ],
     
     // Profissional (Staff): Foco total na jornada do cliente e lançamentos de consumo
@@ -25,11 +26,12 @@ const ROLE_PERMISSIONS: Record<UserRole, (ViewState | '*')[]> = {
     profissional: [
         'dashboard', 
         'agenda', 
-        'agenda_online', // Precisa ver o link para enviar a clientes
+        'agenda_online', 
         'clientes', 
         'whatsapp',
         'comandas', 
-        'vendas' // Liberado: Staff precisa registrar vendas de produtos e serviços
+        'vendas',
+        'marketing'
     ]
 };
 
