@@ -55,7 +55,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // 1. Busca Contexto via RPC v2 (Mapeamento Cirúrgico)
+            // 1. Busca Contexto via RPC v2 (Fonte da Verdade para Nomes)
             const { data: rpcData, error: rpcError } = await supabase
                 .rpc('get_checkout_context_v2', { p_command_id: commandId });
 
@@ -86,13 +86,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setAvailableConfigs(configs || []);
 
             if (rpcData && rpcData.length > 0) {
-                // A RPC retorna um array, extraímos o primeiro item
                 const context = Array.isArray(rpcData) ? rpcData[0] : rpcData;
                 
-                // Mapeamento de nomes conforme regras do prompt
-                const clientName = context?.client_display_name ?? context?.client_name ?? "Cliente sem cadastro";
-                const professionalName = context?.professional_display_name ?? context?.professional_name ?? "Profissional não atribuído";
-                const professionalPhoto = context?.professional_photo_url ?? null;
+                // Mapeamento Cirúrgico de Nomes conforme especificação
+                const clientName = context.client_display_name ?? context.client_name ?? "Cliente sem cadastro";
+                const professionalName = context.professional_display_name ?? context.professional_name ?? "Profissional não atribuído";
+                const professionalPhoto = context.professional_photo_url ?? null;
 
                 const alreadyPaid = context.command_status === 'paid';
                 setIsLocked(alreadyPaid);
@@ -101,6 +100,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     ...cmdData,
                     status: context.command_status,
                     professional_id: context.professional_id || cmdData.professional_id,
+                    client_id: context.client_id || cmdData.client_id,
                     client: { 
                         nome: clientName, 
                         whatsapp: context.client_phone ?? context.client_whatsapp ?? null 
@@ -111,7 +111,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     }
                 });
 
-                // Mapeia pagamentos realizados
+                // Mapeia pagamentos realizados (se houver)
                 const validPayments = rpcData
                     .filter((p: any) => p.payment_id)
                     .map((p: any) => ({
@@ -211,7 +211,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
         try {
             for (const payment of addedPayments) {
-                // FIX: Garantir que nenhum parâmetro seja undefined para evitar erro de assinatura SQL
+                // CORREÇÃO CRÍTICA: Parâmetros exatos conforme assinatura da função no print
+                // Garantindo que nada seja undefined e convertendo números explicitamente
                 const { data: transactionId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_amount: Number(payment.amount),
                     p_category: 'servico',
@@ -260,6 +261,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setTimeout(onBack, 1500);
 
         } catch (e: any) {
+            console.error('[FINISH_ERROR]', e);
             setToast({ message: `Erro no fechamento: ${e.message}`, type: 'error' });
             setIsFinishing(false);
         }
@@ -361,7 +363,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* PARCELAS DE RECEBIMENTO / PAGAMENTOS ADICIONADOS */}
+                        {/* PARCELAS DE RECEBIMENTO */}
                         {addedPayments.length > 0 && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50">
@@ -423,7 +425,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             value={discount}
                                             disabled={isLocked}
                                             onChange={e => setDiscount(e.target.value)}
-                                            className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-50 transition-all disabled:opacity-50"
+                                            className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500 transition-all disabled:opacity-50"
                                         />
                                     </div>
                                 </div>
