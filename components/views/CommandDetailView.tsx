@@ -55,7 +55,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // A) Busca Contexto via View (Fonte de Verdade)
+            // A) Busca Contexto Unificado via VIEW filtrando por command_id
             const { data: viewData, error: viewError } = await supabase
                 .from('v_checkout_context')
                 .select('*')
@@ -64,7 +64,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (viewError) throw viewError;
 
-            // B) Itens da Comanda
+            // B) Busca Itens da Comanda
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select(`
@@ -79,7 +79,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (cmdError) throw cmdError;
 
-            // Busca configurações gerais para novos pagamentos (se não estiver bloqueado)
+            // Busca configurações de taxas (PDV)
             const { data: configs } = await supabase
                 .from('payment_methods_config')
                 .select('*')
@@ -89,9 +89,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setAvailableConfigs(configs || []);
 
             if (viewData && viewData.length > 0) {
-                const ctx = viewData[0]; 
+                const ctx = viewData[0]; // Considera apenas o registro mais recente para contexto/lock
                 
-                // Blindagem: Se o status for 'paid', travamos a UI
                 const alreadyPaid = ctx.command_status === 'paid';
                 setIsLocked(alreadyPaid);
 
@@ -103,26 +102,27 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         whatsapp: ctx.client_phone || ctx.client_whatsapp 
                     },
                     professional: { 
-                        name: ctx.professional_name 
+                        name: ctx.professional_name // Binding do Profissional da View
                     }
                 });
 
-                // Mapeia pagamentos da view
-                const validPayments = viewData
-                    .filter(p => p.payment_id)
-                    .map(p => ({
-                        id: p.payment_id,
-                        method: p.method_type as PaymentMethod,
-                        amount: p.payment_amount,
-                        installments: p.installments || 1,
-                        method_id: p.method_id,
-                        fee_rate: p.fee_rate || 0,
-                        fee_value: p.fee_value || 0,
-                        net_amount: p.net_amount || p.payment_amount,
-                        brand: p.method_brand || p.brand
-                    }));
-                
-                setAddedPayments(validPayments);
+                // C) Mapeamento de Pagamento (Regra 6: Apenas o mais recente)
+                if (ctx.payment_id) {
+                    const latestPayment: PaymentEntry = {
+                        id: ctx.payment_id,
+                        method: ctx.method_type as PaymentMethod,
+                        amount: ctx.payment_amount,
+                        installments: ctx.installments || 1,
+                        method_id: ctx.method_id,
+                        fee_rate: ctx.fee_rate || 0,
+                        fee_value: ctx.fee_value || 0,
+                        net_amount: ctx.net_amount || ctx.payment_amount,
+                        brand: ctx.method_brand || ctx.brand
+                    };
+                    setAddedPayments([latestPayment]);
+                } else {
+                    setAddedPayments([]);
+                }
             } else {
                 setCommand(cmdData);
             }
@@ -198,7 +198,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             net_amount: netAmount
         };
 
-        setAddedPayments(prev => [...prev, newPayment]);
+        setAddedPayments([newPayment]); // No Checkout V5 simplificado, consideramos um pagamento por vez
         setActiveMethod(null);
     };
 
