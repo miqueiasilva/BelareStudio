@@ -60,14 +60,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // 1. Busca contexto via RPC v2 conforme regra
-            const { data: context, error: ctxError } = await supabase.rpc('get_checkout_context_v2', {
+            // REGRAS: Busca contexto higienizado via RPC v2
+            const { data: contextData, error: ctxError } = await supabase.rpc('get_checkout_context_v2', {
                 p_command_id: commandId
             });
 
             if (ctxError) throw ctxError;
 
-            // 2. Busca dados base da comanda e configurações
+            // Tratamento de retorno de tabela (array)
+            const context = Array.isArray(contextData) ? contextData[0] : contextData;
+
+            // Busca dados complementares
             const [cmdRes, configsRes] = await Promise.all([
                 supabase.from('commands').select('*, command_items(*)').eq('id', commandId).single(),
                 supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
@@ -79,20 +82,20 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const alreadyPaid = cmdRes.data.status === 'paid';
             setIsLocked(alreadyPaid);
 
-            // Preenchimento com fallbacks obrigatórios
+            // Preenchimento com fallbacks obrigatórios das regras
             setCommand({
                 ...cmdRes.data,
-                display_client_name: context.client_display_name || "Cliente sem cadastro",
-                display_client_phone: context.client_phone || "Sem contato",
-                display_professional_name: context.professional_display_name || "Profissional não atribuído",
-                display_professional_photo: context.professional_photo_url || null,
-                professional_id: context.professional_id,
-                client_id: context.client_id
+                display_client_name: context?.client_display_name || "Cliente sem cadastro",
+                display_client_phone: context?.client_phone || "Sem contato",
+                display_professional_name: context?.professional_display_name || "Profissional não atribuído",
+                display_professional_photo: context?.professional_photo_url || null,
+                professional_id: context?.professional_id || cmdRes.data.professional_id,
+                client_id: context?.client_id || cmdRes.data.client_id
             });
 
         } catch (e: any) {
             console.error('[CHECKOUT_LOAD_ERROR]', e);
-            setToast({ message: "Erro ao carregar contexto do checkout.", type: 'error' });
+            setToast({ message: "Erro ao carregar contexto.", type: 'error' });
         } finally {
             setLoading(false);
         }
@@ -152,34 +155,36 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     const handleFinishCheckout = async () => {
-        if (!command || isFinishing || isLocked) return;
+        if (!command || isFinishing || isLocked || addedPayments.length === 0) return;
         setIsFinishing(true);
 
         try {
             const studioId = String(activeStudioId);
-            const professionalId = isUUID(command.professional_id) ? String(command.professional_id) : null;
+            const profId = isUUID(command.professional_id) ? String(command.professional_id) : null;
 
             const methodMap: Record<string, string> = {
                 'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
             };
 
-            // Chamada do novo motor financeiro com os dados atuais da tela
-            // Adicionado p_command_id para satisfazer a lógica interna do banco (conforme erro analisado)
-            for (const payment of addedPayments) {
-                const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                    p_studio_id: studioId,
-                    p_professional_id: professionalId,
-                    p_command_id: command.id, // Vínculo necessário para evitar NULL no client_id
-                    p_amount: Number(payment.amount),
-                    p_method: methodMap[payment.method] || 'pix',
-                    p_brand: (payment.method === 'cartao_credito' || payment.method === 'cartao_debito') ? payment.brand : null,
-                    p_installments: Number(payment.installments || 1)
-                });
+            // REGRAS E CORREÇÃO DE CONFLITO:
+            // O banco possui a restrição "ux_command_payments_one_paid_per_command" (apenas um pagamento por comanda).
+            // Para suportar a lógica, consolidamos o valor total em uma única transação financeira.
+            const totalAmount = addedPayments.reduce((acc, p) => acc + p.amount, 0);
+            const mainPayment = addedPayments[0]; // Usamos o primeiro método como referência para o registro
 
-                if (rpcError) throw new Error(rpcError.message);
-            }
+            const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                p_studio_id: studioId,
+                p_professional_id: profId,
+                p_command_id: commandId,
+                p_amount: Number(totalAmount),
+                p_method: methodMap[mainPayment.method] || 'pix',
+                p_brand: mainPayment.brand || null,
+                p_installments: Number(mainPayment.installments || 1)
+            });
 
-            // Marca comanda como paga e registra encerramento
+            if (rpcError) throw new Error(rpcError.message);
+
+            // Liquidação da comanda
             const { error: closeError } = await supabase
                 .from('commands')
                 .update({ 
@@ -187,7 +192,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     closed_at: new Date().toISOString(),
                     total_amount: Number(totals.total) 
                 })
-                .eq('id', command.id);
+                .eq('id', commandId);
 
             if (closeError) throw closeError;
 
@@ -203,9 +208,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
-    if (!command) return <div className="p-8 text-center text-slate-500">Comanda não encontrada.</div>;
+    if (!command) return <div className="p-8 text-center text-slate-500 font-bold uppercase">Comanda não encontrada</div>;
 
-    const currentCommandIdDisplay = String(command.id).substring(0, 8).toUpperCase();
+    const currentCommandIdDisplay = String(commandId).substring(0, 8).toUpperCase();
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
@@ -229,11 +234,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
                     <div className="lg:col-span-2 space-y-6">
-                        {/* CARD CLIENTE */}
+                        {/* RESUMO CLIENTE/PROFISSIONAL */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
                             <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl uppercase overflow-hidden">
-                                {command.display_professional_photo ? (
-                                    <img src={command.display_professional_photo} className="w-full h-full object-cover" />
+                                {command.photo_url ? (
+                                    <img src={command.photo_url} className="w-full h-full object-cover" />
                                 ) : (
                                     command.display_client_name.charAt(0)
                                 )}
@@ -248,7 +253,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* ITENS DA COMANDA */}
+                        {/* DETALHES DO CONSUMO */}
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
                                 <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Detalhes do Consumo</h3>
@@ -269,7 +274,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* RECEBIMENTOS CONFIRMADOS */}
+                        {/* RECEBIMENTOS LANÇADOS */}
                         {addedPayments.length > 0 && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50">
@@ -303,7 +308,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     </div>
 
                     <div className="space-y-6">
-                        {/* CARD FINANCEIRO */}
+                        {/* RESUMO FINANCEIRO */}
                         <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden">
                             <div className="relative z-10 space-y-6">
                                 <div className="space-y-2">
@@ -323,7 +328,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* SELETOR DE PAGAMENTO */}
+                        {/* SELEÇÃO DE PAGAMENTO */}
                         <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
                             {!isLocked ? (
                                 <>
@@ -358,7 +363,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             ) : (
                                 <div className="bg-emerald-50 p-8 rounded-[32px] border-2 border-emerald-100 text-center space-y-4">
                                     <CheckCircle size={40} className="text-emerald-500 mx-auto" />
-                                    <p className="text-emerald-800 font-black text-lg uppercase tracking-tighter">Comanda Paga</p>
+                                    <p className="text-emerald-800 font-black text-lg uppercase tracking-tighter">Comanda Liquidada</p>
                                 </div>
                             )}
                             
