@@ -424,16 +424,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
-            // FIX: Adicionados backups de texto (client_name, professional_name) no comando 
-            // para garantir exibição resiliente no checkout
+            // FIX: Removidas as chaves client_name e professional_name do insert da comanda, pois o servidor retornou erro 400 (colunas inexistentes)
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
                     studio_id: activeStudioId,
                     client_id: isUUID(appointment.client?.id) ? appointment.client?.id : null,
-                    client_name: appointment.client?.nome || 'Cliente sem cadastro',
                     professional_id: isUUID(appointment.professional.id) ? appointment.professional.id : null,
-                    professional_name: appointment.professional.name || 'Geral',
                     status: 'open',
                     total_amount: appointment.service.price
                 }])

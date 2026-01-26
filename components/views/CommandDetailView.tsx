@@ -6,13 +6,13 @@ import {
     Phone, Scissors, ShoppingBag, Receipt,
     Percent, Calendar, ShoppingCart, X, Coins,
     ArrowRight, ShieldCheck, Tag, CreditCard as CardIcon,
-    User, UserCheck, Trash2, Lock, MoreVertical, AlertTriangle
+    User, UserCheck, Trash2, Lock, MoreVertical, AlertTriangle,
+    Clock, Landmark
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
-import { Command, PaymentMethod } from '../../types';
 import Toast, { ToastType } from '../shared/Toast';
 
 interface CommandDetailViewProps {
@@ -26,17 +26,19 @@ interface PaymentEntry {
     amount: number;
     brand?: string;
     installments: number;
-    method_id: string;
     fee_rate: number;
     fee_value: number;
     net_amount: number;
+    created_at?: string;
 }
 
-const BRANDS = ['Visa', 'Mastercard', 'Elo', 'Hipercard', 'Amex', 'Outros'];
+// Added missing BRANDS constant for card selection
+const BRANDS = ['Visa', 'Master', 'Elo', 'Hiper', 'Amex', 'Outros'];
 
 const isUUID = (str: any): boolean => {
     if (!str || typeof str !== 'string') return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str) || 
+           /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 };
 
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
@@ -47,6 +49,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [isLocked, setIsLocked] = useState(false);
     
     const [addedPayments, setAddedPayments] = useState<PaymentEntry[]>([]);
+    const [historyPayments, setHistoryPayments] = useState<any[]>([]);
     const [activeMethod, setActiveMethod] = useState<string | null>(null);
     const [selectedBrand, setSelectedBrand] = useState<string>('Visa');
     const [selectedInstallments, setSelectedInstallments] = useState<number>(1);
@@ -56,20 +59,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [availableConfigs, setAvailableConfigs] = useState<any[]>([]);
 
     const fetchContext = async () => {
-        if (!activeStudioId || !commandId) return;
-        
-        // CRÍTICO: Validação de segurança para evitar erro 400 se o ID não for UUID
-        if (!isUUID(commandId)) {
-            console.error("ID de comanda inválido detectado:", commandId);
+        if (!activeStudioId || !commandId || !isUUID(commandId)) {
             setLoading(false);
-            setCommand(null);
             return;
         }
-
-        setLoading(true);
         
+        setLoading(true);
         try {
-            // 1. Busca dados da Comanda (Consultas separadas para evitar erro 400 em Joins complexos)
+            // 1. Busca Comanda e Itens
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select('*')
@@ -78,42 +75,50 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (cmdError) throw cmdError;
 
-            // 2. Busca Itens da Comanda
             const { data: itemsData } = await supabase
                 .from('command_items')
                 .select('*')
                 .eq('command_id', commandId);
 
-            // 3. Busca Dados Relacionados (Cliente e Profissional) com Fallbacks Resilientes
-            const resolvedProfId = cmdData.professional_id || itemsData?.[0]?.professional_id;
-            const resolvedClientId = cmdData.client_id;
+            // 2. Busca Pagamentos Reais (Histórico de Transações)
+            const { data: transData } = await supabase
+                .from('financial_transactions')
+                .select('*')
+                .eq('command_id', commandId)
+                .neq('status', 'cancelado');
 
-            const [clientRes, profRes, configsRes] = await Promise.all([
-                isUUID(resolvedClientId) ? supabase.from('clients').select('nome, whatsapp').eq('id', resolvedClientId).maybeSingle() : Promise.resolve({ data: null }),
-                isUUID(resolvedProfId) ? supabase.from('team_members').select('name, photo_url').eq('id', resolvedProfId).maybeSingle() : Promise.resolve({ data: null }),
+            // 3. Resolve Profissional e Cliente (Independente para evitar erro de tipo no Join)
+            const profId = cmdData.professional_id || itemsData?.[0]?.professional_id;
+            const clientId = cmdData.client_id;
+
+            const [profRes, clientRes, configsRes] = await Promise.all([
+                isUUID(profId) ? supabase.from('team_members').select('name, photo_url').eq('id', profId).maybeSingle() : Promise.resolve({ data: null }),
+                isUUID(clientId) ? supabase.from('clients').select('nome, whatsapp, photo_url').eq('id', clientId).maybeSingle() : Promise.resolve({ data: null }),
                 supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
             ]);
 
             setAvailableConfigs(configsRes.data || []);
+            setHistoryPayments(transData || []);
+            
             const alreadyPaid = cmdData.status === 'paid';
 
-            // 4. Monta objeto de comando resolvendo nomes reais
+            // 4. Monta Objeto Consolidado
             setCommand({
                 ...cmdData,
                 command_items: itemsData || [],
-                display_client_name: clientRes.data?.nome || cmdData.client_name || "Cliente sem cadastro",
-                display_client_phone: clientRes.data?.whatsapp || "SEM CONTATO",
-                display_professional_name: profRes.data?.name || cmdData.professional_name || "Geral / Studio",
+                display_client_name: clientRes.data?.nome || cmdData.client_name || "Consumidor Final",
+                display_client_phone: clientRes.data?.whatsapp || cmdData.client_phone || "S/ CONTATO",
+                display_client_photo: clientRes.data?.photo_url || null,
+                display_professional_name: profRes.data?.name || cmdData.professional_name || "Geral",
                 display_professional_photo: profRes.data?.photo_url || null,
-                professional_id: resolvedProfId,
-                client_id: resolvedClientId
+                professional_id: profId,
+                client_id: clientId
             });
 
             setIsLocked(alreadyPaid);
-
         } catch (e: any) {
-            console.error('[CHECKOUT_LOAD_ERROR]', e);
-            setToast({ message: "Erro ao carregar checkout. Tente novamente.", type: 'error' });
+            console.error('[FETCH_CONTEXT_ERROR]', e);
+            setToast({ message: "Erro ao carregar detalhes da comanda.", type: 'error' });
         } finally {
             setLoading(false);
         }
@@ -126,43 +131,34 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const subtotal = command.command_items?.reduce((acc: number, i: any) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || 0;
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
-        const paid = addedPayments.reduce((acc, p) => acc + p.amount, 0);
+        
+        // Soma pagamentos já salvos + pagamentos na fila do checkout atual
+        const savedPaid = historyPayments.reduce((acc, p) => acc + Number(p.amount), 0);
+        const currentPaid = addedPayments.reduce((acc, p) => acc + p.amount, 0);
+        
+        const paid = savedPaid + currentPaid;
         const remaining = Math.max(0, totalAfterDiscount - paid);
+        
         return { subtotal, total: totalAfterDiscount, paid, remaining };
-    }, [command, discount, addedPayments]);
-
-    const handleInitPayment = (method: string) => {
-        if (isLocked) return;
-        setActiveMethod(method);
-        setAmountToPay(totals.remaining.toFixed(2));
-        setSelectedBrand('Visa');
-        setSelectedInstallments(1);
-    };
+    }, [command, discount, addedPayments, historyPayments]);
 
     const handleConfirmPartialPayment = () => {
         if (!activeMethod || isLocked) return;
         const amount = parseFloat(amountToPay.replace(',', '.'));
         if (isNaN(amount) || amount <= 0) return;
 
-        const typeMap: Record<string, string> = {
-            'pix': 'pix', 'dinheiro': 'money', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
-        };
-
-        const config = availableConfigs.find(c => 
-            c.type === (typeMap[activeMethod] || activeMethod) && 
-            (c.type === 'pix' || c.type === 'money' || String(c.brand).toLowerCase() === selectedBrand.toLowerCase())
-        );
+        const typeMap: Record<string, string> = { 'pix': 'pix', 'dinheiro': 'money', 'cartao_credito': 'credit', 'cartao_debito': 'debit' };
+        const config = availableConfigs.find(c => c.type === (typeMap[activeMethod] || activeMethod) && (c.type === 'pix' || c.type === 'money' || String(c.brand).toUpperCase() === selectedBrand.toUpperCase()));
 
         const feeRate = Number(config?.rate_cash || 0);
         const feeValue = Number((amount * (feeRate / 100)).toFixed(2));
 
         const newPayment: PaymentEntry = {
             id: Math.random().toString(36).substring(7),
-            method: String(activeMethod),
-            method_id: String(config?.id || 'manual'),
+            method: activeMethod,
             amount: amount,
             installments: selectedInstallments,
-            brand: String(selectedBrand),
+            brand: selectedBrand,
             fee_rate: feeRate,
             fee_value: feeValue,
             net_amount: Number((amount - feeValue).toFixed(2))
@@ -173,159 +169,144 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     const handleFinishCheckout = async () => {
-        if (!command || isFinishing || isLocked || addedPayments.length === 0) return;
+        if (!command || isFinishing || isLocked || (addedPayments.length === 0 && historyPayments.length === 0)) return;
         setIsFinishing(true);
 
         try {
-            const studioId = String(activeStudioId);
-            
-            // 1. Prevenção de duplicidade de transação financeira
-            const { data: existing } = await supabase.from('financial_transactions').select('id').eq('command_id', commandId).maybeSingle();
-            
-            if (!existing) {
-                const methodMap: Record<string, string> = {
-                    'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
-                };
-
-                const totalAmount = addedPayments.reduce((acc, p) => acc + p.amount, 0);
-                const primaryPayment = addedPayments[0];
-
-                const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                    p_studio_id: studioId,
+            // 1. Registra novos pagamentos no financeiro
+            for (const p of addedPayments) {
+                const methodMap: Record<string, string> = { 'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit' };
+                await supabase.rpc('register_payment_transaction', {
+                    p_studio_id: activeStudioId,
                     p_professional_id: isUUID(command.professional_id) ? command.professional_id : null,
                     p_command_id: commandId,
-                    p_amount: Number(totalAmount),
-                    p_method: methodMap[primaryPayment.method] || 'pix',
-                    p_brand: primaryPayment.brand || null,
-                    p_installments: Number(primaryPayment.installments || 1)
+                    p_amount: p.amount,
+                    p_method: methodMap[p.method] || 'pix',
+                    p_brand: p.brand || null,
+                    p_installments: p.installments
                 });
-
-                if (rpcError && rpcError.code !== '23505') throw rpcError;
             }
 
-            // 2. Marca comanda como paga
+            // 2. Finaliza a comanda
             const { error: closeError } = await supabase
                 .from('commands')
                 .update({ 
                     status: 'paid', 
                     closed_at: new Date().toISOString(),
-                    total_amount: Number(totals.total)
+                    total_amount: totals.total,
+                    payment_method: addedPayments[0]?.method || historyPayments[0]?.payment_method || 'misto'
                 })
                 .eq('id', commandId);
 
             if (closeError) throw closeError;
 
-            setToast({ message: "Checkout finalizado com sucesso! ✅", type: 'success' });
+            setToast({ message: "Comanda liquidada com sucesso! 💳", type: 'success' });
             setIsLocked(true);
             setTimeout(onBack, 1500);
         } catch (e: any) {
-            console.error('[FINISH_ERROR]', e);
-            setToast({ message: `Erro no fechamento: ${e.message}`, type: 'error' });
+            setToast({ message: `Erro ao fechar: ${e.message}`, type: 'error' });
         } finally {
             setIsFinishing(false);
         }
     };
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
-    
-    if (!command) return (
-        <div className="h-full flex flex-col items-center justify-center bg-slate-50 p-8 text-center">
-            <AlertTriangle size={64} className="text-slate-200 mb-6" />
-            <h3 className="text-lg font-black text-slate-400 uppercase tracking-widest">Comanda não encontrada</h3>
-            <p className="text-xs text-slate-400 mt-2">O ID fornecido é inválido ou o registro foi removido.</p>
-            <button onClick={onBack} className="mt-6 px-8 py-3 bg-slate-800 text-white font-black rounded-2xl text-xs uppercase tracking-widest active:scale-95 transition-all">Voltar</button>
-        </div>
-    );
-
-    const currentCommandIdDisplay = String(commandId).substring(0, 8).toUpperCase();
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
+            
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center z-20 shadow-sm flex-shrink-0">
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-all"><ChevronLeft size={24} /></button>
                     <div>
-                        <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500 font-mono">#{currentCommandIdDisplay}</span></h1>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                            Profissional: {command.display_professional_name}
-                        </p>
+                        <h1 className="text-xl font-black text-slate-800">Comanda <span className="text-orange-500 font-mono">#{commandId.substring(0,8).toUpperCase()}</span></h1>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Responsável: {command.display_professional_name}</p>
                     </div>
                 </div>
-                <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${command.status === 'open' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
-                    {command.status === 'open' ? 'Em aberto' : 'Finalizada'}
+                <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${isLocked ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-orange-50 text-orange-600 border border-orange-100'}`}>
+                    {isLocked ? 'Paga / Finalizada' : 'Em Aberto'}
                 </div>
             </header>
 
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
-                <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
+                <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
                     <div className="lg:col-span-2 space-y-6">
-                        {/* CARD CLIENTE */}
+                        {/* HEADER CLIENTE */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
-                            <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl uppercase overflow-hidden">
-                                {command.photo_url ? (
-                                    <img src={command.photo_url} className="w-full h-full object-cover" />
-                                ) : (
-                                    command.display_client_name.charAt(0)
-                                )}
+                            <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl overflow-hidden">
+                                {command.display_client_photo ? <img src={command.display_client_photo} className="w-full h-full object-cover" /> : command.display_client_name.charAt(0)}
                             </div>
                             <div className="flex-1 text-center md:text-left">
                                 <h3 className="text-2xl font-black text-slate-800 leading-tight">{command.display_client_name}</h3>
                                 <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Phone size={14} className="text-orange-500" /> {command.display_client_phone}</div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><UserCheck size={14} className="text-orange-500" /> {command.display_professional_name}</div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Calendar size={14} className="text-orange-500" /> {format(new Date(command.created_at), "dd/MM 'às' HH:mm", { locale: pt })}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><Phone size={14} className="text-orange-500" /> {command.display_client_phone}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><UserCheck size={14} className="text-orange-500" /> {command.display_professional_name}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><Clock size={14} className="text-orange-500" /> {format(new Date(command.created_at), "HH:mm 'de' dd/MM")}</div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* DETALHES DO CONSUMO */}
+                        {/* ITENS CONSUMIDOS */}
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
-                            <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
-                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Detalhes do Consumo</h3>
+                            <header className="px-8 py-6 border-b border-slate-50 bg-slate-50/30">
+                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Itens da Comanda</h3>
                             </header>
                             <div className="divide-y divide-slate-50">
                                 {command.command_items?.map((item: any) => (
                                     <div key={item.id} className="p-8 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
                                         <div className="flex items-center gap-5">
-                                            <div className={`p-4 rounded-3xl ${item.product_id ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>{item.product_id ? <ShoppingBag size={24} /> : <Scissors size={24} />}</div>
+                                            <div className={`p-4 rounded-3xl ${item.product_id ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
+                                                {item.product_id ? <ShoppingBag size={24} /> : <Scissors size={24} />}
+                                            </div>
                                             <div>
                                                 <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
-                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-1">{item.quantity} un. x R$ {Number(item.price || 0).toFixed(2)}</p>
+                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-1">{item.quantity} un x R$ {Number(item.price).toFixed(2)}</p>
                                             </div>
                                         </div>
-                                        <p className="font-black text-slate-800 text-xl">R$ {(Number(item.price || 0) * Number(item.quantity || 1)).toFixed(2)}</p>
+                                        <p className="font-black text-slate-800 text-xl">R$ {(item.quantity * item.price).toFixed(2)}</p>
                                     </div>
                                 ))}
                             </div>
                         </div>
 
-                        {/* RECEBIMENTOS LANÇADOS */}
-                        {addedPayments.length > 0 && (
+                        {/* HISTÓRICO DE PAGAMENTOS */}
+                        {(historyPayments.length > 0 || addedPayments.length > 0) && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
-                                <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50">
-                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Recebimentos Lançados</h3>
+                                <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50 flex justify-between items-center">
+                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Fluxo de Recebimento</h3>
+                                    {isLocked && <span className="text-[9px] font-black text-emerald-600 bg-white px-2 py-1 rounded-lg border border-emerald-100 uppercase">Liquidada</span>}
                                 </header>
                                 <div className="divide-y divide-slate-50">
-                                    {addedPayments.map(p => (
-                                        <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-white">
+                                    {/* Pagamentos já processados (Histórico) */}
+                                    {historyPayments.map(p => (
+                                        <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-slate-50/30 opacity-80">
                                             <div className="flex items-center gap-4">
-                                                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500"><Coins size={20} /></div>
+                                                <div className="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-emerald-500"><Landmark size={20} /></div>
                                                 <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-sm font-black text-slate-700 uppercase">{String(p.method).replace('_', ' ')}</span>
-                                                        {p.brand && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{String(p.brand)} ({p.installments}x)</span>}
-                                                    </div>
-                                                    <div className="flex gap-3 mt-0.5">
-                                                        <p className="text-[9px] font-black text-rose-500 uppercase">TAXA: {p.fee_rate}% (- R$ {p.fee_value.toFixed(2)})</p>
-                                                        <p className="text-[9px] font-black text-emerald-600 uppercase">LÍQUIDO: R$ {p.net_amount.toFixed(2)}</p>
-                                                    </div>
+                                                    <p className="text-sm font-black text-slate-700 uppercase">{p.payment_method?.replace('_', ' ')}</p>
+                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Processado em {format(new Date(p.date), 'dd/MM HH:mm')}</p>
                                                 </div>
                                             </div>
-                                            <div className="flex items-center gap-6">
-                                                <span className="font-black text-slate-800 text-lg">R$ {Number(p.amount).toFixed(2)}</span>
-                                                {!isLocked && <button onClick={() => setAddedPayments(prev => prev.filter(item => item.id !== p.id))} className="p-2 text-slate-200 hover:text-rose-500 transition-colors"><X size={20} strokeWidth={3} /></button>}
+                                            <span className="font-black text-slate-800 text-lg">R$ {Number(p.amount).toFixed(2)}</span>
+                                        </div>
+                                    ))}
+                                    {/* Pagamentos adicionados agora */}
+                                    {addedPayments.map(p => (
+                                        <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-white group">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center"><Coins size={20} /></div>
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-sm font-black text-slate-700 uppercase">{p.method.replace('_', ' ')}</span>
+                                                        {p.brand && <span className="text-[10px] font-bold text-slate-400 uppercase">({p.brand})</span>}
+                                                    </div>
+                                                    <p className="text-[9px] font-black text-emerald-600 uppercase">Líquido: R$ {p.net_amount.toFixed(2)}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <span className="font-black text-slate-800 text-lg">R$ {p.amount.toFixed(2)}</span>
+                                                {!isLocked && <button onClick={() => setAddedPayments(prev => prev.filter(i => i.id !== p.id))} className="p-2 text-slate-200 hover:text-rose-500 transition-colors"><X size={18} /></button>}
                                             </div>
                                         </div>
                                     ))}
@@ -335,73 +316,81 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     </div>
 
                     <div className="space-y-6">
-                        {/* CARD FINANCEIRO */}
+                        {/* CARD FINANCEIRO TOTALIZADOR */}
                         <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden">
                             <div className="relative z-10 space-y-6">
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-xs font-black uppercase tracking-widest text-slate-400"><span>Subtotal</span><span>R$ {totals.subtotal.toFixed(2)}</span></div>
-                                    <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400"><Percent size={14} /> Desconto</div><input type="number" value={discount} disabled={isLocked} onChange={e => setDiscount(e.target.value)} className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-50 transition-all" /></div>
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400"><Percent size={14} /> Desconto</div>
+                                        <input type="number" value={discount} disabled={isLocked} onChange={e => setDiscount(e.target.value)} className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500/50" />
+                                    </div>
                                 </div>
                                 <div className="pt-6 border-t border-white/10">
                                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total a Receber</p>
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.total.toFixed(2)}</h2>
                                 </div>
                                 {totals.paid > 0 && (
-                                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10 space-y-3">
-                                        <div className="flex justify-between text-xs font-bold"><span className="text-slate-400">Total Pago:</span><span className="text-emerald-400">R$ {totals.paid.toFixed(2)}</span></div>
-                                        <div className="flex justify-between items-center pt-2 border-t border-white/5"><span className="text-xs font-black uppercase tracking-widest text-orange-400">Restante:</span><span className={`text-xl font-black ${totals.remaining === 0 ? 'text-emerald-400' : 'text-white'}`}>R$ {totals.remaining.toFixed(2)}</span></div>
+                                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10 space-y-2">
+                                        <div className="flex justify-between text-xs font-bold text-slate-400"><span>Pago:</span><span className="text-emerald-400">R$ {totals.paid.toFixed(2)}</span></div>
+                                        <div className="flex justify-between items-center pt-2 border-t border-white/5">
+                                            <span className="text-xs font-black uppercase tracking-widest text-orange-400">Restante:</span>
+                                            <span className={`text-xl font-black ${totals.remaining === 0 ? 'text-emerald-400' : 'text-white'}`}>R$ {totals.remaining.toFixed(2)}</span>
+                                        </div>
                                     </div>
                                 )}
                             </div>
                         </div>
 
-                        {/* SELEÇÃO DE PAGAMENTO */}
-                        <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
-                            {!isLocked ? (
-                                <>
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Forma de Recebimento</h4>
-                                    {activeMethod ? (
-                                        <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95 space-y-6">
-                                            <div className="flex justify-between items-center"><span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">{String(activeMethod).replace('_', ' ')}</span><button onClick={() => setActiveMethod(null)} className="text-slate-300"><X size={20}/></button></div>
-                                            <div className="space-y-4">
-                                                {(activeMethod === 'cartao_credito' || activeMethod === 'cartao_debito') && (
-                                                    <div className="grid grid-cols-3 gap-2">{BRANDS.map(b => (<button key={b} onClick={() => setSelectedBrand(b)} className={`py-2 rounded-xl text-[9px] font-black uppercase transition-all ${selectedBrand === b ? 'bg-orange-500 text-white' : 'bg-white border-slate-100 text-slate-400'}`}>{b}</button>))}</div>
-                                                )}
-                                                <div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none" /></div>
-                                            </div>
-                                            <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg">Confirmar Parcela</button>
+                        {/* SELEÇÃO DE PAGAMENTO (Se não estiver paga) */}
+                        {!isLocked && (
+                            <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
+                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Método de Pagamento</h4>
+                                
+                                {activeMethod ? (
+                                    <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95 space-y-6">
+                                        <div className="flex justify-between items-center"><span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">{activeMethod.replace('_', ' ')}</span><button onClick={() => setActiveMethod(null)} className="text-slate-300"><X size={20}/></button></div>
+                                        <div className="space-y-4">
+                                            {(activeMethod === 'cartao_credito' || activeMethod === 'cartao_debito') && (
+                                                <div className="grid grid-cols-3 gap-2">{BRANDS.map(b => (<button key={b} onClick={() => setSelectedBrand(b)} className={`py-2 rounded-xl text-[9px] font-black uppercase transition-all ${selectedBrand === b ? 'bg-orange-500 text-white' : 'bg-white border-slate-100 text-slate-400'}`}>{b}</button>))}</div>
+                                            )}
+                                            <div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all" /></div>
                                         </div>
-                                    ) : (
-                                        <div className="grid grid-cols-2 gap-3">
-                                            {[
-                                                { id: 'pix', label: 'Pix', icon: Smartphone, color: 'bg-teal-50' },
-                                                { id: 'dinheiro', label: 'Dinheiro', icon: Banknote, color: 'bg-green-50' },
-                                                { id: 'cartao_credito', label: 'Crédito', icon: CreditCard, color: 'bg-blue-50' },
-                                                { id: 'cartao_debito', label: 'Débito', icon: CardIcon, color: 'bg-cyan-50' }
-                                            ].map(pm => (
-                                                <button key={pm.id} onClick={() => handleInitPayment(pm.id)} className="flex flex-col items-center justify-center p-6 rounded-[32px] bg-slate-50 text-slate-400 hover:border-orange-200 hover:bg-white transition-all active:scale-95 group">
-                                                    <pm.icon size={28} className="mb-3 text-slate-300 group-hover:text-orange-500 transition-colors" />
-                                                    <span className="text-[10px] font-black uppercase tracking-tighter">{pm.label}</span>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                </>
-                            ) : (
-                                <div className="bg-emerald-50 p-8 rounded-[32px] border-2 border-emerald-100 text-center space-y-4">
-                                    <CheckCircle size={40} className="text-emerald-500 mx-auto" />
-                                    <p className="text-emerald-800 font-black text-lg uppercase tracking-tighter">Comanda Liquidada</p>
-                                </div>
-                            )}
-                            
-                            <button 
-                                onClick={handleFinishCheckout} 
-                                disabled={isLocked || isFinishing || totals.remaining > 0 || addedPayments.length === 0} 
-                                className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase tracking-widest shadow-2xl transition-all ${!isLocked && totals.remaining === 0 && addedPayments.length > 0 ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
-                            >
-                                {isFinishing ? (<Loader2 size={24} className="animate-spin" />) : isLocked ? (<><CheckCircle size={24} /> FINALIZADO</>) : (<><CheckCircle size={24} /> FECHAR CHECKOUT</>)}
-                            </button>
-                        </div>
+                                        <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">Confirmar Valor</button>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {[
+                                            { id: 'pix', label: 'Pix', icon: Smartphone },
+                                            { id: 'dinheiro', label: 'Dinheiro', icon: Banknote },
+                                            { id: 'cartao_credito', label: 'Crédito', icon: CreditCard },
+                                            { id: 'cartao_debito', label: 'Débito', icon: CardIcon }
+                                        ].map(pm => (
+                                            <button key={pm.id} onClick={() => { setActiveMethod(pm.id); setAmountToPay(totals.remaining.toFixed(2)); }} className="flex flex-col items-center justify-center p-6 rounded-[32px] bg-slate-50 text-slate-400 hover:border-orange-200 hover:bg-white transition-all group">
+                                                <pm.icon size={28} className="mb-3 text-slate-300 group-hover:text-orange-500 transition-colors" />
+                                                <span className="text-[10px] font-black uppercase tracking-tighter">{pm.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <button 
+                                    onClick={handleFinishCheckout} 
+                                    disabled={isFinishing || totals.remaining > 0 || (addedPayments.length === 0 && historyPayments.length === 0)} 
+                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
+                                >
+                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> FECHAR COMANDA</>}
+                                </button>
+                            </div>
+                        )}
+
+                        {isLocked && (
+                            <div className="bg-emerald-50 p-8 rounded-[48px] border-2 border-emerald-100 text-center space-y-4 animate-in zoom-in-95">
+                                <CheckCircle size={48} className="text-emerald-500 mx-auto" />
+                                <h3 className="text-xl font-black text-emerald-800 uppercase tracking-tighter">Comanda Paga</h3>
+                                <p className="text-xs text-emerald-600 font-medium leading-relaxed">Este registro está arquivado e seu faturamento foi consolidado no fluxo de caixa.</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
