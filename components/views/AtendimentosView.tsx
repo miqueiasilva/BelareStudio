@@ -419,13 +419,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
-            // FIX: Adicionado professional_id no insert da comanda para garantir exibição no checkout
+            // FIX: Adicionado professional_id, professional_name e client_name no insert da comanda para garantir exibição robusta no checkout
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
                     studio_id: activeStudioId,
                     client_id: appointment.client?.id,
+                    client_name: appointment.client?.nome,
                     professional_id: appointment.professional.id,
+                    professional_name: appointment.professional.name,
                     status: 'open',
                     total_amount: appointment.service.price
                 }])

@@ -36,7 +36,7 @@ const BRANDS = ['Visa', 'Mastercard', 'Elo', 'Hipercard', 'Amex', 'Outros'];
 
 const isUUID = (str: any): boolean => {
     if (!str || typeof str !== 'string') return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str) || str.length > 20;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str) || str.length > 20;
 };
 
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
@@ -60,50 +60,53 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // 1. Busca contexto via RPC v2
-            const { data: contextData, error: ctxError } = await supabase.rpc('get_checkout_context_v2', {
-                p_command_id: commandId
-            });
-
-            if (ctxError) console.warn("Erro RPC Context:", ctxError);
-            const context = Array.isArray(contextData) ? contextData[0] : contextData;
-
-            // 2. Busca dados base com relacionamentos manuais para garantir nomes
+            // 1. Busca dados da Comanda (Consulta Base - Evita Joins complexos que podem 400)
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
-                .select('*, clients(id, nome, whatsapp), team_members(id, name, photo_url), command_items(*)')
+                .select('*, command_items(*)')
                 .eq('id', commandId)
                 .single();
 
             if (cmdError) throw cmdError;
 
-            // 3. Busca configurações de taxas
-            const { data: configs } = await supabase
-                .from('payment_methods_config')
-                .select('*')
-                .eq('studio_id', activeStudioId)
-                .eq('is_active', true);
+            // 2. Busca Contexto via RPC (Opcional - Tenta buscar nomes formatados)
+            let context: any = null;
+            try {
+                const { data: contextData } = await supabase.rpc('get_checkout_context_v2', {
+                    p_command_id: commandId
+                });
+                context = Array.isArray(contextData) ? contextData[0] : contextData;
+            } catch (e) {
+                console.warn("RPC Context Falhou, usando fallbacks.");
+            }
 
-            setAvailableConfigs(configs || []);
+            // 3. Busca Dados Relacionados (Cliente e Profissional) de forma independente e paralela
+            const [clientRes, profRes, configsRes] = await Promise.all([
+                cmdData.client_id ? supabase.from('clients').select('nome, whatsapp').eq('id', cmdData.client_id).single() : Promise.resolve({ data: null }),
+                cmdData.professional_id ? supabase.from('team_members').select('name, photo_url').eq('id', cmdData.professional_id).single() : Promise.resolve({ data: null }),
+                supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
+            ]);
+
+            setAvailableConfigs(configsRes.data || []);
 
             const alreadyPaid = cmdData.status === 'paid';
 
-            // Mapeamento Robusto de Nomes
+            // Mapeamento Robusto com Fallbacks em cascata
             setCommand({
                 ...cmdData,
-                display_client_name: context?.client_display_name || cmdData.clients?.nome || cmdData.client_name || "Cliente sem cadastro",
-                display_client_phone: context?.client_phone || cmdData.clients?.whatsapp || "SEM CONTATO",
-                display_professional_name: context?.professional_display_name || cmdData.team_members?.name || cmdData.professional_name || "Geral / Studio",
-                display_professional_photo: context?.professional_photo_url || cmdData.team_members?.photo_url || null,
-                professional_id: context?.professional_id || cmdData.professional_id,
-                client_id: context?.client_id || cmdData.client_id
+                display_client_name: context?.client_display_name || clientRes.data?.nome || cmdData.client_name || "Cliente sem cadastro",
+                display_client_phone: context?.client_phone || clientRes.data?.whatsapp || "SEM CONTATO",
+                display_professional_name: context?.professional_display_name || profRes.data?.name || cmdData.professional_name || "Geral / Studio",
+                display_professional_photo: context?.professional_photo_url || profRes.data?.photo_url || null,
+                professional_id: cmdData.professional_id,
+                client_id: cmdData.client_id
             });
 
             setIsLocked(alreadyPaid);
 
         } catch (e: any) {
             console.error('[CHECKOUT_LOAD_ERROR]', e);
-            setToast({ message: "Erro ao carregar dados do checkout.", type: 'error' });
+            setToast({ message: "Erro ao localizar comanda.", type: 'error' });
         } finally {
             setLoading(false);
         }
@@ -217,7 +220,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
-    if (!command) return <div className="p-20 text-center text-slate-400 font-black uppercase">Comanda não encontrada</div>;
+    if (!command) return (
+        <div className="h-full flex flex-col items-center justify-center bg-slate-50 p-8 text-center">
+            <AlertTriangle size={64} className="text-slate-200 mb-6" />
+            <h3 className="text-lg font-black text-slate-400 uppercase tracking-widest">Comanda não encontrada</h3>
+            <button onClick={onBack} className="mt-6 px-8 py-3 bg-slate-800 text-white font-black rounded-2xl text-xs uppercase tracking-widest active:scale-95 transition-all">Voltar</button>
+        </div>
+    );
 
     const currentCommandIdDisplay = String(commandId).substring(0, 8).toUpperCase();
 
