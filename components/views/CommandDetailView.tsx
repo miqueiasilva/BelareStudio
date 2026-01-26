@@ -65,33 +65,56 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         
         setLoading(true);
         try {
-            // Chamar a RPC get_command_full que retorna todo o contexto em JSON
+            // Tenta usar a RPC (Mais rápido)
             const { data: fullData, error: rpcError } = await supabase.rpc('get_command_full', { p_command_id: commandId });
 
-            if (rpcError) throw rpcError;
+            if (rpcError) {
+                // FALLBACK: Se a RPC não existir (404), fazemos a busca manual robusta
+                console.warn("RPC 'get_command_full' não encontrada. Usando busca manual.");
+                
+                const { data: cmdData } = await supabase.from('commands').select('*').eq('id', commandId).single();
+                const { data: itemsData } = await supabase.from('command_items').select('*').eq('command_id', commandId);
+                const { data: transData } = await supabase.from('financial_transactions').select('*').eq('command_id', commandId).neq('status', 'cancelado');
+                const firstApptId = itemsData?.find(i => i.appointment_id)?.appointment_id;
+                
+                const [profRes, clientRes, apptRes] = await Promise.all([
+                    isUUID(cmdData?.professional_id) ? supabase.from('team_members').select('name, photo_url').eq('id', cmdData.professional_id).maybeSingle() : Promise.resolve({ data: null }),
+                    isUUID(cmdData?.client_id) ? supabase.from('clients').select('nome, whatsapp, photo_url').eq('id', cmdData.client_id).maybeSingle() : Promise.resolve({ data: null }),
+                    firstApptId ? supabase.from('appointments').select('client_name, professional_name').eq('id', firstApptId).maybeSingle() : Promise.resolve({ data: null })
+                ]);
 
-            // Carrega configurações de pagamento JIT
+                setCommand({
+                    ...cmdData,
+                    command_items: itemsData || [],
+                    display_client_name: clientRes.data?.nome || apptRes.data?.client_name || cmdData.client_name || "Consumidor Final",
+                    display_client_phone: clientRes.data?.whatsapp || cmdData.client_phone || "S/ CONTATO",
+                    display_professional_name: profRes.data?.name || apptRes.data?.professional_name || cmdData.professional_name || "Geral",
+                    display_professional_photo: profRes.data?.photo_url || null
+                });
+                setHistoryPayments(transData || []);
+                setIsLocked(cmdData?.status === 'paid');
+            } else {
+                // Sucesso com RPC
+                const { header, items, payments } = fullData;
+                setHistoryPayments(payments || []);
+                setIsLocked(header.status === 'paid');
+                setCommand({
+                    ...header,
+                    command_items: items || [],
+                    display_client_name: header.client_display || "Consumidor Final",
+                    display_client_phone: header.client_phone_display || "S/ CONTATO",
+                    display_professional_name: header.professional_name || "Geral",
+                    display_professional_photo: header.professional_photo || null
+                });
+            }
+
+            // Carrega configs de pagamento de qualquer forma
             const { data: configsRes } = await supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true);
             setAvailableConfigs(configsRes || []);
 
-            const { header, items, payments } = fullData;
-            
-            setHistoryPayments(payments || []);
-            setIsLocked(header.status === 'paid');
-
-            setCommand({
-                ...header,
-                command_items: items || [],
-                display_client_name: header.client_display || "Consumidor Final",
-                display_client_phone: header.client_phone_display || "S/ CONTATO",
-                display_client_photo: header.professional_photo || null,
-                display_professional_name: header.professional_name || "Geral",
-                display_professional_photo: header.professional_photo || null
-            });
-
         } catch (e: any) {
             console.error('[FETCH_CONTEXT_ERROR]', e);
-            setToast({ message: "Erro ao carregar detalhes via RPC.", type: 'error' });
+            setToast({ message: "Erro ao carregar detalhes da comanda.", type: 'error' });
         } finally {
             setLoading(false);
         }
@@ -104,13 +127,10 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const subtotal = command.command_items?.reduce((acc: number, i: any) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || 0;
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
-        
         const savedPaid = historyPayments.reduce((acc, p) => acc + Number(p.amount), 0);
         const currentPaid = addedPayments.reduce((acc, p) => acc + p.amount, 0);
-        
         const paid = savedPaid + currentPaid;
         const remaining = Math.max(0, totalAfterDiscount - paid);
-        
         return { subtotal, total: totalAfterDiscount, paid, remaining };
     }, [command, discount, addedPayments, historyPayments]);
 
@@ -145,7 +165,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setIsFinishing(true);
 
         try {
-            // Registra as transações individualmente via RPC para garantir snapshots financeiros
             for (const p of addedPayments) {
                 const methodMap: Record<string, string> = { 'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit' };
                 await supabase.rpc('register_payment_transaction', {
@@ -159,7 +178,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 });
             }
 
-            // Chamar close_command passando o snapshot do nome do cliente para a tabela commands
             const { error: closeError } = await supabase.rpc('close_command', {
                 p_command_id: commandId,
                 p_client_name: command.display_client_name,
@@ -168,18 +186,13 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             });
 
             if (closeError) {
-                // Fallback update se a RPC close_command ainda não estiver disponível
-                const { error: fallbackError } = await supabase
-                    .from('commands')
-                    .update({ 
-                        status: 'paid', 
-                        closed_at: new Date().toISOString(),
-                        total_amount: totals.total,
-                        client_name: command.display_client_name,
-                        payment_method: addedPayments[0]?.method || historyPayments[0]?.payment_method || 'misto'
-                    })
-                    .eq('id', commandId);
-                if (fallbackError) throw fallbackError;
+                await supabase.from('commands').update({ 
+                    status: 'paid', 
+                    closed_at: new Date().toISOString(),
+                    total_amount: totals.total,
+                    client_name: command.display_client_name,
+                    payment_method: addedPayments[0]?.method || historyPayments[0]?.payment_method || 'misto'
+                }).eq('id', commandId);
             }
 
             setToast({ message: "Comanda liquidada com sucesso! 💳", type: 'success' });
@@ -194,6 +207,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
 
+    // Proteção crucial: se command ainda for null após carregar, mostra erro ao invés de crashar
+    if (!command) return <div className="h-full flex flex-col items-center justify-center bg-slate-50 gap-4"><AlertTriangle className="text-rose-500" size={48} /><p className="font-bold text-slate-700">Comanda não encontrada.</p><button onClick={onBack} className="text-orange-500 font-bold uppercase text-xs">Voltar</button></div>;
+
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -203,7 +219,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-all"><ChevronLeft size={24} /></button>
                     <div>
                         <h1 className="text-xl font-black text-slate-800">Comanda <span className="text-orange-500 font-mono">#{commandId.substring(0,8).toUpperCase()}</span></h1>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Responsável: {command.display_professional_name}</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Responsável: {command?.display_professional_name || 'Geral'}</p>
                     </div>
                 </div>
                 <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${isLocked ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-orange-50 text-orange-600 border border-orange-100'}`}>
@@ -217,7 +233,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         {/* HEADER CLIENTE */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
                             <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl overflow-hidden">
-                                {command.display_client_photo ? <img src={command.display_client_photo} className="w-full h-full object-cover" /> : command.display_client_name.charAt(0)}
+                                {command.display_client_photo ? <img src={command.display_client_photo} className="w-full h-full object-cover" /> : command.display_client_name?.charAt(0)}
                             </div>
                             <div className="flex-1 text-center md:text-left">
                                 <h3 className="text-2xl font-black text-slate-800 leading-tight">{command.display_client_name}</h3>

@@ -18,7 +18,6 @@ import { differenceInMinutes, format } from 'date-fns';
 const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) => {
     const { activeStudioId } = useStudio();
     const [tabs, setTabs] = useState<any[]>([]);
-    const [professionals, setProfessionals] = useState<LegacyProfessional[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [currentTab, setCurrentTab] = useState<'open' | 'paid'>('open');
@@ -31,7 +30,6 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         setLoading(true);
         try {
             if (currentTab === 'paid') {
-                // Consome a view de histórico para comandas pagas
                 const { data, error } = await supabase
                     .from('v_commands_paid_list')
                     .select('*')
@@ -39,7 +37,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     .order('paid_at', { ascending: false });
                 
                 if (error) {
-                    // Fallback para a tabela commands caso a view não exista ainda
+                    // Fallback para a tabela commands
                     const { data: cmdData } = await supabase
                         .from('commands')
                         .select('*, clients(nome), command_items(*)')
@@ -49,13 +47,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                         .order('created_at', { ascending: false });
                     setTabs(cmdData || []);
                 } else {
-                    // Mapeia os dados da view para o formato esperado pelo card
-                    setTabs(data.map(item => ({
-                        ...item,
-                        display_name: item.client_display || "Consumidor Final",
-                        display_prof: item.professional_display || "Profissional",
-                        command_items: [] // Itens serão carregados no detalhe
-                    })));
+                    setTabs(data || []);
                 }
             } else {
                 const { data, error } = await supabase
@@ -122,7 +114,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                 <div>
                     <h1 className="text-xl font-black text-slate-800 flex items-center gap-2 leading-none uppercase tracking-tighter"><FileText className="text-orange-500" size={24} /> Balcão / Comandas</h1>
                     <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 mt-2">
-                        <button onClick={() => setCurrentTab('open')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'open' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-50'}`}>Em Atendimento</button>
+                        <button onClick={() => setCurrentTab('open')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'open' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500'}`}>Em Atendimento</button>
                         <button onClick={() => setCurrentTab('paid')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'paid' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500'}`}>Pagos / Arquivo</button>
                     </div>
                 </div>
