@@ -60,7 +60,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // 1. Busca contexto via RPC v2 conforme regra (sempre exibir cliente e profissional)
+            // 1. Busca contexto via RPC v2 (Garante nomes reais de cliente e profissional)
             const { data: contextData, error: ctxError } = await supabase.rpc('get_checkout_context_v2', {
                 p_command_id: commandId
             });
@@ -68,7 +68,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             if (ctxError) throw ctxError;
             const context = Array.isArray(contextData) ? contextData[0] : contextData;
 
-            // 2. Busca dados base da comanda e configurações de taxas
+            // 2. Busca dados base e configurações de taxas
             const [cmdRes, configsRes] = await Promise.all([
                 supabase.from('commands').select('*, command_items(*)').eq('id', commandId).single(),
                 supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
@@ -83,6 +83,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             // 3. Mapeamento com fallbacks obrigatórios
             setCommand({
                 ...cmdRes.data,
+                // Regra: Sempre exibir nomes amigáveis
                 display_client_name: context?.client_display_name || cmdRes.data.client_name || "Cliente sem cadastro",
                 display_client_phone: context?.client_phone || "SEM CONTATO",
                 display_professional_name: context?.professional_display_name || "Geral / Studio",
@@ -124,7 +125,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const amount = parseFloat(amountToPay.replace(',', '.'));
         if (isNaN(amount) || amount <= 0) return;
 
-        // Regra de Taxas: Buscar config do método
+        // Regra de Taxas: Buscar config do método no studio
         const typeMap: Record<string, string> = {
             'pix': 'pix', 'dinheiro': 'money', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
         };
@@ -134,7 +135,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             (c.type === 'pix' || c.type === 'money' || String(c.brand).toLowerCase() === selectedBrand.toLowerCase())
         );
 
-        // Se for crédito e parcelado, usa a taxa da parcela se disponível
         let feeRate = 0;
         if (config) {
             if (activeMethod === 'cartao_credito' && selectedInstallments > 1 && config.installment_rates) {
@@ -169,7 +169,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         try {
             const studioId = String(activeStudioId);
             
-            // Regra Bug client_id NULL: Garante que haja um client_id
+            // Regra Bug client_id NULL: Garante atribuição do cliente padrão
             let clientId = command.client_id;
             if (!clientId) {
                 const { data: defaultClient } = await supabase
@@ -179,50 +179,45 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     .eq('nome', 'Cliente sem cadastro')
                     .maybeSingle();
                 
-                if (defaultClient) {
-                    clientId = defaultClient.id;
-                } else {
-                    // Se não existir, cria o padrão do studio
+                clientId = defaultClient?.id;
+                if (!clientId) {
                     const { data: newDefault } = await supabase
                         .from('clients')
                         .insert([{ nome: 'Cliente sem cadastro', studio_id: studioId, consent: true }])
-                        .select()
-                        .single();
+                        .select().single();
                     clientId = newDefault.id;
                 }
-                
-                // Atualiza a comanda para não ficar órfã
                 await supabase.from('commands').update({ client_id: clientId }).eq('id', commandId);
             }
 
-            // Regra RPC Oficial: register_payment_transaction
-            // Devido à restrição ux_command_payments_one_paid_per_command, se houver múltiplos métodos,
-            // consolidamos ou processamos individualmente se a RPC permitir. 
-            // Para respeitar a constraint de 1 registro por comanda, consolidamos o total.
+            // Regra de Duplicidade: Verifica se já existe transação paga
+            const { data: existing } = await supabase.from('financial_transactions').select('id').eq('command_id', commandId).maybeSingle();
             
-            const methodMap: Record<string, string> = {
-                'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
-            };
+            if (!existing) {
+                const methodMap: Record<string, string> = {
+                    'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
+                };
 
-            const totalAmount = addedPayments.reduce((acc, p) => acc + p.amount, 0);
-            const primaryPayment = addedPayments[0]; // Referência de método
+                const totalAmount = addedPayments.reduce((acc, p) => acc + p.amount, 0);
+                const primaryPayment = addedPayments[0];
 
-            const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                p_studio_id: studioId,
-                p_professional_id: isUUID(command.professional_id) ? command.professional_id : null,
-                p_amount: Number(totalAmount),
-                p_method: methodMap[primaryPayment.method] || 'pix',
-                p_brand: primaryPayment.brand || null,
-                p_installments: Number(primaryPayment.installments || 1)
-            });
+                const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                    p_studio_id: studioId,
+                    p_professional_id: isUUID(command.professional_id) ? command.professional_id : null,
+                    p_command_id: commandId,
+                    p_amount: Number(totalAmount),
+                    p_method: methodMap[primaryPayment.method] || 'pix',
+                    p_brand: primaryPayment.brand || null,
+                    p_installments: Number(primaryPayment.installments || 1)
+                });
 
-            if (rpcError) {
-                // Se for erro de duplicidade, verificamos se a comanda já está paga no banco
-                const isDuplicate = rpcError.code === '23505' || rpcError.message?.includes('ux_command_payments_one_paid_per_command');
-                if (!isDuplicate) throw new Error(rpcError.message);
+                if (rpcError) {
+                    const isDuplicate = rpcError.code === '23505' || rpcError.message?.includes('ux_command_payments_one_paid_per_command');
+                    if (!isDuplicate) throw new Error(rpcError.message);
+                }
             }
 
-            // Marca comanda como paga e registra data de fechamento
+            // Marca comanda como paga
             const { error: closeError } = await supabase
                 .from('commands')
                 .update({ 
