@@ -58,7 +58,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     const fetchContext = async () => {
         if (!activeStudioId || !commandId || !isSafeUUID(commandId)) {
-            console.error("UUID inválido:", commandId);
+            console.error("COMMAND_DETAIL_ABORT: ID inválido", commandId);
             setLoading(false);
             return;
         }
@@ -69,7 +69,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const { data: fullData, error: rpcError } = await supabase.rpc('get_command_full', { p_command_id: commandId });
 
             if (rpcError) {
-                console.warn("Usando fallback manual para comanda", commandId);
+                console.warn("RPC falhou, usando carregamento manual para", commandId);
                 const { data: cmdData } = await supabase
                     .from('commands')
                     .select('*, clients:client_id(nome, whatsapp, photo_url)')
@@ -79,33 +79,22 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 const { data: itemsData } = await supabase.from('command_items').select('*').eq('command_id', commandId);
                 const { data: transData } = await supabase.from('financial_transactions').select('*').eq('command_id', commandId).neq('status', 'cancelado');
 
-                let profName = cmdData?.professional_name || "Geral";
-                let profPhoto = null;
-
-                if (isSafeUUID(cmdData?.professional_id)) {
-                    const { data: pData } = await supabase.from('team_members').select('name, photo_url').eq('id', cmdData.professional_id).maybeSingle();
-                    if (pData) {
-                        profName = pData.name;
-                        profPhoto = pData.photo_url;
-                    }
-                }
+                const clientName = Array.isArray(cmdData?.clients) ? cmdData.clients[0]?.nome : cmdData?.clients?.nome;
+                const clientPhone = Array.isArray(cmdData?.clients) ? cmdData.clients[0]?.whatsapp : cmdData?.clients?.whatsapp;
+                const clientPhoto = Array.isArray(cmdData?.clients) ? cmdData.clients[0]?.photo_url : cmdData?.clients?.photo_url;
 
                 setCommand({
                     ...cmdData,
                     command_items: itemsData || [],
-                    display_client_name: cmdData?.clients?.nome || cmdData?.client_name || "Consumidor Final",
-                    display_client_phone: cmdData?.clients?.whatsapp || cmdData?.client_phone || "S/ CONTATO",
-                    display_client_photo: cmdData?.clients?.photo_url || null,
-                    display_professional_name: profName,
-                    display_professional_photo: profPhoto
+                    display_client_name: clientName || cmdData?.client_name || "Consumidor Final",
+                    display_client_phone: clientPhone || "S/ CONTATO",
+                    display_client_photo: clientPhoto || null,
+                    display_professional_name: cmdData?.professional_name || "Geral"
                 });
                 setHistoryPayments(transData?.map(t => ({
                     ...t,
-                    payment_method: t.payment_method,
                     amount: t.amount,
-                    net_amount: t.net_value,
-                    fee_rate: t.tax_rate,
-                    fee_value: t.tax_rate_amount
+                    payment_method: t.payment_method
                 })) || []);
                 setIsLocked(cmdData?.status === 'paid');
             } else {
@@ -115,10 +104,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 setCommand({
                     ...header,
                     command_items: items || [],
-                    display_client_name: header.client_display || "Consumidor Final",
+                    display_client_name: header.client_display || header.client_name || "Consumidor Final",
                     display_client_phone: header.client_phone_display || "S/ CONTATO",
                     display_professional_name: header.professional_name || "Geral",
-                    display_professional_photo: header.professional_photo || null,
                     display_client_photo: header.client_photo_display || null
                 });
             }
@@ -128,7 +116,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
         } catch (e: any) {
             console.error('[DETALHE_ERRO]', e);
-            setToast({ message: "Falha ao carregar comanda.", type: 'error' });
+            setToast({ message: "Erro ao carregar detalhes.", type: 'error' });
         } finally {
             setLoading(false);
         }
@@ -207,12 +195,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     status: 'paid', 
                     closed_at: new Date().toISOString(),
                     total_amount: totals.total,
-                    client_name: command.display_client_name,
-                    payment_method: addedPayments[0]?.method || historyPayments[0]?.payment_method || 'misto'
+                    client_name: command.display_client_name
                 }).eq('id', commandId);
             }
 
-            setToast({ message: "Comanda liquidada com sucesso! ✨", type: 'success' });
+            setToast({ message: "Comanda finalizada com sucesso! ✨", type: 'success' });
             setIsLocked(true);
             setTimeout(onBack, 1500);
         } catch (e: any) {
@@ -239,7 +226,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-all active:scale-90"><ChevronLeft size={24} /></button>
                     <div>
-                        <h1 className="text-xl font-black text-slate-800">Comanda <span className="text-orange-500 font-mono">#{commandId.substring(0,8).toUpperCase()}</span></h1>
+                        <h1 className="text-xl font-black text-slate-800 uppercase tracking-tighter">
+                            Comanda <span className="text-orange-500 font-mono">#{commandId.substring(0,8).toUpperCase()}</span>
+                        </h1>
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-tight">Responsável: {command.display_professional_name || 'Geral'}</p>
                     </div>
                 </div>
@@ -257,11 +246,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 {command.display_client_photo ? <img src={command.display_client_photo} className="w-full h-full object-cover" alt="" /> : (command.display_client_name || 'C').charAt(0)}
                             </div>
                             <div className="flex-1 text-center md:text-left">
-                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{command.display_client_name || "Consumidor Final"}</h3>
+                                <h3 className="text-2xl font-black text-slate-800 leading-tight uppercase">{command.display_client_name}</h3>
                                 <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><Phone size={14} className="text-orange-500" /> {command.display_client_phone}</div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><UserCheck size={14} className="text-orange-500" /> {command.display_professional_name || 'Geral'}</div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><Clock size={14} className="text-orange-500" /> {formattedDate()}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-widest"><Phone size={14} className="text-orange-500" /> {command.display_client_phone}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-widest"><UserCheck size={14} className="text-orange-500" /> {command.display_professional_name}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-widest"><Clock size={14} className="text-orange-500" /> {formattedDate()}</div>
                                 </div>
                             </div>
                         </div>
@@ -279,8 +268,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                 {item.product_id ? <ShoppingBag size={24} /> : <Scissors size={24} />}
                                             </div>
                                             <div>
-                                                <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
-                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-1">{item.quantity} un x R$ {Number(item.price).toFixed(2)}</p>
+                                                <p className="font-black text-slate-800 text-lg leading-tight uppercase">{item.title}</p>
+                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-1 tracking-widest">{item.quantity} un x R$ {Number(item.price).toFixed(2)}</p>
                                             </div>
                                         </div>
                                         <p className="font-black text-slate-800 text-xl">R$ {(item.quantity * item.price).toFixed(2)}</p>
@@ -289,41 +278,27 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* HISTÓRICO DE RECEBIMENTO */}
+                        {/* FLOW DE RECEBIMENTO */}
                         {(historyPayments.length > 0 || addedPayments.length > 0) && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
-                                <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50 flex justify-between items-center">
+                                <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50">
                                     <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Fluxo de Caixa Realizado</h3>
                                 </header>
                                 <div className="divide-y divide-slate-50">
                                     {historyPayments.map(p => (
-                                        <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-slate-50/30 opacity-90">
+                                        <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-slate-50/30">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-emerald-500 shadow-sm"><Landmark size={20} /></div>
-                                                <div>
-                                                    <p className="text-sm font-black text-slate-700 uppercase">{p.payment_method?.replace('_', ' ') || 'LIQUIDADO'}</p>
-                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                                                        Taxa Snap: R$ {Number(p.fee_value || 0).toFixed(2)} ({p.fee_rate || 0}%)
-                                                    </p>
-                                                </div>
+                                                <p className="text-sm font-black text-slate-700 uppercase">{p.payment_method?.replace('_', ' ') || 'LIQUIDADO'}</p>
                                             </div>
-                                            <div className="text-right">
-                                                <span className="font-black text-slate-800 text-lg">R$ {Number(p.amount).toFixed(2)}</span>
-                                                <p className="text-[9px] font-black text-emerald-600 uppercase">Líquido: R$ {Number(p.net_amount || p.amount).toFixed(2)}</p>
-                                            </div>
+                                            <span className="font-black text-slate-800 text-lg">R$ {Number(p.amount).toFixed(2)}</span>
                                         </div>
                                     ))}
                                     {addedPayments.map(p => (
                                         <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-white group">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center"><Coins size={20} /></div>
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-sm font-black text-slate-700 uppercase">{p.method.replace('_', ' ')}</span>
-                                                        {p.brand && <span className="text-[10px] font-bold text-slate-400 uppercase">({p.brand})</span>}
-                                                    </div>
-                                                    <p className="text-[9px] font-black text-emerald-600 uppercase">Líquido: R$ {p.net_amount.toFixed(2)}</p>
-                                                </div>
+                                                <p className="text-sm font-black text-slate-700 uppercase">{p.method.replace('_', ' ')} {p.brand && `(${p.brand})`}</p>
                                             </div>
                                             <div className="flex items-center gap-4">
                                                 <span className="font-black text-slate-800 text-lg">R$ {p.amount.toFixed(2)}</span>
@@ -351,15 +326,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total a Receber</p>
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.total.toFixed(2)}</h2>
                                 </div>
-                                {totals.paid > 0 && (
-                                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10 space-y-2">
-                                        <div className="flex justify-between text-xs font-bold text-slate-400"><span>Liquidado:</span><span className="text-emerald-400">R$ {totals.paid.toFixed(2)}</span></div>
-                                        <div className="flex justify-between items-center pt-2 border-t border-white/5">
-                                            <span className="text-xs font-black uppercase tracking-widest text-orange-400">A Pagar:</span>
-                                            <span className={`text-xl font-black ${totals.remaining === 0 ? 'text-emerald-400' : 'text-white'}`}>R$ {totals.remaining.toFixed(2)}</span>
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                         </div>
 
