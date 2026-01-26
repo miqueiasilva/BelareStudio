@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
     ChevronLeft, CreditCard, Smartphone, Banknote, 
@@ -47,6 +46,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [isFinishing, setIsFinishing] = useState(false);
     const [isLocked, setIsLocked] = useState(false);
     
+    const [addedPayments, setAddedPayments] = useState<PaymentEntry[]>([]);
     const [historyPayments, setHistoryPayments] = useState<any[]>([]);
     const [activeMethod, setActiveMethod] = useState<string | null>(null);
     const [selectedBrand, setSelectedBrand] = useState<string>('Visa');
@@ -64,6 +64,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         
         setLoading(true);
         try {
+            // 1. Busca Comanda com Join no Cliente Oficial
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select('*, clients:client_id(nome, photo_url, whatsapp)')
@@ -72,13 +73,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (cmdError) throw cmdError;
 
+            // 2. Busca Itens
             const { data: itemsData } = await supabase
                 .from('command_items')
                 .select('*')
                 .eq('command_id', commandId);
 
+            // 3. Busca Pagamentos e Configurações
             const [transRes, configsRes] = await Promise.all([
-                supabase.from('financial_transactions').select('*').eq('command_id', commandId).neq('status', 'cancelado').order('date', { ascending: false }),
+                supabase.from('financial_transactions').select('*').eq('command_id', commandId).neq('status', 'cancelado'),
                 supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
             ]);
 
@@ -87,6 +90,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             
             const alreadyPaid = cmdData.status === 'paid';
 
+            // 4. Resolução do Cliente (Join > Snapshot > Fallback)
             const clientInfo = Array.isArray(cmdData.clients) ? cmdData.clients[0] : cmdData.clients;
             const resolvedName = clientInfo?.nome || cmdData.client_name || "Consumidor Final";
 
@@ -102,7 +106,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setIsLocked(alreadyPaid);
         } catch (e: any) {
             console.error('[FETCH_CONTEXT_ERROR]', e);
-            setToast({ message: "Erro ao carregar detalhes.", type: 'error' });
+            setToast({ message: "Erro ao carregar detalhes da comanda.", type: 'error' });
         } finally {
             setLoading(false);
         }
@@ -116,53 +120,59 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const discValue = parseFloat(discount) || 0;
         const totalAfterDiscount = Math.max(0, subtotal - discValue);
         
-        const paid = historyPayments.reduce((acc, p) => acc + Number(p.amount), 0);
+        const savedPaid = historyPayments.reduce((acc, p) => acc + Number(p.amount), 0);
+        const currentPaid = addedPayments.reduce((acc, p) => acc + p.amount, 0);
+        
+        const paid = savedPaid + currentPaid;
         const remaining = Math.max(0, totalAfterDiscount - paid);
         
         return { subtotal, total: totalAfterDiscount, paid, remaining };
-    }, [command, discount, historyPayments]);
+    }, [command, discount, addedPayments, historyPayments]);
 
-    const handleConfirmPartialPayment = async () => {
-        if (!activeMethod || isLocked || !activeStudioId) return;
+    const handleConfirmPartialPayment = () => {
+        if (!activeMethod || isLocked) return;
         const amount = parseFloat(amountToPay.replace(',', '.'));
         if (isNaN(amount) || amount <= 0) return;
 
-        setIsFinishing(true);
-        try {
-            const methodMap: Record<string, string> = { 
-                'pix': 'pix', 
-                'dinheiro': 'cash', 
-                'cartao_credito': 'credit', 
-                'cartao_debito': 'debit' 
-            };
-            
-            const { error } = await supabase.rpc('register_payment_transaction', {
-                p_studio_id: activeStudioId,
-                p_professional_id: isUUID(command.professional_id) ? command.professional_id : null,
-                p_command_id: commandId,
-                p_amount: amount,
-                p_method: methodMap[activeMethod] || 'pix',
-                p_brand: (activeMethod.includes('cartao')) ? selectedBrand : null,
-                p_installments: selectedInstallments
-            });
+        const typeMap: Record<string, string> = { 'pix': 'pix', 'dinheiro': 'money', 'cartao_credito': 'credit', 'cartao_debito': 'debit' };
+        const config = availableConfigs.find(c => c.type === (typeMap[activeMethod] || activeMethod) && (c.type === 'pix' || c.type === 'money' || String(c.brand).toUpperCase() === selectedBrand.toUpperCase()));
 
-            if (error) throw error;
+        const feeRate = Number(config?.rate_cash || 0);
+        const feeValue = Number((amount * (feeRate / 100)).toFixed(2));
 
-            setToast({ message: "Pagamento confirmado! ✅", type: 'success' });
-            setActiveMethod(null);
-            await fetchContext(); // Atualiza a interface e recalcula saldo
-        } catch (e: any) {
-            setToast({ message: "Erro ao registrar: " + e.message, type: 'error' });
-        } finally {
-            setIsFinishing(false);
-        }
+        const newPayment: PaymentEntry = {
+            id: Math.random().toString(36).substring(7),
+            method: activeMethod,
+            amount: amount,
+            installments: selectedInstallments,
+            brand: selectedBrand,
+            fee_rate: feeRate,
+            fee_value: feeValue,
+            net_amount: Number((amount - feeValue).toFixed(2))
+        };
+
+        setAddedPayments(prev => [...prev, newPayment]);
+        setActiveMethod(null);
     };
 
     const handleFinishCheckout = async () => {
-        if (!command || isFinishing || isLocked || historyPayments.length === 0) return;
+        if (!command || isFinishing || isLocked || (addedPayments.length === 0 && historyPayments.length === 0)) return;
         setIsFinishing(true);
 
         try {
+            for (const p of addedPayments) {
+                const methodMap: Record<string, string> = { 'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit' };
+                await supabase.rpc('register_payment_transaction', {
+                    p_studio_id: activeStudioId,
+                    p_professional_id: isUUID(command.professional_id) ? command.professional_id : null,
+                    p_command_id: commandId,
+                    p_amount: p.amount,
+                    p_method: methodMap[p.method] || 'pix',
+                    p_brand: p.brand || null,
+                    p_installments: p.installments
+                });
+            }
+
             const { error: closeError } = await supabase
                 .from('commands')
                 .update({ 
@@ -174,7 +184,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (closeError) throw closeError;
 
-            setToast({ message: "Comanda finalizada com sucesso! ✨", type: 'success' });
+            setToast({ message: "Comanda finalizada com sucesso! 💳", type: 'success' });
             setIsLocked(true);
             setTimeout(onBack, 1500);
         } catch (e: any) {
@@ -209,7 +219,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         {/* HEADER CLIENTE */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
                             <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl overflow-hidden">
-                                {command.display_client_photo ? <img src={command.display_client_photo} className="w-full h-full object-cover" alt="" /> : command.display_client_name.charAt(0)}
+                                {command.display_client_photo ? <img src={command.display_client_photo} className="w-full h-full object-cover" /> : command.display_client_name.charAt(0)}
                             </div>
                             <div className="flex-1 text-center md:text-left">
                                 <h3 className="text-2xl font-black text-slate-800 leading-tight uppercase">{command.display_client_name}</h3>
@@ -244,8 +254,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* RECEBIMENTOS CONFIRMADOS */}
-                        {historyPayments.length > 0 && (
+                        {/* RECEBIMENTOS */}
+                        {(historyPayments.length > 0 || addedPayments.length > 0) && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50 flex justify-between items-center">
                                     <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Recebimentos Confirmados</h3>
@@ -256,11 +266,29 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             <div className="flex items-center gap-4">
                                                 <div className="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-emerald-500"><Landmark size={20} /></div>
                                                 <div>
-                                                    <p className="text-sm font-black text-slate-700 uppercase">{p.payment_method?.replace('_', ' ') || 'Lançamento'}</p>
+                                                    <p className="text-sm font-black text-slate-700 uppercase">{p.payment_method?.replace('_', ' ')}</p>
                                                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{format(new Date(p.date), 'dd/MM HH:mm')}</p>
                                                 </div>
                                             </div>
                                             <span className="font-black text-slate-800 text-lg">R$ {Number(p.amount).toFixed(2)}</span>
+                                        </div>
+                                    ))}
+                                    {addedPayments.map(p => (
+                                        <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-white group border-l-4 border-orange-500">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center"><Coins size={20} /></div>
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-sm font-black text-slate-700 uppercase">{p.method.replace('_', ' ')}</span>
+                                                        {p.brand && <span className="text-[10px] font-bold text-slate-400 uppercase">({p.brand})</span>}
+                                                    </div>
+                                                    <p className="text-[9px] font-black text-emerald-600 uppercase">Líquido: R$ {p.net_amount.toFixed(2)}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <span className="font-black text-slate-800 text-lg">R$ {p.amount.toFixed(2)}</span>
+                                                {!isLocked && <button onClick={() => setAddedPayments(prev => prev.filter(i => i.id !== p.id))} className="p-2 text-slate-200 hover:text-rose-500 transition-colors"><X size={18} /></button>}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -307,9 +335,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                             )}
                                             <div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all" /></div>
                                         </div>
-                                        <button onClick={handleConfirmPartialPayment} disabled={isFinishing} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
-                                            {isFinishing ? <Loader2 className="animate-spin" size={20} /> : "Confirmar Recebimento"}
-                                        </button>
+                                        <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">Confirmar Valor</button>
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-2 gap-3">
@@ -329,8 +355,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
                                 <button 
                                     onClick={handleFinishCheckout} 
-                                    disabled={isFinishing || totals.remaining > 0 || historyPayments.length === 0} 
-                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 && historyPayments.length > 0 ? 'bg-emerald-600 text-white shadow-emerald-200' : 'bg-slate-100 text-slate-300'}`}
+                                    disabled={isFinishing || totals.remaining > 0 || (addedPayments.length === 0 && historyPayments.length === 0)} 
+                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 && (addedPayments.length > 0 || historyPayments.length > 0) ? 'bg-emerald-600 text-white shadow-emerald-200' : 'bg-slate-100 text-slate-300'}`}
                                 >
                                     {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> FINALIZAR CHECKOUT</>}
                                 </button>
