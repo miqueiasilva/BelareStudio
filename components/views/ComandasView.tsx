@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
     Search, Plus, Clock, User, FileText, 
@@ -17,7 +16,7 @@ import { differenceInMinutes, format } from 'date-fns';
 
 const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) => {
     const { activeStudioId } = useStudio();
-    const [tabs, setTabs] = useState<Command[]>([]);
+    const [tabs, setTabs] = useState<any[]>([]);
     const [professionals, setProfessionals] = useState<LegacyProfessional[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -33,9 +32,10 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!activeStudioId) return;
         setLoading(true);
         try {
+            // JOIN com clientes e profissionais para pegar nomes reais
             const { data, error } = await supabase
                 .from('commands')
-                .select('*, clients(nome, photo_url), command_items(*)')
+                .select('*, clients:client_id(nome, photo_url), team_members:professional_id(name), command_items(*)')
                 .eq('studio_id', activeStudioId)
                 .eq('status', currentTab)
                 .is('deleted_at', null)
@@ -93,7 +93,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
     };
 
     const filteredTabs = tabs.filter(t => {
-        const name = (t.clients?.nome || t.client_name || '').toLowerCase();
+        const name = (t.clients?.nome || t.client_name || 'Consumidor Final').toLowerCase();
         return name.includes(searchTerm.toLowerCase());
     });
 
@@ -132,8 +132,8 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                             {tab.clients?.photo_url ? <img src={tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" /> : (tab.clients?.nome || tab.client_name || '?').charAt(0)}
                                         </div>
                                         <div className="min-w-0">
-                                            <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{tab.clients?.nome || tab.client_name}</h3>
-                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">#{tab.id.split('-')[0].toUpperCase()}</span>
+                                            <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{tab.clients?.nome || tab.client_name || 'Consumidor Final'}</h3>
+                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate block">Prof: {tab.team_members?.name || 'Geral'}</span>
                                         </div>
                                     </div>
                                     {tab.status === 'open' && (
@@ -142,7 +142,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                 </div>
 
                                 <div className="flex-1 p-5 overflow-y-auto custom-scrollbar space-y-2">
-                                    {tab.command_items.map(item => (
+                                    {tab.command_items.map((item: any) => (
                                         <div key={item.id} className="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0">
                                             <span className="text-xs font-bold text-slate-600 truncate flex-1 pr-2">{item.title}</span>
                                             <span className="text-xs font-black text-slate-800">R$ {Number(item.price).toFixed(2)}</span>
