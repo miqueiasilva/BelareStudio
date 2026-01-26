@@ -60,17 +60,16 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // REGRAS: Busca contexto higienizado via RPC v2
+            // 1. Busca contexto via RPC v2 com tratamento de array
             const { data: contextData, error: ctxError } = await supabase.rpc('get_checkout_context_v2', {
                 p_command_id: commandId
             });
 
             if (ctxError) throw ctxError;
 
-            // Tratamento de retorno de tabela (array)
             const context = Array.isArray(contextData) ? contextData[0] : contextData;
 
-            // Busca dados complementares
+            // 2. Busca dados complementares da comanda e configurações do estúdio
             const [cmdRes, configsRes] = await Promise.all([
                 supabase.from('commands').select('*, command_items(*)').eq('id', commandId).single(),
                 supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
@@ -82,7 +81,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const alreadyPaid = cmdRes.data.status === 'paid';
             setIsLocked(alreadyPaid);
 
-            // Preenchimento com fallbacks obrigatórios das regras
+            // 3. Montagem do objeto de exibição com fallbacks seguros
             setCommand({
                 ...cmdRes.data,
                 display_client_name: context?.client_display_name || "Cliente sem cadastro",
@@ -160,17 +159,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
         try {
             const studioId = String(activeStudioId);
-            const profId = isUUID(command.professional_id) ? String(command.professional_id) : null;
+            // Higienização: Se o ID for o placeholder string, trata como nulo
+            const profIdRaw = String(command.professional_id);
+            const profId = isUUID(profIdRaw) ? profIdRaw : null;
 
             const methodMap: Record<string, string> = {
                 'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
             };
 
-            // REGRAS E CORREÇÃO DE CONFLITO:
-            // O banco possui a restrição "ux_command_payments_one_paid_per_command" (apenas um pagamento por comanda).
-            // Para suportar a lógica, consolidamos o valor total em uma única transação financeira.
+            // Consolidação para transação única (respeitando restrição do banco)
             const totalAmount = addedPayments.reduce((acc, p) => acc + p.amount, 0);
-            const mainPayment = addedPayments[0]; // Usamos o primeiro método como referência para o registro
+            const mainPayment = addedPayments[0];
 
             const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: studioId,
@@ -182,9 +181,21 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 p_installments: Number(mainPayment.installments || 1)
             });
 
-            if (rpcError) throw new Error(rpcError.message);
+            // CORREÇÃO CRÍTICA: Se o erro for 23505 (violação de chave única), significa que
+            // o pagamento já existe no banco. Nesse caso, ignoramos o erro e tentamos apenas
+            // forçar o encerramento da comanda para 'paid'.
+            if (rpcError) {
+                const isDuplicate = rpcError.code === '23505' || 
+                                  rpcError.message?.toLowerCase().includes('unique constraint') ||
+                                  rpcError.message?.toLowerCase().includes('duplicate key');
+                
+                if (!isDuplicate) {
+                    throw new Error(rpcError.message);
+                }
+                console.warn("Conflito detectado: Pagamento já registrado anteriormente. Forçando encerramento da comanda.");
+            }
 
-            // Liquidação da comanda
+            // Atualiza status final da comanda
             const { error: closeError } = await supabase
                 .from('commands')
                 .update({ 
@@ -237,8 +248,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         {/* RESUMO CLIENTE/PROFISSIONAL */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
                             <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl uppercase overflow-hidden">
-                                {command.photo_url ? (
-                                    <img src={command.photo_url} className="w-full h-full object-cover" />
+                                {command.display_professional_photo ? (
+                                    <img src={command.display_professional_photo} className="w-full h-full object-cover" />
                                 ) : (
                                     command.display_client_name.charAt(0)
                                 )}
