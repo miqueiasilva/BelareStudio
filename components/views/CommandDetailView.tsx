@@ -34,7 +34,6 @@ interface PaymentEntry {
 
 const BRANDS = ['Visa', 'Mastercard', 'Elo', 'Hipercard', 'Amex', 'Outros'];
 
-// Helper para validar se uma string é um UUID válido
 const isUUID = (str: any): boolean => {
     if (!str || typeof str !== 'string') return false;
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
@@ -61,76 +60,34 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // 1. Busca Detalhes da Comanda com JOINS robustos
-            const { data: cmdData, error: cmdError } = await supabase
-                .from('commands')
-                .select(`
-                    *,
-                    clients(id, nome, whatsapp, cpf),
-                    command_items (
-                        *,
-                        professional:team_members(id, name)
-                    ),
-                    professional:team_members(id, name)
-                `)
-                .eq('id', commandId)
-                .single();
-
-            if (cmdError) throw cmdError;
-
-            // 2. Busca Configurações de Taxas
-            const { data: configs } = await supabase
-                .from('payment_methods_config')
-                .select('*')
-                .eq('studio_id', activeStudioId)
-                .eq('is_active', true);
-
-            setAvailableConfigs(configs || []);
-
-            // 3. Tenta buscar pagamentos já existentes
-            const { data: existingPayments } = await supabase
-                .from('command_payments')
-                .select('*')
-                .eq('command_id', commandId);
-
-            // Identificação de nomes com extração profunda e fallbacks
-            const clientName = cmdData.clients?.nome || "Consumidor Final";
-            
-            // Tenta obter o profissional do comando, ou do primeiro item
-            let profName = "Geral / Studio";
-            if (cmdData.professional?.name) {
-                profName = cmdData.professional.name;
-            } else if (cmdData.command_items && cmdData.command_items.length > 0) {
-                const itemWithProf = cmdData.command_items.find((i: any) => i.professional?.name);
-                if (itemWithProf) {
-                    profName = itemWithProf.professional.name;
-                }
-            }
-
-            const alreadyPaid = cmdData.status === 'paid';
-
-            setCommand({
-                ...cmdData,
-                display_client_name: String(clientName),
-                display_professional_name: String(profName),
+            // REGRAS: Busca contexto via RPC v2
+            const { data: context, error: ctxError } = await supabase.rpc('get_checkout_context_v2', {
+                p_command_id: commandId
             });
 
+            if (ctxError) throw ctxError;
+
+            // Busca os itens da comanda e o estúdio para taxas
+            const [cmdRes, configsRes] = await Promise.all([
+                supabase.from('commands').select('*, command_items(*)').eq('id', commandId).single(),
+                supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
+            ]);
+
+            if (cmdRes.error) throw cmdRes.error;
+            setAvailableConfigs(configsRes.data || []);
+
+            const alreadyPaid = cmdRes.data.status === 'paid';
             setIsLocked(alreadyPaid);
 
-            if (existingPayments && existingPayments.length > 0) {
-                const mappedPayments = existingPayments.map((p: any) => ({
-                    id: String(p.id),
-                    method: String(p.method),
-                    amount: Number(p.amount),
-                    installments: Number(p.installments || 1),
-                    method_id: String(p.method_id),
-                    fee_rate: Number(p.fee_rate || 0),
-                    fee_value: Number(p.fee_amount || 0),
-                    net_amount: Number(p.net_amount || p.amount),
-                    brand: String(p.brand || '')
-                }));
-                setAddedPayments(mappedPayments);
-            }
+            // Preenchimento com fallbacks conforme solicitado
+            setCommand({
+                ...cmdRes.data,
+                display_client_name: context.client_display_name || "Cliente sem cadastro",
+                display_client_phone: context.client_phone || "Sem contato",
+                display_professional_name: context.professional_display_name || "Profissional não atribuído",
+                display_professional_photo: context.professional_photo_url || null,
+                professional_id: context.professional_id // Guarda o ID higienizado
+            });
 
         } catch (e: any) {
             console.error('[CHECKOUT_LOAD_ERROR]', e);
@@ -165,6 +122,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const amount = parseFloat(amountToPay.replace(',', '.'));
         if (isNaN(amount) || amount <= 0) return;
 
+        // Mapeamento interno para localizar na config
         const typeMap: Record<string, string> = {
             'pix': 'pix', 'dinheiro': 'money', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
         };
@@ -174,6 +132,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             (c.type === 'pix' || c.type === 'money' || String(c.brand).toLowerCase() === selectedBrand.toLowerCase())
         );
 
+        // REGRAS: Cálculo de taxa baseado na config do Studio
         const feeRate = Number(config?.rate_cash || 0);
         const feeValue = Number((amount * (feeRate / 100)).toFixed(2));
 
@@ -191,6 +150,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
         setAddedPayments(prev => [...prev, newPayment]);
         setActiveMethod(null);
+        setToast({ message: "Recebimento adicionado!", type: 'success' });
     };
 
     const handleFinishCheckout = async () => {
@@ -198,40 +158,28 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setIsFinishing(true);
 
         try {
-            const studioId = isUUID(activeStudioId) ? String(activeStudioId) : null;
-            if (!studioId) throw new Error("ID do estúdio inválido.");
+            const studioId = String(activeStudioId);
+            const professionalId = isUUID(command.professional_id) ? String(command.professional_id) : null;
 
-            // Prioriza o profissional do comando, depois o do primeiro item
-            const rawProfId = command.professional_id || command.command_items?.[0]?.professional_id;
-            const professionalId = isUUID(rawProfId) ? String(rawProfId) : null;
-
-            // Mapeamento para os tipos esperados pelo RPC register_payment_transaction
             const methodMap: Record<string, string> = {
-                'pix': 'pix',
-                'dinheiro': 'cash',
-                'cartao_credito': 'credit',
-                'cartao_debito': 'debit'
+                'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
             };
 
-            // EXIGÊNCIA DO BANCO: Uso obrigatório da função RPC register_payment_transaction
-            // Enviando agora apenas os 6 parâmetros solicitados na assinatura atualizada
+            // REGRAS: Loop chamando estritamente a nova assinatura da RPC
             for (const payment of addedPayments) {
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_studio_id: studioId,
                     p_professional_id: professionalId,
                     p_amount: Number(payment.amount),
                     p_method: methodMap[payment.method] || 'pix',
-                    p_brand: payment.brand || null,
+                    p_brand: (payment.method === 'cartao_credito' || payment.method === 'cartao_debito') ? payment.brand : null,
                     p_installments: Number(payment.installments || 1)
                 });
 
-                if (rpcError) {
-                    console.error("Erro interno no RPC:", rpcError);
-                    throw new Error(`Falha no motor financeiro: ${rpcError.message}`);
-                }
+                if (rpcError) throw new Error(`Erro financeiro: ${rpcError.message}`);
             }
 
-            // Atualização do status da comanda para PAGO
+            // Marca comanda como paga
             const { error: closeError } = await supabase
                 .from('commands')
                 .update({ 
@@ -243,12 +191,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (closeError) throw closeError;
 
-            setToast({ message: "Comanda finalizada com sucesso! ✨", type: 'success' });
+            setToast({ message: "Checkout finalizado com sucesso! ✅", type: 'success' });
             setIsLocked(true);
             setTimeout(onBack, 1500);
         } catch (e: any) {
             console.error('[FINISH_ERROR]', e);
-            setToast({ message: `Erro no fechamento: ${e.message || "Tente novamente"}`, type: 'error' });
+            setToast({ message: `Falha no fechamento: ${e.message}`, type: 'error' });
         } finally {
             setIsFinishing(false);
         }
@@ -268,7 +216,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     <div>
                         <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500 font-mono">#{currentCommandIdDisplay}</span></h1>
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                            Profissional: {String(command?.display_professional_name || 'Geral / Studio')}
+                            Profissional: {command?.display_professional_name}
                         </p>
                     </div>
                 </div>
@@ -280,25 +228,29 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
                     <div className="lg:col-span-2 space-y-6">
-                        {/* CARD CLIENTE */}
+                        {/* RESUMO CLIENTE */}
                         <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
-                            <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl uppercase">
-                                {String(command?.display_client_name || 'C').charAt(0)}
+                            <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl uppercase overflow-hidden">
+                                {command?.display_professional_photo ? (
+                                    <img src={command.display_professional_photo} className="w-full h-full object-cover" />
+                                ) : (
+                                    command?.display_client_name.charAt(0)
+                                )}
                             </div>
                             <div className="flex-1 text-center md:text-left">
-                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{String(command?.display_client_name || 'Cliente sem cadastro')}</h3>
+                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{command?.display_client_name}</h3>
                                 <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Phone size={14} className="text-orange-500" /> {command.clients?.whatsapp || 'Sem contato'}</div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><User size={14} className="text-orange-500" /> Profissional: {String(command?.display_professional_name).toUpperCase()}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Phone size={14} className="text-orange-500" /> {command.display_client_phone}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><User size={14} className="text-orange-500" /> {command?.display_professional_name}</div>
                                     <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Calendar size={14} className="text-orange-500" /> {command ? format(new Date(command.created_at), "dd/MM 'às' HH:mm", { locale: pt }) : '--'}</div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* ITENS DA COMANDA */}
+                        {/* ITENS DETALHADOS */}
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
-                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Itens da Comanda</h3>
+                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Detalhes da Comanda</h3>
                             </header>
                             <div className="divide-y divide-slate-50">
                                 {command?.command_items?.map((item: any) => (
@@ -316,11 +268,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* PAGAMENTOS CONFIRMADOS */}
+                        {/* RECEBIMENTOS CONFIRMADOS */}
                         {addedPayments.length > 0 && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50">
-                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Parcelas de Recebimento</h3>
+                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Recebimentos Confirmados</h3>
                                 </header>
                                 <div className="divide-y divide-slate-50">
                                     {addedPayments.map(p => (
@@ -350,7 +302,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     </div>
 
                     <div className="space-y-6">
-                        {/* RESUMO TOTAIS */}
+                        {/* CARD FINANCEIRO */}
                         <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden">
                             <div className="relative z-10 space-y-6">
                                 <div className="space-y-2">
@@ -358,7 +310,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400"><Percent size={14} /> Desconto</div><input type="number" value={discount} disabled={isLocked} onChange={e => setDiscount(e.target.value)} className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-50 transition-all" /></div>
                                 </div>
                                 <div className="pt-6 border-t border-white/10">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total Final</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total a Pagar</p>
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.total.toFixed(2)}</h2>
                                 </div>
                                 {totals.paid > 0 && (
@@ -370,11 +322,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* SELETOR DE PAGAMENTO */}
+                        {/* SELEÇÃO DE PAGAMENTO */}
                         <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
                             {!isLocked ? (
                                 <>
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Selecionar Pagamento</h4>
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Forma de Pagamento</h4>
                                     {activeMethod ? (
                                         <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95 space-y-6">
                                             <div className="flex justify-between items-center"><span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">{String(activeMethod).replace('_', ' ')}</span><button onClick={() => setActiveMethod(null)} className="text-slate-300"><X size={20}/></button></div>
@@ -384,7 +336,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                 )}
                                                 <div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none" /></div>
                                             </div>
-                                            <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg">Confirmar</button>
+                                            <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg">Lançar Pagamento</button>
                                         </div>
                                     ) : (
                                         <div className="grid grid-cols-2 gap-3">
@@ -405,7 +357,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             ) : (
                                 <div className="bg-emerald-50 p-8 rounded-[32px] border-2 border-emerald-100 text-center space-y-4">
                                     <CheckCircle size={40} className="text-emerald-500 mx-auto" />
-                                    <p className="text-emerald-800 font-black text-lg uppercase tracking-tighter">Comanda Liquidada</p>
+                                    <p className="text-emerald-800 font-black text-lg uppercase tracking-tighter">Comanda Paga</p>
                                 </div>
                             )}
                             
