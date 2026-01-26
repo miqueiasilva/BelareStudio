@@ -77,6 +77,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 .single();
 
             if (cmdError) throw cmdError;
+            if (!cmdData) throw new Error("Comanda não encontrada.");
 
             // 2. Busca Configurações de Taxas
             const { data: configs } = await supabase
@@ -209,7 +210,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             if (!studioId) throw new Error("ID do estúdio inválido.");
 
             // EXIGÊNCIA DO BANCO: Uso obrigatório da função RPC register_payment_transaction
-            // Garante que cada pagamento seja processado conforme a assinatura do banco
             for (const payment of addedPayments) {
                 const cleanMethodId = isUUID(payment.method_id) ? payment.method_id : null;
 
@@ -275,6 +275,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
 
+    if (!command && !loading) return (
+        <div className="h-full flex flex-col items-center justify-center bg-slate-50 text-slate-400 p-8">
+            <AlertTriangle size={48} className="mb-4" />
+            <p className="font-black uppercase tracking-widest text-sm">Comanda não localizada</p>
+            <button onClick={onBack} className="mt-4 text-orange-500 font-bold underline">Voltar para a lista</button>
+        </div>
+    );
+
     const currentCommandIdDisplay = String(command?.id || '').substring(0, 8).toUpperCase();
 
     return (
@@ -305,9 +313,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 {String(command?.display_client_name || 'C').charAt(0)}
                             </div>
                             <div className="flex-1 text-center md:text-left">
-                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{String(command?.display_client_name || 'Cliente sem cadastro')}</h3>
+                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{String(command?.display_client_name || 'Consumidor Final')}</h3>
                                 <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Phone size={14} className="text-orange-500" /> {command.clients?.whatsapp || 'Sem contato'}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Phone size={14} className="text-orange-500" /> {command?.clients?.whatsapp || 'Sem contato'}</div>
                                     <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><User size={14} className="text-orange-500" /> Profissional: {String(command?.display_professional_name).toUpperCase()}</div>
                                     <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Calendar size={14} className="text-orange-500" /> {command ? format(new Date(command.created_at), "dd/MM 'às' HH:mm", { locale: pt }) : '--'}</div>
                                 </div>
@@ -374,7 +382,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             <div className="relative z-10 space-y-6">
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-xs font-black uppercase tracking-widest text-slate-400"><span>Subtotal</span><span>R$ {totals.subtotal.toFixed(2)}</span></div>
-                                    <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400"><Percent size={14} /> Desconto</div><input type="number" value={discount} disabled={isLocked} onChange={e => setDiscount(e.target.value)} className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500 transition-all" /></div>
+                                    <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400"><Percent size={14} /> Desconto</div><input type="number" value={discount} disabled={isLocked} onChange={e => setDiscount(e.target.value)} className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-50 focus:border-orange-400 transition-all" /></div>
                                 </div>
                                 <div className="pt-6 border-t border-white/10">
                                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total Final</p>
