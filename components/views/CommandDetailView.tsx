@@ -6,8 +6,7 @@ import {
     Phone, Scissors, ShoppingBag, Receipt,
     Percent, Calendar, ShoppingCart, X, Coins,
     ArrowRight, ShieldCheck, Tag, CreditCard as CardIcon,
-    User, UserCheck, Trash2, Lock, MoreVertical, AlertTriangle,
-    BadgePercent, Landmark
+    User, UserCheck, Trash2, Lock, MoreVertical, AlertTriangle
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -35,6 +34,12 @@ interface PaymentEntry {
 
 const BRANDS = ['Visa', 'Mastercard', 'Elo', 'Hipercard', 'Amex', 'Outros'];
 
+// Helper para validar se uma string é um UUID válido
+const isUUID = (str: any): boolean => {
+    if (!str || typeof str !== 'string') return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+};
+
 const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
     const { activeStudioId } = useStudio();
     const [command, setCommand] = useState<any>(null);
@@ -56,7 +61,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // 1. Busca Detalhes da Comanda com Joins para pegar Cliente e Profissional
+            // 1. Busca Detalhes da Comanda com JOINS robustos
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select(`
@@ -65,14 +70,15 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     command_items (
                         *,
                         professional:team_members(id, name)
-                    )
+                    ),
+                    professional:team_members(id, name)
                 `)
                 .eq('id', commandId)
                 .single();
 
             if (cmdError) throw cmdError;
 
-            // 2. Busca Configurações de Taxas vigentes
+            // 2. Busca Configurações de Taxas
             const { data: configs } = await supabase
                 .from('payment_methods_config')
                 .select('*')
@@ -81,28 +87,35 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             setAvailableConfigs(configs || []);
 
-            // 3. Busca o profissional responsável (do primeiro item ou da comanda)
+            // 3. Tenta buscar pagamentos já existentes
+            const { data: existingPayments } = await supabase
+                .from('command_payments')
+                .select('*')
+                .eq('command_id', commandId);
+
+            // Identificação de nomes com extração profunda e fallbacks
+            const clientName = cmdData.clients?.nome || "Consumidor Final";
+            
+            // Tenta obter o profissional do comando, ou do primeiro item
             let profName = "Geral / Studio";
-            if (cmdData.command_items && cmdData.command_items.length > 0) {
+            if (cmdData.professional?.name) {
+                profName = cmdData.professional.name;
+            } else if (cmdData.command_items && cmdData.command_items.length > 0) {
                 const itemWithProf = cmdData.command_items.find((i: any) => i.professional?.name);
-                if (itemWithProf) profName = itemWithProf.professional.name;
+                if (itemWithProf) {
+                    profName = itemWithProf.professional.name;
+                }
             }
 
             const alreadyPaid = cmdData.status === 'paid';
 
             setCommand({
                 ...cmdData,
-                display_client_name: cmdData.clients?.nome || "Cliente não identificado",
-                display_professional_name: profName,
+                display_client_name: String(clientName),
+                display_professional_name: String(profName),
             });
 
             setIsLocked(alreadyPaid);
-
-            // Carrega pagamentos já realizados se houver
-            const { data: existingPayments } = await supabase
-                .from('command_payments')
-                .select('*')
-                .eq('command_id', commandId);
 
             if (existingPayments && existingPayments.length > 0) {
                 const mappedPayments = existingPayments.map((p: any) => ({
@@ -121,7 +134,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
         } catch (e: any) {
             console.error('[CHECKOUT_LOAD_ERROR]', e);
-            setToast({ message: "Erro ao carregar dados da comanda.", type: 'error' });
+            setToast({ message: "Erro ao carregar contexto do checkout.", type: 'error' });
         } finally {
             setLoading(false);
         }
@@ -167,7 +180,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const newPayment: PaymentEntry = {
             id: Math.random().toString(36).substring(7),
             method: String(activeMethod),
-            method_id: config?.id || 'manual',
+            method_id: String(config?.id || 'manual'),
             amount: amount,
             installments: selectedInstallments,
             brand: String(selectedBrand),
@@ -185,56 +198,40 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setIsFinishing(true);
 
         try {
-            // Validação de UUIDs para evitar erro de assinatura no Postgres
-            const isUUID = (str: any) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str));
-            
-            const studioId = isUUID(activeStudioId) ? activeStudioId : null;
-            const clientId = isUUID(command.client_id) ? command.client_id : null;
-            const profId = command.command_items?.[0]?.professional_id;
-            const professionalId = isUUID(profId) ? profId : null;
+            const studioId = isUUID(activeStudioId) ? String(activeStudioId) : null;
+            if (!studioId) throw new Error("ID do estúdio inválido.");
 
-            // Executa o fechamento financeiro via RPC obrigatório
+            // Prioriza o profissional do comando, depois o do primeiro item
+            const rawProfId = command.professional_id || command.command_items?.[0]?.professional_id;
+            const professionalId = isUUID(rawProfId) ? String(rawProfId) : null;
+
+            // Mapeamento para os tipos esperados pelo RPC register_payment_transaction
+            const methodMap: Record<string, string> = {
+                'pix': 'pix',
+                'dinheiro': 'cash',
+                'cartao_credito': 'credit',
+                'cartao_debito': 'debit'
+            };
+
+            // EXIGÊNCIA DO BANCO: Uso obrigatório da função RPC register_payment_transaction
+            // Enviando agora apenas os 6 parâmetros solicitados na assinatura atualizada
             for (const payment of addedPayments) {
-                const methodId = isUUID(payment.method_id) ? payment.method_id : null;
-
-                const { data: transactionId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                    p_amount: Number(payment.amount),
-                    p_category: 'servico',
-                    p_client_id: clientId,
-                    p_description: `Checkout Comanda #${command.id.substring(0, 8).toUpperCase()}`,
-                    p_net_value: Number(payment.net_amount),
-                    p_payment_method_id: methodId,
-                    p_professional_id: professionalId,
+                const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_studio_id: studioId,
-                    p_tax_rate: Number(payment.fee_rate),
-                    p_type: 'income'
+                    p_professional_id: professionalId,
+                    p_amount: Number(payment.amount),
+                    p_method: methodMap[payment.method] || 'pix',
+                    p_brand: payment.brand || null,
+                    p_installments: Number(payment.installments || 1)
                 });
 
                 if (rpcError) {
-                    console.error("Erro na função register_payment_transaction:", rpcError);
-                    throw new Error(`Motor Financeiro: ${rpcError.message}`);
+                    console.error("Erro interno no RPC:", rpcError);
+                    throw new Error(`Falha no motor financeiro: ${rpcError.message}`);
                 }
-
-                // Vincula o pagamento à comanda no banco
-                const { error: pError } = await supabase
-                    .from('command_payments')
-                    .insert([{
-                        command_id: command.id,
-                        financial_transaction_id: transactionId,
-                        method_id: methodId,
-                        amount: Number(payment.amount),
-                        method: payment.method,
-                        installments: payment.installments,
-                        fee_rate: payment.fee_rate,
-                        fee_amount: payment.fee_value,
-                        net_amount: payment.net_amount,
-                        brand: payment.brand
-                    }]);
-
-                if (pError) throw pError;
             }
 
-            // Atualiza status final da comanda
+            // Atualização do status da comanda para PAGO
             const { error: closeError } = await supabase
                 .from('commands')
                 .update({ 
@@ -246,12 +243,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
             if (closeError) throw closeError;
 
-            setToast({ message: "Checkout finalizado com sucesso! 💰", type: 'success' });
+            setToast({ message: "Comanda finalizada com sucesso! ✨", type: 'success' });
             setIsLocked(true);
             setTimeout(onBack, 1500);
         } catch (e: any) {
             console.error('[FINISH_ERROR]', e);
-            setToast({ message: `Erro: ${e.message || "Falha na comunicação com o banco"}`, type: 'error' });
+            setToast({ message: `Erro no fechamento: ${e.message || "Tente novamente"}`, type: 'error' });
         } finally {
             setIsFinishing(false);
         }
@@ -259,9 +256,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
 
-    if (!command) return <div className="h-full flex flex-col items-center justify-center text-slate-400"><AlertTriangle size={48} /><p className="font-bold mt-4">Comanda não encontrada.</p><button onClick={onBack} className="mt-4 text-orange-500 underline">Voltar</button></div>;
-
-    const commandCode = command.id.substring(0, 8).toUpperCase();
+    const currentCommandIdDisplay = String(command?.id || '').substring(0, 8).toUpperCase();
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
@@ -271,83 +266,81 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-all"><ChevronLeft size={24} /></button>
                     <div>
-                        <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500 font-mono">#{commandCode}</span></h1>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Unidade: BelaApp Studio</p>
+                        <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500 font-mono">#{currentCommandIdDisplay}</span></h1>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                            Profissional: {String(command?.display_professional_name || 'Geral / Studio')}
+                        </p>
                     </div>
                 </div>
-                <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${command.status === 'open' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
-                    {command.status === 'open' ? 'Em aberto' : 'Liquidada'}
+                <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${command?.status === 'open' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
+                    {command?.status === 'open' ? 'Em aberto' : 'Finalizada'}
                 </div>
             </header>
 
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
                     <div className="lg:col-span-2 space-y-6">
-                        {/* CARD RESUMO CLIENTE E PROFISSIONAL */}
-                        <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-8">
-                            <div className="w-24 h-24 bg-orange-100 text-orange-600 rounded-[32px] flex items-center justify-center font-black text-3xl uppercase shadow-inner">
-                                {command.display_client_name.charAt(0)}
+                        {/* CARD CLIENTE */}
+                        <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
+                            <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl uppercase">
+                                {String(command?.display_client_name || 'C').charAt(0)}
                             </div>
-                            <div className="flex-1 text-center md:text-left space-y-1">
-                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{command.display_client_name}</h3>
-                                <div className="flex flex-wrap justify-center md:justify-start gap-4">
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Phone size={14} className="text-orange-500" /> {command.clients?.whatsapp || 'Sem WhatsApp'}</div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><User size={14} className="text-orange-500" /> Profissional: <span className="text-slate-600">{command.display_professional_name.toUpperCase()}</span></div>
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Calendar size={14} className="text-orange-500" /> {format(new Date(command.created_at), "dd/MM 'às' HH:mm", { locale: pt })}</div>
+                            <div className="flex-1 text-center md:text-left">
+                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{String(command?.display_client_name || 'Cliente sem cadastro')}</h3>
+                                <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Phone size={14} className="text-orange-500" /> {command.clients?.whatsapp || 'Sem contato'}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><User size={14} className="text-orange-500" /> Profissional: {String(command?.display_professional_name).toUpperCase()}</div>
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase tracking-tighter"><Calendar size={14} className="text-orange-500" /> {command ? format(new Date(command.created_at), "dd/MM 'às' HH:mm", { locale: pt }) : '--'}</div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* LISTAGEM DE ITENS */}
+                        {/* ITENS DA COMANDA */}
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
-                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Serviços & Produtos</h3>
+                                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Itens da Comanda</h3>
                             </header>
                             <div className="divide-y divide-slate-50">
-                                {command.command_items?.map((item: any) => (
+                                {command?.command_items?.map((item: any) => (
                                     <div key={item.id} className="p-8 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
                                         <div className="flex items-center gap-5">
                                             <div className={`p-4 rounded-3xl ${item.product_id ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>{item.product_id ? <ShoppingBag size={24} /> : <Scissors size={24} />}</div>
                                             <div>
-                                                <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
-                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-1">Qtde: {item.quantity} un • {item.professional?.name ? `Prof: ${item.professional.name}` : 'Geral'}</p>
+                                                <p className="font-black text-slate-800 text-lg leading-tight">{String(item.title)}</p>
+                                                <p className="text-[10px] text-slate-400 font-black uppercase mt-1">{item.quantity} un. x R$ {Number(item.price || 0).toFixed(2)}</p>
                                             </div>
                                         </div>
-                                        <p className="font-black text-slate-800 text-xl">R$ {(item.price * item.quantity).toFixed(2)}</p>
+                                        <p className="font-black text-slate-800 text-xl">R$ {(Number(item.price || 0) * Number(item.quantity || 1)).toFixed(2)}</p>
                                     </div>
                                 ))}
                             </div>
                         </div>
 
-                        {/* LISTAGEM DE PAGAMENTOS E TAXAS */}
+                        {/* PAGAMENTOS CONFIRMADOS */}
                         {addedPayments.length > 0 && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50">
-                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Recebimentos Confirmados</h3>
+                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Parcelas de Recebimento</h3>
                                 </header>
                                 <div className="divide-y divide-slate-50">
                                     {addedPayments.map(p => (
-                                        <div key={p.id} className="px-8 py-6 flex items-center justify-between bg-white group">
-                                            <div className="flex items-center gap-5">
-                                                <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 border border-slate-100"><Coins size={24} /></div>
+                                        <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-white">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500"><Coins size={20} /></div>
                                                 <div>
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-sm font-black text-slate-700 uppercase">{p.method.replace('_', ' ')}</span>
-                                                        {p.brand && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border px-1.5 rounded">{p.brand} ({p.installments}x)</span>}
+                                                        <span className="text-sm font-black text-slate-700 uppercase">{String(p.method).replace('_', ' ')}</span>
+                                                        {p.brand && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{String(p.brand)} ({p.installments}x)</span>}
                                                     </div>
-                                                    <div className="flex items-center gap-4 mt-1">
-                                                        <div className="flex items-center gap-1 text-[10px] font-black text-rose-500 uppercase">
-                                                            <BadgePercent size={12} /> Taxa: {p.fee_rate}% (- R$ {p.fee_value.toFixed(2)})
-                                                        </div>
-                                                        <div className="flex items-center gap-1 text-[10px] font-black text-emerald-600 uppercase">
-                                                            <Landmark size={12} /> Líquido: R$ {p.net_amount.toFixed(2)}
-                                                        </div>
+                                                    <div className="flex gap-3">
+                                                        <p className="text-[9px] font-black text-rose-500 uppercase">Taxa: {p.fee_rate}% (- R$ {p.fee_value.toFixed(2)})</p>
+                                                        <p className="text-[9px] font-black text-emerald-600 uppercase">Líquido: R$ {p.net_amount.toFixed(2)}</p>
                                                     </div>
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-6">
-                                                <span className="font-black text-slate-800 text-lg">R$ {p.amount.toFixed(2)}</span>
-                                                {!isLocked && <button onClick={() => setAddedPayments(prev => prev.filter(item => item.id !== p.id))} className="p-2 text-slate-200 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"><X size={20} /></button>}
+                                                <span className="font-black text-slate-800 text-lg">R$ {Number(p.amount).toFixed(2)}</span>
+                                                {!isLocked && <button onClick={() => setAddedPayments(prev => prev.filter(item => item.id !== p.id))} className="p-2 text-slate-200 hover:text-rose-500 transition-colors"><X size={20} strokeWidth={3} /></button>}
                                             </div>
                                         </div>
                                     ))}
@@ -357,24 +350,21 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     </div>
 
                     <div className="space-y-6">
-                        {/* CARD FINANCEIRO FINAL */}
+                        {/* RESUMO TOTAIS */}
                         <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden">
                             <div className="relative z-10 space-y-6">
-                                <div className="space-y-3">
-                                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500"><span>Subtotal</span><span>R$ {totals.subtotal.toFixed(2)}</span></div>
-                                    <div className="flex justify-between items-center">
-                                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-orange-400"><Percent size={14} /> Desconto</div>
-                                        <input type="number" value={discount} disabled={isLocked} onChange={e => setDiscount(e.target.value)} className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500 transition-all" />
-                                    </div>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-xs font-black uppercase tracking-widest text-slate-400"><span>Subtotal</span><span>R$ {totals.subtotal.toFixed(2)}</span></div>
+                                    <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400"><Percent size={14} /> Desconto</div><input type="number" value={discount} disabled={isLocked} onChange={e => setDiscount(e.target.value)} className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-50 transition-all" /></div>
                                 </div>
                                 <div className="pt-6 border-t border-white/10">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total a Receber</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total Final</p>
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.total.toFixed(2)}</h2>
                                 </div>
                                 {totals.paid > 0 && (
-                                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10 space-y-3 animate-in zoom-in-95">
-                                        <div className="flex justify-between text-xs font-bold"><span className="text-slate-400">Já Recebido:</span><span className="text-emerald-400">R$ {totals.paid.toFixed(2)}</span></div>
-                                        <div className="flex justify-between items-center pt-2 border-t border-white/5"><span className="text-[10px] font-black uppercase tracking-widest text-orange-400">Falta Pagar:</span><span className={`text-xl font-black ${totals.remaining === 0 ? 'text-emerald-400' : 'text-white'}`}>R$ {totals.remaining.toFixed(2)}</span></div>
+                                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10 space-y-3">
+                                        <div className="flex justify-between text-xs font-bold"><span className="text-slate-400">Total Pago:</span><span className="text-emerald-400">R$ {totals.paid.toFixed(2)}</span></div>
+                                        <div className="flex justify-between items-center pt-2 border-t border-white/5"><span className="text-xs font-black uppercase tracking-widest text-orange-400">Restante:</span><span className={`text-xl font-black ${totals.remaining === 0 ? 'text-emerald-400' : 'text-white'}`}>R$ {totals.remaining.toFixed(2)}</span></div>
                                     </div>
                                 )}
                             </div>
@@ -384,17 +374,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
                             {!isLocked ? (
                                 <>
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Forma de Lançamento</h4>
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Selecionar Pagamento</h4>
                                     {activeMethod ? (
                                         <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-orange-500 animate-in zoom-in-95 space-y-6">
-                                            <div className="flex justify-between items-center"><span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">{activeMethod.replace('_', ' ')}</span><button onClick={() => setActiveMethod(null)} className="text-slate-300"><X size={20}/></button></div>
+                                            <div className="flex justify-between items-center"><span className="text-[10px] font-black uppercase text-orange-600 tracking-widest">{String(activeMethod).replace('_', ' ')}</span><button onClick={() => setActiveMethod(null)} className="text-slate-300"><X size={20}/></button></div>
                                             <div className="space-y-4">
                                                 {(activeMethod === 'cartao_credito' || activeMethod === 'cartao_debito') && (
                                                     <div className="grid grid-cols-3 gap-2">{BRANDS.map(b => (<button key={b} onClick={() => setSelectedBrand(b)} className={`py-2 rounded-xl text-[9px] font-black uppercase transition-all ${selectedBrand === b ? 'bg-orange-500 text-white' : 'bg-white border-slate-100 text-slate-400'}`}>{b}</button>))}</div>
                                                 )}
                                                 <div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span><input type="number" value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none" /></div>
                                             </div>
-                                            <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg">Confirmar Lançamento</button>
+                                            <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg">Confirmar</button>
                                         </div>
                                     ) : (
                                         <div className="grid grid-cols-2 gap-3">
@@ -415,7 +405,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             ) : (
                                 <div className="bg-emerald-50 p-8 rounded-[32px] border-2 border-emerald-100 text-center space-y-4">
                                     <CheckCircle size={40} className="text-emerald-500 mx-auto" />
-                                    <p className="text-emerald-800 font-black text-lg uppercase tracking-tighter">Comanda Paga</p>
+                                    <p className="text-emerald-800 font-black text-lg uppercase tracking-tighter">Comanda Liquidada</p>
                                 </div>
                             )}
                             
