@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
     ChevronLeft, CreditCard, Smartphone, Banknote, 
@@ -64,43 +65,59 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         
         setLoading(true);
         try {
-            // 1. Busca Comanda com Join no Cliente Oficial
+            // 1. Busca Comanda Básica
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
-                .select('*, clients:client_id(nome, photo_url, whatsapp)')
+                .select('*')
                 .eq('id', commandId)
                 .single();
 
             if (cmdError) throw cmdError;
 
-            // 2. Busca Itens
+            // 2. Busca Itens (Essencial para achar o appointment_id)
             const { data: itemsData } = await supabase
                 .from('command_items')
                 .select('*')
                 .eq('command_id', commandId);
 
-            // 3. Busca Pagamentos e Configurações
-            const [transRes, configsRes] = await Promise.all([
+            // 3. Pega o ID do agendamento original para backup de nomes
+            const firstApptId = itemsData?.find(i => i.appointment_id)?.appointment_id;
+
+            // 4. Busca Pagamentos e Dados de Backup em paralelo
+            const [transRes, configsRes, apptBackupRes] = await Promise.all([
                 supabase.from('financial_transactions').select('*').eq('command_id', commandId).neq('status', 'cancelado'),
-                supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
+                supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true),
+                firstApptId ? supabase.from('appointments').select('client_name, professional_name').eq('id', firstApptId).maybeSingle() : Promise.resolve({ data: null })
             ]);
+
+            // 5. Busca Cadastro oficial do cliente se existir UUID
+            const clientId = cmdData.client_id;
+            const clientOfficialRes = isUUID(clientId) 
+                ? await supabase.from('clients').select('nome, whatsapp, photo_url').eq('id', clientId).maybeSingle()
+                : { data: null };
+
+            // 6. Busca Profissional oficial
+            const profId = cmdData.professional_id || itemsData?.[0]?.professional_id;
+            const profOfficialRes = isUUID(profId)
+                ? await supabase.from('team_members').select('name, photo_url').eq('id', profId).maybeSingle()
+                : { data: null };
 
             setAvailableConfigs(configsRes.data || []);
             setHistoryPayments(transRes.data || []);
             
             const alreadyPaid = cmdData.status === 'paid';
 
-            // 4. Resolução do Cliente (Join > Snapshot > Fallback)
-            const clientInfo = Array.isArray(cmdData.clients) ? cmdData.clients[0] : cmdData.clients;
-            const resolvedName = clientInfo?.nome || cmdData.client_name || "Consumidor Final";
-
+            // 7. Montagem com hierarquia de nomes (Oficial > Agenda > Fallback)
             setCommand({
                 ...cmdData,
                 command_items: itemsData || [],
-                display_client_name: resolvedName,
-                display_client_phone: clientInfo?.whatsapp || "S/ CONTATO",
-                display_client_photo: clientInfo?.photo_url || null,
-                display_professional_name: cmdData.professional_name || "Geral"
+                display_client_name: clientOfficialRes.data?.nome || apptBackupRes.data?.client_name || cmdData.client_name || "Consumidor Final",
+                display_client_phone: clientOfficialRes.data?.whatsapp || cmdData.client_phone || "S/ CONTATO",
+                display_client_photo: clientOfficialRes.data?.photo_url || null,
+                display_professional_name: profOfficialRes.data?.name || apptBackupRes.data?.professional_name || cmdData.professional_name || "Geral",
+                display_professional_photo: profOfficialRes.data?.photo_url || null,
+                professional_id: profId,
+                client_id: clientId
             });
 
             setIsLocked(alreadyPaid);
@@ -178,13 +195,14 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 .update({ 
                     status: 'paid', 
                     closed_at: new Date().toISOString(),
-                    total_amount: totals.total
+                    total_amount: totals.total,
+                    payment_method: addedPayments[0]?.method || historyPayments[0]?.payment_method || 'misto'
                 })
                 .eq('id', commandId);
 
             if (closeError) throw closeError;
 
-            setToast({ message: "Comanda finalizada com sucesso! 💳", type: 'success' });
+            setToast({ message: "Comanda liquidada com sucesso! 💳", type: 'success' });
             setIsLocked(true);
             setTimeout(onBack, 1500);
         } catch (e: any) {
@@ -222,7 +240,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 {command.display_client_photo ? <img src={command.display_client_photo} className="w-full h-full object-cover" /> : command.display_client_name.charAt(0)}
                             </div>
                             <div className="flex-1 text-center md:text-left">
-                                <h3 className="text-2xl font-black text-slate-800 leading-tight uppercase">{command.display_client_name}</h3>
+                                <h3 className="text-2xl font-black text-slate-800 leading-tight">{command.display_client_name}</h3>
                                 <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-2">
                                     <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><Phone size={14} className="text-orange-500" /> {command.display_client_phone}</div>
                                     <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase"><UserCheck size={14} className="text-orange-500" /> {command.display_professional_name}</div>
@@ -244,7 +262,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                 {item.product_id ? <ShoppingBag size={24} /> : <Scissors size={24} />}
                                             </div>
                                             <div>
-                                                <p className="font-black text-slate-800 text-lg leading-tight uppercase">{item.title}</p>
+                                                <p className="font-black text-slate-800 text-lg leading-tight">{item.title}</p>
                                                 <p className="text-[10px] text-slate-400 font-black uppercase mt-1">{item.quantity} un x R$ {Number(item.price).toFixed(2)}</p>
                                             </div>
                                         </div>
@@ -254,27 +272,27 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* RECEBIMENTOS */}
+                        {/* FLOW DE RECEBIMENTO */}
                         {(historyPayments.length > 0 || addedPayments.length > 0) && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50 flex justify-between items-center">
-                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Recebimentos Confirmados</h3>
+                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Fluxo de Recebimento</h3>
                                 </header>
                                 <div className="divide-y divide-slate-50">
                                     {historyPayments.map(p => (
-                                        <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-slate-50/30">
+                                        <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-slate-50/30 opacity-80">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-emerald-500"><Landmark size={20} /></div>
                                                 <div>
                                                     <p className="text-sm font-black text-slate-700 uppercase">{p.payment_method?.replace('_', ' ')}</p>
-                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{format(new Date(p.date), 'dd/MM HH:mm')}</p>
+                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Processado em {format(new Date(p.date), 'dd/MM HH:mm')}</p>
                                                 </div>
                                             </div>
                                             <span className="font-black text-slate-800 text-lg">R$ {Number(p.amount).toFixed(2)}</span>
                                         </div>
                                     ))}
                                     {addedPayments.map(p => (
-                                        <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-white group border-l-4 border-orange-500">
+                                        <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-white group">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center"><Coins size={20} /></div>
                                                 <div>
@@ -356,9 +374,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                 <button 
                                     onClick={handleFinishCheckout} 
                                     disabled={isFinishing || totals.remaining > 0 || (addedPayments.length === 0 && historyPayments.length === 0)} 
-                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 && (addedPayments.length > 0 || historyPayments.length > 0) ? 'bg-emerald-600 text-white shadow-emerald-200' : 'bg-slate-100 text-slate-300'}`}
+                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
                                 >
-                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> FINALIZAR CHECKOUT</>}
+                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> FECHAR COMANDA</>}
                                 </button>
                             </div>
                         )}
@@ -366,9 +384,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                         {isLocked && (
                             <div className="bg-emerald-50 p-8 rounded-[48px] border-2 border-emerald-100 text-center space-y-4 animate-in zoom-in-95">
                                 <CheckCircle size={48} className="text-emerald-500 mx-auto" />
-                                <h3 className="text-xl font-black text-emerald-800 uppercase tracking-tighter">Venda Finalizada</h3>
-                                <p className="text-xs text-emerald-600 font-medium leading-relaxed">O faturamento desta comanda foi consolidado no fluxo de caixa da unidade.</p>
-                                <button onClick={onBack} className="mt-4 px-8 py-2 bg-emerald-600 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-emerald-100 transition-all active:scale-95">Voltar ao Balcão</button>
+                                <h3 className="text-xl font-black text-emerald-800 uppercase tracking-tighter">Comanda Paga</h3>
+                                <p className="text-xs text-emerald-600 font-medium leading-relaxed">Este registro está arquivado e seu faturamento foi consolidado no fluxo de caixa.</p>
                             </div>
                         )}
                     </div>
