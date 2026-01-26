@@ -13,36 +13,27 @@ import { FinancialTransaction, PaymentMethod, Client, Command, CommandItem, Lega
 import Toast, { ToastType } from '../shared/Toast';
 import SelectionModal from '../modals/SelectionModal';
 import ClientSearchModal from '../modals/ClientSearchModal';
-import { differenceInMinutes, format } from 'date-fns';
 
 const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) => {
     const { activeStudioId } = useStudio();
     const [tabs, setTabs] = useState<Command[]>([]);
-    const [professionals, setProfessionals] = useState<LegacyProfessional[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [currentTab, setCurrentTab] = useState<'open' | 'paid'>('open');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    // Modais de Seleção
     const [isClientSearchOpen, setIsClientSearchOpen] = useState(false);
-    const [isProfSelectionOpen, setIsProfSelectionOpen] = useState(false);
-    
-    // Estados de Edição
-    const [editingCommand, setEditingCommand] = useState<Command | null>(null);
-    const [isActionLoading, setIsActionLoading] = useState(false);
 
     const fetchCommands = async () => {
         if (!activeStudioId) return;
         setLoading(true);
         try {
-            // Regra: Filtrar comandos não deletados (deleted_at IS NULL)
             const { data, error } = await supabase
                 .from('commands')
                 .select('*, clients(*), command_items(*)')
                 .eq('studio_id', activeStudioId)
                 .eq('status', currentTab)
-                .is('deleted_at', null)
+                .is('deleted_at', null) // Filtro para soft delete
                 .order('created_at', { ascending: false });
             
             if (error) throw error;
@@ -54,24 +45,8 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         }
     };
 
-    const fetchProfessionals = async () => {
-        if (!activeStudioId) return;
-        try {
-            const { data, error } = await supabase
-                .from('team_members')
-                .select('id, name')
-                .eq('studio_id', activeStudioId)
-                .eq('active', true);
-            if (error) throw error;
-            setProfessionals(data.map(p => ({ id: p.id, name: p.name, avatarUrl: '' })));
-        } catch (e) {
-            console.error("Erro ao carregar profissionais:", e);
-        }
-    };
-
     useEffect(() => { 
         fetchCommands(); 
-        fetchProfessionals();
     }, [currentTab, activeStudioId]);
 
     const handleCreateCommand = async (client: Client) => {
@@ -91,93 +66,37 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         }
     };
 
-    const handleDeleteCommand = async (e: React.MouseEvent, commandId: string) => {
+    const handleDeleteCommand = async (e: React.MouseEvent, command: Command) => {
         e.stopPropagation();
         
-        // Regra de Negócio: Impedir exclusão de comanda paga
-        const targetCommand = tabs.find(t => t.id === commandId);
-        if (targetCommand?.status === 'paid') {
-            setToast({ message: "Comanda liquidada não pode ser excluída.", type: 'error' });
+        if (command.status === 'paid') {
+            setToast({ message: "Não é possível excluir uma comanda paga.", type: 'error' });
             return;
         }
 
-        if (!window.confirm("Deseja realmente excluir esta comanda? Esta ação é irreversível.")) return;
+        if (!window.confirm("Deseja realmente excluir esta comanda?")) return;
 
-        setIsActionLoading(true);
         try {
-            // Regra Soft Delete: status = canceled e preenche deleted_at
             const { error } = await supabase
                 .from('commands')
                 .update({ 
                     status: 'canceled', 
                     deleted_at: new Date().toISOString() 
                 })
-                .eq('id', commandId);
+                .eq('id', command.id);
 
             if (error) throw error;
 
-            setTabs(prev => prev.filter(t => t.id !== commandId));
-            setToast({ message: "Comanda excluída com sucesso.", type: 'info' });
+            setTabs(prev => prev.filter(t => t.id !== command.id));
+            setToast({ message: "Comanda excluída.", type: 'info' });
         } catch (e: any) {
-            setToast({ message: "Erro ao excluir comanda.", type: 'error' });
-        } finally {
-            setIsActionLoading(false);
+            setToast({ message: "Erro ao excluir.", type: 'error' });
         }
     };
 
-    const handleStartEdit = (e: React.MouseEvent, command: Command) => {
+    const handleEditCommand = (e: React.MouseEvent, commandId: string) => {
         e.stopPropagation();
-        if (command.status === 'paid') {
-            setToast({ message: "Comandas faturadas não podem ser alteradas.", type: 'error' });
-            return;
-        }
-        // Redireciona para o detalhe onde a edição de itens ocorre naturalmente por lógica
-        onNavigateToCommand?.(command.id);
-    };
-
-    const handleUpdateCommandClient = async (client: Client) => {
-        if (!editingCommand) return;
-        
-        setIsActionLoading(true);
-        try {
-            const { error } = await supabase
-                .from('commands')
-                .update({ client_id: client.id })
-                .eq('id', editingCommand.id);
-
-            if (error) throw error;
-
-            setToast({ message: "Cliente da comanda atualizado!", type: 'success' });
-            fetchCommands();
-            setEditingCommand(null);
-        } catch (e: any) {
-            setToast({ message: "Erro ao atualizar cliente.", type: 'error' });
-        } finally {
-            setIsActionLoading(false);
-        }
-    };
-
-    const handleUpdateCommandProfessional = async (prof: any) => {
-        if (!editingCommand) return;
-        
-        setIsActionLoading(true);
-        try {
-            const { error } = await supabase
-                .from('commands')
-                .update({ professional_id: prof.id })
-                .eq('id', editingCommand.id);
-
-            if (error) throw error;
-
-            setToast({ message: "Profissional da comanda atualizado!", type: 'success' });
-            fetchCommands();
-            setEditingCommand(null);
-            setIsProfSelectionOpen(false);
-        } catch (e: any) {
-            setToast({ message: "Erro ao atualizar profissional.", type: 'error' });
-        } finally {
-            setIsActionLoading(false);
-        }
+        onNavigateToCommand?.(commandId);
     };
 
     const filteredTabs = tabs.filter(t => (t.clients?.nome || '').toLowerCase().includes(searchTerm.toLowerCase()));
@@ -202,31 +121,18 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
             </div>
 
             <main className="flex-1 overflow-y-auto p-6">
-                {loading ? <div className="flex justify-center p-20"><Loader2 className="animate-spin text-orange-500" /></div> : (
+                {loading ? <div className="flex justify-center p-20"><Loader2 className="animate-spin text-orange-500" size={40} /></div> : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
                         {filteredTabs.map(tab => (
-                            <div key={tab.id} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[400px] group transition-all hover:shadow-md">
+                            <div key={tab.id} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[400px] group transition-all">
                                 <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
-                                    <div className="flex-1 min-w-0 mr-2">
+                                    <div className="flex-1 truncate">
                                         <h3 className="font-black text-slate-800 text-sm truncate">{tab.clients?.nome}</h3>
                                         <span className="text-[10px] font-black text-slate-400">#{tab.id.split('-')[0].toUpperCase()}</span>
                                     </div>
-                                    
                                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button 
-                                            onClick={(e) => handleStartEdit(e, tab)}
-                                            className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                                            title="Ver/Editar comanda"
-                                        >
-                                            <Edit2 size={14} />
-                                        </button>
-                                        <button 
-                                            onClick={(e) => handleDeleteCommand(e, tab.id)}
-                                            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
-                                            title="Excluir comanda"
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
+                                        <button onClick={(e) => handleEditCommand(e, tab.id)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"><Edit2 size={14} /></button>
+                                        <button onClick={(e) => handleDeleteCommand(e, tab)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 size={14} /></button>
                                     </div>
                                 </div>
 
@@ -244,22 +150,14 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                     )}
                                 </div>
 
-                                <div className="p-5 bg-slate-50/50 border-t border-slate-50">
-                                    <div className="flex justify-between items-end">
-                                        <div>
-                                            <p className="text-[9px] font-black uppercase text-slate-400 mb-1">Total</p>
-                                            <p className="text-2xl font-black text-slate-800">R$ {Number(tab.total_amount || 0).toFixed(2)}</p>
-                                        </div>
-                                        {tab.status === 'open' && (
-                                            <button 
-                                                onClick={() => onNavigateToCommand?.(tab.id)}
-                                                className="p-3 bg-emerald-600 text-white rounded-xl shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all active:scale-95"
-                                                title="Ir para checkout"
-                                            >
-                                                <Receipt size={20}/>
-                                            </button>
-                                        )}
+                                <div className="p-5 bg-slate-50/50 border-t border-slate-50 flex justify-between items-end">
+                                    <div>
+                                        <p className="text-[9px] font-black uppercase text-slate-400 mb-1">Total</p>
+                                        <p className="text-2xl font-black text-slate-800">R$ {Number(tab.total_amount || 0).toFixed(2)}</p>
                                     </div>
+                                    {tab.status === 'open' && (
+                                        <button onClick={() => onNavigateToCommand?.(tab.id)} className="p-3 bg-emerald-600 text-white rounded-xl shadow-lg hover:bg-emerald-700 transition-all"><Receipt size={20}/></button>
+                                    )}
                                 </div>
                             </div>
                         ))}
