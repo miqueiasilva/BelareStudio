@@ -60,17 +60,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // 1. Busca contexto via RPC v2 (Garante nomes reais de cliente e profissional)
+            // 1. Busca contexto via RPC v2 (Prioridade absoluta para nomes reais)
             const { data: contextData, error: ctxError } = await supabase.rpc('get_checkout_context_v2', {
                 p_command_id: commandId
             });
 
-            if (ctxError) throw ctxError;
+            if (ctxError) console.warn("RPC Context Error:", ctxError);
             const context = Array.isArray(contextData) ? contextData[0] : contextData;
 
-            // 2. Busca dados base e configurações de taxas
+            // 2. Busca dados base da comanda com relação de cliente e configurações de taxas
             const [cmdRes, configsRes] = await Promise.all([
-                supabase.from('commands').select('*, command_items(*)').eq('id', commandId).single(),
+                supabase.from('commands').select('*, clients(nome, telefone), command_items(*)').eq('id', commandId).single(),
                 supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
             ]);
 
@@ -80,13 +80,12 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             const alreadyPaid = cmdRes.data.status === 'paid';
             setIsLocked(alreadyPaid);
 
-            // 3. Mapeamento com fallbacks obrigatórios
+            // 3. Mapeamento Inteligente: RPC -> Relação DB -> Fallback Texto
             setCommand({
                 ...cmdRes.data,
-                // Regra: Sempre exibir nomes amigáveis
-                display_client_name: context?.client_display_name || cmdRes.data.client_name || "Cliente sem cadastro",
-                display_client_phone: context?.client_phone || "SEM CONTATO",
-                display_professional_name: context?.professional_display_name || "Geral / Studio",
+                display_client_name: context?.client_display_name || cmdRes.data.clients?.nome || cmdRes.data.client_name || "Cliente sem cadastro",
+                display_client_phone: context?.client_phone || cmdRes.data.clients?.telefone || "SEM CONTATO",
+                display_professional_name: context?.professional_display_name || cmdRes.data.professional_name || "Geral / Studio",
                 display_professional_photo: context?.professional_photo_url || null,
                 professional_id: context?.professional_id || cmdRes.data.professional_id,
                 client_id: context?.client_id || cmdRes.data.client_id
@@ -94,7 +93,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
         } catch (e: any) {
             console.error('[CHECKOUT_LOAD_ERROR]', e);
-            setToast({ message: "Erro ao carregar contexto do checkout.", type: 'error' });
+            setToast({ message: "Erro ao carregar contexto.", type: 'error' });
         } finally {
             setLoading(false);
         }
@@ -125,7 +124,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const amount = parseFloat(amountToPay.replace(',', '.'));
         if (isNaN(amount) || amount <= 0) return;
 
-        // Regra de Taxas: Buscar config do método no studio
         const typeMap: Record<string, string> = {
             'pix': 'pix', 'dinheiro': 'money', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
         };
@@ -169,7 +167,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         try {
             const studioId = String(activeStudioId);
             
-            // Regra Bug client_id NULL: Garante atribuição do cliente padrão
+            // 1. Garante que haja um client_id (Evita erro NULL)
             let clientId = command.client_id;
             if (!clientId) {
                 const { data: defaultClient } = await supabase
@@ -190,7 +188,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 await supabase.from('commands').update({ client_id: clientId }).eq('id', commandId);
             }
 
-            // Regra de Duplicidade: Verifica se já existe transação paga
+            // 2. Prevenção de Duplicidade (Erro 23505)
             const { data: existing } = await supabase.from('financial_transactions').select('id').eq('command_id', commandId).maybeSingle();
             
             if (!existing) {
@@ -217,7 +215,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 }
             }
 
-            // Marca comanda como paga
+            // 3. Marca comanda como paga
             const { error: closeError } = await supabase
                 .from('commands')
                 .update({ 
@@ -308,7 +306,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* RECEBIMENTOS LANÇADOS (Taxas e Líquido sempre visíveis) */}
+                        {/* RECEBIMENTOS LANÇADOS */}
                         {addedPayments.length > 0 && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50">
