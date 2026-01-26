@@ -27,7 +27,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         setLoading(true);
         try {
             if (currentTab === 'paid') {
-                // Tenta carregar da view oficial
+                console.log("FETCH_PAID: Buscando via v_commands_paid_list");
                 const { data, error } = await supabase
                     .from('v_commands_paid_list')
                     .select('*')
@@ -35,7 +35,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     .order('paid_at', { ascending: false });
                 
                 if (error) {
-                    console.warn("View v_commands_paid_list não encontrada, usando fallback manual.");
+                    console.warn("View v_commands_paid_list não acessível, tentando fallback manual.");
                     const { data: cmdData } = await supabase
                         .from('commands')
                         .select('*, clients:client_id(nome), items:command_items(*)')
@@ -53,6 +53,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     setTabs(data || []);
                 }
             } else {
+                console.log("FETCH_OPEN: Buscando comandas em aberto");
                 const { data, error } = await supabase
                     .from('commands')
                     .select('*, clients:client_id(nome, photo_url), command_items(*)')
@@ -76,14 +77,15 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
 
     useEffect(() => { fetchCommands(); }, [currentTab, activeStudioId]);
 
-    const handleActionClick = (e: React.MouseEvent, id: string) => {
+    const handleActionClick = (e: React.MouseEvent, id: string, actionType: string) => {
         e.preventDefault();
-        e.stopPropagation(); // Evita o clique do card pai se houver
-        console.log("Abrindo comanda:", id);
-        onNavigateToCommand?.(id);
+        e.stopPropagation();
+        console.log(`CLICK_${actionType.toUpperCase()} commandId=${id}`);
+        if (onNavigateToCommand) {
+            onNavigateToCommand(id);
+        }
     };
 
-    // FIX: Added missing handleCreateCommand function to open a new command for a selected client.
     const handleCreateCommand = async (client: Client) => {
         if (!activeStudioId) return;
         setIsClientSearchOpen(false);
@@ -95,17 +97,17 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     studio_id: activeStudioId,
                     client_id: client.id,
                     status: 'open',
-                    total_amount: 0
+                    total_amount: 0,
+                    client_name: client.nome
                 }])
                 .select()
                 .single();
 
             if (cmdError) throw cmdError;
-
-            setToast({ message: `Comanda iniciada para ${client.nome}! 💳`, type: 'success' });
+            console.log("COMMAND_CREATED", command.id);
+            setToast({ message: `Comanda iniciada! 💳`, type: 'success' });
             onNavigateToCommand?.(command.id);
         } catch (e: any) {
-            console.error("Falha ao iniciar comanda:", e);
             setToast({ message: "Erro ao iniciar comanda.", type: 'error' });
         } finally {
             setLoading(false);
@@ -125,31 +127,33 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
     };
 
     const filteredTabs = tabs.filter(t => {
-        const name = (t.client_display || '').toLowerCase();
+        const name = (t.client_display || t.client_name || '').toLowerCase();
         return name.includes(searchTerm.toLowerCase());
     });
 
     return (
-        <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
+        <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden relative">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm flex-shrink-0 z-50">
-                <div>
-                    <h1 className="text-xl font-black text-slate-800 flex items-center gap-2 leading-none uppercase tracking-tighter"><FileText className="text-orange-500" size={24} /> Balcão / Comandas</h1>
+                <div className="pointer-events-auto">
+                    <h1 className="text-xl font-black text-slate-800 flex items-center gap-2 leading-none uppercase tracking-tighter">
+                        <FileText className="text-orange-500" size={24} /> Balcão / Comandas
+                    </h1>
                     <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 mt-2">
-                        <button onClick={() => setCurrentTab('open')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'open' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-50'}`}>Em Atendimento</button>
-                        <button onClick={() => setCurrentTab('paid')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'paid' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-50'}`}>Pagos / Arquivo</button>
+                        <button onClick={() => setCurrentTab('open')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'open' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}>Em Atendimento</button>
+                        <button onClick={() => setCurrentTab('paid')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'paid' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}>Pagos / Arquivo</button>
                     </div>
                 </div>
-                <button onClick={() => setIsClientSearchOpen(true)} className="bg-orange-500 text-white px-6 py-2.5 rounded-xl font-black text-xs shadow-lg active:scale-95 uppercase tracking-widest flex items-center gap-2 z-50">
+                <button onClick={() => setIsClientSearchOpen(true)} className="bg-orange-500 text-white px-6 py-2.5 rounded-xl font-black text-xs shadow-lg active:scale-95 uppercase tracking-widest flex items-center gap-2 z-50 pointer-events-auto">
                     <Plus size={18} /> Iniciar Comanda
                 </button>
             </header>
 
             <div className="p-4 bg-white border-b border-slate-100 flex-shrink-0 z-40">
-                <div className="relative group max-w-md">
+                <div className="relative group max-w-md pointer-events-auto">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 w-5 h-5 group-focus-within:text-orange-500 transition-colors" />
-                    <input type="text" placeholder="Buscar cliente..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:bg-white focus:ring-4 focus:ring-orange-50 focus:border-orange-400 outline-none transition-all" />
+                    <input type="text" placeholder="Buscar cliente..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:bg-white focus:ring-4 focus:ring-orange-50 focus:border-orange-400 outline-none transition-all shadow-inner" />
                 </div>
             </div>
 
@@ -157,25 +161,25 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                 {loading ? <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-orange-500" size={40} /></div> : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24">
                         {filteredTabs.map(tab => (
-                            <div key={tab.id} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[380px] group transition-all hover:shadow-xl hover:border-orange-200 relative">
-                                {/* CARD HEADER */}
-                                <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                            <div key={tab.id} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[380px] group transition-all hover:shadow-xl hover:border-orange-200 relative pointer-events-auto">
+                                <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50 z-20">
                                     <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-10 h-10 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xs flex-shrink-0 uppercase">
-                                            {tab.photo_url || tab.clients?.photo_url ? <img src={tab.photo_url || tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" /> : (tab.client_display || 'C').charAt(0)}
+                                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-xs flex-shrink-0 uppercase ${tab.photo_url || tab.clients?.photo_url ? 'bg-white' : 'bg-orange-100 text-orange-600'}`}>
+                                            {(tab.photo_url || tab.clients?.photo_url) ? <img src={tab.photo_url || tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" alt="" /> : (tab.client_display || tab.client_name || 'C').charAt(0)}
                                         </div>
                                         <div className="min-w-0">
-                                            <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{tab.client_display}</h3>
+                                            <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">
+                                                {tab.client_display || tab.client_name || 'Consumidor Final'}
+                                            </h3>
                                             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">#{tab.id.split('-')[0].toUpperCase()}</span>
                                         </div>
                                     </div>
                                     
-                                    {/* ACTION BUTTONS: Z-INDEX FORCED */}
-                                    <div className="flex gap-1 relative z-30 pointer-events-auto">
+                                    <div className="flex gap-1 relative z-30">
                                         {tab.status === 'open' ? (
                                             <>
                                                 <button 
-                                                    onClick={(e) => handleActionClick(e, tab.id)}
+                                                    onClick={(e) => handleActionClick(e, tab.id, 'edit')}
                                                     className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[9px] font-black text-orange-600 uppercase hover:bg-orange-50 transition-colors shadow-sm active:scale-95"
                                                 >
                                                     <Edit2 size={10} /> Editar
@@ -184,8 +188,8 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                             </>
                                         ) : (
                                             <button 
-                                                onClick={(e) => handleActionClick(e, tab.id)}
-                                                className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[9px] font-black text-slate-400 uppercase hover:bg-slate-50 transition-colors shadow-sm active:scale-95"
+                                                onClick={(e) => handleActionClick(e, tab.id, 'detail')}
+                                                className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[9px] font-black text-slate-500 uppercase hover:bg-slate-50 transition-colors shadow-sm active:scale-95"
                                             >
                                                 <Eye size={10} /> Ver Detalhe
                                             </button>
@@ -215,16 +219,15 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                     )}
                                 </div>
 
-                                {/* FOOTER ACTIONS */}
-                                <div className="p-5 bg-slate-50/50 border-t border-slate-50 mt-auto">
+                                <div className="p-5 bg-slate-50/50 border-t border-slate-50 mt-auto z-20">
                                     <div className="flex justify-between items-end">
                                         <div>
                                             <p className="text-[9px] font-black uppercase text-slate-400 mb-1">Valor Total</p>
                                             <p className="text-2xl font-black text-slate-800">R$ {Number(tab.total_amount || 0).toFixed(2)}</p>
                                         </div>
                                         <button 
-                                            onClick={(e) => handleActionClick(e, tab.id)}
-                                            className={`p-3 rounded-2xl shadow-sm border border-slate-100 transition-all active:scale-95 z-30 pointer-events-auto ${tab.status === 'open' ? 'bg-white text-orange-500 hover:bg-orange-500 hover:text-white' : 'bg-slate-800 text-white opacity-80 hover:opacity-100'}`}
+                                            onClick={(e) => handleActionClick(e, tab.id, 'arrow')}
+                                            className={`p-3 rounded-2xl shadow-sm border border-slate-100 transition-all active:scale-95 z-30 ${tab.status === 'open' ? 'bg-white text-orange-500 hover:bg-orange-500 hover:text-white shadow-orange-100' : 'bg-slate-800 text-white opacity-80 hover:opacity-100 shadow-slate-200'}`}
                                         >
                                             <ArrowRight size={20} strokeWidth={3} />
                                         </button>

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
     ChevronLeft, CreditCard, Smartphone, Banknote, 
@@ -57,19 +56,20 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     const [availableConfigs, setAvailableConfigs] = useState<any[]>([]);
 
     const fetchContext = async () => {
-        if (!activeStudioId || !commandId) {
+        if (!activeStudioId || !commandId || !isSafeUUID(commandId)) {
+            console.error("COMMAND_DETAIL_ABORT: UUID inválido ou faltante", commandId);
             setLoading(false);
             return;
         }
         
         setLoading(true);
         try {
-            // 1. Tenta buscar via RPC inteligente para pegar tudo de uma vez
+            console.log("FETCH_COMMAND_FULL commandId=", commandId);
             const { data: fullData, error: rpcError } = await supabase.rpc('get_command_full', { p_command_id: commandId });
 
             if (rpcError) {
-                console.warn("RPC get_command_full falhou, executando busca manual composta.");
-                // FALLBACK MANUAL com correção de tipo
+                console.warn("RPC get_command_full falhou ou 404, tentando busca manual composta.");
+                // FALLBACK MANUAL com correção de tipo e joins
                 const { data: cmdData } = await supabase
                     .from('commands')
                     .select('*, clients:client_id(nome, whatsapp, photo_url)')
@@ -78,35 +78,28 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
 
                 const { data: itemsData } = await supabase.from('command_items').select('*').eq('command_id', commandId);
                 
-                // Transações filtradas para o histórico de pagamento real
                 const { data: transData } = await supabase
                     .from('financial_transactions')
                     .select('*')
                     .eq('command_id', commandId)
                     .neq('status', 'cancelado');
 
-                const profId = cmdData?.professional_id;
                 let profName = cmdData?.professional_name || "Geral";
                 let profPhoto = null;
 
-                // Casting profissional (uuid vs text)
-                if (isSafeUUID(profId)) {
-                    const { data: profData } = await supabase
-                        .from('team_members')
-                        .select('name, photo_url')
-                        .eq('id', profId)
-                        .maybeSingle();
-                    if (profData) {
-                        profName = profData.name;
-                        profPhoto = profData.photo_url;
+                if (isSafeUUID(cmdData?.professional_id)) {
+                    const { data: pData } = await supabase.from('team_members').select('name, photo_url').eq('id', cmdData.professional_id).maybeSingle();
+                    if (pData) {
+                        profName = pData.name;
+                        profPhoto = pData.photo_url;
                     }
                 }
 
                 setCommand({
                     ...cmdData,
                     command_items: itemsData || [],
-                    display_client_name: cmdData?.clients?.nome || cmdData.client_name || "Consumidor Final",
-                    display_client_phone: cmdData?.clients?.whatsapp || cmdData.client_phone || "S/ CONTATO",
+                    display_client_name: cmdData?.clients?.nome || cmdData?.client_name || "Consumidor Final",
+                    display_client_phone: cmdData?.clients?.whatsapp || "S/ CONTATO",
                     display_client_photo: cmdData?.clients?.photo_url || null,
                     display_professional_name: profName,
                     display_professional_photo: profPhoto
@@ -121,7 +114,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 })) || []);
                 setIsLocked(cmdData?.status === 'paid');
             } else {
-                // SUCESSO COM RPC
                 const { header, items, payments } = fullData;
                 setHistoryPayments(payments || []);
                 setIsLocked(header.status === 'paid');
@@ -131,11 +123,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                     display_client_name: header.client_display || "Consumidor Final",
                     display_client_phone: header.client_phone_display || "S/ CONTATO",
                     display_professional_name: header.professional_name || "Geral",
-                    display_professional_photo: header.professional_photo || null
+                    display_professional_photo: header.professional_photo || null,
+                    display_client_photo: header.client_photo_display || null
                 });
             }
 
-            // Carrega configs de pagamento se a comanda estiver aberta
             const { data: configsRes } = await supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true);
             setAvailableConfigs(configsRes || []);
 
@@ -260,9 +252,9 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
                     <div className="lg:col-span-2 space-y-6">
                         {/* HEADER CLIENTE */}
-                        <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6">
-                            <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl overflow-hidden">
-                                {command.display_client_photo ? <img src={command.display_client_photo} className="w-full h-full object-cover" /> : command.display_client_name.charAt(0)}
+                        <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm flex flex-col md:flex-row items-center gap-6 animate-in fade-in duration-300">
+                            <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl overflow-hidden shadow-inner">
+                                {command.display_client_photo ? <img src={command.display_client_photo} className="w-full h-full object-cover" alt="" /> : command.display_client_name?.charAt(0)}
                             </div>
                             <div className="flex-1 text-center md:text-left">
                                 <h3 className="text-2xl font-black text-slate-800 leading-tight">{command.display_client_name}</h3>
@@ -407,7 +399,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                     disabled={isFinishing || totals.remaining > 0 || (addedPayments.length === 0 && historyPayments.length === 0)} 
                                     className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 ? 'bg-emerald-600 text-white shadow-emerald-200' : 'bg-slate-100 text-slate-300'}`}
                                 >
-                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> FECHAR COMANDA</>}
+                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> FINALIZAR COMANDA</>}
                                 </button>
                             </div>
                         )}
