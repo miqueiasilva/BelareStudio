@@ -60,7 +60,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         setLoading(true);
         
         try {
-            // 1. Chamada da RPC Oficial para contexto
+            // 1. Busca contexto via RPC v2 (Garante nomes reais de cliente e profissional)
             const { data: contextData, error: ctxError } = await supabase.rpc('get_checkout_context_v2', {
                 p_command_id: commandId
             });
@@ -68,28 +68,38 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             if (ctxError) console.error("Erro RPC Context:", ctxError);
             const context = Array.isArray(contextData) ? contextData[0] : contextData;
 
-            // 2. Busca dados base e configurações de taxas do estúdio
-            const [cmdRes, configsRes] = await Promise.all([
-                supabase.from('commands').select('*, command_items(*)').eq('id', commandId).single(),
-                supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true)
-            ]);
+            // 2. Busca dados base da comanda com joins para fallback
+            const { data: cmdData, error: cmdError } = await supabase
+                .from('commands')
+                .select('*, clients(id, nome, whatsapp, cpf), command_items(*)')
+                .eq('id', commandId)
+                .single();
 
-            if (cmdRes.error) throw cmdRes.error;
-            setAvailableConfigs(configsRes.data || []);
+            if (cmdError) throw cmdError;
 
-            const alreadyPaid = cmdRes.data.status === 'paid';
-            setIsLocked(alreadyPaid);
+            // 3. Busca configurações de taxas
+            const { data: configs } = await supabase
+                .from('payment_methods_config')
+                .select('*')
+                .eq('studio_id', activeStudioId)
+                .eq('is_active', true);
 
-            // 3. Mapeamento com Fallbacks Obrigatórios conforme especificação
+            setAvailableConfigs(configs || []);
+
+            const alreadyPaid = cmdData.status === 'paid';
+
+            // Mapeamento prioritário do Contexto (Nomes Reais)
             setCommand({
-                ...cmdRes.data,
-                display_client_name: context?.client_display_name || cmdRes.data.client_name || "Cliente sem cadastro",
-                display_client_phone: context?.client_phone || "SEM CONTATO",
+                ...cmdData,
+                display_client_name: context?.client_display_name || cmdData.clients?.nome || cmdData.client_name || "Cliente sem cadastro",
+                display_client_phone: context?.client_phone || cmdData.clients?.whatsapp || "SEM CONTATO",
                 display_professional_name: context?.professional_display_name || "Geral / Studio",
                 display_professional_photo: context?.professional_photo_url || null,
-                professional_id: context?.professional_id || cmdRes.data.professional_id,
-                client_id: context?.client_id || cmdRes.data.client_id
+                professional_id: context?.professional_id || cmdData.professional_id,
+                client_id: context?.client_id || cmdData.client_id
             });
+
+            setIsLocked(alreadyPaid);
 
         } catch (e: any) {
             console.error('[CHECKOUT_LOAD_ERROR]', e);
@@ -124,7 +134,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         const amount = parseFloat(amountToPay.replace(',', '.'));
         if (isNaN(amount) || amount <= 0) return;
 
-        // Lógica de Taxas baseada em Configuração
         const typeMap: Record<string, string> = {
             'pix': 'pix', 'dinheiro': 'money', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
         };
@@ -134,15 +143,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             (c.type === 'pix' || c.type === 'money' || String(c.brand).toLowerCase() === selectedBrand.toLowerCase())
         );
 
-        let feeRate = 0;
-        if (config) {
-            if (activeMethod === 'cartao_credito' && selectedInstallments > 1 && config.installment_rates) {
-                feeRate = Number(config.installment_rates[selectedInstallments.toString()] || config.rate_cash || 0);
-            } else {
-                feeRate = Number(config.rate_cash || 0);
-            }
-        }
-
+        const feeRate = Number(config?.rate_cash || 0);
         const feeValue = Number((amount * (feeRate / 100)).toFixed(2));
 
         const newPayment: PaymentEntry = {
@@ -168,66 +169,46 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         try {
             const studioId = String(activeStudioId);
             
-            // Regra: Corrigir client_id NULL atribuindo padrão do studio
-            let clientId = command.client_id;
-            if (!clientId) {
-                const { data: defaultClient } = await supabase
-                    .from('clients')
-                    .select('id')
-                    .eq('studio_id', studioId)
-                    .eq('nome', 'Cliente sem cadastro')
-                    .maybeSingle();
-                
-                if (defaultClient) {
-                    clientId = defaultClient.id;
-                } else {
-                    const { data: newDefault } = await supabase
-                        .from('clients')
-                        .insert([{ nome: 'Cliente sem cadastro', studio_id: studioId, consent: true }])
-                        .select().single();
-                    clientId = newDefault.id;
-                }
-                await supabase.from('commands').update({ client_id: clientId }).eq('id', commandId);
-            }
-
-            // Registro Financeiro via RPC Oficial
-            const methodMap: Record<string, string> = {
-                'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
-            };
-
-            const totalAmount = addedPayments.reduce((acc, p) => acc + p.amount, 0);
-            const mainPay = addedPayments[0];
-
-            // Verifica se já existe transação paga para evitar erro 23505
+            // 1. Prevenção de duplicidade: verifica se já existe transação paga para esta comanda
             const { data: existing } = await supabase.from('financial_transactions').select('id').eq('command_id', commandId).maybeSingle();
-
+            
             if (!existing) {
+                const methodMap: Record<string, string> = {
+                    'pix': 'pix', 'dinheiro': 'cash', 'cartao_credito': 'credit', 'cartao_debito': 'debit'
+                };
+
+                const totalAmount = addedPayments.reduce((acc, p) => acc + p.amount, 0);
+                const primaryPayment = addedPayments[0];
+
                 const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                     p_studio_id: studioId,
                     p_professional_id: isUUID(command.professional_id) ? command.professional_id : null,
+                    p_command_id: commandId,
                     p_amount: Number(totalAmount),
-                    p_method: methodMap[mainPay.method] || 'pix',
-                    p_brand: mainPay.brand || null,
-                    p_installments: Number(mainPay.installments || 1)
+                    p_method: methodMap[primaryPayment.method] || 'pix',
+                    p_brand: primaryPayment.brand || null,
+                    p_installments: Number(primaryPayment.installments || 1)
                 });
 
-                if (rpcError && rpcError.code !== '23505') throw rpcError;
+                if (rpcError) {
+                    const isDuplicate = rpcError.code === '23505' || rpcError.message?.includes('ux_command_payments_one_paid_per_command');
+                    if (!isDuplicate) throw new Error(rpcError.message);
+                }
             }
 
-            // Finaliza Comanda
+            // 2. Marca comanda como paga
             const { error: closeError } = await supabase
                 .from('commands')
                 .update({ 
                     status: 'paid', 
                     closed_at: new Date().toISOString(),
-                    total_amount: Number(totals.total),
-                    client_id: clientId
+                    total_amount: Number(totals.total)
                 })
                 .eq('id', commandId);
 
             if (closeError) throw closeError;
 
-            setToast({ message: "Checkout finalizado! ✅", type: 'success' });
+            setToast({ message: "Checkout finalizado com sucesso! ✅", type: 'success' });
             setIsLocked(true);
             setTimeout(onBack, 1500);
         } catch (e: any) {
@@ -239,7 +220,11 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
     };
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
-    if (!command) return <div className="p-8 text-center text-slate-500 font-bold uppercase">Comanda não encontrada</div>;
+    
+    // CRITICAL FIX: Guard clause para evitar erro 'reading clients of null'
+    if (!command) return <div className="p-20 text-center text-slate-400 font-black uppercase tracking-widest">Comanda não encontrada</div>;
+
+    const currentCommandIdDisplay = String(commandId).substring(0, 8).toUpperCase();
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
@@ -249,7 +234,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-all"><ChevronLeft size={24} /></button>
                     <div>
-                        <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500 font-mono">#{String(commandId).substring(0, 8).toUpperCase()}</span></h1>
+                        <h1 className="text-xl font-black text-slate-800">Checkout <span className="text-orange-500 font-mono">#{currentCommandIdDisplay}</span></h1>
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
                             Profissional: {command.display_professional_name}
                         </p>
@@ -303,7 +288,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             </div>
                         </div>
 
-                        {/* RECEBIMENTOS LANÇADOS (Com Taxas e Líquido) */}
+                        {/* RECEBIMENTOS LANÇADOS */}
                         {addedPayments.length > 0 && (
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                 <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50">
@@ -342,7 +327,7 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                             <div className="relative z-10 space-y-6">
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-xs font-black uppercase tracking-widest text-slate-400"><span>Subtotal</span><span>R$ {totals.subtotal.toFixed(2)}</span></div>
-                                    <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400"><Percent size={14} /> Desconto</div><input type="number" value={discount} disabled={isLocked} onChange={e => setDiscount(e.target.value)} className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-500 transition-all" /></div>
+                                    <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-orange-400"><Percent size={14} /> Desconto</div><input type="number" value={discount} disabled={isLocked} onChange={e => setDiscount(e.target.value)} className="w-24 bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 text-right font-black text-white outline-none focus:ring-2 focus:ring-orange-50 transition-all" /></div>
                                 </div>
                                 <div className="pt-6 border-t border-white/10">
                                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total a Receber</p>
