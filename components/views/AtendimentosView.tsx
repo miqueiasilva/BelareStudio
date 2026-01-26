@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
@@ -424,36 +423,78 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
-            // FIX: Removidas as chaves client_name e professional_name do insert da comanda, pois o servidor retornou erro 400 (colunas inexistentes)
-            const { data: command, error: cmdError } = await supabase
-                .from('commands')
-                .insert([{
-                    studio_id: activeStudioId,
-                    client_id: isUUID(appointment.client?.id) ? appointment.client?.id : null,
-                    professional_id: isUUID(appointment.professional.id) ? appointment.professional.id : null,
-                    status: 'open',
-                    total_amount: appointment.service.price
-                }])
-                .select()
-                .single();
+            const clientId = isUUID(appointment.client?.id) ? appointment.client?.id : null;
+            let commandId = null;
+            let existingCommand = null;
 
-            if (cmdError) throw cmdError;
+            // Busca se já existe uma comanda aberta para este cliente
+            if (clientId) {
+                const { data: cmdSearch } = await supabase
+                    .from('commands')
+                    .select('id, total_amount')
+                    .eq('client_id', clientId)
+                    .eq('studio_id', activeStudioId)
+                    .eq('status', 'open')
+                    .is('deleted_at', null)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+                
+                if (cmdSearch) {
+                    existingCommand = cmdSearch;
+                    commandId = cmdSearch.id;
+                }
+            }
 
-            const { error: itemError } = await supabase
+            if (!commandId) {
+                // Cria nova comanda se não existir uma aberta
+                const { data: command, error: cmdError } = await supabase
+                    .from('commands')
+                    .insert([{
+                        studio_id: activeStudioId,
+                        client_id: clientId,
+                        professional_id: isUUID(appointment.professional.id) ? appointment.professional.id : null,
+                        status: 'open',
+                        total_amount: appointment.service.price,
+                        client_name: appointment.client?.nome || 'Consumidor Final'
+                    }])
+                    .select()
+                    .single();
+
+                if (cmdError) throw cmdError;
+                commandId = command.id;
+            } else {
+                // Se já existia, incrementa o total
+                const newTotal = Number(existingCommand.total_amount || 0) + Number(appointment.service.price);
+                await supabase.from('commands').update({ total_amount: newTotal }).eq('id', commandId);
+            }
+
+            // Verifica se o item já foi adicionado para evitar duplicidade em múltiplos cliques
+            const { data: itemSearch } = await supabase
                 .from('command_items')
-                .insert([{
-                    command_id: command.id,
-                    appointment_id: appointment.id,
-                    service_id: isUUID(appointment.service.id) ? String(appointment.service.id) : null,
-                    studio_id: activeStudioId, 
-                    title: appointment.service.name,
-                    price: appointment.service.price,
-                    quantity: 1,
-                    professional_id: isUUID(appointment.professional.id) ? appointment.professional.id : null
-                }]);
+                .select('id')
+                .eq('command_id', commandId)
+                .eq('appointment_id', appointment.id)
+                .maybeSingle();
 
-            if (itemError) throw itemError;
+            if (!itemSearch) {
+                const { error: itemError } = await supabase
+                    .from('command_items')
+                    .insert([{
+                        command_id: commandId,
+                        appointment_id: appointment.id,
+                        service_id: isUUID(appointment.service.id) ? String(appointment.service.id) : null,
+                        studio_id: activeStudioId, 
+                        title: appointment.service.name,
+                        price: appointment.service.price,
+                        quantity: 1,
+                        professional_id: isUUID(appointment.professional.id) ? appointment.professional.id : null
+                    }]);
 
+                if (itemError) throw itemError;
+            }
+
+            // Atualiza status do agendamento para concluído
             const { error: apptUpdateError } = await supabase
                 .from('appointments')
                 .update({ status: 'concluido' })
@@ -461,15 +502,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             if (apptUpdateError) throw apptUpdateError;
 
-            setToast({ message: `Comanda gerada com sucesso! Redirecionando... 💳`, type: 'success' });
+            setToast({ message: existingCommand ? `Adicionado à comanda aberta! 💳` : `Comanda gerada! Redirecionando... 💳`, type: 'success' });
             setActiveAppointmentDetail(null);
             
             if (onNavigateToCommand) {
-                onNavigateToCommand(command.id);
+                onNavigateToCommand(commandId);
             }
         } catch (e: any) {
-            console.error("Falha ao gerar comanda:", e);
-            setToast({ message: "Erro ao converter agendamento em comanda.", type: 'error' });
+            console.error("Falha ao processar comando:", e);
+            setToast({ message: "Erro ao converter agendamento.", type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
