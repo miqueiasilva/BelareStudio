@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import { ViewState } from '../../types';
-import { Menu, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Menu, ChevronLeft, X } from 'lucide-react';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -10,19 +11,15 @@ interface MainLayoutProps {
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children, currentView, onNavigate }) => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
   // Responsive Check
   useEffect(() => {
     const checkScreenSize = () => {
-      const mobile = window.innerWidth < 1024; // Large tablet/Desktop breakpoint
+      const mobile = window.innerWidth < 1024;
       setIsMobile(mobile);
-      if (mobile) {
-        setIsSidebarOpen(false);
-      } else {
-        setIsSidebarOpen(true);
-      }
+      setIsSidebarOpen(!mobile);
     };
 
     checkScreenSize();
@@ -38,66 +35,67 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, currentView, onNaviga
   };
 
   return (
-    <div className="flex h-screen bg-slate-100 overflow-hidden relative">
+    <div className="flex h-screen bg-slate-100 overflow-hidden relative font-sans">
       
-      {/* Mobile Backdrop - Camada de fundo quase máxima */}
+      {/* Mobile Backdrop */}
       {isMobile && isSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/60 z-[99998] backdrop-blur-sm transition-opacity"
+          className="fixed inset-0 bg-slate-900/60 z-[9998] backdrop-blur-sm transition-opacity duration-300"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar Container - Camada máxima absoluta no mobile */}
+      {/* Sidebar Container */}
       <div 
         className={`
           flex flex-col h-full bg-white border-r border-slate-200 transition-all duration-300 ease-in-out
-          ${isMobile ? 'fixed inset-y-0 left-0 shadow-2xl z-[99999]' : 'relative z-40'}
+          ${isMobile ? 'fixed inset-y-0 left-0 shadow-2xl z-[9999]' : 'relative z-40'}
           ${isSidebarOpen ? 'w-64 translate-x-0' : isMobile ? '-translate-x-full w-64' : 'w-0 overflow-hidden'}
         `}
       >
         <div className="flex-1 overflow-hidden w-64 relative">
             <Sidebar currentView={currentView} onNavigate={handleNavigate} className="w-full" />
             
-            {/* Desktop Collapse Arrow */}
+            {/* Collapse Arrow (Desktop) */}
             {!isMobile && (
                 <button
                     onClick={() => setIsSidebarOpen(false)}
                     className="absolute top-4 right-2 p-1.5 bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
-                    title="Recolher menu"
                 >
                     <ChevronLeft size={18} />
                 </button>
             )}
+
+            {/* Close Button (Mobile) */}
+            {isMobile && (
+                <button 
+                    onClick={() => setIsSidebarOpen(false)}
+                    className="absolute top-4 right-4 p-2.5 bg-orange-50 text-orange-600 rounded-xl shadow-sm active:scale-90"
+                >
+                    <X size={20} strokeWidth={3} />
+                </button>
+            )}
         </div>
-        
-        {/* Mobile Close Button */}
-        {isMobile && (
-            <button 
-                onClick={() => setIsSidebarOpen(false)}
-                className="absolute top-4 right-4 p-2 bg-slate-100 rounded-full text-slate-500 shadow-sm"
-            >
-                <ChevronLeft className="w-5 h-5" />
-            </button>
-        )}
       </div>
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative w-full transition-all">
         
-        {/* Top Toggle Bar (Z-index baixo para não cobrir a sidebar aberta) */}
-        {(!isSidebarOpen || isMobile) && (
-            <div className="flex-shrink-0 bg-white border-b border-slate-200 px-4 h-14 flex items-center gap-3 z-30 shadow-sm md:shadow-none">
-                <button
-                    onClick={toggleSidebar}
-                    className="p-2 bg-slate-50 hover:bg-orange-50 text-slate-600 hover:text-orange-600 rounded-lg transition-colors"
-                    aria-label="Abrir Menu"
-                >
-                    <Menu className="w-5 h-5" />
-                </button>
-                <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 bg-orange-500 rounded flex items-center justify-center font-bold text-white text-xs">B</div>
-                    <span className="font-bold text-slate-700 text-sm">BelareStudio</span>
+        {/* Persistent Top Header (Mobile & Collapsed Desktop) */}
+        {(isMobile || !isSidebarOpen) && (
+            <div className="flex-shrink-0 bg-white border-b border-slate-200 px-4 h-16 flex items-center justify-between z-30 shadow-sm">
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={toggleSidebar}
+                        className="p-2.5 bg-slate-50 hover:bg-orange-50 text-slate-600 hover:text-orange-600 rounded-xl transition-all active:scale-95"
+                        aria-label="Abrir Menu"
+                    >
+                        <Menu className="w-6 h-6" />
+                    </button>
+                    <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 bg-orange-500 rounded-xl flex items-center justify-center font-black text-white text-xs shadow-lg shadow-orange-100">B</div>
+                        <span className="font-black text-slate-700 text-sm tracking-tighter uppercase">BelareStudio</span>
+                    </div>
                 </div>
             </div>
         )}

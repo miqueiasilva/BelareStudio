@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
     Search, Plus, Clock, User, FileText, 
@@ -34,7 +35,12 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         try {
             const { data, error } = await supabase
                 .from('commands')
-                .select('*, clients:client_id(nome, photo_url), team_members:professional_id(name), command_items(*)')
+                .select(`
+                    *, 
+                    clients:client_id(nome, photo_url), 
+                    team_members:professional_id(name),
+                    command_items(*)
+                `)
                 .eq('studio_id', activeStudioId)
                 .eq('status', currentTab)
                 .is('deleted_at', null)
@@ -92,8 +98,8 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
     };
 
     const filteredTabs = tabs.filter(t => {
-        const name = (t.clients?.nome || t.client_name || 'Consumidor Final').toLowerCase();
-        return name.includes(searchTerm.toLowerCase());
+        const clientName = t.clients?.nome || t.client_name || 'Consumidor Final';
+        return clientName.toLowerCase().includes(searchTerm.toLowerCase());
     });
 
     return (
@@ -123,51 +129,56 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
             <main className="flex-1 overflow-y-auto p-6 custom-scrollbar">
                 {loading ? <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-orange-500" size={40} /></div> : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24">
-                        {filteredTabs.map(tab => (
-                            <div key={tab.id} onClick={() => onNavigateToCommand?.(tab.id)} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[380px] group transition-all hover:shadow-xl hover:border-orange-200 cursor-pointer">
-                                <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-10 h-10 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xs flex-shrink-0 uppercase">
-                                            {tab.clients?.photo_url ? <img src={tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" /> : (tab.clients?.nome || tab.client_name || '?').charAt(0)}
+                        {filteredTabs.map(tab => {
+                            const displayName = tab.clients?.nome || tab.client_name || 'Consumidor Final';
+                            const professionalName = tab.team_members?.name || tab.professional_name || 'Geral';
+                            
+                            return (
+                                <div key={tab.id} onClick={() => onNavigateToCommand?.(tab.id)} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[380px] group transition-all hover:shadow-xl hover:border-orange-200 cursor-pointer">
+                                    <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-10 h-10 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xs flex-shrink-0 uppercase">
+                                                {tab.clients?.photo_url ? <img src={tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" /> : displayName.charAt(0)}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{displayName}</h3>
+                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate block">Prof: {professionalName}</span>
+                                            </div>
                                         </div>
-                                        <div className="min-w-0">
-                                            <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{tab.clients?.nome || tab.client_name || 'Consumidor Final'}</h3>
-                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate block">Prof: {tab.team_members?.name || 'Geral'}</span>
+                                        {tab.status === 'open' && (
+                                            <button onClick={(e) => handleDeleteCommand(e, tab.id)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
+                                        )}
+                                    </div>
+
+                                    <div className="flex-1 p-5 overflow-y-auto custom-scrollbar space-y-2">
+                                        {tab.command_items.map((item: any) => (
+                                            <div key={item.id} className="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0">
+                                                <span className="text-xs font-bold text-slate-600 truncate flex-1 pr-2">{item.title}</span>
+                                                <span className="text-xs font-black text-slate-800">R$ {Number(item.price).toFixed(2)}</span>
+                                            </div>
+                                        ))}
+                                        {tab.command_items.length === 0 && (
+                                            <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-60">
+                                                <ShoppingBag size={32} />
+                                                <p className="text-[10px] font-black uppercase mt-2">Sem Consumo</p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="p-5 bg-slate-50/50 border-t border-slate-50">
+                                        <div className="flex justify-between items-end">
+                                            <div>
+                                                <p className="text-[9px] font-black uppercase text-slate-400 mb-1">Valor Total</p>
+                                                <p className="text-2xl font-black text-slate-800">R$ {Number(tab.total_amount || 0).toFixed(2)}</p>
+                                            </div>
+                                            <div className="bg-white p-3 rounded-2xl shadow-sm text-orange-500 border border-slate-100 group-hover:bg-orange-500 group-hover:text-white transition-all active:scale-95">
+                                                <ArrowRight size={20} strokeWidth={3} />
+                                            </div>
                                         </div>
                                     </div>
-                                    {tab.status === 'open' && (
-                                        <button onClick={(e) => handleDeleteCommand(e, tab.id)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
-                                    )}
                                 </div>
-
-                                <div className="flex-1 p-5 overflow-y-auto custom-scrollbar space-y-2">
-                                    {tab.command_items.map((item: any) => (
-                                        <div key={item.id} className="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0">
-                                            <span className="text-xs font-bold text-slate-600 truncate flex-1 pr-2">{item.title}</span>
-                                            <span className="text-xs font-black text-slate-800">R$ {Number(item.price).toFixed(2)}</span>
-                                        </div>
-                                    ))}
-                                    {tab.command_items.length === 0 && (
-                                        <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-60">
-                                            <ShoppingBag size={32} />
-                                            <p className="text-[10px] font-black uppercase mt-2">Sem Consumo</p>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="p-5 bg-slate-50/50 border-t border-slate-50">
-                                    <div className="flex justify-between items-end">
-                                        <div>
-                                            <p className="text-[9px] font-black uppercase text-slate-400 mb-1">Valor Total</p>
-                                            <p className="text-2xl font-black text-slate-800">R$ {Number(tab.total_amount || 0).toFixed(2)}</p>
-                                        </div>
-                                        <div className="bg-white p-3 rounded-2xl shadow-sm text-orange-500 border border-slate-100 group-hover:bg-orange-500 group-hover:text-white transition-all active:scale-95">
-                                            <ArrowRight size={20} strokeWidth={3} />
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </main>
