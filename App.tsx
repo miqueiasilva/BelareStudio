@@ -11,7 +11,7 @@ import { Loader2, ShieldAlert, LogOut } from 'lucide-react';
 import MainLayout from './components/layout/MainLayout';
 import LoginView from './components/views/LoginView';
 
-// Views Lazy Load (Code Splitting)
+// Views Lazy Load
 const ResetPasswordView = lazy(() => import('./components/views/ResetPasswordView'));
 const DashboardView = lazy(() => import('./components/views/DashboardView'));
 const AtendimentosView = lazy(() => import('./components/views/AtendimentosView'));
@@ -48,63 +48,61 @@ const AppContent: React.FC = () => {
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
   const [hash, setHash] = useState(window.location.hash);
-  const [pathname, setPathname] = useState(window.location.pathname);
 
   useEffect(() => {
     const handleHashChange = () => {
-      const newHash = window.location.hash;
-      setHash(newHash);
-      if (newHash === '' || newHash === '#/') setCurrentView('dashboard');
+      setHash(window.location.hash);
+      if (window.location.hash === '' || window.location.hash === '#/') setCurrentView('dashboard');
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // 1. Rotas Públicas (Ignoram Auth)
+  // 1. Rotas Públicas
   if (hash === '#/public-preview') return <Suspense fallback={<ViewLoader />}><PublicBookingPreview /></Suspense>;
-  if (pathname === '/reset-password' || hash === '#/reset-password') return <Suspense fallback={<ViewLoader />}><ResetPasswordView /></Suspense>;
+  if (hash === '#/reset-password') return <Suspense fallback={<ViewLoader />}><ResetPasswordView /></Suspense>;
 
-  // 2. Verificação de Autenticação (Fase Inicial)
+  // 2. Estado de Carregamento da Autenticação
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 font-sans">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-slate-500 font-medium font-sans">Sincronizando conta...</p>
+          <Loader2 className="animate-spin text-orange-500" size={40} />
+          <p className="text-slate-500 font-bold text-sm">Validando acesso...</p>
         </div>
       </div>
     );
   }
 
-  // 3. Caso não haja usuário, exibe LOGIN imediatamente (Interrompe qualquer loop de dados)
+  // 3. SE NÃO HÁ USUÁRIO -> LOGIN (Ponto de quebra do loop)
   if (!user) return <LoginView />;
 
-  // 4. Verificação de Estúdio (Fase Secundária - Apenas Logado)
+  // 4. Carregamento do contexto do Studio (Apenas para logados)
   if (studioLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 font-sans">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-slate-500 font-medium font-sans">Sincronizando estúdio...</p>
+          <Loader2 className="animate-spin text-orange-500" size={40} />
+          <p className="text-slate-500 font-bold text-sm">Sincronizando unidade...</p>
         </div>
       </div>
     );
   }
 
-  // 5. Verificação de Vínculo
+  // 5. Verificação de vínculo com Studio
   if (!activeStudioId) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white rounded-[40px] shadow-2xl p-10 text-center border border-slate-200 animate-in zoom-in-95 duration-300">
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6 font-sans">
+        <div className="max-w-md w-full bg-white rounded-[40px] shadow-2xl p-10 text-center border border-slate-200">
           <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-3xl flex items-center justify-center mx-auto mb-6">
             <ShieldAlert size={40} />
           </div>
-          <h2 className="text-2xl font-black text-slate-800 leading-tight">Nenhum Studio vinculado</h2>
+          <h2 className="text-2xl font-black text-slate-800 leading-tight">Acesso Pendente</h2>
           <p className="text-slate-500 mt-4 font-medium leading-relaxed">
-            Seu usuário ainda não possui permissão de acesso a nenhuma unidade do <b>BelareStudio</b>.
+            Seu usuário ainda não possui permissão de acesso em nenhuma unidade do BelareStudio.
           </p>
           <div className="mt-10 space-y-3">
-             <button onClick={() => window.location.reload()} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl transition-all active:scale-95">Tentar Novamente</button>
+             <button onClick={() => window.location.reload()} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl">Tentar Novamente</button>
              <button onClick={signOut} className="w-full py-4 text-rose-500 font-bold flex items-center justify-center gap-2 hover:bg-rose-50 rounded-2xl transition-all"><LogOut size={18} /> Sair do Sistema</button>
           </div>
         </div>
@@ -120,7 +118,8 @@ const AppContent: React.FC = () => {
   };
 
   const renderView = () => {
-    if (!hasAccess(user.papel as UserRole, currentView)) {
+    const userRole = (user.papel as UserRole) || 'profissional';
+    if (!hasAccess(userRole, currentView)) {
         return <DashboardView onNavigate={setCurrentView} />;
     }
 
@@ -138,16 +137,13 @@ const AppContent: React.FC = () => {
             case 'configuracoes': return <ConfiguracoesView />;
             case 'remuneracoes': return <RemuneracoesView />;
             case 'vendas': return <VendasView onAddTransaction={handleAddTransaction} />;
-            case 'comandas': return <ComandasView onAddTransaction={handleAddTransaction} />;
+            case 'comandas': return <ComandasView onAddTransaction={handleAddTransaction} onNavigateToCommand={navigateToCommand} />;
             case 'comanda_detalhe': return <CommandDetailView commandId={activeCommandId!} onBack={() => setCurrentView('comandas')} />;
             case 'caixa': return <CaixaView />;
             case 'produtos': return <ProdutosView />;
             case 'servicos': return <ServicosView />;
             case 'equipe': return <EquipeView />;
             case 'marketing': return <MarketingView />;
-            case 'public_preview':
-              window.location.hash = '/public-preview';
-              return null;
             default: return <DashboardView onNavigate={setCurrentView} />;
           }
         })()}
