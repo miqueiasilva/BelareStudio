@@ -4,8 +4,7 @@ import {
     CreditCard, Banknote, Smartphone, Loader2,
     Calendar, Clock, Landmark, DollarSign,
     ChevronLeft, CheckCircle2, Info,
-    // FIX: Added AlertTriangle to imports
-    AlertTriangle
+    AlertTriangle, ShoppingCart, UserCheck
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { format } from 'date-fns';
@@ -22,15 +21,20 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
 
     useEffect(() => {
         const fetchFullCommand = async () => {
+            if (!commandId) return;
             setLoading(true);
             try {
                 // Utilizando a RPC solicitada para obter dados consolidados
+                // Esperamos que retorne um objeto com { client, professional, items, payments, ... }
                 const { data: fullData, error } = await supabase.rpc('get_command_full', { 
                     p_command_id: commandId 
                 });
 
                 if (error) throw error;
-                setData(fullData);
+                
+                // Se o RPC retornar um array (comum no PostgREST se não for single), pegamos o primeiro
+                const result = Array.isArray(fullData) ? fullData[0] : fullData;
+                setData(result);
             } catch (err) {
                 console.error("Erro ao carregar detalhe da comanda paga:", err);
             } finally {
@@ -38,18 +42,17 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
             }
         };
 
-        if (commandId) fetchFullCommand();
+        fetchFullCommand();
     }, [commandId]);
 
     const formatBRL = (val: number) => 
         new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
 
     const getPaymentIcon = (method: string) => {
-        switch (method?.toLowerCase()) {
-            case 'pix': return <Smartphone className="text-teal-500" />;
-            case 'money': case 'cash': case 'dinheiro': return <Banknote className="text-green-500" />;
-            default: return <CreditCard className="text-blue-500" />;
-        }
+        const m = method?.toLowerCase() || '';
+        if (m.includes('pix')) return <Smartphone className="text-teal-500" />;
+        if (m.includes('dinheiro') || m.includes('cash') || m.includes('money')) return <Banknote className="text-green-500" />;
+        return <CreditCard className="text-blue-500" />;
     };
 
     if (loading) {
@@ -74,7 +77,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
         );
     }
 
-    const itemsTotal = data.items?.reduce((acc: number, i: any) => acc + (Number(i.price) * Number(i.quantity)), 0) || 0;
+    const itemsTotal = data.items?.reduce((acc: number, i: any) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || 0;
     const discount = itemsTotal - (Number(data.total_amount) || 0);
 
     return (
@@ -86,55 +89,56 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                     </button>
                     <div>
                         <h1 className="text-lg font-black text-slate-800 uppercase tracking-tighter">
-                            Comanda Arquivada <span className="text-orange-500">#{commandId.substring(0, 8).toUpperCase()}</span>
+                            Detalhamento <span className="text-orange-500">#{commandId.substring(0, 8).toUpperCase()}</span>
                         </h1>
-                        <p className="text-[9px] text-slate-400 font-black uppercase tracking-[0.2em]">Registro Histórico Permanente</p>
+                        <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Consulta de Histórico (Somente Leitura)</p>
                     </div>
                 </div>
-                <div className="bg-emerald-50 text-emerald-600 px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-emerald-100 flex items-center gap-2">
-                    <CheckCircle2 size={14} /> Paga em {data.closed_at ? format(new Date(data.closed_at), 'dd/MM/yyyy HH:mm') : '---'}
+                <div className="bg-emerald-50 text-emerald-600 px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-emerald-100 flex items-center gap-2 shadow-sm">
+                    <CheckCircle2 size={14} /> Liquidada em {data.closed_at ? format(new Date(data.closed_at), 'dd/MM/yyyy HH:mm') : '---'}
                 </div>
             </header>
 
             <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
-                <div className="max-w-5xl mx-auto space-y-6 pb-20">
+                <div className="max-w-6xl mx-auto space-y-6 pb-20">
                     
-                    {/* INFO CLIENTE E PROFISSIONAL */}
+                    {/* CLIENT & PROF INFO */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-5">
-                            <div className="w-16 h-16 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl overflow-hidden shadow-inner">
-                                {data.client?.photo_url ? <img src={data.client.photo_url} className="w-full h-full object-cover" /> : (data.client?.nome || 'C').charAt(0)}
+                            <div className="w-16 h-16 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl overflow-hidden shadow-inner border-2 border-white">
+                                {data.client?.photo_url ? <img src={data.client.photo_url} className="w-full h-full object-cover" /> : (data.client?.nome || data.client_name || 'C').charAt(0)}
                             </div>
                             <div className="flex-1 min-w-0">
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Cliente Atendido</p>
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Cliente</p>
                                 <h3 className="font-black text-slate-800 truncate uppercase text-lg">{data.client?.nome || data.client_name || 'Consumidor Final'}</h3>
-                                {data.client?.whatsapp && <p className="text-[10px] font-bold text-slate-400">{data.client.whatsapp}</p>}
+                                {data.client?.whatsapp && <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1"><Smartphone size={10} className="text-orange-400"/> {data.client.whatsapp}</p>}
                             </div>
                         </div>
 
                         <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-5">
-                            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center overflow-hidden shadow-inner">
+                            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center overflow-hidden shadow-inner border-2 border-white">
                                 {data.professional?.photo_url ? <img src={data.professional.photo_url} className="w-full h-full object-cover" /> : <User size={32} className="text-blue-200" />}
                             </div>
                             <div className="flex-1 min-w-0">
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Profissional Responsável</p>
-                                <h3 className="font-black text-slate-800 truncate uppercase text-lg">{data.professional?.name || data.professional_name || 'Equipe Belare'}</h3>
-                                {data.professional?.role && <p className="text-[10px] font-bold text-slate-400 uppercase">{data.professional.role}</p>}
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Atendimento por</p>
+                                <h3 className="font-black text-slate-800 truncate uppercase text-lg">{data.professional?.name || data.professional_name || 'Profissional'}</h3>
+                                <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1 uppercase"><UserCheck size={10} className="text-blue-400"/> Responsável Técnico</p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* LISTA DE ITENS */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* ITEMS LIST */}
                         <div className="lg:col-span-2 space-y-6">
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
-                                <header className="px-8 py-6 border-b border-slate-50 bg-slate-50/50">
+                                <header className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
                                     <h3 className="font-black text-slate-700 text-[10px] uppercase tracking-widest flex items-center gap-2">
-                                        <Receipt size={18} className="text-orange-500" /> Detalhamento do Consumo
+                                        <ShoppingCart size={18} className="text-orange-500" /> Consumo Registrado
                                     </h3>
+                                    <span className="text-[10px] font-black text-slate-400 uppercase bg-white px-3 py-1 rounded-lg border border-slate-100">{data.items?.length || 0} Itens</span>
                                 </header>
                                 <div className="divide-y divide-slate-50">
-                                    {data.items?.length > 0 ? data.items.map((item: any) => (
+                                    {data.items?.map((item: any) => (
                                         <div key={item.id} className="p-8 flex items-center justify-between hover:bg-slate-50/30 transition-colors">
                                             <div className="flex items-center gap-5">
                                                 <div className={`p-4 rounded-[24px] shadow-sm ${item.product_id ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
@@ -143,7 +147,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                                                 <div>
                                                     <p className="font-black text-slate-800 text-lg leading-tight uppercase tracking-tight">{item.title}</p>
                                                     <div className="flex items-center gap-2 mt-1">
-                                                        <span className="text-[10px] font-black text-slate-400 uppercase bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+                                                        <span className="text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded border border-slate-100">
                                                             {item.quantity} un
                                                         </span>
                                                         <span className="text-[10px] font-bold text-slate-400">x {formatBRL(item.price)}</span>
@@ -154,21 +158,19 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                                                 <p className="font-black text-slate-800 text-xl">{formatBRL(item.quantity * item.price)}</p>
                                             </div>
                                         </div>
-                                    )) : (
-                                        <div className="p-20 text-center text-slate-300 font-bold uppercase text-xs tracking-widest">Nenhum item registrado</div>
-                                    )}
+                                    ))}
                                 </div>
                                 <footer className="p-8 bg-slate-50/50 border-t border-slate-100 flex justify-between items-center">
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Soma dos Itens</span>
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Soma Bruta dos Itens</span>
                                     <span className="font-black text-slate-600 text-lg">{formatBRL(itemsTotal)}</span>
                                 </footer>
                             </div>
                         </div>
 
-                        {/* RESUMO FINANCEIRO */}
+                        {/* FINANCIAL SUMMARY */}
                         <div className="space-y-6">
-                            <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden">
-                                <div className="absolute top-0 right-0 p-6 opacity-10"><DollarSign size={80} /></div>
+                            <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity"><DollarSign size={120} /></div>
                                 <div className="relative z-10">
                                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Valor Total Liquidado</p>
                                     <h2 className="text-5xl font-black tracking-tighter text-emerald-400">{formatBRL(data.total_amount)}</h2>
@@ -180,42 +182,43 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                                         </div>
                                         {discount > 0 && (
                                             <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-orange-400">
-                                                <span>Descontos Aplicados</span>
+                                                <span>Descontos / Ajustes</span>
                                                 <span className="bg-orange-500/20 px-2 py-0.5 rounded">-{formatBRL(discount)}</span>
                                             </div>
                                         )}
                                         <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-emerald-400 pt-2">
-                                            <span>Líquido Recebido</span>
-                                            <span className="text-sm">{formatBRL(data.total_amount)}</span>
+                                            <span>Recebido em Conta</span>
+                                            <span className="text-sm font-bold">{formatBRL(data.total_amount)}</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
-                                <header className="px-6 py-4 border-b border-slate-50 bg-emerald-50/30">
-                                    <h3 className="font-black text-emerald-800 text-[10px] uppercase tracking-widest flex items-center gap-2">
-                                        <CreditCard size={14} /> Detalhe do Pagamento
+                                <header className="px-6 py-4 border-b border-slate-50 bg-slate-50/50">
+                                    <h3 className="font-black text-slate-700 text-[10px] uppercase tracking-widest flex items-center gap-2">
+                                        <Receipt size={14} className="text-emerald-500" /> Métodos Utilizados
                                     </h3>
                                 </header>
                                 <div className="p-6 space-y-4">
-                                    {data.payments?.length > 0 ? data.payments.map((p: any, idx: number) => (
-                                        <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-3xl border border-slate-100">
+                                    {data.payments?.map((p: any, idx: number) => (
+                                        <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-3xl border border-slate-100 group hover:border-emerald-200 transition-all">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-2xl bg-white flex items-center justify-center shadow-sm">
+                                                <div className="w-10 h-10 rounded-2xl bg-white flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
                                                     {getPaymentIcon(p.method)}
                                                 </div>
                                                 <div>
-                                                    <p className="text-xs font-black text-slate-800 uppercase tracking-tighter">{p.method?.replace('_', ' ') || 'Outro'}</p>
+                                                    <p className="text-xs font-black text-slate-800 uppercase tracking-tighter">{p.method?.replace('_', ' ') || 'Processamento'}</p>
                                                     {p.brand && <p className="text-[9px] font-bold text-slate-400 uppercase">{p.brand} {p.installments > 1 && `• ${p.installments}x`}</p>}
                                                 </div>
                                             </div>
                                             <span className="font-black text-slate-800 text-sm">{formatBRL(p.amount)}</span>
                                         </div>
-                                    )) : (
+                                    ))}
+                                    {(!data.payments || data.payments.length === 0) && (
                                         <div className="p-4 bg-orange-50 border border-orange-100 rounded-2xl flex items-start gap-3">
                                             <AlertTriangle size={16} className="text-orange-500 flex-shrink-0 mt-0.5" />
-                                            <p className="text-[10px] font-bold text-orange-700 leading-relaxed uppercase">Registro de pagamento manual ou migrado. Detalhes de taxa indisponíveis.</p>
+                                            <p className="text-[10px] font-bold text-orange-700 leading-relaxed uppercase">O detalhamento individual das taxas deste fechamento não está disponível no log atual.</p>
                                         </div>
                                     )}
                                 </div>
@@ -224,8 +227,8 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                             <div className="p-6 bg-blue-50 border border-blue-100 rounded-[32px] flex items-start gap-4">
                                 <Info size={20} className="text-blue-500 flex-shrink-0 mt-1" />
                                 <div>
-                                    <h4 className="text-xs font-black text-blue-900 uppercase tracking-widest mb-1">Auditoria</h4>
-                                    <p className="text-[10px] text-blue-700 leading-relaxed font-medium">Este documento é um comprovante interno de quitação. As taxas bancárias reais foram descontadas no fechamento do dia correspondente.</p>
+                                    <h4 className="text-xs font-black text-blue-900 uppercase tracking-widest mb-1">Informações de Auditoria</h4>
+                                    <p className="text-[10px] text-blue-700 leading-relaxed font-medium">Comanda encerrada e bloqueada para edição. Qualquer estorno deve ser realizado manualmente no módulo financeiro.</p>
                                 </div>
                             </div>
                         </div>
@@ -236,9 +239,9 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
             <footer className="p-6 bg-white border-t border-slate-100 flex justify-center flex-shrink-0">
                 <button 
                     onClick={onClose}
-                    className="px-12 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-slate-200 transition-all active:scale-95"
+                    className="px-12 py-4 bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-slate-900 transition-all active:scale-95 shadow-xl"
                 >
-                    Fechar Arquivo
+                    Voltar ao Balcão
                 </button>
             </footer>
         </div>
