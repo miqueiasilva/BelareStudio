@@ -60,21 +60,38 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  if (authLoading || studioLoading) {
+  // 1. Rotas Públicas (Ignoram Auth)
+  if (hash === '#/public-preview') return <Suspense fallback={<ViewLoader />}><PublicBookingPreview /></Suspense>;
+  if (pathname === '/reset-password' || hash === '#/reset-password') return <Suspense fallback={<ViewLoader />}><ResetPasswordView /></Suspense>;
+
+  // 2. Verificação de Autenticação (Fase Inicial)
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-slate-500 font-medium font-sans">Sincronizando dados...</p>
+          <p className="text-slate-500 font-medium font-sans">Sincronizando conta...</p>
         </div>
       </div>
     );
   }
 
-  if (hash === '#/public-preview') return <Suspense fallback={<ViewLoader />}><PublicBookingPreview /></Suspense>;
-  if (pathname === '/reset-password' || hash === '#/reset-password') return <Suspense fallback={<ViewLoader />}><ResetPasswordView /></Suspense>;
+  // 3. Caso não haja usuário, exibe LOGIN imediatamente (Interrompe qualquer loop de dados)
   if (!user) return <LoginView />;
 
+  // 4. Verificação de Estúdio (Fase Secundária - Apenas Logado)
+  if (studioLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-slate-500 font-medium font-sans">Sincronizando estúdio...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 5. Verificação de Vínculo
   if (!activeStudioId) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
