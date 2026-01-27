@@ -1,11 +1,10 @@
-
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
     Search, Plus, Clock, User, FileText, 
     DollarSign, Coffee, Scissors, Trash2, ShoppingBag, X,
     CreditCard, Banknote, Smartphone, CheckCircle, Loader2,
     Receipt, History, LayoutGrid, CheckCircle2, AlertCircle, Edit2,
-    Briefcase, ArrowRight
+    Briefcase, ArrowRight, Eye
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
@@ -14,6 +13,7 @@ import Toast, { ToastType } from '../shared/Toast';
 import SelectionModal from '../modals/SelectionModal';
 import ClientSearchModal from '../modals/ClientSearchModal';
 import { differenceInMinutes, format } from 'date-fns';
+import PaidCommandDetailView from './PaidCommandDetailView';
 
 const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) => {
     const { activeStudioId } = useStudio();
@@ -25,6 +25,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
     const [isClientSearchOpen, setIsClientSearchOpen] = useState(false);
+    const [viewingPaidId, setViewingPaidId] = useState<string | null>(null);
     const [isProfSelectionOpen, setIsProfSelectionOpen] = useState(false);
     const [editingCommand, setEditingCommand] = useState<Command | null>(null);
     const [isActionLoading, setIsActionLoading] = useState(false);
@@ -97,6 +98,14 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         return name.includes(searchTerm.toLowerCase());
     });
 
+    const handleCommandClick = (id: string) => {
+        if (currentTab === 'paid') {
+            setViewingPaidId(id);
+        } else {
+            onNavigateToCommand?.(id);
+        }
+    };
+
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -125,7 +134,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                 {loading ? <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-orange-500" size={40} /></div> : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24">
                         {filteredTabs.map(tab => (
-                            <div key={tab.id} onClick={() => onNavigateToCommand?.(tab.id)} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[380px] group transition-all hover:shadow-xl hover:border-orange-200 cursor-pointer">
+                            <div key={tab.id} onClick={() => handleCommandClick(tab.id)} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[380px] group transition-all hover:shadow-xl hover:border-orange-200 cursor-pointer">
                                 <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
                                     <div className="flex items-center gap-3 min-w-0">
                                         <div className="w-10 h-10 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xs flex-shrink-0 uppercase">
@@ -136,8 +145,12 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">#{tab.id.split('-')[0].toUpperCase()}</span>
                                         </div>
                                     </div>
-                                    {tab.status === 'open' && (
+                                    {tab.status === 'open' ? (
                                         <button onClick={(e) => handleDeleteCommand(e, tab.id)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
+                                    ) : (
+                                        <div className="p-2 text-slate-300 hover:text-orange-500 transition-all opacity-0 group-hover:opacity-100" title="Ver Detalhe">
+                                            <Eye size={18} />
+                                        </div>
                                     )}
                                 </div>
 
@@ -162,8 +175,12 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                             <p className="text-[9px] font-black uppercase text-slate-400 mb-1">Valor Total</p>
                                             <p className="text-2xl font-black text-slate-800">R$ {Number(tab.total_amount || 0).toFixed(2)}</p>
                                         </div>
-                                        <div className="bg-white p-3 rounded-2xl shadow-sm text-orange-500 border border-slate-100 group-hover:bg-orange-500 group-hover:text-white transition-all active:scale-95">
-                                            <ArrowRight size={20} strokeWidth={3} />
+                                        <div className="bg-white p-3 rounded-2xl shadow-sm text-orange-500 border border-slate-100 group-hover:bg-orange-50 group-hover:text-white transition-all active:scale-95">
+                                            {currentTab === 'paid' ? (
+                                              <span className="text-[10px] font-black uppercase px-2">Ver Detalhe</span>
+                                            ) : (
+                                              <ArrowRight size={20} strokeWidth={3} />
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -178,6 +195,13 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     onClose={() => setIsClientSearchOpen(false)} 
                     onSelect={handleCreateCommand} 
                     onNewClient={() => {}} 
+                />
+            )}
+
+            {viewingPaidId && (
+                <PaidCommandDetailView 
+                    commandId={viewingPaidId} 
+                    onClose={() => setViewingPaidId(null)} 
                 />
             )}
         </div>
