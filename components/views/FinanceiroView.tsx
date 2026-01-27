@@ -35,7 +35,7 @@ interface FinanceiroViewProps {
 }
 
 const formatBRL = (value: number) => 
-    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
 
 const StatCard = ({ title, value, subtext, icon: Icon, colorClass, trend }: any) => (
     <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-md transition-all group">
@@ -95,32 +95,39 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                 end = endOfDay(new Date(endDate));
             }
 
-            // 1. Buscar Métricas dos Cards via RPC
-            const { data: cards, error: cardsError } = await supabase.rpc('get_cashflow_cards', {
-                p_studio_id: activeStudioId,
-                p_start: start.toISOString(),
-                p_end: end.toISOString()
-            });
-
-            if (cardsError) throw cardsError;
-            setSummaryCards(cards?.[0] || cards || {
-                gross_revenue: 0,
-                net_revenue: 0,
-                total_expenses: 0,
-                balance: 0
-            });
-
-            // 2. Buscar Extrato da View vw_cashflow_extrato
+            // 1. Buscar Extrato Analítico (Usando tabela base para máxima compatibilidade)
             const { data: trans, error: transError } = await supabase
-                .from('vw_cashflow_extrato')
-                .select('*')
+                .from('financial_transactions')
+                .select('id, description, amount, net_value, type, category, date, payment_method, status, studio_id')
                 .eq('studio_id', activeStudioId)
                 .gte('date', start.toISOString())
                 .lte('date', end.toISOString())
+                .neq('status', 'cancelado')
                 .order('date', { ascending: false });
             
             if (transError) throw transError;
-            setDbTransactions(trans || []);
+            const currentTrans = trans || [];
+            setDbTransactions(currentTrans);
+
+            // 2. Cálculo dos Indicadores dos Cards (Frontend side para evitar erro 404 da RPC get_cashflow_cards)
+            const gross = currentTrans
+                .filter(t => t.type === 'income' || t.type === 'receita')
+                .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+                
+            const expenses = currentTrans
+                .filter(t => t.type === 'expense' || t.type === 'despesa')
+                .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+                
+            const net = currentTrans
+                .filter(t => t.type === 'income' || t.type === 'receita')
+                .reduce((acc, t) => acc + Number(t.net_value || t.amount || 0), 0);
+
+            setSummaryCards({
+                gross_revenue: gross,
+                net_revenue: net,
+                total_expenses: expenses,
+                balance: net - expenses
+            });
 
             // 3. Buscar Projeções para o Gráfico
             const projStart = startOfDay(new Date());
