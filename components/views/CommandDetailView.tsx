@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
     ChevronLeft, CreditCard, Smartphone, Banknote, 
@@ -65,16 +64,19 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
         
         setLoading(true);
         try {
-            // 1. Busca Comanda Básica
+            // AJUSTE: Select trazendo dados do cliente via join para nome real
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
-                .select('*')
+                .select(`
+                    id, studio_id, client_id, client_name, professional_id, status, total_amount, created_at, closed_at,
+                    clients:client_id (id, nome, whatsapp, photo_url)
+                `)
                 .eq('id', commandId)
                 .single();
 
             if (cmdError) throw cmdError;
 
-            // 2. Busca Itens (Essencial para achar o appointment_id)
+            // 2. Busca Itens
             const { data: itemsData } = await supabase
                 .from('command_items')
                 .select('*')
@@ -90,12 +92,6 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                 firstApptId ? supabase.from('appointments').select('client_name, professional_name').eq('id', firstApptId).maybeSingle() : Promise.resolve({ data: null })
             ]);
 
-            // 5. Busca Cadastro oficial do cliente se existir UUID
-            const clientId = cmdData.client_id;
-            const clientOfficialRes = isUUID(clientId) 
-                ? await supabase.from('clients').select('nome, whatsapp, photo_url').eq('id', clientId).maybeSingle()
-                : { data: null };
-
             // 6. Busca Profissional oficial
             const profId = cmdData.professional_id || itemsData?.[0]?.professional_id;
             const profOfficialRes = isUUID(profId)
@@ -107,17 +103,17 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             
             const alreadyPaid = cmdData.status === 'paid';
 
-            // 7. Montagem com hierarquia de nomes (Oficial > Agenda > Fallback)
+            // 7. Montagem com hierarquia de nomes: Join > Snapshot > Fallback
             setCommand({
                 ...cmdData,
                 command_items: itemsData || [],
-                display_client_name: clientOfficialRes.data?.nome || apptBackupRes.data?.client_name || cmdData.client_name || "Consumidor Final",
-                display_client_phone: clientOfficialRes.data?.whatsapp || cmdData.client_phone || "S/ CONTATO",
-                display_client_photo: clientOfficialRes.data?.photo_url || null,
-                display_professional_name: profOfficialRes.data?.name || apptBackupRes.data?.professional_name || cmdData.professional_name || "Geral",
+                display_client_name: cmdData.clients?.nome || apptBackupRes.data?.client_name || cmdData.client_name || "Consumidor Final",
+                display_client_phone: cmdData.clients?.whatsapp || "S/ CONTATO",
+                display_client_photo: cmdData.clients?.photo_url || null,
+                display_professional_name: profOfficialRes.data?.name || apptBackupRes.data?.professional_name || "Geral",
                 display_professional_photo: profOfficialRes.data?.photo_url || null,
                 professional_id: profId,
-                client_id: clientId
+                client_id: cmdData.client_id
             });
 
             setIsLocked(alreadyPaid);
@@ -211,6 +207,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
             setIsFinishing(false);
         }
     };
+
+    const formatBRL = (val: number) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
 

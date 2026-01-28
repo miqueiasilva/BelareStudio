@@ -34,8 +34,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!activeStudioId) return;
         setLoading(true);
         try {
-            // CORREÇÃO: Removida a coluna professional_name que não existe no banco
-            // Adicionada a coluna professional_id para fazer o merge no front-end
+            // AJUSTE: Join explícito com clients via client_id para pegar o nome real
             const { data, error } = await supabase
                 .from('commands')
                 .select(`
@@ -48,7 +47,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     closed_at, 
                     client_name, 
                     professional_id,
-                    clients(nome, photo_url), 
+                    clients:client_id (id, nome, photo_url), 
                     command_items(id, title, price, quantity)
                 `)
                 .eq('studio_id', activeStudioId)
@@ -83,10 +82,16 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!activeStudioId) return;
         setIsClientSearchOpen(false);
         try {
+            // GARANTINDO: Salvamento de client_id e snapshot do nome
             const { data, error } = await supabase
                 .from('commands')
-                .insert([{ studio_id: activeStudioId, client_id: client.id, client_name: client.nome, status: 'open' }])
-                .select('*, clients(nome), command_items(*)')
+                .insert([{ 
+                    studio_id: activeStudioId, 
+                    client_id: client.id, 
+                    client_name: client.nome, 
+                    status: 'open' 
+                }])
+                .select('id, studio_id, client_id, client_name, professional_id, status, total_amount, clients:client_id(nome), command_items(*)')
                 .single();
             if (error) throw error;
             setTabs(prev => [data, ...prev]);
@@ -121,7 +126,6 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         }
     };
 
-    // Helper para buscar nome do profissional no estado local
     const getProfessionalName = (profId: any) => {
         if (!profId) return 'Geral / Studio';
         const found = professionals.find(p => String(p.id) === String(profId));
@@ -155,62 +159,67 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
             <main className="flex-1 overflow-y-auto p-6 custom-scrollbar">
                 {loading ? <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-orange-500" size={40} /></div> : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24">
-                        {filteredTabs.map(tab => (
-                            <div key={tab.id} onClick={() => handleCommandClick(tab.id)} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[380px] group transition-all hover:shadow-xl hover:border-orange-200 cursor-pointer">
-                                <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-10 h-10 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xs flex-shrink-0 uppercase">
-                                            {tab.clients?.photo_url ? <img src={tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" /> : (tab.clients?.nome || tab.client_name || '?').charAt(0)}
+                        {filteredTabs.map(tab => {
+                            // LÓGICA DE NOME: Join > Snapshot > Fallback
+                            const clientLabel = tab.clients?.nome || tab.client_name || "Consumidor Final";
+
+                            return (
+                                <div key={tab.id} onClick={() => handleCommandClick(tab.id)} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[380px] group transition-all hover:shadow-xl hover:border-orange-200 cursor-pointer">
+                                    <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-10 h-10 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xs flex-shrink-0 uppercase">
+                                                {tab.clients?.photo_url ? <img src={tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" /> : clientLabel.charAt(0)}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{clientLabel}</h3>
+                                                <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1 uppercase">
+                                                    <UserCheck size={10} className="text-orange-400" />
+                                                    {getProfessionalName(tab.professional_id)}
+                                                </p>
+                                            </div>
                                         </div>
-                                        <div className="min-w-0">
-                                            <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{tab.clients?.nome || tab.client_name}</h3>
-                                            <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1 uppercase">
-                                                <UserCheck size={10} className="text-orange-400" />
-                                                {getProfessionalName(tab.professional_id)}
-                                            </p>
+                                        {tab.status === 'open' ? (
+                                            <button onClick={(e) => handleDeleteCommand(e, tab.id)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
+                                        ) : (
+                                            <div className="p-2 text-slate-300 hover:text-orange-500 transition-all opacity-0 group-hover:opacity-100" title="Ver Detalhe">
+                                                <Eye size={18} />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="flex-1 p-5 overflow-y-auto custom-scrollbar space-y-2">
+                                        {tab.command_items?.map((item: any) => (
+                                            <div key={item.id} className="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0">
+                                                <span className="text-xs font-bold text-slate-600 truncate flex-1 pr-2">{item.title}</span>
+                                                <span className="text-xs font-black text-slate-800">R$ {Number(item.price).toFixed(2)}</span>
+                                            </div>
+                                        ))}
+                                        {(!tab.command_items || tab.command_items.length === 0) && (
+                                            <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-60">
+                                                <ShoppingBag size={32} />
+                                                <p className="text-[10px] font-black uppercase mt-2">Sem Consumo</p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="p-5 bg-slate-50/50 border-t border-slate-50">
+                                        <div className="flex justify-between items-end">
+                                            <div>
+                                                <p className="text-[9px] font-black uppercase text-slate-400 mb-1">Valor Total</p>
+                                                <p className="text-2xl font-black text-slate-800">R$ {Number(tab.total_amount || 0).toFixed(2)}</p>
+                                            </div>
+                                            <div className="bg-white p-3 rounded-2xl shadow-sm text-orange-500 border border-slate-100 group-hover:bg-orange-50 group-hover:text-white transition-all active:scale-95">
+                                                {currentTab === 'paid' ? (
+                                                  <span className="text-[10px] font-black uppercase px-2">Ver Detalhe</span>
+                                                ) : (
+                                                  <ArrowRight size={20} strokeWidth={3} />
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
-                                    {tab.status === 'open' ? (
-                                        <button onClick={(e) => handleDeleteCommand(e, tab.id)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
-                                    ) : (
-                                        <div className="p-2 text-slate-300 hover:text-orange-500 transition-all opacity-0 group-hover:opacity-100" title="Ver Detalhe">
-                                            <Eye size={18} />
-                                        </div>
-                                    )}
                                 </div>
-
-                                <div className="flex-1 p-5 overflow-y-auto custom-scrollbar space-y-2">
-                                    {tab.command_items?.map((item: any) => (
-                                        <div key={item.id} className="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0">
-                                            <span className="text-xs font-bold text-slate-600 truncate flex-1 pr-2">{item.title}</span>
-                                            <span className="text-xs font-black text-slate-800">R$ {Number(item.price).toFixed(2)}</span>
-                                        </div>
-                                    ))}
-                                    {(!tab.command_items || tab.command_items.length === 0) && (
-                                        <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-60">
-                                            <ShoppingBag size={32} />
-                                            <p className="text-[10px] font-black uppercase mt-2">Sem Consumo</p>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="p-5 bg-slate-50/50 border-t border-slate-50">
-                                    <div className="flex justify-between items-end">
-                                        <div>
-                                            <p className="text-[9px] font-black uppercase text-slate-400 mb-1">Valor Total</p>
-                                            <p className="text-2xl font-black text-slate-800">R$ {Number(tab.total_amount || 0).toFixed(2)}</p>
-                                        </div>
-                                        <div className="bg-white p-3 rounded-2xl shadow-sm text-orange-500 border border-slate-100 group-hover:bg-orange-50 group-hover:text-white transition-all active:scale-95">
-                                            {currentTab === 'paid' ? (
-                                              <span className="text-[10px] font-black uppercase px-2">Ver Detalhe</span>
-                                            ) : (
-                                              <ArrowRight size={20} strokeWidth={3} />
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </main>

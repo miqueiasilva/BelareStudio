@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { 
     ChevronLeft, ChevronRight, MessageSquare, 
@@ -424,7 +423,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
-            // FIX: Removidas as chaves client_name e professional_name do insert da comanda, pois o servidor retornou erro 400 (colunas inexistentes)
+            // CORREÇÃO: Usando lista explícita de colunas no retorno para evitar professional_name
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
@@ -434,7 +433,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     status: 'open',
                     total_amount: appointment.service.price
                 }])
-                .select()
+                .select('id, studio_id, client_id, client_name, professional_id, status, total_amount')
                 .single();
 
             if (cmdError) throw cmdError;
