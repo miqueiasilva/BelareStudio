@@ -96,7 +96,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             }
 
             // 1. Buscar Lançamentos Reais da Tabela Base
-            // IMPORTANTE: .select('col,col') sem aspas ou espaços desnecessários
+            // IMPORTANTE: .select() sem aspas em excesso ou colchetes para evitar processamento incorreto de query params
             const { data: trans, error: transError } = await supabase
                 .from('financial_transactions')
                 .select('id,description,amount,net_value,type,category,date,payment_method,status,studio_id')
@@ -110,7 +110,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             const currentTrans = trans || [];
             setDbTransactions(currentTrans);
 
-            // 2. Cálculo Manual dos Indicadores
+            // 2. Cálculo Manual dos Indicadores (Fonte de Verdade: financial_transactions)
             const gross = currentTrans
                 .filter(t => t.type === 'income' || t.type === 'receita')
                 .reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -262,25 +262,29 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
 
     const handleSaveNewTransaction = async (t: any) => {
         try {
+            // Conversão de data para string ISO para evitar erros de formatação no Postgres
             const payload = {
                 description: t.description,
-                amount: t.amount,
+                amount: Number(t.amount),
                 type: t.type,
                 category: t.category,
-                date: t.date,
+                date: t.date instanceof Date ? t.date.toISOString() : new Date(t.date).toISOString(),
                 payment_method: t.payment_method,
-                status: t.status,
+                status: t.status || 'pago',
                 studio_id: activeStudioId
             };
 
-            const { error } = await supabase.from('financial_transactions').insert([payload]);
+            // Inserção direta na tabela financial_transactions
+            const { error } = await supabase.from('financial_transactions').insert(payload);
+            
             if (error) throw error;
 
             setToast({ message: "Lançamento registrado!", type: 'success' });
             fetchData();
             setShowModal(null);
         } catch (e: any) {
-            setToast({ message: "Erro ao salvar transação.", type: 'error' });
+            console.error("Erro ao salvar:", e);
+            setToast({ message: `Erro ao salvar transação: ${e.message}`, type: 'error' });
         }
     };
 
