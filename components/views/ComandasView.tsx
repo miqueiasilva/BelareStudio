@@ -34,7 +34,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!activeStudioId) return;
         setLoading(true);
         try {
-            // AJUSTE: Join explícito com a tabela de clientes para garantir o nome real do cadastro
+            // Join com clients garantindo a captura de nome e foto
             const { data, error } = await supabase
                 .from('commands')
                 .select(`
@@ -47,7 +47,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     closed_at, 
                     client_name, 
                     professional_id,
-                    clients:client_id (id, nome, photo_url), 
+                    clients:client_id (id, nome, name, photo_url), 
                     command_items(id, title, price, quantity)
                 `)
                 .eq('studio_id', activeStudioId)
@@ -82,16 +82,15 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!activeStudioId) return;
         setIsClientSearchOpen(false);
         try {
-            // GRAVANDO: client_id e snapshot client_name para histórico (Opção A solicitada)
             const { data, error } = await supabase
                 .from('commands')
                 .insert([{ 
                     studio_id: activeStudioId, 
-                    client_id: client.id, 
-                    client_name: client.nome, // Snapshot do nome no momento da criação
+                    client_id: client.id || null, 
+                    client_name: client.nome || null, 
                     status: 'open' 
                 }])
-                .select('id, studio_id, client_id, client_name, professional_id, status, total_amount, clients:client_id(nome), command_items(*)')
+                .select('id, studio_id, client_id, client_name, professional_id, status, total_amount, clients:client_id(nome, name), command_items(*)')
                 .single();
             if (error) throw error;
             setTabs(prev => [data, ...prev]);
@@ -113,9 +112,15 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         } catch (e) {}
     };
 
+    const getClientDisplayName = (tab: any) => {
+        const joinedName = tab.clients?.name || tab.clients?.nome;
+        const snapshotName = tab.client_name;
+
+        return joinedName || snapshotName || "Consumidor Final";
+    };
+
     const filteredTabs = tabs.filter(t => {
-        // HIERARQUIA DE EXIBIÇÃO: Nome real do cadastro > Snapshot da comanda > Fallback
-        const clientLabel = t.clients?.nome || t.client_name || "Consumidor Final";
+        const clientLabel = getClientDisplayName(t);
         return clientLabel.toLowerCase().includes(searchTerm.toLowerCase());
     });
 
@@ -158,7 +163,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
             </header>
 
             <div className="p-4 bg-white border-b border-slate-100 flex-shrink-0">
-                <div className="relative group max-w-md">
+                <div className="relative group max-md">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 w-5 h-5 group-focus-within:text-orange-500 transition-colors" />
                     <input type="text" placeholder="Buscar cliente..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:bg-white focus:ring-4 focus:ring-orange-50 focus:border-orange-400 outline-none transition-all" />
                 </div>
@@ -168,8 +173,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                 {loading ? <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-orange-500" size={40} /></div> : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24">
                         {filteredTabs.map(tab => {
-                            // HIERARQUIA DE EXIBIÇÃO: Nome real do cadastro > Snapshot da comanda > Fallback
-                            const clientLabel = tab.clients?.nome || tab.client_name || "Consumidor Final";
+                            const clientLabel = getClientDisplayName(tab);
 
                             return (
                                 <div key={tab.id} onClick={() => handleCommandClick(tab.id)} className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[380px] group transition-all hover:shadow-xl hover:border-orange-200 cursor-pointer">
