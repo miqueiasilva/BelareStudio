@@ -24,15 +24,13 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
             if (!commandId) return;
             setLoading(true);
             try {
-                // Utilizando a RPC solicitada para obter dados consolidados
-                // Esperamos que retorne um objeto com { client, professional, items, payments, ... }
+                // Utilizando a RPC para obter dados consolidados (itens + pagamentos + perfis)
                 const { data: fullData, error } = await supabase.rpc('get_command_full', { 
                     p_command_id: commandId 
                 });
 
                 if (error) throw error;
                 
-                // Se o RPC retornar um array (comum no PostgREST se não for single), pegamos o primeiro
                 const result = Array.isArray(fullData) ? fullData[0] : fullData;
                 setData(result);
             } catch (err) {
@@ -77,8 +75,13 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
         );
     }
 
+    // Lógica de fallback para nome do cliente
+    const displayClientName = data.client?.nome || data.client?.name || data.client_name || "Consumidor Final";
+    
+    // Cálculos do resumo
     const itemsTotal = data.items?.reduce((acc: number, i: any) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || 0;
-    const discount = itemsTotal - (Number(data.total_amount) || 0);
+    const finalAmount = Number(data.total_amount) || 0;
+    const discount = itemsTotal - finalAmount;
 
     return (
         <div className="fixed inset-0 bg-slate-50 z-[100] flex flex-col font-sans animate-in slide-in-from-right duration-300 text-left">
@@ -91,7 +94,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                         <h1 className="text-lg font-black text-slate-800 uppercase tracking-tighter">
                             Detalhamento <span className="text-orange-500">#{commandId.substring(0, 8).toUpperCase()}</span>
                         </h1>
-                        <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Consulta de Histórico (Somente Leitura)</p>
+                        <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Histórico de Arquivo • Somente Leitura</p>
                     </div>
                 </div>
                 <div className="bg-emerald-50 text-emerald-600 px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-emerald-100 flex items-center gap-2 shadow-sm">
@@ -102,15 +105,15 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
             <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto space-y-6 pb-20">
                     
-                    {/* CLIENT & PROF INFO */}
+                    {/* INFO CARDS */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-5">
                             <div className="w-16 h-16 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl overflow-hidden shadow-inner border-2 border-white">
-                                {data.client?.photo_url ? <img src={data.client.photo_url} className="w-full h-full object-cover" /> : (data.client?.nome || data.client_name || 'C').charAt(0)}
+                                {data.client?.photo_url ? <img src={data.client.photo_url} className="w-full h-full object-cover" /> : displayClientName.charAt(0)}
                             </div>
                             <div className="flex-1 min-w-0">
                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Cliente</p>
-                                <h3 className="font-black text-slate-800 truncate uppercase text-lg">{data.client?.nome || data.client_name || 'Consumidor Final'}</h3>
+                                <h3 className="font-black text-slate-800 truncate uppercase text-lg">{displayClientName}</h3>
                                 {data.client?.whatsapp && <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1"><Smartphone size={10} className="text-orange-400"/> {data.client.whatsapp}</p>}
                             </div>
                         </div>
@@ -120,22 +123,22 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                                 {data.professional?.photo_url ? <img src={data.professional.photo_url} className="w-full h-full object-cover" /> : <User size={32} className="text-blue-200" />}
                             </div>
                             <div className="flex-1 min-w-0">
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Atendimento por</p>
-                                <h3 className="font-black text-slate-800 truncate uppercase text-lg">{data.professional?.name || data.professional_name || 'Profissional'}</h3>
-                                <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1 uppercase"><UserCheck size={10} className="text-blue-400"/> Responsável Técnico</p>
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Responsável</p>
+                                <h3 className="font-black text-slate-800 truncate uppercase text-lg">{data.professional?.name || data.professional_name || 'Geral'}</h3>
+                                <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1 uppercase"><UserCheck size={10} className="text-blue-400"/> Vendedor Técnico</p>
                             </div>
                         </div>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        {/* ITEMS LIST */}
+                        {/* CONSUMO */}
                         <div className="lg:col-span-2 space-y-6">
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                                 <header className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
                                     <h3 className="font-black text-slate-700 text-[10px] uppercase tracking-widest flex items-center gap-2">
-                                        <ShoppingCart size={18} className="text-orange-500" /> Consumo Registrado
+                                        <ShoppingCart size={18} className="text-orange-500" /> Itens da Transação
                                     </h3>
-                                    <span className="text-[10px] font-black text-slate-400 uppercase bg-white px-3 py-1 rounded-lg border border-slate-100">{data.items?.length || 0} Itens</span>
+                                    <span className="text-[10px] font-black text-slate-400 uppercase bg-white px-3 py-1 rounded-lg border border-slate-100">{data.items?.length || 0} Registros</span>
                                 </header>
                                 <div className="divide-y divide-slate-50">
                                     {data.items?.map((item: any) => (
@@ -161,19 +164,19 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                                     ))}
                                 </div>
                                 <footer className="p-8 bg-slate-50/50 border-t border-slate-100 flex justify-between items-center">
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Soma Bruta dos Itens</span>
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Soma Bruta</span>
                                     <span className="font-black text-slate-600 text-lg">{formatBRL(itemsTotal)}</span>
                                 </footer>
                             </div>
                         </div>
 
-                        {/* FINANCIAL SUMMARY */}
+                        {/* RESUMO FINANCEIRO */}
                         <div className="space-y-6">
                             <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden group">
                                 <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity"><DollarSign size={120} /></div>
                                 <div className="relative z-10">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Valor Total Liquidado</p>
-                                    <h2 className="text-5xl font-black tracking-tighter text-emerald-400">{formatBRL(data.total_amount)}</h2>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Faturamento Consolidado</p>
+                                    <h2 className="text-5xl font-black tracking-tighter text-emerald-400">{formatBRL(finalAmount)}</h2>
                                     
                                     <div className="mt-8 pt-8 border-t border-white/10 space-y-4">
                                         <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -182,13 +185,13 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                                         </div>
                                         {discount > 0 && (
                                             <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-orange-400">
-                                                <span>Descontos / Ajustes</span>
+                                                <span>Ajustes / Descontos</span>
                                                 <span className="bg-orange-500/20 px-2 py-0.5 rounded">-{formatBRL(discount)}</span>
                                             </div>
                                         )}
-                                        <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-emerald-400 pt-2">
-                                            <span>Recebido em Conta</span>
-                                            <span className="text-sm font-bold">{formatBRL(data.total_amount)}</span>
+                                        <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-emerald-400 pt-2 border-t border-white/5">
+                                            <span>Valor em Caixa</span>
+                                            <span className="text-sm font-bold">{formatBRL(finalAmount)}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -197,7 +200,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                             <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                                 <header className="px-6 py-4 border-b border-slate-50 bg-slate-50/50">
                                     <h3 className="font-black text-slate-700 text-[10px] uppercase tracking-widest flex items-center gap-2">
-                                        <Receipt size={14} className="text-emerald-500" /> Métodos Utilizados
+                                        <Receipt size={14} className="text-emerald-500" /> Fluxo de Pagamento
                                     </h3>
                                 </header>
                                 <div className="p-6 space-y-4">
@@ -227,8 +230,8 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                             <div className="p-6 bg-blue-50 border border-blue-100 rounded-[32px] flex items-start gap-4">
                                 <Info size={20} className="text-blue-500 flex-shrink-0 mt-1" />
                                 <div>
-                                    <h4 className="text-xs font-black text-blue-900 uppercase tracking-widest mb-1">Informações de Auditoria</h4>
-                                    <p className="text-[10px] text-blue-700 leading-relaxed font-medium">Comanda encerrada e bloqueada para edição. Qualquer estorno deve ser realizado manualmente no módulo financeiro.</p>
+                                    <h4 className="text-xs font-black text-blue-900 uppercase tracking-widest mb-1">Auditoria Eletrônica</h4>
+                                    <p className="text-[10px] text-blue-700 leading-relaxed font-medium">Este registro foi selado após a liquidação financeira. Alterações só são possíveis via estorno administrativo no módulo Financeiro.</p>
                                 </div>
                             </div>
                         </div>
