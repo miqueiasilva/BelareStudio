@@ -34,7 +34,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!activeStudioId) return;
         setLoading(true);
         try {
-            // Join com clients garantindo a captura de nome e foto
+            // Ajuste na Query: Incluindo o join com clients para buscar nome real e foto
             const { data, error } = await supabase
                 .from('commands')
                 .select(`
@@ -112,11 +112,12 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         } catch (e) {}
     };
 
+    // Lógica de Prioridade de Nome: Cadastro (name ou nome) > Snapshot (client_name) > Fallback
     const getClientDisplayName = (tab: any) => {
         const joinedName = tab.clients?.name || tab.clients?.nome;
         const snapshotName = tab.client_name;
 
-        return joinedName || snapshotName || "Consumidor Final";
+        return joinedName || snapshotName || "CLIENTE SEM CADASTRO";
     };
 
     const filteredTabs = tabs.filter(t => {
