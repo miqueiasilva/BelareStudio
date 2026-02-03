@@ -34,7 +34,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!activeStudioId) return;
         setLoading(true);
         try {
-            // Ajuste na Query: Incluindo o join com clients para buscar nome real e foto
+            // AJUSTE: Query agora inclui o relacionamento 'client' via join no client_id
             const { data, error } = await supabase
                 .from('commands')
                 .select(`
@@ -47,7 +47,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     closed_at, 
                     client_name, 
                     professional_id,
-                    clients:client_id (id, nome, name, photo_url), 
+                    client:client_id (id, nome, name, photo_url), 
                     command_items(id, title, price, quantity)
                 `)
                 .eq('studio_id', activeStudioId)
@@ -90,7 +90,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     client_name: client.nome || null, 
                     status: 'open' 
                 }])
-                .select('id, studio_id, client_id, client_name, professional_id, status, total_amount, clients:client_id(nome, name), command_items(*)')
+                .select('id, studio_id, client_id, client_name, professional_id, status, total_amount, client:client_id(nome, name), command_items(*)')
                 .single();
             if (error) throw error;
             setTabs(prev => [data, ...prev]);
@@ -112,9 +112,9 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         } catch (e) {}
     };
 
-    // Lógica de Prioridade de Nome: Cadastro (name ou nome) > Snapshot (client_name) > Fallback
+    // AJUSTE: Lógica de Prioridade: Cadastro (Joined) > Snapshot (Local) > Fallback
     const getClientDisplayName = (tab: any) => {
-        const joinedName = tab.clients?.name || tab.clients?.nome;
+        const joinedName = tab.client?.name || tab.client?.nome;
         const snapshotName = tab.client_name;
 
         return joinedName || snapshotName || "CLIENTE SEM CADASTRO";
@@ -181,7 +181,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                                     <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
                                         <div className="flex items-center gap-3 min-w-0">
                                             <div className="w-10 h-10 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xs flex-shrink-0 uppercase">
-                                                {tab.clients?.photo_url ? <img src={tab.clients.photo_url} className="w-full h-full object-cover rounded-2xl" /> : getClientInitials(clientLabel)}
+                                                {tab.client?.photo_url ? <img src={tab.client.photo_url} className="w-full h-full object-cover rounded-2xl" /> : getClientInitials(clientLabel)}
                                             </div>
                                             <div className="min-w-0">
                                                 <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{clientLabel}</h3>
