@@ -39,7 +39,7 @@ const LoginView: React.FC = () => {
             const { error } = await signInWithGoogle();
             if (error) throw error;
         } catch (err: any) {
-            setError("Falha na autenticação com Google.");
+            setError(err.message || "Falha na autenticação com Google.");
             setIsLoading(false);
         }
     };
@@ -52,19 +52,23 @@ const LoginView: React.FC = () => {
 
         try {
             if (mode === 'login') {
-                const { error } = await signIn(email, password);
-                if (error) throw error;
+                const { error: signInError } = await signIn(email, password);
+                if (signInError) throw signInError;
             } else if (mode === 'register') {
-                const { error } = await signUp(email, password, name);
-                if (error) throw error;
-                setSuccessMessage("Conta criada! Verifique seu e-mail.");
+                const { error: signUpError } = await signUp(email, password, name);
+                if (signUpError) throw signUpError;
+                setSuccessMessage("Conta criada! Verifique seu e-mail para confirmar o cadastro.");
             } else if (mode === 'forgot') {
-                const { error } = await resetPassword(email);
-                if (error) throw error;
-                setSuccessMessage("Instruções enviadas para seu e-mail.");
+                const { error: forgotError } = await resetPassword(email);
+                if (forgotError) throw forgotError;
+                setSuccessMessage("Link de recuperação enviado para seu e-mail!");
             }
         } catch (err: any) {
-            setError(err.message === "Invalid login credentials" ? "E-mail ou senha incorretos." : err.message);
+            // Tratamento de erros específicos do Supabase para melhor UX
+            let message = err.message;
+            if (message === "Invalid login credentials") message = "E-mail ou senha incorretos.";
+            if (message === "Email not confirmed") message = "Por favor, confirme seu e-mail antes de entrar.";
+            setError(message);
         } finally {
             setIsLoading(false);
         }
@@ -177,7 +181,7 @@ const LoginView: React.FC = () => {
                                     <button 
                                         type="button" 
                                         onClick={() => handleModeChange('forgot')} 
-                                        className="text-xs font-bold text-orange-400 hover:text-orange-300 transition-colors"
+                                        className="text-xs font-bold text-orange-400 hover:text-orange-300 transition-all"
                                     >
                                         Esqueceu a senha?
                                     </button>
@@ -195,7 +199,7 @@ const LoginView: React.FC = () => {
                             <Loader2 className="animate-spin h-5 w-5" />
                         ) : (
                             <>
-                                <span>{mode === 'login' ? 'Entrar' : mode === 'register' ? 'Criar Conta' : 'Redefinir Senha'}</span>
+                                <span>{mode === 'login' ? 'Entrar' : mode === 'register' ? 'Criar Conta' : 'Recuperar Senha'}</span>
                                 <ArrowRight size={20} />
                             </>
                         )}
