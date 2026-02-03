@@ -41,7 +41,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
             if (!commandId) return;
             setLoading(true);
             try {
-                // Utilizando a RPC get_command_full para obter dados consolidados (itens + clientes)
+                // Utilizando a RPC get_command_full para obter dados consolidados
                 const { data: fullData, error } = await supabase.rpc('get_command_full', { 
                     p_command_id: commandId 
                 });
@@ -51,7 +51,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                 const result = Array.isArray(fullData) ? fullData[0] : fullData;
                 setData(result);
 
-                // Busca dos pagamentos reais vinculados para o resumo financeiro
+                // Busca dos pagamentos vinculados
                 const payList = await fetchCommandPayments(commandId);
                 setPayments(payList);
             } catch (err) {
@@ -74,7 +74,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
         return <CreditCard className="text-blue-500" />;
     };
 
-    // Cálculos financeiros dinâmicos baseados em transações reais e itens
+    // Cálculos Financeiros Dinâmicos
     const financialStats = useMemo(() => {
         const itemsTotal = data?.items?.reduce((acc: number, i: any) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || 0;
         
@@ -123,7 +123,6 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
         );
     }
 
-    // Prioridade de nome idêntica ao card da lista
     const displayClientName = data.client?.name || data.client?.nome || data.client_name || "CLIENTE SEM CADASTRO";
     const discount = Math.max(0, financialStats.subtotal - financialStats.gross);
 
