@@ -3,21 +3,16 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { initialAppointments, mockTransactions, clients, professionals } from "../data/mockData";
 import { format } from "date-fns";
 
-// --- Padrão Lazy Singleton para Estabilidade ---
-let aiInstance: GoogleGenAI | null = null;
+// --- IA Model Configs ---
 const modelId = "gemini-3-flash-preview";
 const imageModelId = "gemini-2.5-flash-image";
 
+/**
+ * Cria uma nova instância da IA do Google.
+ * FIX: Guidelines requerem o uso direto de process.env.API_KEY e criação de instância sob demanda.
+ */
 const getAIClient = () => {
-    if (aiInstance) return aiInstance;
-    const apiKey = process.env.API_KEY;
-    if (!apiKey || apiKey === 'undefined') return null;
-    try {
-        aiInstance = new GoogleGenAI({ apiKey });
-        return aiInstance;
-    } catch (e) {
-        return null;
-    }
+    return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 /**
@@ -35,12 +30,13 @@ const insightsFallback = [
 
 export const getDashboardInsight = async (): Promise<string> => {
     const ai = getAIClient();
-    if (!ai) return insightsFallback[0];
     try {
+        // FIX: Using generateContent with direct model ID.
         const response = await ai.models.generateContent({
             model: modelId,
             contents: "Você é JaciBot, analista de beleza. Gere 1 dica curta de gestão.",
         });
+        // FIX: Access .text property directly (not a function).
         return response.text || insightsFallback[0];
     } catch (error) {
         return insightsFallback[0];
@@ -49,7 +45,6 @@ export const getDashboardInsight = async (): Promise<string> => {
 
 export const generateMarketingContent = async (service: string, theme: string, tone: string) => {
     const ai = getAIClient();
-    if (!ai) throw new Error("IA não configurada");
 
     try {
         // 1. Legendas
@@ -66,24 +61,29 @@ export const generateMarketingContent = async (service: string, theme: string, t
                             title: { type: Type.STRING },
                             content: { type: Type.STRING }
                         },
-                        required: ["title", "content"]
+                        required: ["title", "content"],
+                        // FIX: Added propertyOrdering as per guideline requirements for object clarity.
+                        propertyOrdering: ["title", "content"]
                     }
                 }
             }
         });
 
+        // FIX: Access .text property directly.
         const captions = JSON.parse(cleanJsonResponse(textResponse.text || "[]"));
 
         // 2. Imagem
         const imagePrompt = `Professional aesthetic banner for beauty salon. Topic: ${service}. Style: ${theme}. No text. High resolution.`;
         const imageResponse = await ai.models.generateContent({
             model: imageModelId,
-            contents: [{ text: imagePrompt }],
+            // FIX: Using standardized { parts: [...] } structure.
+            contents: { parts: [{ text: imagePrompt }] },
             config: { imageConfig: { aspectRatio: "1:1" } }
         });
 
         let imageUrl = '';
         if (imageResponse.candidates?.[0]?.content?.parts) {
+            // FIX: Iterate through parts to find image data as per guidelines.
             for (const part of imageResponse.candidates[0].content.parts) {
                 if (part.inlineData) {
                     imageUrl = `data:image/png;base64,${part.inlineData.data}`;
@@ -101,12 +101,12 @@ export const generateMarketingContent = async (service: string, theme: string, t
 
 export const getInsightByTopic = async (topic: string): Promise<string> => {
     const ai = getAIClient();
-    if (!ai) return "Análise indisponível no momento.";
     try {
         const response = await ai.models.generateContent({
             model: modelId,
             contents: `Dê uma dica de 10 palavras sobre ${topic} para um estúdio de beleza.`,
         });
+        // FIX: Access .text property directly.
         return response.text || "Mantenha o foco na experiência do cliente.";
     } catch (error) {
         return "Revise seus indicadores mensais.";
