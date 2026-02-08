@@ -1,299 +1,73 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-    X, User, Receipt, Scissors, ShoppingBag, 
-    CreditCard, Banknote, Smartphone, Loader2,
-    Calendar, Clock, Landmark, DollarSign,
-    ChevronLeft, CheckCircle2, Info,
-    AlertTriangle, ShoppingCart, UserCheck
-} from 'lucide-react';
-import { supabase } from '../../services/supabaseClient';
-import { format } from 'date-fns';
-import { ptBR as pt } from 'date-fns/locale/pt-BR';
+const fetchCommandPayments = async (id: string) => {
+  try {
+    // 1) Fonte preferencial: financial_transactions (é o que seu CommandDetailView já usa)
+    const { data: txs, error: txErr } = await supabase
+      .from('financial_transactions')
+      .select('amount, net_value, tax_rate, installments, brand, payment_method, created_at, date, status, type')
+      .eq('command_id', id)
+      .eq('type', 'income')
+      .neq('status', 'cancelado')
+      .order('created_at', { ascending: true });
 
-interface PaidCommandDetailViewProps {
-    commandId: string;
-    onClose: () => void;
-}
+    if (txErr) throw txErr;
 
-const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId, onClose }) => {
-    const [data, setData] = useState<any>(null);
-    const [payments, setPayments] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-
-    const fetchCommandPayments = async (id: string) => {
-        try {
-            const { data: payRes, error } = await supabase
-                .from('command_payments')
-                .select('amount, method, fee_amount, net_amount, brand, installments, created_at')
-                .eq('command_id', id)
-                .order('created_at', { ascending: true });
-            
-            if (error) throw error;
-            return payRes || [];
-        } catch (err) {
-            console.error("Erro ao buscar pagamentos:", err);
-            return [];
-        }
-    };
-
-    useEffect(() => {
-        const fetchFullCommand = async () => {
-            if (!commandId) return;
-            setLoading(true);
-            try {
-                // Utilizando a RPC get_command_full para obter dados consolidados
-                const { data: fullData, error } = await supabase.rpc('get_command_full', { 
-                    p_command_id: commandId 
-                });
-
-                if (error) throw error;
-                
-                const result = Array.isArray(fullData) ? fullData[0] : fullData;
-                setData(result);
-
-                // Busca dos pagamentos vinculados
-                const payList = await fetchCommandPayments(commandId);
-                setPayments(payList);
-            } catch (err) {
-                console.error("Erro ao carregar detalhe da comanda paga:", err);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchFullCommand();
-    }, [commandId]);
-
-    const formatBRL = (val: number) => 
-        new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
-
-    const getPaymentIcon = (method: string) => {
-        const m = method?.toLowerCase() || '';
-        if (m.includes('pix')) return <Smartphone className="text-teal-500" />;
-        if (m.includes('dinheiro') || m.includes('cash') || m.includes('money')) return <Banknote className="text-green-500" />;
-        return <CreditCard className="text-blue-500" />;
-    };
-
-    // Cálculos Financeiros Dinâmicos
-    const financialStats = useMemo(() => {
-        const itemsTotal = data?.items?.reduce((acc: number, i: any) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || 0;
-        
-        if (payments.length === 0) {
-            return {
-                subtotal: itemsTotal,
-                gross: Number(data?.total_amount) || itemsTotal,
-                fees: 0,
-                net: Number(data?.total_amount) || itemsTotal,
-                hasRealPayments: false
-            };
-        }
-
-        const gross = payments.reduce((acc, p) => acc + Number(p.amount || 0), 0);
-        const fees = payments.reduce((acc, p) => acc + Number(p.fee_amount || 0), 0);
-        const net = payments.reduce((acc, p) => acc + Number(p.net_amount || 0), 0);
+    if (txs && txs.length > 0) {
+      return txs.map((t: any) => {
+        const amount = Number(t.amount || 0);
+        const net = Number(t.net_value ?? t.net_amount ?? t.net_amount ?? amount);
+        const fee = Number((amount - net).toFixed(2));
 
         return {
-            subtotal: itemsTotal,
-            gross,
-            fees,
-            net,
-            hasRealPayments: true
+          amount,
+          net_amount: net,
+          fee_amount: fee,
+          method: (t.payment_method || 'misto'),
+          brand: t.brand || null,
+          installments: Number(t.installments || 1),
+          created_at: t.created_at || t.date || null
         };
-    }, [data, payments]);
-
-    if (loading) {
-        return (
-            <div className="fixed inset-0 bg-slate-50/90 backdrop-blur-sm z-[100] flex flex-col items-center justify-center animate-in fade-in duration-300">
-                <Loader2 className="animate-spin text-orange-500 mb-4" size={40} />
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Recuperando Registro...</p>
-            </div>
-        );
+      });
     }
 
-    if (!data) {
-        return (
-            <div className="fixed inset-0 bg-white z-[100] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
-                <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-[32px] flex items-center justify-center mb-6">
-                    <X size={40} />
-                </div>
-                <h3 className="text-xl font-black text-slate-800">Comanda não localizada</h3>
-                <p className="text-slate-400 text-sm mt-2 max-w-xs">O registro solicitado pode ter sido removido ou não está acessível no momento.</p>
-                <button onClick={onClose} className="mt-8 px-10 py-4 bg-slate-800 text-white rounded-2xl font-black uppercase text-xs shadow-xl active:scale-95 transition-all">Voltar ao Balcão</button>
-            </div>
-        );
-    }
+    // 2) Fallback: command_payments (se existir em algum caso)
+    const { data: cps, error: cpErr } = await supabase
+      .from('command_payments')
+      .select('amount, method, fee_amount, net_amount, brand, installments, created_at')
+      .eq('command_id', id)
+      .order('created_at', { ascending: true });
 
-    const displayClientName = data.client?.name || data.client?.nome || data.client_name || "CLIENTE SEM CADASTRO";
-    const discount = Math.max(0, financialStats.subtotal - financialStats.gross);
+    if (cpErr) throw cpErr;
 
-    return (
-        <div className="fixed inset-0 bg-slate-50 z-[100] flex flex-col font-sans animate-in slide-in-from-right duration-300 text-left">
-            <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm flex-shrink-0">
-                <div className="flex items-center gap-4">
-                    <button onClick={onClose} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-all active:scale-90">
-                        <ChevronLeft size={24} />
-                    </button>
-                    <div>
-                        <h1 className="text-lg font-black text-slate-800 uppercase tracking-tighter">
-                            Detalhamento <span className="text-orange-500">#{commandId.substring(0, 8).toUpperCase()}</span>
-                        </h1>
-                        <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Consulta de Histórico (Somente Leitura)</p>
-                    </div>
-                </div>
-                <div className="bg-emerald-50 text-emerald-600 px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-emerald-100 flex items-center gap-2 shadow-sm">
-                    <CheckCircle2 size={14} /> Liquidada em {data.closed_at ? format(new Date(data.closed_at), 'dd/MM/yyyy HH:mm') : '---'}
-                </div>
-            </header>
-
-            <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
-                <div className="max-w-6xl mx-auto space-y-6 pb-20">
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-5">
-                            <div className="w-16 h-16 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center font-black text-2xl overflow-hidden shadow-inner border-2 border-white">
-                                {data.client?.photo_url ? <img src={data.client.photo_url} className="w-full h-full object-cover" /> : displayClientName.charAt(0)}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Cliente</p>
-                                <h3 className="font-black text-slate-800 truncate uppercase text-lg">{displayClientName}</h3>
-                                {data.client?.whatsapp && <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1"><Smartphone size={10} className="text-orange-400"/> {data.client.whatsapp}</p>}
-                            </div>
-                        </div>
-
-                        <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-5">
-                            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center overflow-hidden shadow-inner border-2 border-white">
-                                {data.professional?.photo_url ? <img src={data.professional.photo_url} className="w-full h-full object-cover" /> : <User size={32} className="text-blue-200" />}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Atendimento por</p>
-                                <h3 className="font-black text-slate-800 truncate uppercase text-lg">{data.professional?.name || data.professional_name || 'Profissional'}</h3>
-                                <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1 uppercase"><UserCheck size={10} className="text-blue-400"/> Responsável Técnico</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        <div className="lg:col-span-2 space-y-6">
-                            <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
-                                <header className="px-8 py-6 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
-                                    <h3 className="font-black text-slate-700 text-[10px] uppercase tracking-widest flex items-center gap-2">
-                                        <ShoppingCart size={18} className="text-orange-500" /> Consumo Registrado
-                                    </h3>
-                                    <span className="text-[10px] font-black text-slate-400 uppercase bg-white px-3 py-1 rounded-lg border border-slate-100">{data.items?.length || 0} Itens</span>
-                                </header>
-                                <div className="divide-y divide-slate-50">
-                                    {data.items?.map((item: any) => (
-                                        <div key={item.id} className="p-8 flex items-center justify-between hover:bg-slate-50/30 transition-colors">
-                                            <div className="flex items-center gap-5">
-                                                <div className={`p-4 rounded-[24px] shadow-sm ${item.product_id ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
-                                                    {item.product_id ? <ShoppingBag size={24} /> : <Scissors size={24} />}
-                                                </div>
-                                                <div>
-                                                    <p className="font-black text-slate-800 text-lg leading-tight uppercase tracking-tight">{item.title}</p>
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <span className="text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded border border-slate-100">
-                                                            {item.quantity} un
-                                                        </span>
-                                                        <span className="text-[10px] font-bold text-slate-400">x {formatBRL(item.price)}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="font-black text-slate-800 text-xl">{formatBRL(item.quantity * item.price)}</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                                <footer className="p-8 bg-slate-50/50 border-t border-slate-100 flex justify-between items-center">
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Soma Bruta dos Itens</span>
-                                    <span className="font-black text-slate-600 text-lg">{formatBRL(financialStats.subtotal)}</span>
-                                </footer>
-                            </div>
-                        </div>
-
-                        <div className="space-y-6">
-                            <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden group">
-                                <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity"><DollarSign size={120} /></div>
-                                <div className="relative z-10">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Valor Total Liquidado</p>
-                                    <h2 className="text-5xl font-black tracking-tighter text-emerald-400">{formatBRL(financialStats.gross)}</h2>
-                                    
-                                    <div className="mt-8 pt-8 border-t border-white/10 space-y-4">
-                                        <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                            <span>Subtotal</span>
-                                            <span>{formatBRL(financialStats.subtotal)}</span>
-                                        </div>
-                                        {discount > 0 && (
-                                            <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-orange-400">
-                                                <span>Descontos Aplicados</span>
-                                                <span className="bg-orange-500/20 px-2 py-0.5 rounded">-{formatBRL(discount)}</span>
-                                            </div>
-                                        )}
-                                        {financialStats.fees > 0 && (
-                                            <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-rose-400">
-                                                <span>Taxas Transacionais (-)</span>
-                                                <span>-{formatBRL(financialStats.fees)}</span>
-                                            </div>
-                                        )}
-                                        <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-emerald-400 pt-2 border-t border-white/5">
-                                            <span>Recebido em Conta (Líquido)</span>
-                                            <span className="text-sm font-bold">{formatBRL(financialStats.net)}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
-                                <header className="px-6 py-4 border-b border-slate-50 bg-slate-50/50">
-                                    <h3 className="font-black text-slate-700 text-[10px] uppercase tracking-widest flex items-center gap-2">
-                                        <Receipt size={14} className="text-emerald-500" /> Métodos Utilizados
-                                    </h3>
-                                </header>
-                                <div className="p-6 space-y-4">
-                                    {financialStats.hasRealPayments ? (
-                                        payments.map((p, idx) => (
-                                            <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-3xl border border-slate-100 group hover:border-emerald-200 transition-all">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-2xl bg-white flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
-                                                        {getPaymentIcon(p.method)}
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-xs font-black text-slate-800 uppercase tracking-tighter">{p.method?.replace('_', ' ') || 'Processamento'}</p>
-                                                        <p className="text-[9px] font-bold text-slate-400 uppercase">
-                                                            {p.brand ? `${p.brand} ` : ''} 
-                                                            {p.installments > 1 ? `• ${p.installments}x` : '• À vista'}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                <div className="text-right">
-                                                    <span className="font-black text-slate-800 text-sm block">{formatBRL(p.amount)}</span>
-                                                    {p.fee_amount > 0 && <span className="text-[8px] font-bold text-rose-400 uppercase">Taxa: {formatBRL(p.fee_amount)}</span>}
-                                                </div>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <div className="p-4 bg-orange-50 border border-orange-100 rounded-2xl flex items-start gap-3">
-                                            <AlertTriangle size={16} className="text-orange-500 flex-shrink-0 mt-0.5" />
-                                            <p className="text-[10px] font-bold text-orange-700 leading-relaxed uppercase">O detalhamento individual das taxas deste fechamento não está disponível no log atual.</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </main>
-            
-            <footer className="p-6 bg-white border-t border-slate-100 flex justify-center flex-shrink-0">
-                <button 
-                    onClick={onClose}
-                    className="px-12 py-4 bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-slate-900 transition-all active:scale-95 shadow-xl"
-                >
-                    Voltar ao Balcão
-                </button>
-            </footer>
-        </div>
-    );
+    return cps || [];
+  } catch (err) {
+    console.error("Erro ao buscar pagamentos (FT/CP):", err);
+    return [];
+  }
 };
 
-export default PaidCommandDetailView;
+useEffect(() => {
+  const fetchFullCommand = async () => {
+    if (!commandId) return;
+    setLoading(true);
+    try {
+      const { data: fullData, error } = await supabase.rpc('get_command_full', {
+        p_command_id: commandId
+      });
+      if (error) throw error;
+
+      const result = Array.isArray(fullData) ? fullData[0] : fullData;
+      setData(result);
+
+      const payList = await fetchCommandPayments(commandId);
+      setPayments(payList);
+    } catch (err) {
+      console.error("Erro ao carregar detalhe da comanda paga:", err);
+      setData(null);
+      setPayments([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  fetchFullCommand();
+}, [commandId]);
