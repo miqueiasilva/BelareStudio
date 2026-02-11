@@ -4,44 +4,56 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
  * [AUTH_DEBUG] Diagnóstico de inicialização
  */
 const origin = typeof window !== 'undefined' ? window.location.origin : 'SSR';
+console.log(`[AUTH_DEBUG] Origin: ${origin}`);
 
-// Valores de fallback (Segurança para desenvolvimento local)
-const FALLBACK_URL = "https://rxtwmwrgcilmsldtqdfe.supabase.co";
-const FALLBACK_KEY = "sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x";
+// Valores padrão do projeto (Hardcoded fallbacks)
+const DEFAULT_URL = "https://rxtwmwrgcilmsldtqdfe.supabase.co";
+const DEFAULT_KEY = "sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x";
 
-/**
- * No Vite, import.meta.env.CHAVE é substituído estaticamente no build.
- * Esta função tenta pegar os valores das diversas formas possíveis com segurança.
- */
-const getEnv = (key: string): string | null => {
-  // 1. Tenta acesso direto com proteção contra undefined (forma padrão do Vite)
+// Função auxiliar para resolver as chaves (Vite env -> LocalStorage -> Default)
+const getEnv = (key: string, fallback: string): string => {
+  // 1. Tenta variáveis de ambiente do Vite (import.meta.env) de forma segura
   try {
-    if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
-      const env = (import.meta as any).env;
-      if (key === 'VITE_SUPABASE_URL' && env.VITE_SUPABASE_URL) return env.VITE_SUPABASE_URL;
-      if (key === 'VITE_SUPABASE_ANON_KEY' && env.VITE_SUPABASE_ANON_KEY) return env.VITE_SUPABASE_ANON_KEY;
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
+      // @ts-ignore
+      return import.meta.env[key];
     }
   } catch (e) {
-    console.warn(`[AUTH_DEBUG] Falha ao ler import.meta.env.${key}:`, e);
+    // Silently ignore
   }
 
-  // 2. Tenta LocalStorage (para o EnvGate)
+  // 2. Tenta process.env (fallback para outros ambientes)
+  try {
+    // @ts-ignore
+    if (typeof process !== 'undefined' && process.env && process.env[key]) {
+      // @ts-ignore
+      return process.env[key];
+    }
+  } catch (e) {
+    // Silently ignore
+  }
+
+  // 3. Tenta LocalStorage (necessário para o funcionamento do EnvGate)
   if (typeof window !== 'undefined') {
     try {
-      const stored = localStorage.getItem(key);
-      if (stored) return stored;
-    } catch (e) {}
+      const localVal = localStorage.getItem(key);
+      if (localVal) return localVal;
+    } catch (e) {
+      // Silently ignore
+    }
   }
 
-  return null;
+  return fallback;
 };
 
-const supabaseUrl = getEnv('VITE_SUPABASE_URL') || FALLBACK_URL;
-const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || FALLBACK_KEY;
+const supabaseUrl = getEnv('VITE_SUPABASE_URL', DEFAULT_URL);
+const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY', DEFAULT_KEY);
 
-console.log(`[AUTH_DEBUG] Supabase URL: ${supabaseUrl.substring(0, 20)}...`);
+console.log(`[AUTH_DEBUG] VITE_SUPABASE_URL: ${supabaseUrl === DEFAULT_URL ? 'utilizando fallback' : 'presente'}`);
+console.log(`[AUTH_DEBUG] VITE_SUPABASE_ANON_KEY: ${supabaseAnonKey === DEFAULT_KEY ? 'utilizando fallback' : 'presente'}`);
 
-// Inicialização do cliente
+// Inicialização segura do cliente para evitar "supabaseUrl is required"
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
@@ -51,16 +63,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 }) as unknown as SupabaseClient;
 
-/**
- * O sistema é considerado configurado se as variáveis VITE_ estão presentes no bundle,
- * se o usuário salvou manualmente no localStorage OU se as chaves de fallback foram injetadas.
- * Isso garante que o usuário veja a tela de LOGIN em vez da tela de CONFIGURAÇÃO.
- */
-export const isConfigured = !!(
-  (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_SUPABASE_URL) || 
-  (typeof window !== 'undefined' && localStorage.getItem('VITE_SUPABASE_URL')) ||
-  (supabaseUrl && supabaseUrl.length > 10) // Considera configurado se houver qualquer URL válida
-);
+// Helpers para o EnvGate.tsx
+// Consideramos configurado se houver algo diferente do fallback básico ou se o fallback for o esperado
+export const isConfigured = !!(supabaseUrl && supabaseAnonKey && supabaseAnonKey.length > 10);
 
 export const saveSupabaseConfig = (url: string, key: string) => {
   if (typeof window !== 'undefined') {
@@ -70,6 +75,7 @@ export const saveSupabaseConfig = (url: string, key: string) => {
   }
 };
 
+// Injeta no window para debug rápido no console se necessário
 if (typeof window !== 'undefined') {
   (window as any).supabase = supabase;
 }

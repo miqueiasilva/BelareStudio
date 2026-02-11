@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useMemo, useState, useRef } from "react";
+
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "../services/supabaseClient";
 
 type Studio = {
@@ -9,137 +10,119 @@ type Studio = {
 
 type StudioContextValue = {
   loading: boolean;
-  isSyncing: boolean;
-  syncError: boolean;
   studios: Studio[];
   activeStudioId: string | null;
   setActiveStudioId: (id: string) => void;
-  refreshStudios: (isRetry?: boolean) => Promise<void>;
+  refreshStudios: () => Promise<void>;
 };
 
 const StudioContext = createContext<StudioContextValue | null>(null);
+
 const STORAGE_KEY = "belaapp.activeStudioId";
-const SYNC_TIMEOUT_MS = 5000;
 
 export function StudioProvider({ children }: { children?: React.ReactNode }) {
-  const [loading, setLoading] = useState(true); // Controla o boot inicial
-  const [isSyncing, setIsSyncing] = useState(false); // Background status
-  const [syncError, setSyncError] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [studios, setStudios] = useState<Studio[]>([]);
   const [activeStudioId, setActiveStudioIdState] = useState<string | null>(
     () => localStorage.getItem(STORAGE_KEY)
   );
-
-  const syncInFlightRef = useRef<boolean>(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
 
   const setActiveStudioId = (id: string) => {
     setActiveStudioIdState(id);
     localStorage.setItem(STORAGE_KEY, id);
   };
 
-  const refreshStudios = async (isRetry = false) => {
-    if (syncInFlightRef.current && !isRetry) return;
-    
-    syncInFlightRef.current = true;
-    setIsSyncing(true);
-    setSyncError(false);
-
-    if (abortControllerRef.current) abortControllerRef.current.abort();
-    abortControllerRef.current = new AbortController();
-
-    // Failsafe Timeout: Nunca deixa o app travado
-    const timeoutId = setTimeout(() => {
-      if (syncInFlightRef.current) {
-        setSyncError(true);
-        setLoading(false);
-        setIsSyncing(false);
-        syncInFlightRef.current = false;
-        console.warn("[STUDIO] Sincronização excedeu tempo limite. Prosseguindo com dados locais.");
-      }
-    }, SYNC_TIMEOUT_MS);
-
+  const refreshStudios = async () => {
     try {
+      setLoading(true);
+
       const { data: sessionData } = await supabase.auth.getSession();
-      const authUser = sessionData?.session?.user;
+      const user = sessionData?.session?.user;
       
-      if (!authUser) {
-        setLoading(false);
-        setIsSyncing(false);
-        syncInFlightRef.current = false;
-        clearTimeout(timeoutId);
+      if (!user) {
+        setStudios([]);
+        setActiveStudioIdState(null);
         return;
       }
 
-      // Prioridade absoluta para o papel administrativo
-      const userRole = (authUser.app_metadata?.role || authUser.user_metadata?.role || '').toLowerCase();
-      const isAdmin = userRole === 'admin' || userRole === 'gestor' || authUser.email === 'admin@belarestudio.com';
+      // 1. Busca memberships para pegar studio_id e role
+      const { data: memberships, error: mErr } = await supabase
+        .from("user_studios")
+        .select("studio_id, role")
+        .eq("user_id", user.id);
 
-      let mappedStudios: Studio[] = [];
+      if (mErr) throw mErr;
 
-      if (isAdmin) {
-        const { data: allStudios } = await supabase
-          .from("studios")
-          .select("id, name")
-          .abortSignal(abortControllerRef.current.signal);
-        mappedStudios = (allStudios || []).map(s => ({ id: s.id, name: s.name, role: 'admin' }));
-      } else {
-        const { data: memberships } = await supabase
-          .from("user_studios")
-          .select("studio_id, role, studios(name)")
-          .eq("user_id", authUser.id)
-          .abortSignal(abortControllerRef.current.signal);
-        mappedStudios = (memberships || []).map(m => ({
-          id: m.studio_id,
-          name: (m.studios as any)?.name || "Unidade",
-          role: m.role
-        }));
+      if (!memberships || memberships.length === 0) {
+        setStudios([]);
+        setActiveStudioIdState(null);
+        localStorage.removeItem(STORAGE_KEY);
+        return;
       }
+
+      const studioIds = memberships.map(m => m.studio_id);
+
+      // 2. Busca detalhes dos studios
+      const { data: studiosData, error: sErr } = await supabase
+        .from("studios")
+        .select("id, name")
+        .in("id", studioIds);
+
+      if (sErr) throw sErr;
+
+      // 3. Mapeia combinando as informações
+      const mappedStudios = studiosData.map(s => ({
+        id: s.id,
+        name: s.name,
+        role: memberships.find(m => m.studio_id === s.id)?.role
+      }));
 
       setStudios(mappedStudios);
 
-      if (mappedStudios.length > 0) {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        const valid = saved && mappedStudios.some(s => s.id === saved);
-        if (!valid) setActiveStudioId(mappedStudios[0].id);
+      // 4. Gerencia qual studio está ativo
+      const saved = localStorage.getItem(STORAGE_KEY);
+      const savedStillValid = saved && mappedStudios.some((s) => s.id === saved);
+      
+      if (!savedStillValid) {
+        setActiveStudioId(mappedStudios[0].id);
+      } else {
+        setActiveStudioIdState(saved!);
       }
-
-      setSyncError(false);
-    } catch (err: any) {
-      if (err.name !== 'AbortError') setSyncError(true);
+    } catch (err) {
+      console.error("[StudioProvider] refreshStudios error:", err);
     } finally {
-      clearTimeout(timeoutId);
       setLoading(false);
-      setIsSyncing(false);
-      syncInFlightRef.current = false;
     }
   };
 
   useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') refreshStudios();
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
     refreshStudios();
 
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') refreshStudios(true);
-      if (event === 'SIGNED_OUT') {
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        refreshStudios();
+      } else if (event === 'SIGNED_OUT') {
         setStudios([]);
         setActiveStudioIdState(null);
         localStorage.removeItem(STORAGE_KEY);
       }
     });
 
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY) setActiveStudioIdState(e.newValue);
+    };
+    window.addEventListener("storage", onStorage);
+
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibility);
       sub.subscription.unsubscribe();
+      window.removeEventListener("storage", onStorage);
     };
   }, []);
 
-  const value = useMemo(() => ({
-    loading, isSyncing, syncError, studios, activeStudioId, setActiveStudioId, refreshStudios
-  }), [loading, isSyncing, syncError, studios, activeStudioId]);
+  const value = useMemo(
+    () => ({ loading, studios, activeStudioId, setActiveStudioId, refreshStudios }),
+    [loading, studios, activeStudioId]
+  );
 
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>;
 }
