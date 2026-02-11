@@ -31,7 +31,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
     console.log("[AUTH_DEBUG] Buscando perfil para:", authUser.email);
     try {
-      // Timeout de 3 segundos para a busca do perfil para não travar o login
+      // Timeout aumentado para 10 segundos para lidar com conexões lentas ou cold starts
       const profilePromise = supabase
         .from('team_members')
         .select('role, photo_url, name')
@@ -40,10 +40,12 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
 
       const { data: profData, error } = await Promise.race([
         profilePromise,
-        new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Timeout perfil")), 4000))
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Timeout perfil")), 10000))
       ]);
 
-      if (error) console.warn("[AUTH] Erro ao buscar perfil (ignorado):", error);
+      if (error) {
+        console.warn("[AUTH] Aviso ao buscar perfil:", error.message);
+      }
 
       return {
         ...authUser,
@@ -51,20 +53,22 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         nome: profData?.name || authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
         avatar_url: profData?.photo_url || authUser.user_metadata?.avatar_url
       };
-    } catch (e) {
-      console.error("[AUTH] Falha crítica ao buscar perfil:", e);
+    } catch (e: any) {
+      console.error("[AUTH] Erro na busca do perfil (usando fallback):", e.message);
       return { 
         ...authUser, 
         papel: 'profissional', 
-        nome: authUser.user_metadata?.full_name || 'Usuário' 
+        nome: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Usuário' 
       };
     }
   };
 
   const resolveUser = async (sessionUser: SupabaseUser | null) => {
     if (!sessionUser) {
-      setUser(null);
-      setLoading(false);
+      if (isMounted.current) {
+        setUser(null);
+        setLoading(false);
+      }
       return;
     }
 
@@ -75,6 +79,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         setLoading(false);
       }
     } catch (err) {
+      console.error("[AUTH] Erro fatal no resolveUser:", err);
       if (isMounted.current) setLoading(false);
     }
   };
@@ -82,29 +87,43 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   useEffect(() => {
     isMounted.current = true;
     
-    // Failsafe: se em 7 segundos ainda estiver carregando, libera a tela
+    // Failsafe Global: Força a desativação do loading após 15 segundos
+    // para garantir que a tela de login apareça se o Supabase não responder.
     const safetyTimer = setTimeout(() => {
       if (loading && isMounted.current) {
-        console.warn("[AUTH_DEBUG] Loading forçado para false por timeout de segurança.");
+        console.warn("[AUTH_DEBUG] Loading interrompido por timeout de segurança global.");
         setLoading(false);
       }
-    }, 7000);
+    }, 15000);
 
-    // Inicialização
+    // Inicialização da sessão
     const init = async () => {
-      console.log("[AUTH_DEBUG] Iniciando getSession...");
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        await resolveUser(session.user);
-      } else {
-        setLoading(false);
+      try {
+        console.log("[AUTH_DEBUG] Iniciando getSession...");
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error("[AUTH_DEBUG] Erro no getSession:", error.message);
+          if (isMounted.current) setLoading(false);
+          return;
+        }
+
+        if (session?.user) {
+          await resolveUser(session.user);
+        } else {
+          if (isMounted.current) setLoading(false);
+        }
+      } catch (err) {
+        console.error("[AUTH_DEBUG] Erro crítico na inicialização:", err);
+        if (isMounted.current) setLoading(false);
+      } finally {
+        initialized.current = true;
       }
-      initialized.current = true;
     };
 
     init();
 
-    // Listener de mudanças
+    // Listener de mudanças de estado
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log(`[AUTH_DEBUG] Evento Supabase: ${event}`);
       
@@ -127,16 +146,26 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     setLoading(true);
-    return supabase.auth.signInWithPassword({ email, password });
+    try {
+        return await supabase.auth.signInWithPassword({ email, password });
+    } catch (e) {
+        setLoading(false);
+        throw e;
+    }
   };
 
   const signUp = async (email: string, password: string, name: string) => {
     setLoading(true);
-    return supabase.auth.signUp({ 
-      email, 
-      password, 
-      options: { data: { full_name: name } } 
-    });
+    try {
+        return await supabase.auth.signUp({ 
+          email, 
+          password, 
+          options: { data: { full_name: name } } 
+        });
+    } catch (e) {
+        setLoading(false);
+        throw e;
+    }
   };
   
   const signInWithGoogle = async () => {
