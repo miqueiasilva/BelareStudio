@@ -17,7 +17,7 @@ interface PaidCommandDetailViewProps {
     onClose: () => void;
 }
 
-// Estrutura consolidada para exibição baseada em transações financeiras
+// Estrutura consolidada para exibição baseada em transações financeiras e registros de comanda
 interface PaymentDetail {
     id: string;
     methodLabel: string;
@@ -27,6 +27,7 @@ interface PaymentDetail {
     taxRate: number;
     installments: number;
     date: string | null;
+    brand: string | null;
 }
 
 const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId, onClose }) => {
@@ -36,38 +37,19 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
     const [professionalName, setProfessionalName] = useState<string>("GERAL / BALCÃO");
     const [loading, setLoading] = useState(true);
 
-    const resolveProfessional = async (commandData: any, itemsData: any[], paymentsData: any[]) => {
-        // 1. Prioridade: Professional retornado no snapshot da comanda
-        if (commandData.responsible_professional_name) return commandData.responsible_professional_name;
-        if (commandData.professional_name && commandData.professional_name !== "Geral") return commandData.professional_name;
-
-        // 2. Buscar por professional_id da comanda
+    const resolveProfessional = async (commandData: any, itemsData: any[]) => {
+        if (commandData.professional_name && commandData.professional_name !== "Geral") {
+            return commandData.professional_name;
+        }
         if (commandData.professional_id) {
             const { data: prof } = await supabase.from('team_members').select('name').eq('id', commandData.professional_id).maybeSingle();
             if (prof) return prof.name;
         }
-
-        // 3. Buscar pelo professional_id do primeiro pagamento
-        const firstPayWithProf = paymentsData.find(p => p.professional_id);
-        if (firstPayWithProf) {
-            const { data: prof } = await supabase.from('team_members').select('name').eq('id', firstPayWithProf.professional_id).maybeSingle();
-            if (prof) return prof.name;
-        }
-
-        // 4. Buscar pelo professional_id do primeiro item
         const firstItemWithProf = itemsData.find(i => i.professional_id);
         if (firstItemWithProf) {
             const { data: prof } = await supabase.from('team_members').select('name').eq('id', firstItemWithProf.professional_id).maybeSingle();
             if (prof) return prof.name;
         }
-
-        // 5. Buscar do agendamento ligado ao item
-        const firstItemWithAppt = itemsData.find(i => i.appointment_id);
-        if (firstItemWithAppt) {
-            const { data: appt } = await supabase.from('appointments').select('professional_name').eq('id', firstItemWithAppt.appointment_id).maybeSingle();
-            if (appt?.professional_name) return appt.professional_name;
-        }
-
         return "GERAL / BALCÃO";
     };
 
@@ -80,68 +62,112 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
             const [cmdRes, itemsRes, paymentsRes] = await Promise.all([
                 supabase.from('commands').select('*, clients:client_id (id, nome, name, photo_url)').eq('id', commandId).maybeSingle(),
                 supabase.from('command_items').select('*').eq('command_id', commandId),
-                // CORREÇÃO DA QUERY (400 FIX): Join explícito com a tabela de configuração
-                supabase.from('command_payments')
-                    .select('*, payment_methods_config!command_payments_method_id_fkey(name, brand, rate_cash)')
-                    .eq('command_id', commandId)
-                    .order('created_at', { ascending: true })
+                // FONTE DE AUDITORIA: command_payments (Traz o detalhamento exato do fechamento)
+                supabase
+                  .from('command_payments')
+                  .select(`
+                    id,
+                    amount,
+                    fee_amount,
+                    net_amount,
+                    fee_rate,
+                    installments,
+                    brand,
+                    created_at,
+                    method:method_id (
+                      name,
+                      type
+                    )
+                  `)
+                  .eq('command_id', commandId)
+                  .order('created_at', { ascending: true })
             ]);
 
             if (cmdRes.error) throw cmdRes.error;
             const commandData = cmdRes.data;
             const itemsData = itemsRes.data || [];
-            const paymentsDb = paymentsRes.data || [];
             
             setCommand(commandData);
             setItems(itemsData);
 
             // 2. Resolver Profissional Responsável
-            const resolvedProf = await resolveProfessional(commandData, itemsData, paymentsDb);
+            const resolvedProf = await resolveProfessional(commandData, itemsData);
             setProfessionalName(resolvedProf);
 
-            // 3. Formatar Pagamentos de command_payments (Fonte de Auditoria)
-            if (paymentsDb.length > 0) {
-                const formatted: PaymentDetail[] = paymentsDb.map(p => {
+            // 3. Formatar Pagamentos de command_payments
+            if (paymentsRes.data && paymentsRes.data.length > 0) {
+                const formatted: PaymentDetail[] = paymentsRes.data.map(p => {
                     const gross = Number(p.amount || 0);
                     const net = Number(p.net_amount || p.amount || 0);
-                    const config = p.payment_methods_config as any;
+                    const tax = Number(p.fee_rate || 0);
+                    
+                    const methodInfo = p.method as any;
+                    const type = methodInfo?.type || '';
+                    const brandName = p.brand;
+                    
+                    let label = methodInfo?.name || 'PAGAMENTO';
+                    
+                    // Lógica para Bandeira / Brand
+                    if (type === 'credit' || type === 'debit') {
+                        if (!brandName || brandName.trim() === '') {
+                            label = `${label} (bandeira não informada)`;
+                        } else {
+                            label = `${brandName.toUpperCase()} ${label}`;
+                        }
+                    }
 
                     return {
                         id: p.id,
-                        methodLabel: (config?.name || 'PAGAMENTO').toUpperCase(),
+                        methodLabel: label.toUpperCase(),
                         grossValue: gross,
-                        feeValue: gross - net,
+                        feeValue: Number(p.fee_amount || (gross - net)),
                         netValue: net,
-                        taxRate: Number(p.fee_rate || config?.rate_cash || 0),
+                        taxRate: tax,
                         installments: p.installments || 1,
-                        date: p.created_at
+                        date: p.created_at,
+                        brand: brandName
                     };
                 });
                 setPayments(formatted);
             } else {
-                // Caso extremo: tenta financial_transactions como fallback
-                const { data: ftData } = await supabase
+                // FALLBACK: Se não houver command_payments, tenta financial_transactions (Retrocompatibilidade)
+                const { data: financialRes } = await supabase
                     .from('financial_transactions')
-                    .select('*, payment_methods_config:payment_method_id(name)')
+                    .select('id, amount, net_value, tax_rate, installments, created_at, payment_method:payment_method_id (name, brand)')
                     .eq('command_id', commandId)
-                    .limit(5);
+                    .eq('type', 'income')
+                    .neq('status', 'cancelado');
 
-                if (ftData && ftData.length > 0) {
-                    setPayments(ftData.map(ft => ({
-                        id: ft.id,
-                        methodLabel: ((ft.payment_methods_config as any)?.name || ft.payment_method || 'RECEBIMENTO').toUpperCase(),
-                        grossValue: Number(ft.amount || 0),
-                        feeValue: Number(ft.amount || 0) - Number(ft.net_value || ft.amount),
-                        netValue: Number(ft.net_value || ft.amount || 0),
-                        taxRate: Number(ft.tax_rate || 0),
-                        installments: ft.installments || 1,
-                        date: ft.date || ft.created_at
+                if (financialRes && financialRes.length > 0) {
+                    setPayments(financialRes.map(t => ({
+                        id: t.id,
+                        methodLabel: ((t.payment_method as any)?.name || 'PAGAMENTO').toUpperCase(),
+                        grossValue: Number(t.amount || 0),
+                        feeValue: Number(t.amount || 0) - Number(t.net_value || t.amount || 0),
+                        netValue: Number(t.net_value || t.amount || 0),
+                        taxRate: Number(t.tax_rate || 0),
+                        installments: t.installments || 1,
+                        date: t.created_at,
+                        brand: (t.payment_method as any)?.brand || null
                     })));
+                } else {
+                    // Caso extremo sem nenhum registro
+                    setPayments([{
+                        id: 'fallback',
+                        methodLabel: (commandData?.payment_method || 'RECEBIMENTO').toUpperCase(),
+                        grossValue: Number(commandData?.total_amount || 0),
+                        feeValue: 0,
+                        netValue: Number(commandData?.total_amount || 0),
+                        taxRate: 0,
+                        installments: 1,
+                        date: commandData?.closed_at || null,
+                        brand: null
+                    }]);
                 }
             }
 
         } catch (e: any) {
-            console.error('[PAID_DETAIL] Erro ao carregar auditoria:', e);
+            console.error('[PAID_DETAIL] Erro ao carregar auditoria financeira:', e);
         } finally {
             setLoading(false);
         }
@@ -171,7 +197,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                             <Receipt className="text-emerald-500" size={24} />
                             Resumo da Venda
                         </h2>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Comanda Liquidada • Auditoria Financeira</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Comanda Liquidada • Auditoria de Caixa</p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400"><X size={24} /></button>
                 </header>
@@ -211,7 +237,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                         </div>
                     </Card>
 
-                    {/* Detalhamento Financeiro */}
+                    {/* Fluxo de Recebimento (Financeiro) */}
                     <div className="space-y-4">
                         <div className="flex justify-between items-center px-1">
                             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">

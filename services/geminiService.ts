@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { initialAppointments, mockTransactions, clients, professionals } from "../data/mockData";
 import { format } from "date-fns";

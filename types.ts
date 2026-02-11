@@ -242,3 +242,23 @@ export interface Review {
   serviceName?: string;
   reply?: string;
 }
+
+export interface PaymentMethodInfo {
+  id: string;
+  name: string;
+  brand?: string;
+  icon?: string;
+  studio_id: string;
+}
+
+export interface FinancialTransactionDetail {
+  id: string;
+  command_id: string;
+  payment_method: string;
+  amount: number;
+  net_value: number;
+  tax_rate: number;
+  installments: number;
+  type: 'income' | 'expense';
+  created_at: string;
+}

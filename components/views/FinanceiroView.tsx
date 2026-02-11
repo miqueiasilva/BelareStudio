@@ -18,8 +18,8 @@ import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import { 
     format, isSameDay, isAfter, 
-    endOfDay, endOfMonth, startOfMonth,
-    eachDayOfInterval, addDays, subDays, startOfDay
+    endOfDay, endOfMonth,
+    eachDayOfInterval, addDays
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import Toast, { ToastType } from '../shared/Toast';
@@ -28,6 +28,16 @@ import Toast, { ToastType } from '../shared/Toast';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+
+// FIX: Manual replacement for startOfDay
+const getStartOfDay = (d: Date) => {
+    const nd = new Date(d);
+    nd.setHours(0, 0, 0, 0);
+    return nd;
+};
+
+// FIX: Manual replacement for startOfMonth
+const getStartOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
 
 interface FinanceiroViewProps {
     transactions: FinancialTransaction[];
@@ -70,7 +80,8 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
     
     // Filtros
     const [filterPeriod, setFilterPeriod] = useState<'hoje' | 'mes' | 'custom'>('hoje');
-    const [startDate, setStartDate] = useState(format(startOfDay(new Date()), 'yyyy-MM-dd'));
+    // FIX: Used getStartOfDay helper
+    const [startDate, setStartDate] = useState(format(getStartOfDay(new Date()), 'yyyy-MM-dd'));
     const [endDate, setEndDate] = useState(format(endOfDay(new Date()), 'yyyy-MM-dd'));
     
     const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
@@ -85,13 +96,16 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
         try {
             let start, end;
             if (filterPeriod === 'hoje') {
-                start = startOfDay(new Date());
+                // FIX: Used getStartOfDay helper
+                start = getStartOfDay(new Date());
                 end = endOfDay(new Date());
             } else if (filterPeriod === 'mes') {
-                start = startOfMonth(new Date());
+                // FIX: Used getStartOfMonth helper
+                start = getStartOfMonth(new Date());
                 end = endOfMonth(new Date());
             } else {
-                start = startOfDay(new Date(startDate));
+                // FIX: Used getStartOfDay helper
+                start = getStartOfDay(new Date(startDate));
                 end = endOfDay(new Date(endDate));
             }
 
@@ -131,7 +145,8 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             });
 
             // 3. Buscar Projeções para o Gráfico
-            const projStart = startOfDay(new Date());
+            // FIX: Used getStartOfDay helper
+            const projStart = getStartOfDay(new Date());
             const projEnd = endOfDay(addDays(new Date(), 7));
             
             const { data: apps, error: appsError } = await supabase
@@ -173,8 +188,9 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             return { name: cat, value: total };
         }).sort((a, b) => b.value - a.value).slice(0, 5);
 
-        const rangeStart = filterPeriod === 'hoje' ? startOfDay(new Date()) : (filterPeriod === 'custom' ? new Date(startDate) : startOfMonth(new Date()));
-        const rangeEnd = filterPeriod === 'hoje' ? endOfDay(new Date()) : (filterPeriod === 'custom' ? new Date(endDate) : endOfMonth(new Date()));
+        // FIX: Used helpers
+        const rangeStart = filterPeriod === 'hoje' ? getStartOfDay(new Date()) : (filterPeriod === 'custom' ? new Date(startDate) : getStartOfMonth(new Date()));
+        const rangeEnd = filterPeriod === 'hoje' ? endOfDay(new Date()) : (filterPeriod === 'custom' ? endOfDay(new Date(endDate)) : endOfMonth(new Date()));
         
         const daysInPeriod = eachDayOfInterval({
             start: rangeStart,

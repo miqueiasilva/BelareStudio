@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
     X, CheckCircle, Wallet, CreditCard, Banknote, 
@@ -20,7 +19,6 @@ interface DBPaymentMethod {
     id: string; 
     name: string;
     type: 'credit' | 'debit' | 'pix' | 'money';
-    brand: string;
     rate_cash: number;
     allow_installments: boolean;
     max_installments: number;
@@ -57,7 +55,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const isSafeUUID = (id: any): boolean => {
         if (!id) return false;
         const sid = String(id).trim();
-        // Regex básica para UUID v4
         return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sid);
     };
 
@@ -139,35 +136,33 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         try {
             const profId = isSafeUUID(selectedProfessionalId) ? selectedProfessionalId : null;
-            const clientId = isSafeUUID(appointment.client_id) ? String(appointment.client_id) : null;
+            
+            // 1. REGISTRO DO PAGAMENTO (PRIMEIRO)
+            const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                p_studio_id: (window as any).activeStudioId || null,
+                p_professional_id: profId,
+                p_amount: appointment.price,
+                p_method: selectedCategory,
+                p_installments: installments,
+                p_appointment_id: appointment.id
+            });
 
-            const payload = {
-                amount: appointment.price, 
-                net_value: financialMetrics.netValue, 
-                tax_rate: financialMetrics.rate, 
-                description: `Venda: ${appointment.service_name} - ${appointment.client_name}`,
-                type: 'income',
-                category: 'servico',
-                payment_method: selectedCategory,
-                payment_method_id: currentMethod.id, 
-                professional_id: profId,
-                client_id: clientId,
-                appointment_id: appointment.id,
-                installments: installments,
-                status: 'pago',
-                date: new Date().toISOString()
-            };
+            if (rpcError) throw rpcError;
 
-            const { error: finError } = await supabase.from('financial_transactions').insert([payload]);
-            if (finError) throw finError;
-
-            await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
+            // 2. ATUALIZAÇÃO DO AGENDAMENTO (SÓ SE O PASSO 1 FOI OK)
+            const { error: apptError } = await supabase
+                .from('appointments')
+                .update({ status: 'concluido' })
+                .eq('id', appointment.id);
+            
+            if (apptError) throw apptError;
 
             setToast({ message: "Pagamento recebido!", type: 'success' });
             onSuccess();
             onClose();
         } catch (error: any) {
-            setToast({ message: "Erro ao finalizar recebimento.", type: 'error' });
+            console.error("Erro no recebimento:", error);
+            setToast({ message: "Erro ao finalizar recebimento: " + error.message, type: 'error' });
             setIsLoading(false);
         }
     };
@@ -217,7 +212,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none"
                             >
                                 {filteredMethods.map(m => (
-                                    <option key={m.id} value={m.id}>{m.name} {m.brand ? `(${m.brand})` : ''}</option>
+                                    <option key={m.id} value={m.id}>{m.name}</option>
                                 ))}
                             </select>
                             {currentMethod?.type === 'credit' && currentMethod.allow_installments && (

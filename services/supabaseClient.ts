@@ -1,115 +1,81 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Robust environment variable resolver for Preview and Production environments
-const getEnvVar = (key: string): string | null => {
-  if (typeof window === 'undefined') return null;
+/**
+ * [AUTH_DEBUG] Diagnóstico de inicialização
+ */
+const origin = typeof window !== 'undefined' ? window.location.origin : 'SSR';
+console.log(`[AUTH_DEBUG] Origin: ${origin}`);
 
+// Valores padrão do projeto (Hardcoded fallbacks)
+const DEFAULT_URL = "https://rxtwmwrgcilmsldtqdfe.supabase.co";
+const DEFAULT_KEY = "sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x";
+
+// Função auxiliar para resolver as chaves (Vite env -> LocalStorage -> Default)
+const getEnv = (key: string, fallback: string): string => {
+  // 1. Tenta variáveis de ambiente do Vite (import.meta.env) de forma segura
   try {
-    // 1. Check window overrides (Direct console injection or Preview environment)
-    if ((window as any)[`__${key}__`]) return (window as any)[`__${key}__` ];
-    if ((window as any).__ENV__ && (window as any).__ENV__[key]) return (window as any).__ENV__[key];
-
-    // 2. Check import.meta.env (Vite standard)
-    // FIX: Cast import.meta to any to resolve "Property 'env' does not exist on type 'ImportMeta'" error.
-    if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env[key]) {
-      return (import.meta as any).env[key];
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
+      // @ts-ignore
+      return import.meta.env[key];
     }
-
-    // 3. Check localStorage (Saved via EnvGate)
-    const saved = localStorage.getItem(key);
-    if (saved && saved.trim() !== '') return saved.trim();
   } catch (e) {
-    console.warn(`Error resolving env var ${key}:`, e);
-  }
-  return null;
-};
-
-// Default credentials - IMPORTANT: Standard Supabase Anon keys are long JWT strings.
-const FALLBACK_URL = "https://rxtwmwrgcilmsldtqdfe.supabase.co";
-const FALLBACK_KEY = "sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x";
-
-const supabaseUrl = getEnvVar('VITE_SUPABASE_URL') || FALLBACK_URL;
-const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY') || FALLBACK_KEY;
-
-// Diagnostic Log for developers
-console.log(`[Supabase Init] URL: ${supabaseUrl} | Key Status: ${supabaseAnonKey ? 'Loaded (' + supabaseAnonKey.substring(0, 5) + '...)' : 'MISSING'}`);
-
-export const isConfigured = !!(supabaseUrl && supabaseAnonKey && supabaseAnonKey.length > 5);
-
-// Anti-Hang Fetch implementation with explicit header persistence
-const fetchWithTimeout = async (url: string, options: any = {}) => {
-  const timeout = 15000; 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
-
-  // Ensure headers are handled safely (handles both Object and Headers instances)
-  const safeHeaders: Record<string, string> = {};
-  
-  if (options.headers) {
-    if (options.headers instanceof Headers) {
-      options.headers.forEach((value, key) => {
-        safeHeaders[key] = value;
-      });
-    } else {
-      Object.assign(safeHeaders, options.headers);
-    }
+    // Silently ignore
   }
 
-  // CRITICAL FIX: Ensure 'apikey' is always present in outgoing requests
-  if (!safeHeaders['apikey'] && supabaseAnonKey) {
-    safeHeaders['apikey'] = supabaseAnonKey;
-  }
-
+  // 2. Tenta process.env (fallback para outros ambientes)
   try {
-    const response = await fetch(url, {
-      ...options,
-      headers: safeHeaders,
-      signal: controller.signal
-    });
-    clearTimeout(timer);
-    return response;
-  } catch (error: any) {
-    clearTimeout(timer);
-    if (error.name === 'AbortError') {
-      throw new Error("Timeout: A requisição ao Supabase demorou mais que 15s.");
+    // @ts-ignore
+    if (typeof process !== 'undefined' && process.env && process.env[key]) {
+      // @ts-ignore
+      return process.env[key];
     }
-    throw error;
+  } catch (e) {
+    // Silently ignore
   }
+
+  // 3. Tenta LocalStorage (necessário para o funcionamento do EnvGate)
+  if (typeof window !== 'undefined') {
+    try {
+      const localVal = localStorage.getItem(key);
+      if (localVal) return localVal;
+    } catch (e) {
+      // Silently ignore
+    }
+  }
+
+  return fallback;
 };
 
-export const supabase = (isConfigured 
-  ? createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-      },
-      global: {
-        fetch: fetchWithTimeout
-      }
-    }) 
-  : null) as unknown as SupabaseClient;
+const supabaseUrl = getEnv('VITE_SUPABASE_URL', DEFAULT_URL);
+const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY', DEFAULT_KEY);
+
+console.log(`[AUTH_DEBUG] VITE_SUPABASE_URL: ${supabaseUrl === DEFAULT_URL ? 'utilizando fallback' : 'presente'}`);
+console.log(`[AUTH_DEBUG] VITE_SUPABASE_ANON_KEY: ${supabaseAnonKey === DEFAULT_KEY ? 'utilizando fallback' : 'presente'}`);
+
+// Inicialização segura do cliente para evitar "supabaseUrl is required"
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    flowType: 'pkce'
+  }
+}) as unknown as SupabaseClient;
+
+// Helpers para o EnvGate.tsx
+// Consideramos configurado se houver algo diferente do fallback básico ou se o fallback for o esperado
+export const isConfigured = !!(supabaseUrl && supabaseAnonKey && supabaseAnonKey.length > 10);
 
 export const saveSupabaseConfig = (url: string, key: string) => {
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('VITE_SUPABASE_URL', url.trim());
-    localStorage.setItem('VITE_SUPABASE_ANON_KEY', key.trim());
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('VITE_SUPABASE_URL', url);
+    localStorage.setItem('VITE_SUPABASE_ANON_KEY', key);
     window.location.reload();
   }
 };
 
-export async function testConnection() {
-    if (!isConfigured || !supabase) return false;
-    try {
-        const { error } = await supabase.auth.getSession();
-        return !error;
-    } catch (e) {
-        return false;
-    }
-}
-
+// Injeta no window para debug rápido no console se necessário
 if (typeof window !== 'undefined') {
-    (window as any).supabase = supabase;
-    (window as any).VITE_SUPABASE_URL = supabaseUrl;
-    (window as any).VITE_SUPABASE_ANON_KEY = supabaseAnonKey;
+  (window as any).supabase = supabase;
 }

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
     Search, Plus, Clock, User, FileText, 
     DollarSign, Coffee, Scissors, Trash2, ShoppingBag, X,
@@ -34,8 +34,8 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         if (!activeStudioId) return;
         setLoading(true);
         try {
-            // AJUSTE: Utilizando 'clients:client_id' para garantir o join correto conforme estrutura do Supabase
-            const { data, error } = await supabase
+            // 1. Busca básica de comandas
+            let { data, error } = await supabase
                 .from('commands')
                 .select(`
                     id, 
@@ -56,6 +56,26 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                 .order('created_at', { ascending: false });
             
             if (error) throw error;
+
+            // 2. FILTRAGEM INTELIGENTE DE INCONSISTÊNCIA
+            // Se estiver na aba 'abertas', cruzar com command_payments para ocultar os que já têm pagamento
+            if (currentTab === 'open' && data && data.length > 0) {
+                const commandIds = data.map(c => c.id);
+                
+                // Busca em command_payments (vínculo oficial de fechamento financeiro)
+                const { data: payments } = await supabase
+                    .from('command_payments')
+                    .select('command_id')
+                    .in('command_id', commandIds);
+
+                if (payments && payments.length > 0) {
+                    const paidIds = new Set(payments.map(p => p.command_id));
+                    // Mantém apenas as que REALMENTE não têm pagamento no banco
+                    data = data.filter(c => !paidIds.has(c.id));
+                    console.log(`[SYNC] Ocultadas ${paidIds.size} comandas inconsistentes da aba "Em Atendimento".`);
+                }
+            }
+
             setTabs(data || []);
         } catch (e: any) {
             console.error("Erro Comandas:", e);
@@ -112,11 +132,9 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
         } catch (e) {}
     };
 
-    // AJUSTE: Lógica de Fallback para exibição do nome do cliente no Card
     const getClientDisplayName = (tab: any) => {
         const joinedName = tab.clients?.nome || tab.clients?.name;
         const snapshotName = tab.client_name;
-
         return joinedName || snapshotName || "CLIENTE SEM CADASTRO";
     };
 
@@ -166,7 +184,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
             <div className="p-4 bg-white border-b border-slate-100 flex-shrink-0">
                 <div className="relative group max-md">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 w-5 h-5 group-focus-within:text-orange-500 transition-colors" />
-                    <input type="text" placeholder="Buscar cliente..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:bg-white focus:ring-4 focus:ring-orange-50 focus:border-orange-400 outline-none transition-all" />
+                    <input type="text" placeholder="Buscar cliente..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:bg-white focus:ring-4 focus:ring-orange-100 focus:border-orange-400 outline-none transition-all" />
                 </div>
             </div>
 

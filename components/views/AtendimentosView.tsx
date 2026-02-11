@@ -10,7 +10,7 @@ import {
 import { 
     format, addDays, addWeeks, addMonths, eachDayOfInterval, 
     isSameDay, isWithinInterval, isSameMonth, addMinutes, 
-    endOfDay, endOfWeek, endOfMonth, startOfDay
+    endOfDay, endOfWeek, endOfMonth
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
@@ -24,6 +24,13 @@ import Toast, { ToastType } from '../shared/Toast';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
 import { useStudio } from '../../contexts/StudioContext';
+
+// FIX: Manual replacement for startOfDay as it's missing from date-fns
+const getStartOfDay = (d: Date) => {
+    const nd = new Date(d);
+    nd.setHours(0, 0, 0, 0);
+    return nd;
+};
 
 const isUUID = (str: any): boolean => {
     if (!str) return false;
@@ -173,12 +180,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             let rangeStart: Date, rangeEnd: Date;
             
             if (periodType === 'Dia') {
-                rangeStart = startOfDay(currentDate);
+                // FIX: Used getStartOfDay helper
+                rangeStart = getStartOfDay(currentDate);
                 rangeEnd = endOfDay(currentDate);
             } else if (periodType === 'Semana') {
                 const day = currentDate.getDay();
                 const diff = (day < 1 ? -6 : 1) - day;
-                rangeStart = startOfDay(addDays(currentDate, diff));
+                // FIX: Used getStartOfDay helper
+                rangeStart = getStartOfDay(addDays(currentDate, diff));
                 rangeEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
             } else {
                 rangeStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1, 0, 0, 0, 0);
@@ -429,7 +438,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 .insert([{
                     studio_id: activeStudioId,
                     client_id: appointment.client?.id ? appointment.client.id : null,
-                    client_name: appointment.client?.nome || 'Consumidor Final',
+                    client_name: appointment.client?.nome || null, // FIX: Envia null para disparar default do DB se não houver cliente
                     professional_id: appointment.professional.id ? appointment.professional.id : null,
                     status: 'open',
                     total_amount: appointment.service.price
@@ -542,7 +551,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const start = currentDate;
             const day = start.getDay();
             const diff = (day < 1 ? -6 : 1) - day;
-            const weekStart = startOfDay(addDays(start, diff));
+            // FIX: Used getStartOfDay helper
+            const weekStart = getStartOfDay(addDays(start, diff));
 
             return eachDayOfInterval({ start: weekStart, end: endOfWeek(currentDate, { weekStartsOn: 1 }) }).map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date' as const, data: day }));
         }
@@ -555,7 +565,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             if (periodType === 'Semana') {
                 const day = currentDate.getDay();
                 const diff = (day < 1 ? -6 : 1) - day;
-                const weekStart = startOfDay(addDays(currentDate, diff));
+                // FIX: Used getStartOfDay helper
+                const weekStart = getStartOfDay(addDays(currentDate, diff));
                 const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
 
                 return isWithinInterval(a.start, { start: weekStart, end: weekEnd });
@@ -752,7 +763,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                             <div className="p-1.5 bg-orange-100 rounded-lg text-orange-600"><CalendarIcon size={16} /></div> Novo Agendamento
                         </button>
                         <button onClick={() => { setModalState({ type: 'sale', data: { professionalId: selectionMenu.professional.id } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-green-50 hover:text-green-600 transition-colors">
-                            <div className="p-1.5 bg-green-100 rounded-lg text-green-600"><ShoppingBag size={16} /></div> Nova Venda
+                            <div className="p-1.5 bg-green-100 rounded-lg text-green-600"><ShoppingBag size={16} /></div> Novo Venda
                         </button>
                         <button onClick={() => { setModalState({ type: 'block', data: { start: selectionMenu.time, professional: selectionMenu.professional } }); setSelectionMenu(null); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition-colors"><div className="p-1.5 bg-rose-100 rounded-lg text-orange-600"><Ban size={16} /></div> Bloqueio</button>
                     </div>

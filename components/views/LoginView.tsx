@@ -35,11 +35,13 @@ const LoginView: React.FC = () => {
     const handleGoogleLogin = async () => {
         setError(null);
         setIsLoading(true);
+        console.log('[AUTH_DEBUG] Usuário clicou em Login com Google');
         try {
             const { error } = await signInWithGoogle();
             if (error) throw error;
         } catch (err: any) {
-            setError(err.message || "Falha na autenticação com Google.");
+            console.error('[AUTH_DEBUG] Erro Google OAuth:', err);
+            setError(err.message || "Falha na conexão com Google.");
             setIsLoading(false);
         }
     };
@@ -49,6 +51,8 @@ const LoginView: React.FC = () => {
         setError(null);
         setSuccessMessage(null);
         setIsLoading(true);
+        
+        console.log(`[AUTH_DEBUG] Tentativa de ${mode} para: ${email}`);
 
         try {
             if (mode === 'login') {
@@ -57,17 +61,17 @@ const LoginView: React.FC = () => {
             } else if (mode === 'register') {
                 const { error: signUpError } = await signUp(email, password, name);
                 if (signUpError) throw signUpError;
-                setSuccessMessage("Conta criada! Verifique seu e-mail para confirmar o cadastro.");
+                setSuccessMessage("Conta criada! Verifique seu e-mail para confirmar.");
             } else if (mode === 'forgot') {
                 const { error: forgotError } = await resetPassword(email);
                 if (forgotError) throw forgotError;
-                setSuccessMessage("Link de recuperação enviado para seu e-mail!");
+                setSuccessMessage("Link de recuperação enviado para o seu e-mail.");
             }
         } catch (err: any) {
-            // Tratamento de erros específicos do Supabase para melhor UX
+            console.error('[AUTH_DEBUG] Falha no processo de autenticação:', err);
             let message = err.message;
             if (message === "Invalid login credentials") message = "E-mail ou senha incorretos.";
-            if (message === "Email not confirmed") message = "Por favor, confirme seu e-mail antes de entrar.";
+            if (message.includes("API key")) message = "Erro técnico: Chave de API não configurada corretamente.";
             setError(message);
         } finally {
             setIsLoading(false);
@@ -124,16 +128,14 @@ const LoginView: React.FC = () => {
                     {mode === 'register' && (
                         <div>
                             <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Nome Completo</label>
-                            <div className="relative group">
-                                <input
-                                    type="text"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    className="w-full bg-[#242936] border border-white/5 rounded-xl pl-4 pr-4 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all"
-                                    placeholder="Seu nome"
-                                    required
-                                />
-                            </div>
+                            <input
+                                type="text"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                className="w-full bg-[#242936] border border-white/5 rounded-xl pl-4 pr-4 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-50/20 focus:border-orange-500/50 transition-all"
+                                placeholder="Seu nome"
+                                required
+                            />
                         </div>
                     )}
 
@@ -145,7 +147,7 @@ const LoginView: React.FC = () => {
                                 type="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                className="w-full bg-[#242936] border border-white/5 rounded-xl pl-12 pr-4 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all"
+                                className="w-full bg-[#242936] border border-white/5 rounded-xl pl-12 pr-4 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-50/20 focus:border-orange-500/50 transition-all"
                                 placeholder="seu@email.com"
                                 required
                             />
@@ -154,16 +156,14 @@ const LoginView: React.FC = () => {
 
                     {mode !== 'forgot' && (
                         <div>
-                            <div className="flex justify-between items-center mb-2 ml-1">
-                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Senha</label>
-                            </div>
+                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Senha</label>
                             <div className="relative group">
                                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-orange-400 transition-colors" size={18} />
                                 <input
                                     type={showPassword ? "text" : "password"}
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full bg-[#242936] border border-white/5 rounded-xl pl-12 pr-12 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all"
+                                    className="w-full bg-[#242936] border border-white/5 rounded-xl pl-12 pr-12 py-3.5 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-50/20 focus:border-orange-500/50 transition-all"
                                     placeholder="••••••••"
                                     required
                                     minLength={6}
