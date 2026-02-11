@@ -9,7 +9,7 @@ type Studio = {
 
 type StudioContextValue = {
   loading: boolean;
-  syncError: boolean; // Novo estado para controle de falhas
+  syncError: boolean;
   studios: Studio[];
   activeStudioId: string | null;
   setActiveStudioId: (id: string) => void;
@@ -19,7 +19,7 @@ type StudioContextValue = {
 const StudioContext = createContext<StudioContextValue | null>(null);
 
 const STORAGE_KEY = "belaapp.activeStudioId";
-const SYNC_TIMEOUT_MS = 15000; // 15 segundos de timeout
+const SYNC_TIMEOUT_MS = 5000; // Timeout agressivo de 5s para não travar o usuário
 
 export function StudioProvider({ children }: { children?: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
@@ -29,7 +29,6 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
     () => localStorage.getItem(STORAGE_KEY)
   );
 
-  // Refs de controle de concorrência e limpeza
   const syncInFlightRef = useRef<boolean>(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastSyncSuccessRef = useRef<number>(0);
@@ -40,18 +39,12 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
   };
 
   const refreshStudios = async (isRetry = false) => {
-    // 1. Regra de Single-Flight: Impede execuções simultâneas
-    if (syncInFlightRef.current && !isRetry) {
-      // FIX: Cast import.meta to any to fix "Property 'env' does not exist on type 'ImportMeta'"
-      if ((import.meta as any).env?.DEV) console.log("[STUDIO] Sincronização já em andamento, ignorando...");
-      return;
-    }
+    // 1. Single-Flight: Impede concorrência
+    if (syncInFlightRef.current) return;
 
-    // 2. Regra de Reentrada: Evita sync desnecessário se foi recente (< 2 min)
+    // 2. Cache-Hit: Se já temos dados e o sync foi recente (< 5 min), não repetimos
     const now = Date.now();
-    if (!isRetry && lastSyncSuccessRef.current > 0 && (now - lastSyncSuccessRef.current < 120000)) {
-      // FIX: Cast import.meta to any to fix "Property 'env' does not exist on type 'ImportMeta'"
-      if ((import.meta as any).env?.DEV) console.log("[STUDIO] Sincronização recente, pulando...");
+    if (!isRetry && activeStudioId && (now - lastSyncSuccessRef.current < 300000)) {
       setLoading(false);
       return;
     }
@@ -59,13 +52,12 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
     syncInFlightRef.current = true;
     setSyncError(false);
     
-    // Cancela requests anteriores se existirem
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
 
     const timeoutId = setTimeout(() => {
       if (syncInFlightRef.current) {
-        console.warn("[STUDIO] Timeout na sincronização.");
+        if ((import.meta as any).env?.DEV) console.warn("[STUDIO] Timeout background sync.");
         setSyncError(true);
         setLoading(false);
         syncInFlightRef.current = false;
@@ -73,7 +65,8 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
     }, SYNC_TIMEOUT_MS);
 
     try {
-      if (isRetry) setLoading(true);
+      // O loading só é true na primeira vez ou em retentativas manuais
+      if (isRetry || studios.length === 0) setLoading(true);
 
       const { data: sessionData } = await supabase.auth.getSession();
       const authUser = sessionData?.session?.user;
@@ -124,15 +117,13 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
         } else {
           setActiveStudioIdState(saved!);
         }
-      } else {
-        setActiveStudioIdState(null);
       }
 
       lastSyncSuccessRef.current = Date.now();
       setSyncError(false);
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        console.error("[STUDIO] refreshStudios error:", err);
+        console.error("[STUDIO] Sincronização falhou:", err.message);
         setSyncError(true);
       }
     } finally {
@@ -142,12 +133,10 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
     }
   };
 
-  // Listener de visibilidade para re-validar ao voltar para a aba
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        // FIX: Cast import.meta to any to fix "Property 'env' does not exist on type 'ImportMeta'"
-        if ((import.meta as any).env?.DEV) console.log("[STUDIO] Aba visível, validando contexto...");
+      // Só re-sincroniza se voltarmos para a aba e NÃO tivermos uma unidade ativa ou o erro persistir
+      if (document.visibilityState === 'visible' && (!activeStudioId || syncError)) {
         refreshStudios();
       }
     };
