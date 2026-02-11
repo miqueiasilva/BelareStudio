@@ -4,7 +4,7 @@ import { useStudio } from './contexts/StudioContext';
 import { ViewState, FinancialTransaction, UserRole } from './types';
 import EnvGate from './components/EnvGate';
 import { hasAccess } from './utils/permissions';
-import { Loader2, ShieldAlert, LogOut, RefreshCw, AlertCircle } from 'lucide-react';
+import { Loader2, ShieldAlert, LogOut, RefreshCw } from 'lucide-react';
 
 // Componentes estáticos
 import MainLayout from './components/layout/MainLayout';
@@ -36,13 +36,13 @@ import { mockTransactions } from './data/mockData';
 const ViewLoader = () => (
   <div className="h-full w-full flex flex-col items-center justify-center bg-slate-50/50 backdrop-blur-sm">
     <Loader2 className="animate-spin text-orange-500 mb-2" size={32} />
-    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Carregando Módulo...</p>
+    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Processando...</p>
   </div>
 );
 
 const AppContent: React.FC = () => {
   const { user, loading: authLoading, signOut } = useAuth();
-  const { activeStudioId, loading: studioLoading, syncError, refreshStudios } = useStudio();
+  const { activeStudioId, isSyncing, refreshStudios } = useStudio();
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
@@ -70,33 +70,20 @@ const AppContent: React.FC = () => {
 
   if (!user) return <LoginView />;
 
-  // NOTA: Removido o gate de "Sincronizando unidade..." para permitir o boot instantâneo.
-  // O app agora carrega o MainLayout diretamente.
+  // ADMIN tem acesso total imediato. Outros perfis precisam de unidade ativa
+  const userRole = (user.papel as UserRole) || 'profissional';
+  const isAdmin = userRole === 'admin' || userRole === 'gestor';
 
-  const isGlobalAdmin = user.papel === 'admin';
-
-  // Só mostramos a tela de "Acesso Pendente" se:
-  // 1. Não houver estúdio resolvido
-  // 2. Não for Admin Global
-  // 3. O processo inicial de sincronização já terminou (loading=false)
-  if (!activeStudioId && !isGlobalAdmin && !studioLoading) {
+  if (!activeStudioId && !isAdmin) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6 font-sans">
-        <div className="max-w-md w-full bg-white rounded-[40px] shadow-2xl p-10 text-center border border-slate-200">
-          <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-3xl flex items-center justify-center mx-auto mb-6">
-            <ShieldAlert size={40} />
-          </div>
-          <h2 className="text-2xl font-black text-slate-800 leading-tight">Acesso Pendente</h2>
-          <p className="text-slate-500 mt-4 font-medium leading-relaxed">
-            Seu usuário ainda não possui permissão de acesso em nenhuma unidade ativa.
-          </p>
-          <div className="mt-10 space-y-3">
-             <button onClick={() => refreshStudios(true)} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl flex items-center justify-center gap-2">
-               <RefreshCw size={18} /> Tentar Sincronizar
-             </button>
-             <button onClick={signOut} className="w-full py-4 text-rose-500 font-bold flex items-center justify-center gap-2 hover:bg-rose-50 rounded-2xl transition-all">
-               <LogOut size={18} /> Sair do Sistema
-             </button>
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white rounded-[40px] shadow-2xl p-10 text-center">
+          <ShieldAlert size={60} className="mx-auto text-rose-500 mb-6" />
+          <h2 className="text-2xl font-black text-slate-800">Unidade não definida</h2>
+          <p className="text-slate-500 mt-4">Seu usuário não possui permissão vinculada a uma unidade ativa ou a sincronização falhou.</p>
+          <div className="mt-8 flex flex-col gap-3">
+             <button onClick={() => refreshStudios(true)} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-slate-900 transition-all"><RefreshCw size={18} /> Tentar Sincronizar</button>
+             <button onClick={signOut} className="w-full py-4 text-rose-500 font-bold flex items-center justify-center gap-2">Sair</button>
           </div>
         </div>
       </div>
@@ -104,17 +91,13 @@ const AppContent: React.FC = () => {
   }
 
   const handleAddTransaction = (t: FinancialTransaction) => setTransactions(prev => [t, ...prev]);
-
   const navigateToCommand = (id: string) => {
       setActiveCommandId(id);
       setCurrentView('comanda_detalhe');
   };
 
   const renderView = () => {
-    const userRole = (user.papel as UserRole) || 'profissional';
-    if (!hasAccess(userRole, currentView)) {
-        return <DashboardView onNavigate={setCurrentView} />;
-    }
+    if (!hasAccess(userRole, currentView)) return <DashboardView onNavigate={setCurrentView} />;
 
     return (
       <Suspense fallback={<ViewLoader />}>
@@ -146,11 +129,10 @@ const AppContent: React.FC = () => {
 
   return (
     <MainLayout currentView={currentView} onNavigate={setCurrentView}>
-      {/* Indicador discreto de sincronização em background se necessário */}
-      {studioLoading && (
-        <div className="fixed bottom-4 left-4 bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg shadow-sm border border-slate-200 z-[100] flex items-center gap-2 animate-in slide-in-from-bottom-2">
-           <Loader2 size={12} className="animate-spin text-orange-500" />
-           <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Sincronizando...</span>
+      {isSyncing && (
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 bg-white/90 backdrop-blur border border-slate-100 px-3 py-1.5 rounded-full shadow-lg animate-in slide-in-from-bottom-2">
+           <Loader2 className="animate-spin text-orange-500" size={14} />
+           <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Sincronizando Dados</span>
         </div>
       )}
       {renderView()}
