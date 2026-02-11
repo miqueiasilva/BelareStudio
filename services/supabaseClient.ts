@@ -52,12 +52,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 }) as unknown as SupabaseClient;
 
 /**
- * O sistema é considerado configurado se as variáveis VITE_ estão presentes no bundle
- * ou se o usuário salvou manualmente no localStorage.
+ * O sistema é considerado configurado se as variáveis VITE_ estão presentes no bundle,
+ * se o usuário salvou manualmente no localStorage OU se as chaves de fallback foram injetadas.
+ * Isso garante que o usuário veja a tela de LOGIN em vez da tela de CONFIGURAÇÃO.
  */
 export const isConfigured = !!(
   (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_SUPABASE_URL) || 
-  (typeof window !== 'undefined' && localStorage.getItem('VITE_SUPABASE_URL'))
+  (typeof window !== 'undefined' && localStorage.getItem('VITE_SUPABASE_URL')) ||
+  (supabaseUrl && supabaseUrl.length > 10) // Considera configurado se houver qualquer URL válida
 );
 
 export const saveSupabaseConfig = (url: string, key: string) => {
