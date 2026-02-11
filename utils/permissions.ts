@@ -1,4 +1,3 @@
-
 import { UserRole, ViewState } from '../types';
 
 const ROLE_PERMISSIONS: Record<UserRole, (ViewState | '*')[]> = {
@@ -6,7 +5,7 @@ const ROLE_PERMISSIONS: Record<UserRole, (ViewState | '*')[]> = {
     admin: ['*'],
     gestor: ['*'],
     
-    // Recepção: Operacional completo e gestão de estoque/serviços, exceto faturamento bruto e equipe
+    // Recepção: Operacional completo e gestão de estoque/serviços
     recepcao: [
         'dashboard', 
         'agenda', 
@@ -21,8 +20,8 @@ const ROLE_PERMISSIONS: Record<UserRole, (ViewState | '*')[]> = {
         'marketing'
     ],
     
-    // Profissional (Staff): Foco total na jornada do cliente e lançamentos de consumo
-    // Bloqueados: Financeiro Global, Relatórios de Lucro, Configurações de Studio e Gestão de Equipe
+    // Profissional (Staff): Foco na jornada do cliente
+    // Bloqueados: Financeiro Global, Relatórios e Gestão de Equipe
     profissional: [
         'dashboard', 
         'agenda', 
@@ -37,14 +36,21 @@ const ROLE_PERMISSIONS: Record<UserRole, (ViewState | '*')[]> = {
 
 export const hasAccess = (role: UserRole | string | undefined, view: ViewState): boolean => {
     if (!role) return false;
-    const permissions = ROLE_PERMISSIONS[role as UserRole] || ROLE_PERMISSIONS['profissional'];
+    const normalizedRole = role.toLowerCase() as UserRole;
+    
+    // Admins e Gestores pulam qualquer verificação
+    if (normalizedRole === 'admin' || normalizedRole === 'gestor') return true;
+
+    const permissions = ROLE_PERMISSIONS[normalizedRole] || ROLE_PERMISSIONS['profissional'];
     if (permissions.includes('*')) return true;
     return permissions.includes(view);
 };
 
 export const getFirstAllowedView = (role: UserRole | string | undefined): ViewState => {
     if (!role) return 'dashboard';
-    const permissions = ROLE_PERMISSIONS[role as UserRole] || ROLE_PERMISSIONS['profissional'];
-    if (permissions.includes('*')) return 'dashboard';
+    const normalizedRole = role.toLowerCase();
+    if (normalizedRole === 'admin' || normalizedRole === 'gestor') return 'dashboard';
+    
+    const permissions = ROLE_PERMISSIONS[normalizedRole as UserRole] || ROLE_PERMISSIONS['profissional'];
     return (permissions[0] as ViewState) || 'dashboard';
 };

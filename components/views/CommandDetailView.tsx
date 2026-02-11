@@ -445,7 +445,8 @@ const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack
                                                 { id: 'pix', label: 'Pix', icon: Smartphone },
                                                 { id: 'money', label: 'Dinheiro', icon: Banknote },
                                                 { id: 'debit', label: 'Débito', icon: CreditCard },
-                                                { id: 'credit', label: 'Crédito', icon: CardIcon },
+                                                /* FIX: Using correctly imported CreditCard icon instead of undefined CardIcon */
+                                                { id: 'credit', label: 'Crédito', icon: CreditCard },
                                                 { id: 'parcelado', label: 'Parcelado', icon: Layers }
                                             ].map(pm => (
                                                 <button key={pm.id} onClick={() => handleSelectType(pm.id)} className="flex flex-col items-center justify-center p-5 rounded-3xl bg-white border border-slate-100 hover:border-orange-300 transition-all group shadow-sm">

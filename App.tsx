@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { useStudio } from './contexts/StudioContext';
@@ -7,7 +6,7 @@ import EnvGate from './components/EnvGate';
 import { hasAccess } from './utils/permissions';
 import { Loader2, ShieldAlert, LogOut } from 'lucide-react';
 
-// Componentes estáticos (Carregamento Imediato)
+// Componentes estáticos
 import MainLayout from './components/layout/MainLayout';
 import LoginView from './components/views/LoginView';
 
@@ -58,39 +57,34 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // 1. Rotas Públicas
   if (hash === '#/public-preview') return <Suspense fallback={<ViewLoader />}><PublicBookingPreview /></Suspense>;
   if (hash === '#/reset-password') return <Suspense fallback={<ViewLoader />}><ResetPasswordView /></Suspense>;
 
-  // 2. Estado de Carregamento da Autenticação
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 font-sans">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="animate-spin text-orange-500" size={40} />
-          <p className="text-slate-500 font-bold text-sm">Validando acesso...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="animate-spin text-orange-500" size={40} />
       </div>
     );
   }
 
-  // 3. SE NÃO HÁ USUÁRIO -> LOGIN (Ponto de quebra do loop)
   if (!user) return <LoginView />;
 
-  // 4. Carregamento do contexto do Studio (Apenas para logados)
   if (studioLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 font-sans">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="animate-spin text-orange-500" size={40} />
-          <p className="text-slate-500 font-bold text-sm">Sincronizando unidade...</p>
+          <p className="text-slate-500 font-bold text-sm uppercase tracking-widest">Sincronizando unidade...</p>
         </div>
       </div>
     );
   }
 
-  // 5. Verificação de vínculo com Studio
-  if (!activeStudioId) {
+  // Admins globais podem entrar mesmo sem um vínculo explícito em user_studios
+  const isGlobalAdmin = user.papel === 'admin';
+
+  if (!activeStudioId && !isGlobalAdmin) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6 font-sans">
         <div className="max-w-md w-full bg-white rounded-[40px] shadow-2xl p-10 text-center border border-slate-200">
@@ -99,7 +93,7 @@ const AppContent: React.FC = () => {
           </div>
           <h2 className="text-2xl font-black text-slate-800 leading-tight">Acesso Pendente</h2>
           <p className="text-slate-500 mt-4 font-medium leading-relaxed">
-            Seu usuário ainda não possui permissão de acesso em nenhuma unidade do BelareStudio.
+            Seu usuário ainda não possui permissão de acesso em nenhuma unidade ativa.
           </p>
           <div className="mt-10 space-y-3">
              <button onClick={() => window.location.reload()} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl">Tentar Novamente</button>

@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "../services/supabaseClient";
 
@@ -37,56 +36,51 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
       setLoading(true);
 
       const { data: sessionData } = await supabase.auth.getSession();
-      const user = sessionData?.session?.user;
+      const authUser = sessionData?.session?.user;
       
-      if (!user) {
+      if (!authUser) {
         setStudios([]);
-        setActiveStudioIdState(null);
+        setLoading(false);
         return;
       }
 
-      // 1. Busca memberships para pegar studio_id e role
-      const { data: memberships, error: mErr } = await supabase
-        .from("user_studios")
-        .select("studio_id, role")
-        .eq("user_id", user.id);
+      // IMPORTANTE: Primeiro detectamos se é admin global via metadados
+      const userRole = (authUser.app_metadata?.role || authUser.user_metadata?.role || '').toLowerCase();
+      const isAdmin = userRole === 'admin' || authUser.email === 'admin@belarestudio.com';
 
-      if (mErr) throw mErr;
+      let mappedStudios: Studio[] = [];
 
-      if (!memberships || memberships.length === 0) {
-        setStudios([]);
-        setActiveStudioIdState(null);
-        localStorage.removeItem(STORAGE_KEY);
-        return;
+      if (isAdmin) {
+        // Admins veem todas as unidades do sistema
+        console.log("[STUDIO] Modo Admin: Carregando todas as unidades.");
+        const { data: allStudios } = await supabase.from("studios").select("id, name");
+        mappedStudios = (allStudios || []).map(s => ({ id: s.id, name: s.name, role: 'admin' }));
+      } else {
+        // Usuários normais dependem do vínculo user_studios
+        const { data: memberships } = await supabase
+          .from("user_studios")
+          .select("studio_id, role, studios(name)")
+          .eq("user_id", authUser.id);
+
+        mappedStudios = (memberships || []).map(m => ({
+          id: m.studio_id,
+          name: (m.studios as any)?.name || "Unidade",
+          role: m.role
+        }));
       }
-
-      const studioIds = memberships.map(m => m.studio_id);
-
-      // 2. Busca detalhes dos studios
-      const { data: studiosData, error: sErr } = await supabase
-        .from("studios")
-        .select("id, name")
-        .in("id", studioIds);
-
-      if (sErr) throw sErr;
-
-      // 3. Mapeia combinando as informações
-      const mappedStudios = studiosData.map(s => ({
-        id: s.id,
-        name: s.name,
-        role: memberships.find(m => m.studio_id === s.id)?.role
-      }));
 
       setStudios(mappedStudios);
 
-      // 4. Gerencia qual studio está ativo
-      const saved = localStorage.getItem(STORAGE_KEY);
-      const savedStillValid = saved && mappedStudios.some((s) => s.id === saved);
-      
-      if (!savedStillValid) {
-        setActiveStudioId(mappedStudios[0].id);
+      if (mappedStudios.length > 0) {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        const savedStillValid = saved && mappedStudios.some((s) => s.id === saved);
+        if (!savedStillValid) {
+          setActiveStudioId(mappedStudios[0].id);
+        } else {
+          setActiveStudioIdState(saved!);
+        }
       } else {
-        setActiveStudioIdState(saved!);
+        setActiveStudioIdState(null);
       }
     } catch (err) {
       console.error("[StudioProvider] refreshStudios error:", err);
@@ -108,15 +102,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
       }
     });
 
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) setActiveStudioIdState(e.newValue);
-    };
-    window.addEventListener("storage", onStorage);
-
-    return () => {
-      sub.subscription.unsubscribe();
-      window.removeEventListener("storage", onStorage);
-    };
+    return () => sub.subscription.unsubscribe();
   }, []);
 
   const value = useMemo(

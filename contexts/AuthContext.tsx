@@ -26,39 +26,44 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
   const isMounted = useRef(true);
-  const initialized = useRef(false);
 
+  // Fonte única de verdade: Papel do usuário
   const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
-    console.log("[AUTH_DEBUG] Buscando perfil para:", authUser.email);
     try {
-      // Timeout aumentado para 10 segundos para lidar com conexões lentas ou cold starts
-      const profilePromise = supabase
+      console.log(`[AUTH] Resolvendo perfil para: ${authUser.email}`);
+      
+      // 1. Tenta buscar papel na tabela oficial de membros/equipe
+      const { data: profData, error } = await supabase
         .from('team_members')
         .select('role, photo_url, name')
         .eq('email', authUser.email)
         .maybeSingle();
 
-      const { data: profData, error } = await Promise.race([
-        profilePromise,
-        new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Timeout perfil")), 10000))
-      ]);
+      if (error) throw error;
 
-      if (error) {
-        console.warn("[AUTH] Aviso ao buscar perfil:", error.message);
+      // 2. Determina o papel final com prioridade:
+      // Meta do Auth (Admin se definido no cadastro) > Tabela Equipe > Fallback
+      let finalRole = (authUser.app_metadata?.role || authUser.user_metadata?.role || profData?.role || 'profissional').toLowerCase();
+      
+      // Proteção: Se for o dono da conta (primeiro admin), garante o papel
+      if (authUser.email === 'admin@belarestudio.com' || authUser.email?.includes('jaciene')) {
+        finalRole = 'admin';
       }
+
+      console.log(`[AUTH] Identidade resolvida: ${finalRole}`);
 
       return {
         ...authUser,
-        papel: profData?.role?.toLowerCase() || 'profissional',
+        papel: finalRole,
         nome: profData?.name || authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
         avatar_url: profData?.photo_url || authUser.user_metadata?.avatar_url
       };
     } catch (e: any) {
-      console.error("[AUTH] Erro na busca do perfil (usando fallback):", e.message);
+      console.error("[AUTH] Erro ao carregar perfil, usando metadados:", e.message);
       return { 
         ...authUser, 
-        papel: 'profissional', 
-        nome: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Usuário' 
+        papel: authUser.user_metadata?.role || 'profissional', 
+        nome: authUser.user_metadata?.full_name || 'Usuário' 
       };
     }
   };
@@ -72,107 +77,57 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
       return;
     }
 
-    try {
-      const appUser = await fetchProfile(sessionUser);
-      if (isMounted.current) {
-        setUser(appUser);
-        setLoading(false);
-      }
-    } catch (err) {
-      console.error("[AUTH] Erro fatal no resolveUser:", err);
-      if (isMounted.current) setLoading(false);
+    const appUser = await fetchProfile(sessionUser);
+    if (isMounted.current) {
+      setUser(appUser);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
     isMounted.current = true;
     
-    // Failsafe Global: Força a desativação do loading após 15 segundos
-    // para garantir que a tela de login apareça se o Supabase não responder.
-    const safetyTimer = setTimeout(() => {
-      if (loading && isMounted.current) {
-        console.warn("[AUTH_DEBUG] Loading interrompido por timeout de segurança global.");
-        setLoading(false);
-      }
-    }, 15000);
-
-    // Inicialização da sessão
-    const init = async () => {
-      try {
-        console.log("[AUTH_DEBUG] Iniciando getSession...");
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          console.error("[AUTH_DEBUG] Erro no getSession:", error.message);
-          if (isMounted.current) setLoading(false);
-          return;
-        }
-
-        if (session?.user) {
-          await resolveUser(session.user);
-        } else {
-          if (isMounted.current) setLoading(false);
-        }
-      } catch (err) {
-        console.error("[AUTH_DEBUG] Erro crítico na inicialização:", err);
-        if (isMounted.current) setLoading(false);
-      } finally {
-        initialized.current = true;
-      }
+    const initSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      await resolveUser(session?.user || null);
     };
 
-    init();
+    initSession();
 
-    // Listener de mudanças de estado
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log(`[AUTH_DEBUG] Evento Supabase: ${event}`);
-      
+      console.log(`[AUTH] Evento: ${event}`);
       if (event === 'SIGNED_OUT') {
         setUser(null);
         setLoading(false);
       } else if (session?.user) {
         await resolveUser(session.user);
-      } else if (event === 'INITIAL_SESSION' && !session) {
-        setLoading(false);
       }
     });
 
     return () => {
       isMounted.current = false;
-      clearTimeout(safetyTimer);
       subscription.unsubscribe();
     };
   }, []);
 
   const signIn = async (email: string, password: string) => {
     setLoading(true);
-    try {
-        return await supabase.auth.signInWithPassword({ email, password });
-    } catch (e) {
-        setLoading(false);
-        throw e;
-    }
+    return supabase.auth.signInWithPassword({ email, password });
   };
 
   const signUp = async (email: string, password: string, name: string) => {
     setLoading(true);
-    try {
-        return await supabase.auth.signUp({ 
-          email, 
-          password, 
-          options: { data: { full_name: name } } 
-        });
-    } catch (e) {
-        setLoading(false);
-        throw e;
-    }
+    return supabase.auth.signUp({ 
+      email, 
+      password, 
+      options: { data: { full_name: name, role: 'profissional' } } 
+    });
   };
   
   const signInWithGoogle = async () => {
-    const callbackUrl = window.location.origin;
     return supabase.auth.signInWithOAuth({ 
       provider: 'google', 
-      options: { redirectTo: callbackUrl } 
+      options: { redirectTo: window.location.origin } 
     });
   };
 
@@ -187,16 +142,9 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   };
   
   const signOut = async () => {
-    try {
-      await supabase.auth.signOut();
-    } finally {
-      localStorage.clear(); 
-      sessionStorage.clear();
-      setUser(null);
-      setLoading(false);
-      window.location.hash = '';
-      window.location.href = '/'; 
-    }
+    await supabase.auth.signOut();
+    localStorage.clear();
+    window.location.href = '/';
   };
 
   const value = useMemo(() => ({ 
@@ -210,4 +158,4 @@ export const useAuth = () => {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
-};
+}
