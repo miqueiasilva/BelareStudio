@@ -4,7 +4,7 @@ import { useStudio } from './contexts/StudioContext';
 import { ViewState, FinancialTransaction, UserRole } from './types';
 import EnvGate from './components/EnvGate';
 import { hasAccess } from './utils/permissions';
-import { Loader2, ShieldAlert, LogOut } from 'lucide-react';
+import { Loader2, ShieldAlert, LogOut, RefreshCw, AlertCircle } from 'lucide-react';
 
 // Componentes estáticos
 import MainLayout from './components/layout/MainLayout';
@@ -42,7 +42,7 @@ const ViewLoader = () => (
 
 const AppContent: React.FC = () => {
   const { user, loading: authLoading, signOut } = useAuth();
-  const { activeStudioId, loading: studioLoading } = useStudio();
+  const { activeStudioId, loading: studioLoading, syncError, refreshStudios } = useStudio();
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
@@ -70,12 +70,33 @@ const AppContent: React.FC = () => {
 
   if (!user) return <LoginView />;
 
-  if (studioLoading) {
+  if (studioLoading || syncError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 font-sans">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="animate-spin text-orange-500" size={40} />
-          <p className="text-slate-500 font-bold text-sm uppercase tracking-widest">Sincronizando unidade...</p>
+        <div className="flex flex-col items-center gap-6 max-w-xs text-center p-8">
+          {syncError ? (
+            <>
+              <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-2xl flex items-center justify-center shadow-sm">
+                <AlertCircle size={32} />
+              </div>
+              <div className="space-y-2">
+                <p className="text-slate-800 font-black text-sm uppercase tracking-tight">Falha na conexão</p>
+                <p className="text-slate-500 text-xs font-medium leading-relaxed">Não conseguimos sincronizar seus dados com o servidor.</p>
+              </div>
+              <button 
+                onClick={() => refreshStudios(true)}
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-slate-800 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-lg hover:bg-slate-900 transition-all active:scale-95"
+              >
+                <RefreshCw size={14} /> Tentar Novamente
+              </button>
+              <button onClick={signOut} className="text-slate-400 text-[10px] font-bold uppercase hover:text-rose-500 transition-colors">Sair do sistema</button>
+            </>
+          ) : (
+            <>
+              <Loader2 className="animate-spin text-orange-500" size={40} />
+              <p className="text-slate-500 font-bold text-sm uppercase tracking-widest">Sincronizando unidade...</p>
+            </>
+          )}
         </div>
       </div>
     );
@@ -96,7 +117,7 @@ const AppContent: React.FC = () => {
             Seu usuário ainda não possui permissão de acesso em nenhuma unidade ativa.
           </p>
           <div className="mt-10 space-y-3">
-             <button onClick={() => window.location.reload()} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl">Tentar Novamente</button>
+             <button onClick={() => refreshStudios(true)} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl">Tentar Novamente</button>
              <button onClick={signOut} className="w-full py-4 text-rose-500 font-bold flex items-center justify-center gap-2 hover:bg-rose-50 rounded-2xl transition-all"><LogOut size={18} /> Sair do Sistema</button>
           </div>
         </div>

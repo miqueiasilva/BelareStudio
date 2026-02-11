@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState, useRef } from "react";
 import { supabase } from "../services/supabaseClient";
 
 type Studio = {
@@ -9,31 +9,71 @@ type Studio = {
 
 type StudioContextValue = {
   loading: boolean;
+  syncError: boolean; // Novo estado para controle de falhas
   studios: Studio[];
   activeStudioId: string | null;
   setActiveStudioId: (id: string) => void;
-  refreshStudios: () => Promise<void>;
+  refreshStudios: (isRetry?: boolean) => Promise<void>;
 };
 
 const StudioContext = createContext<StudioContextValue | null>(null);
 
 const STORAGE_KEY = "belaapp.activeStudioId";
+const SYNC_TIMEOUT_MS = 15000; // 15 segundos de timeout
 
 export function StudioProvider({ children }: { children?: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
+  const [syncError, setSyncError] = useState(false);
   const [studios, setStudios] = useState<Studio[]>([]);
   const [activeStudioId, setActiveStudioIdState] = useState<string | null>(
     () => localStorage.getItem(STORAGE_KEY)
   );
+
+  // Refs de controle de concorrência e limpeza
+  const syncInFlightRef = useRef<boolean>(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const lastSyncSuccessRef = useRef<number>(0);
 
   const setActiveStudioId = (id: string) => {
     setActiveStudioIdState(id);
     localStorage.setItem(STORAGE_KEY, id);
   };
 
-  const refreshStudios = async () => {
+  const refreshStudios = async (isRetry = false) => {
+    // 1. Regra de Single-Flight: Impede execuções simultâneas
+    if (syncInFlightRef.current && !isRetry) {
+      // FIX: Cast import.meta to any to fix "Property 'env' does not exist on type 'ImportMeta'"
+      if ((import.meta as any).env?.DEV) console.log("[STUDIO] Sincronização já em andamento, ignorando...");
+      return;
+    }
+
+    // 2. Regra de Reentrada: Evita sync desnecessário se foi recente (< 2 min)
+    const now = Date.now();
+    if (!isRetry && lastSyncSuccessRef.current > 0 && (now - lastSyncSuccessRef.current < 120000)) {
+      // FIX: Cast import.meta to any to fix "Property 'env' does not exist on type 'ImportMeta'"
+      if ((import.meta as any).env?.DEV) console.log("[STUDIO] Sincronização recente, pulando...");
+      setLoading(false);
+      return;
+    }
+
+    syncInFlightRef.current = true;
+    setSyncError(false);
+    
+    // Cancela requests anteriores se existirem
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    abortControllerRef.current = new AbortController();
+
+    const timeoutId = setTimeout(() => {
+      if (syncInFlightRef.current) {
+        console.warn("[STUDIO] Timeout na sincronização.");
+        setSyncError(true);
+        setLoading(false);
+        syncInFlightRef.current = false;
+      }
+    }, SYNC_TIMEOUT_MS);
+
     try {
-      setLoading(true);
+      if (isRetry) setLoading(true);
 
       const { data: sessionData } = await supabase.auth.getSession();
       const authUser = sessionData?.session?.user;
@@ -41,27 +81,32 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
       if (!authUser) {
         setStudios([]);
         setLoading(false);
+        syncInFlightRef.current = false;
+        clearTimeout(timeoutId);
         return;
       }
 
-      // IMPORTANTE: Primeiro detectamos se é admin global via metadados
       const userRole = (authUser.app_metadata?.role || authUser.user_metadata?.role || '').toLowerCase();
       const isAdmin = userRole === 'admin' || authUser.email === 'admin@belarestudio.com';
 
       let mappedStudios: Studio[] = [];
 
       if (isAdmin) {
-        // Admins veem todas as unidades do sistema
-        console.log("[STUDIO] Modo Admin: Carregando todas as unidades.");
-        const { data: allStudios } = await supabase.from("studios").select("id, name");
+        const { data: allStudios, error: adminErr } = await supabase
+          .from("studios")
+          .select("id, name")
+          .abortSignal(abortControllerRef.current.signal);
+          
+        if (adminErr) throw adminErr;
         mappedStudios = (allStudios || []).map(s => ({ id: s.id, name: s.name, role: 'admin' }));
       } else {
-        // Usuários normais dependem do vínculo user_studios
-        const { data: memberships } = await supabase
+        const { data: memberships, error: memberErr } = await supabase
           .from("user_studios")
           .select("studio_id, role, studios(name)")
-          .eq("user_id", authUser.id);
+          .eq("user_id", authUser.id)
+          .abortSignal(abortControllerRef.current.signal);
 
+        if (memberErr) throw memberErr;
         mappedStudios = (memberships || []).map(m => ({
           id: m.studio_id,
           name: (m.studios as any)?.name || "Unidade",
@@ -82,32 +127,56 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
       } else {
         setActiveStudioIdState(null);
       }
-    } catch (err) {
-      console.error("[StudioProvider] refreshStudios error:", err);
+
+      lastSyncSuccessRef.current = Date.now();
+      setSyncError(false);
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.error("[STUDIO] refreshStudios error:", err);
+        setSyncError(true);
+      }
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
+      syncInFlightRef.current = false;
     }
   };
 
+  // Listener de visibilidade para re-validar ao voltar para a aba
   useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // FIX: Cast import.meta to any to fix "Property 'env' does not exist on type 'ImportMeta'"
+        if ((import.meta as any).env?.DEV) console.log("[STUDIO] Aba visível, validando contexto...");
+        refreshStudios();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     refreshStudios();
 
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-        refreshStudios();
+        refreshStudios(true);
       } else if (event === 'SIGNED_OUT') {
         setStudios([]);
+        setSyncError(false);
         setActiveStudioIdState(null);
         localStorage.removeItem(STORAGE_KEY);
+        lastSyncSuccessRef.current = 0;
       }
     });
 
-    return () => sub.subscription.unsubscribe();
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      sub.subscription.unsubscribe();
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+    };
   }, []);
 
   const value = useMemo(
-    () => ({ loading, studios, activeStudioId, setActiveStudioId, refreshStudios }),
-    [loading, studios, activeStudioId]
+    () => ({ loading, syncError, studios, activeStudioId, setActiveStudioId, refreshStudios }),
+    [loading, syncError, studios, activeStudioId]
   );
 
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>;
