@@ -4,56 +4,44 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
  * [AUTH_DEBUG] Diagnóstico de inicialização
  */
 const origin = typeof window !== 'undefined' ? window.location.origin : 'SSR';
-console.log(`[AUTH_DEBUG] Origin: ${origin}`);
 
-// Valores padrão do projeto (Hardcoded fallbacks)
-const DEFAULT_URL = "https://rxtwmwrgcilmsldtqdfe.supabase.co";
-const DEFAULT_KEY = "sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x";
+// Valores de fallback (Segurança para desenvolvimento local)
+const FALLBACK_URL = "https://rxtwmwrgcilmsldtqdfe.supabase.co";
+const FALLBACK_KEY = "sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x";
 
-// Função auxiliar para resolver as chaves (Vite env -> LocalStorage -> Default)
-const getEnv = (key: string, fallback: string): string => {
-  // 1. Tenta variáveis de ambiente do Vite (import.meta.env) de forma segura
+/**
+ * No Vite, import.meta.env.CHAVE é substituído estaticamente no build.
+ * Esta função tenta pegar os valores das diversas formas possíveis com segurança.
+ */
+const getEnv = (key: string): string | null => {
+  // 1. Tenta acesso direto com proteção contra undefined (forma padrão do Vite)
   try {
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
-      // @ts-ignore
-      return import.meta.env[key];
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
+      const env = (import.meta as any).env;
+      if (key === 'VITE_SUPABASE_URL' && env.VITE_SUPABASE_URL) return env.VITE_SUPABASE_URL;
+      if (key === 'VITE_SUPABASE_ANON_KEY' && env.VITE_SUPABASE_ANON_KEY) return env.VITE_SUPABASE_ANON_KEY;
     }
   } catch (e) {
-    // Silently ignore
+    console.warn(`[AUTH_DEBUG] Falha ao ler import.meta.env.${key}:`, e);
   }
 
-  // 2. Tenta process.env (fallback para outros ambientes)
-  try {
-    // @ts-ignore
-    if (typeof process !== 'undefined' && process.env && process.env[key]) {
-      // @ts-ignore
-      return process.env[key];
-    }
-  } catch (e) {
-    // Silently ignore
-  }
-
-  // 3. Tenta LocalStorage (necessário para o funcionamento do EnvGate)
+  // 2. Tenta LocalStorage (para o EnvGate)
   if (typeof window !== 'undefined') {
     try {
-      const localVal = localStorage.getItem(key);
-      if (localVal) return localVal;
-    } catch (e) {
-      // Silently ignore
-    }
+      const stored = localStorage.getItem(key);
+      if (stored) return stored;
+    } catch (e) {}
   }
 
-  return fallback;
+  return null;
 };
 
-const supabaseUrl = getEnv('VITE_SUPABASE_URL', DEFAULT_URL);
-const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY', DEFAULT_KEY);
+const supabaseUrl = getEnv('VITE_SUPABASE_URL') || FALLBACK_URL;
+const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || FALLBACK_KEY;
 
-console.log(`[AUTH_DEBUG] VITE_SUPABASE_URL: ${supabaseUrl === DEFAULT_URL ? 'utilizando fallback' : 'presente'}`);
-console.log(`[AUTH_DEBUG] VITE_SUPABASE_ANON_KEY: ${supabaseAnonKey === DEFAULT_KEY ? 'utilizando fallback' : 'presente'}`);
+console.log(`[AUTH_DEBUG] Supabase URL: ${supabaseUrl.substring(0, 20)}...`);
 
-// Inicialização segura do cliente para evitar "supabaseUrl is required"
+// Inicialização do cliente
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
@@ -63,9 +51,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 }) as unknown as SupabaseClient;
 
-// Helpers para o EnvGate.tsx
-// Consideramos configurado se houver algo diferente do fallback básico ou se o fallback for o esperado
-export const isConfigured = !!(supabaseUrl && supabaseAnonKey && supabaseAnonKey.length > 10);
+/**
+ * O sistema é considerado configurado se as variáveis VITE_ estão presentes no bundle
+ * ou se o usuário salvou manualmente no localStorage.
+ */
+export const isConfigured = !!(
+  (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_SUPABASE_URL) || 
+  (typeof window !== 'undefined' && localStorage.getItem('VITE_SUPABASE_URL'))
+);
 
 export const saveSupabaseConfig = (url: string, key: string) => {
   if (typeof window !== 'undefined') {
@@ -75,7 +68,6 @@ export const saveSupabaseConfig = (url: string, key: string) => {
   }
 };
 
-// Injeta no window para debug rápido no console se necessário
 if (typeof window !== 'undefined') {
   (window as any).supabase = supabase;
 }
