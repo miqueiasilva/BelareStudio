@@ -1,5 +1,4 @@
-
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState, useRef } from "react";
 import { supabase } from "../services/supabaseClient";
 
 type Studio = {
@@ -10,32 +9,43 @@ type Studio = {
 
 type StudioContextValue = {
   loading: boolean;
+  isSyncing: boolean;
   studios: Studio[];
   activeStudioId: string | null;
   setActiveStudioId: (id: string) => void;
-  refreshStudios: () => Promise<void>;
+  refreshStudios: (force?: boolean) => Promise<void>;
 };
 
 const StudioContext = createContext<StudioContextValue | null>(null);
-
 const STORAGE_KEY = "belaapp.activeStudioId";
+const SYNC_COOLDOWN_MS = 60000; // 1 minuto de intervalo mínimo entre syncs automáticos
 
 export function StudioProvider({ children }: { children?: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [studios, setStudios] = useState<Studio[]>([]);
   const [activeStudioId, setActiveStudioIdState] = useState<string | null>(
     () => localStorage.getItem(STORAGE_KEY)
   );
+
+  const lastSyncRef = useRef<number>(0);
+  const syncInFlightRef = useRef<boolean>(false);
 
   const setActiveStudioId = (id: string) => {
     setActiveStudioIdState(id);
     localStorage.setItem(STORAGE_KEY, id);
   };
 
-  const refreshStudios = async () => {
-    try {
-      setLoading(true);
+  const refreshStudios = async (force = false) => {
+    const now = Date.now();
+    // Bloqueia sync se já estiver ocorrendo ou se o cooldown não expirou (exceto se for forçado)
+    if (syncInFlightRef.current) return;
+    if (!force && (now - lastSyncRef.current < SYNC_COOLDOWN_MS)) return;
 
+    syncInFlightRef.current = true;
+    setIsSyncing(true);
+
+    try {
       const { data: sessionData } = await supabase.auth.getSession();
       const user = sessionData?.session?.user;
       
@@ -45,62 +55,61 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
         return;
       }
 
-      // 1. Busca memberships para pegar studio_id e role
-      const { data: memberships, error: mErr } = await supabase
-        .from("user_studios")
-        .select("studio_id, role")
-        .eq("user_id", user.id);
+      // Prioridade Admin
+      const userRole = (user.app_metadata?.role || user.user_metadata?.role || '').toLowerCase();
+      const isAdmin = userRole === 'admin' || userRole === 'gestor' || user.email === 'admin@belarestudio.com';
 
-      if (mErr) throw mErr;
+      let mappedStudios: Studio[] = [];
 
-      if (!memberships || memberships.length === 0) {
-        setStudios([]);
-        setActiveStudioIdState(null);
-        localStorage.removeItem(STORAGE_KEY);
-        return;
+      if (isAdmin) {
+        const { data: allStudios } = await supabase.from("studios").select("id, name");
+        mappedStudios = (allStudios || []).map(s => ({ id: s.id, name: s.name, role: 'admin' }));
+      } else {
+        const { data: memberships } = await supabase
+          .from("user_studios")
+          .select("studio_id, role, studios(name)")
+          .eq("user_id", user.id);
+        
+        mappedStudios = (memberships || []).map(m => ({
+          id: m.studio_id,
+          name: (m.studios as any)?.name || "Unidade",
+          role: m.role
+        }));
       }
-
-      const studioIds = memberships.map(m => m.studio_id);
-
-      // 2. Busca detalhes dos studios
-      const { data: studiosData, error: sErr } = await supabase
-        .from("studios")
-        .select("id, name")
-        .in("id", studioIds);
-
-      if (sErr) throw sErr;
-
-      // 3. Mapeia combinando as informações
-      const mappedStudios = studiosData.map(s => ({
-        id: s.id,
-        name: s.name,
-        role: memberships.find(m => m.studio_id === s.id)?.role
-      }));
 
       setStudios(mappedStudios);
 
-      // 4. Gerencia qual studio está ativo
-      const saved = localStorage.getItem(STORAGE_KEY);
-      const savedStillValid = saved && mappedStudios.some((s) => s.id === saved);
-      
-      if (!savedStillValid) {
-        setActiveStudioId(mappedStudios[0].id);
-      } else {
-        setActiveStudioIdState(saved!);
+      if (mappedStudios.length > 0) {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        const valid = saved && mappedStudios.some(s => s.id === saved);
+        if (!valid) setActiveStudioId(mappedStudios[0].id);
       }
+      
+      lastSyncRef.current = Date.now();
     } catch (err) {
-      console.error("[StudioProvider] refreshStudios error:", err);
+      console.error("[StudioProvider] Erro na sincronização:", err);
     } finally {
       setLoading(false);
+      setIsSyncing(false);
+      syncInFlightRef.current = false;
     }
   };
 
   useEffect(() => {
-    refreshStudios();
+    refreshStudios(true);
+
+    const handleVisibility = () => {
+      // Só tenta sincronizar em background ao voltar se o cooldown expirou
+      if (document.visibilityState === 'visible') {
+        refreshStudios(false);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
 
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-        refreshStudios();
+        refreshStudios(true);
       } else if (event === 'SIGNED_OUT') {
         setStudios([]);
         setActiveStudioIdState(null);
@@ -108,20 +117,15 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
       }
     });
 
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) setActiveStudioIdState(e.newValue);
-    };
-    window.addEventListener("storage", onStorage);
-
     return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
       sub.subscription.unsubscribe();
-      window.removeEventListener("storage", onStorage);
     };
   }, []);
 
   const value = useMemo(
-    () => ({ loading, studios, activeStudioId, setActiveStudioId, refreshStudios }),
-    [loading, studios, activeStudioId]
+    () => ({ loading, isSyncing, studios, activeStudioId, setActiveStudioId, refreshStudios }),
+    [loading, isSyncing, studios, activeStudioId]
   );
 
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>;

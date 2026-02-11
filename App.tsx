@@ -1,15 +1,15 @@
-
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { useStudio } from './contexts/StudioContext';
 import { ViewState, FinancialTransaction, UserRole } from './types';
 import EnvGate from './components/EnvGate';
 import { hasAccess } from './utils/permissions';
-import { Loader2, ShieldAlert, LogOut } from 'lucide-react';
+import { Loader2, ShieldAlert, LogOut, RefreshCw } from 'lucide-react';
 
-// Componentes estáticos (Carregamento Imediato)
+// Componentes estáticos
 import MainLayout from './components/layout/MainLayout';
 import LoginView from './components/views/LoginView';
+import PaidCommandDetailView from './components/views/PaidCommandDetailView';
 
 // Views Lazy Load
 const ResetPasswordView = lazy(() => import('./components/views/ResetPasswordView'));
@@ -37,15 +37,16 @@ import { mockTransactions } from './data/mockData';
 const ViewLoader = () => (
   <div className="h-full w-full flex flex-col items-center justify-center bg-slate-50/50 backdrop-blur-sm">
     <Loader2 className="animate-spin text-orange-500 mb-2" size={32} />
-    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Carregando Módulo...</p>
+    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Processando...</p>
   </div>
 );
 
 const AppContent: React.FC = () => {
   const { user, loading: authLoading, signOut } = useAuth();
-  const { activeStudioId, loading: studioLoading } = useStudio();
+  const { activeStudioId, isSyncing, refreshStudios } = useStudio();
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
+  const [viewingPaidId, setViewingPaidId] = useState<string | null>(() => sessionStorage.getItem('open_paid_command'));
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
   const [hash, setHash] = useState(window.location.hash);
 
@@ -58,52 +59,32 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // 1. Rotas Públicas
   if (hash === '#/public-preview') return <Suspense fallback={<ViewLoader />}><PublicBookingPreview /></Suspense>;
   if (hash === '#/reset-password') return <Suspense fallback={<ViewLoader />}><ResetPasswordView /></Suspense>;
 
-  // 2. Estado de Carregamento da Autenticação
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 font-sans">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="animate-spin text-orange-500" size={40} />
-          <p className="text-slate-500 font-bold text-sm">Validando acesso...</p>
-        </div>
+        <Loader2 className="animate-spin text-orange-500" size={40} />
       </div>
     );
   }
 
-  // 3. SE NÃO HÁ USUÁRIO -> LOGIN (Ponto de quebra do loop)
   if (!user) return <LoginView />;
 
-  // 4. Carregamento do contexto do Studio (Apenas para logados)
-  if (studioLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 font-sans">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="animate-spin text-orange-500" size={40} />
-          <p className="text-slate-500 font-bold text-sm">Sincronizando unidade...</p>
-        </div>
-      </div>
-    );
-  }
+  const userRole = (user.papel as UserRole) || 'profissional';
+  const isAdmin = userRole === 'admin' || userRole === 'gestor';
 
-  // 5. Verificação de vínculo com Studio
-  if (!activeStudioId) {
+  if (!activeStudioId && !isAdmin) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6 font-sans">
-        <div className="max-w-md w-full bg-white rounded-[40px] shadow-2xl p-10 text-center border border-slate-200">
-          <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-3xl flex items-center justify-center mx-auto mb-6">
-            <ShieldAlert size={40} />
-          </div>
-          <h2 className="text-2xl font-black text-slate-800 leading-tight">Acesso Pendente</h2>
-          <p className="text-slate-500 mt-4 font-medium leading-relaxed">
-            Seu usuário ainda não possui permissão de acesso em nenhuma unidade do BelareStudio.
-          </p>
-          <div className="mt-10 space-y-3">
-             <button onClick={() => window.location.reload()} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl">Tentar Novamente</button>
-             <button onClick={signOut} className="w-full py-4 text-rose-500 font-bold flex items-center justify-center gap-2 hover:bg-rose-50 rounded-2xl transition-all"><LogOut size={18} /> Sair do Sistema</button>
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white rounded-[40px] shadow-2xl p-10 text-center">
+          <ShieldAlert size={60} className="mx-auto text-rose-500 mb-6" />
+          <h2 className="text-2xl font-black text-slate-800">Unidade não definida</h2>
+          <p className="text-slate-500 mt-4">Sincronize sua conta com uma unidade para continuar.</p>
+          <div className="mt-8 flex flex-col gap-3">
+             <button onClick={() => refreshStudios(true)} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2"><RefreshCw size={18} /> Sincronizar Agora</button>
+             <button onClick={signOut} className="w-full py-4 text-rose-500 font-bold flex items-center justify-center gap-2">Sair</button>
           </div>
         </div>
       </div>
@@ -111,17 +92,23 @@ const AppContent: React.FC = () => {
   }
 
   const handleAddTransaction = (t: FinancialTransaction) => setTransactions(prev => [t, ...prev]);
-
   const navigateToCommand = (id: string) => {
       setActiveCommandId(id);
       setCurrentView('comanda_detalhe');
   };
 
+  const openPaidSummary = (id: string) => {
+    sessionStorage.setItem('open_paid_command', id);
+    setViewingPaidId(id);
+  };
+
+  const closePaidSummary = () => {
+    sessionStorage.removeItem('open_paid_command');
+    setViewingPaidId(null);
+  };
+
   const renderView = () => {
-    const userRole = (user.papel as UserRole) || 'profissional';
-    if (!hasAccess(userRole, currentView)) {
-        return <DashboardView onNavigate={setCurrentView} />;
-    }
+    if (!hasAccess(userRole, currentView)) return <DashboardView onNavigate={setCurrentView} />;
 
     return (
       <Suspense fallback={<ViewLoader />}>
@@ -137,7 +124,7 @@ const AppContent: React.FC = () => {
             case 'configuracoes': return <ConfiguracoesView />;
             case 'remuneracoes': return <RemuneracoesView />;
             case 'vendas': return <VendasView onAddTransaction={handleAddTransaction} />;
-            case 'comandas': return <ComandasView onAddTransaction={handleAddTransaction} onNavigateToCommand={navigateToCommand} />;
+            case 'comandas': return <ComandasView onAddTransaction={handleAddTransaction} onNavigateToCommand={navigateToCommand} onOpenPaidSummary={openPaidSummary} />;
             case 'comanda_detalhe': return <CommandDetailView commandId={activeCommandId!} onBack={() => setCurrentView('comandas')} />;
             case 'caixa': return <CaixaView />;
             case 'produtos': return <ProdutosView />;
@@ -153,6 +140,20 @@ const AppContent: React.FC = () => {
 
   return (
     <MainLayout currentView={currentView} onNavigate={setCurrentView}>
+      {isSyncing && (
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 bg-white/90 backdrop-blur border border-slate-100 px-3 py-1.5 rounded-full shadow-lg animate-in slide-in-from-bottom-2">
+           <Loader2 className="animate-spin text-orange-500" size={14} />
+           <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Sincronizando</span>
+        </div>
+      )}
+      
+      {viewingPaidId && (
+        <PaidCommandDetailView 
+          commandId={viewingPaidId} 
+          onClose={closePaidSummary} 
+        />
+      )}
+
       {renderView()}
     </MainLayout>
   );

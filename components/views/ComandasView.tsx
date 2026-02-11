@@ -13,9 +13,8 @@ import Toast, { ToastType } from '../shared/Toast';
 import SelectionModal from '../modals/SelectionModal';
 import ClientSearchModal from '../modals/ClientSearchModal';
 import { differenceInMinutes, format } from 'date-fns';
-import PaidCommandDetailView from './PaidCommandDetailView';
 
-const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) => {
+const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand, onOpenPaidSummary }) => {
     const { activeStudioId } = useStudio();
     const [tabs, setTabs] = useState<any[]>([]);
     const [professionals, setProfessionals] = useState<LegacyProfessional[]>([]);
@@ -25,16 +24,11 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
     const [isClientSearchOpen, setIsClientSearchOpen] = useState(false);
-    const [viewingPaidId, setViewingPaidId] = useState<string | null>(null);
-    const [isProfSelectionOpen, setIsProfSelectionOpen] = useState(false);
-    const [editingCommand, setEditingCommand] = useState<Command | null>(null);
-    const [isActionLoading, setIsActionLoading] = useState(false);
 
     const fetchCommands = async () => {
         if (!activeStudioId) return;
         setLoading(true);
         try {
-            // 1. Busca básica de comandas
             let { data, error } = await supabase
                 .from('commands')
                 .select(`
@@ -56,26 +50,6 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                 .order('created_at', { ascending: false });
             
             if (error) throw error;
-
-            // 2. FILTRAGEM INTELIGENTE DE INCONSISTÊNCIA
-            // Se estiver na aba 'abertas', cruzar com command_payments para ocultar os que já têm pagamento
-            if (currentTab === 'open' && data && data.length > 0) {
-                const commandIds = data.map(c => c.id);
-                
-                // Busca em command_payments (vínculo oficial de fechamento financeiro)
-                const { data: payments } = await supabase
-                    .from('command_payments')
-                    .select('command_id')
-                    .in('command_id', commandIds);
-
-                if (payments && payments.length > 0) {
-                    const paidIds = new Set(payments.map(p => p.command_id));
-                    // Mantém apenas as que REALMENTE não têm pagamento no banco
-                    data = data.filter(c => !paidIds.has(c.id));
-                    console.log(`[SYNC] Ocultadas ${paidIds.size} comandas inconsistentes da aba "Em Atendimento".`);
-                }
-            }
-
             setTabs(data || []);
         } catch (e: any) {
             console.error("Erro Comandas:", e);
@@ -145,7 +119,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
 
     const handleCommandClick = (id: string) => {
         if (currentTab === 'paid') {
-            setViewingPaidId(id);
+            onOpenPaidSummary(id);
         } else {
             onNavigateToCommand?.(id);
         }
@@ -190,7 +164,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
 
             <main className="flex-1 overflow-y-auto p-6 custom-scrollbar">
                 {loading ? <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-orange-500" size={40} /></div> : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24 text-left">
                         {filteredTabs.map(tab => {
                             const clientLabel = getClientDisplayName(tab);
 
@@ -260,13 +234,6 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand }) 
                     onClose={() => setIsClientSearchOpen(false)} 
                     onSelect={handleCreateCommand} 
                     onNewClient={() => {}} 
-                />
-            )}
-
-            {viewingPaidId && (
-                <PaidCommandDetailView 
-                    commandId={viewingPaidId} 
-                    onClose={() => setViewingPaidId(null)} 
                 />
             )}
         </div>

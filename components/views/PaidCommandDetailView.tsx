@@ -43,7 +43,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
         setLoading(true);
         
         try {
-            // 1. Busca Comanda e Itens
+            // 1. Busca Comanda e Itens (Garante total_bruto independente do pagamento)
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select('*, clients:client_id (id, nome, name, photo_url)')
@@ -65,8 +65,8 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                 if (prof) setProfessionalName(prof.name);
             }
 
-            // 3. Busca Auditoria Financeira (command_payments)
-            const { data: payData, error: payError } = await supabase
+            // 3. Busca Pagamentos com Left Join
+            const { data: payData } = await supabase
                 .from('command_payments')
                 .select(`
                     id, amount, fee_amount, net_value, fee_rate, installments, brand, created_at,
@@ -74,10 +74,8 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                 `)
                 .eq('command_id', commandId);
 
-            if (payError) throw payError;
-
             if (payData && payData.length > 0) {
-                const formatted: PaymentDetail[] = payData.map(p => ({
+                setPayments(payData.map(p => ({
                     id: p.id,
                     methodLabel: (p.method as any)?.name || 'PAGAMENTO',
                     methodType: (p.method as any)?.type || 'other',
@@ -88,21 +86,20 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                     installments: Number(p.installments || 1),
                     brand: p.brand || null,
                     date: p.created_at
-                }));
-                setPayments(formatted);
+                })));
             } else {
-                // FALLBACK: Busca em financial_transactions caso command_payments esteja vazio (legado)
+                // Tenta buscar em transações financeiras (Fallback para comandos antigos)
                 const { data: transData } = await supabase
                     .from('financial_transactions')
-                    .select('id, amount, net_value, tax_rate, installments, date, payment_method')
+                    .select('*')
                     .eq('command_id', commandId)
                     .eq('status', 'pago');
-
+                
                 if (transData && transData.length > 0) {
                     setPayments(transData.map(t => ({
                         id: String(t.id),
                         methodLabel: String(t.payment_method || 'RECEBIMENTO').toUpperCase(),
-                        methodType: t.payment_method,
+                        methodType: t.payment_method || 'other',
                         grossValue: Number(t.amount || 0),
                         feeValue: Number(t.amount || 0) - Number(t.net_value || t.amount || 0),
                         netValue: Number(t.net_value || t.amount || 0),
@@ -123,14 +120,21 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
 
     useEffect(() => { loadData(); }, [commandId]);
 
-    // FIX: Import useMemo from react to resolve "Cannot find name 'useMemo'" error.
-    const totals = useMemo(() => {
-        return payments.reduce((acc, p) => ({
-            gross: acc.gross + p.grossValue,
-            fees: acc.fees + p.feeValue,
-            net: acc.net + p.netValue
-        }), { gross: 0, fees: 0, net: 0 });
-    }, [payments]);
+    // Cálculo Robusto de Totais
+    const calculatedTotals = useMemo(() => {
+        // Bruto vem SEMPRE dos itens para evitar zeros
+        const grossFromItems = items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
+        
+        // Dados financeiros vêm dos registros de pagamento
+        const fees = payments.reduce((acc, p) => acc + p.feeValue, 0);
+        const net = payments.length > 0 ? payments.reduce((acc, p) => acc + p.netValue, 0) : grossFromItems;
+
+        return {
+            gross: grossFromItems,
+            fees: fees,
+            net: net
+        };
+    }, [items, payments]);
 
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
@@ -153,13 +157,12 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                             <Receipt className="text-emerald-500" size={24} />
                             Resumo da Venda
                         </h2>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Documento Fiscal • Auditoria de Recebimento</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Auditado em tempo real • BelareStudio</p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400"><X size={24} /></button>
                 </header>
 
-                <div className="p-8 space-y-8 max-h-[80vh] overflow-y-auto custom-scrollbar">
-                    {/* Header Cliente */}
+                <div className="p-8 space-y-8 max-h-[80vh] overflow-y-auto custom-scrollbar text-left">
                     <div className="flex items-center gap-6">
                         <div className="w-16 h-16 rounded-[24px] bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xl overflow-hidden shadow-sm">
                             {command.clients?.photo_url ? <img src={command.clients.photo_url} className="w-full h-full object-cover" /> : displayClientName.charAt(0).toUpperCase()}
@@ -173,7 +176,6 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                         </div>
                     </div>
 
-                    {/* Itens do Consumo */}
                     <Card title="Detalhamento do Consumo" icon={<ShoppingCart size={16} className="text-orange-500" />}>
                         <div className="divide-y divide-slate-50">
                             {items.map((item: any) => (
@@ -193,81 +195,74 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                         </div>
                     </Card>
 
-                    {/* Fluxo de Recebimento */}
                     <div className="space-y-4">
-                        <div className="flex justify-between items-center px-1">
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                <Landmark size={14} /> Fluxo de Recebimento
-                            </h4>
-                        </div>
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-1">
+                            <Landmark size={14} /> Fluxo de Recebimento
+                        </h4>
                         
                         {payments.length > 0 ? (
                             payments.map((p) => (
-                                <div key={p.id} className="p-5 bg-slate-50 rounded-[32px] border border-slate-100 space-y-4 animate-in fade-in slide-in-from-bottom-2">
+                                <div key={p.id} className="p-5 bg-slate-50 rounded-[32px] border border-slate-100 space-y-4">
                                     <div className="flex justify-between items-start">
                                         <div className="flex items-center gap-3">
                                             <div className="p-2 bg-white rounded-xl shadow-sm text-slate-400">
                                                 {(p.methodType === 'credit' || p.methodType === 'debit') ? <CreditCard size={16} /> : p.methodType === 'pix' ? <Smartphone size={16} /> : <Banknote size={16} />}
                                             </div>
                                             <div>
-                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Método</p>
-                                                <p className="text-xs font-black text-slate-700 flex items-center gap-1.5">
-                                                    {p.methodLabel} 
-                                                    {p.brand && <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded text-[8px]">{p.brand}</span>}
-                                                    {p.installments > 1 && <span className="text-orange-500 font-black">({p.installments}x)</span>}
+                                                <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1">Método</p>
+                                                <p className="text-xs font-black text-slate-700">
+                                                    {p.methodLabel} {p.brand && <span className="opacity-50 text-[10px]">({p.brand})</span>}
+                                                    {p.installments > 1 && <span className="text-orange-500 font-black ml-1">({p.installments}x)</span>}
                                                 </p>
                                             </div>
                                         </div>
                                         <div className="text-right">
-                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Valor Bruto</p>
+                                            <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1">Valor Bruto</p>
                                             <p className="text-sm font-black text-slate-800">{formatBRL(p.grossValue)}</p>
                                         </div>
                                     </div>
                                     
                                     <div className="pt-3 border-t border-slate-200/50 flex justify-between items-center">
                                         <span className="text-[9px] font-bold text-rose-400 uppercase flex items-center gap-1">
-                                            <Percent size={10} /> Taxa Adquirente ({p.taxRate}%)
+                                            <Percent size={10} /> Taxa Retida ({p.taxRate}%)
                                         </span>
                                         <span className="text-[10px] font-black text-rose-500">- {formatBRL(p.feeValue)}</span>
                                     </div>
 
                                     <div className="flex justify-between items-center">
-                                        <span className="text-[9px] font-black text-emerald-600 uppercase">Líquido Creditado</span>
+                                        <span className="text-[9px] font-black text-emerald-600 uppercase">Líquido Previsto</span>
                                         <span className="text-sm font-black text-emerald-700">{formatBRL(p.netValue)}</span>
                                     </div>
                                 </div>
                             ))
                         ) : (
-                            <div className="p-12 text-center bg-slate-50 rounded-[40px] border-2 border-dashed border-slate-200">
-                                <AlertTriangle className="mx-auto text-amber-500 mb-3" size={32} />
-                                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Pagamento não localizado para esta comanda.</p>
+                            <div className="p-10 text-center bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200">
+                                <AlertTriangle className="mx-auto text-amber-500 mb-2" size={24} />
+                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Informações de recebimento indisponíveis no momento.</p>
                             </div>
                         )}
                     </div>
 
-                    {/* Resumo Consolidado */}
                     <div className="bg-slate-900 rounded-[40px] p-8 text-white shadow-2xl relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl -mr-16 -mt-16"></div>
-                        
                         <div className="relative z-10 space-y-4">
                             <div className="flex justify-between items-center">
-                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Bruto</span>
-                                <span className="font-bold text-slate-300 text-sm">{formatBRL(totals.gross)}</span>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Consumido</span>
+                                <span className="font-bold text-slate-300 text-sm">{formatBRL(calculatedTotals.gross)}</span>
                             </div>
                             
-                            {totals.fees > 0 && (
+                            {calculatedTotals.fees > 0 && (
                                 <div className="flex justify-between items-center">
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-rose-400">Total Taxas Retidas</span>
-                                    <span className="font-bold text-rose-300 text-sm">- {formatBRL(totals.fees)}</span>
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-rose-400">Taxas de Cartão</span>
+                                    <span className="font-bold text-rose-300 text-sm">- {formatBRL(calculatedTotals.fees)}</span>
                                 </div>
                             )}
 
                             <div className="pt-4 border-t border-white/10 flex justify-between items-end">
                                 <div>
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-1">Faturamento Líquido</p>
-                                    <p className="text-4xl font-black text-emerald-400 tracking-tighter">{formatBRL(totals.net)}</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-1">Resultado Líquido</p>
+                                    <p className="text-4xl font-black text-emerald-400 tracking-tighter">{formatBRL(calculatedTotals.net)}</p>
                                 </div>
-                                <div className="text-right pb-1">
+                                <div className="pb-1">
                                     <CheckCircle2 size={32} className="text-emerald-500/50" />
                                 </div>
                             </div>
@@ -276,7 +271,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                 </div>
 
                 <footer className="p-8 bg-slate-50 border-t border-slate-100">
-                    <button onClick={onClose} className="w-full py-4 bg-slate-800 text-white font-black rounded-2xl shadow-xl hover:bg-slate-900 transition-all active:scale-95 uppercase text-xs tracking-widest">Fechar Resumo</button>
+                    <button onClick={onClose} className="w-full py-4 bg-slate-800 text-white font-black rounded-2xl shadow-xl hover:bg-slate-900 transition-all uppercase text-xs tracking-widest">Fechar Resumo</button>
                 </footer>
             </div>
         </div>
