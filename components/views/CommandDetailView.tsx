@@ -93,6 +93,18 @@ import React, { useState, useEffect, useMemo } from 'react';
                 
                 const alreadyPaid = cmdData.status === 'paid';
                 const clientInfo = cmdData.clients;
+
+                if (alreadyPaid) {
+                    const { data: payHistory } = await supabase
+                        .from('command_payments')
+                        .select(`
+                            *,
+                            payment_methods_config (name, brand)
+                        `)
+                        .eq('command_id', commandId);
+                    
+                    if (payHistory) setHistoryPayments(payHistory);
+                }
     
                 setCommand({
                     ...cmdData,
@@ -207,33 +219,30 @@ import React, { useState, useEffect, useMemo } from 'react';
             setIsFinishing(true);
     
             try {
-                const profId = isSafeUUID(command.professional_id) ? command.professional_id : null;
-    
+                // 1. VERIFICAR DUPLICIDADE
+                const { data: existing } = await supabase
+                    .from('command_payments')
+                    .select('id')
+                    .eq('command_id', commandId)
+                    .eq('status', 'paid')
+                    .maybeSingle();
+                
+                if (existing) {
+                    setToast({ message: "Esta comanda já foi liquidada!", type: 'error' });
+                    setIsFinishing(false);
+                    return;
+                }
+
+                // 2. GRAVAÇÃO DIRETA DOS PAGAMENTOS EM command_payments
                 for (const p of addedPayments) {
-                    // 1. REGISTRA NA RPC FINANCEIRA (Fluxo de Caixa)
-                    const { data: txId, error: txErr } = await supabase.rpc('register_payment_transaction', {
-                        p_studio_id: activeStudioId,
-                        p_professional_id: profId,
-                        p_amount: p.amount,
-                        p_method: p.method,
-                        p_brand: p.brand || null,
-                        p_installments: p.installments,
-                        p_command_id: commandId,
-                        p_client_id: command.client_id
-                    });
-    
-                    if (txErr) throw txErr;
-    
-                    // 2. REGISTRA NA TABELA DE AUDITORIA (command_payments)
                     const { error: cpErr } = await supabase.from('command_payments').insert([{
                         command_id: commandId,
                         studio_id: activeStudioId,
-                        financial_transaction_id: txId || null,
                         method_id: p.method_id || null,
                         amount: p.amount,
                         fee_amount: p.fee_amount,
                         net_value: p.net_value,
-                        fee_rate: p.fee_rate,
+                        fee_applied: p.fee_rate,
                         installments: p.installments,
                         brand: p.brand || null,
                         status: 'paid'
@@ -242,7 +251,7 @@ import React, { useState, useEffect, useMemo } from 'react';
                     if (cpErr) throw cpErr;
                 }
     
-                // 3. FINALIZA O STATUS DA COMANDA
+                // 3. ATUALIZAR STATUS DA COMANDA
                 const { error: closeError } = await supabase
                     .from('commands')
                     .update({ 
@@ -254,7 +263,7 @@ import React, { useState, useEffect, useMemo } from 'react';
     
                 if (closeError) throw closeError;
     
-                setToast({ message: "Comanda liquidada!", type: 'success' });
+                setToast({ message: "Venda liquidada with sucesso! ✅", type: 'success' });
                 setIsLocked(true);
                 setTimeout(onBack, 800);
     
@@ -310,31 +319,35 @@ import React, { useState, useEffect, useMemo } from 'react';
                                 </div>
                             </div>
     
-                            {addedPayments.length > 0 && (
+                            {(addedPayments.length > 0 || historyPayments.length > 0) && (
                                 <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
                                     <header className="px-8 py-5 border-b border-slate-50 bg-emerald-50/50 flex justify-between items-center">
-                                        <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Fluxo de Caixa Previsto</h3>
+                                        <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest flex items-center gap-2"><CheckCircle size={16} /> Fluxo Financeiro Auditado</h3>
                                     </header>
                                     <div className="divide-y divide-slate-50">
-                                        {addedPayments.map(p => (
-                                            <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-white group animate-in slide-in-from-right-4">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center font-black">
-                                                        {p.installments > 1 ? `${p.installments}x` : '1x'}
+                                        {(isLocked ? historyPayments : addedPayments).map(p => {
+                                            const name = isLocked 
+                                                ? (p.payment_methods_config?.name || p.brand || 'Pagamento')
+                                                : (p.method.replace('_', ' ') + (p.brand ? ` • ${p.brand}` : ''));
+                                            
+                                            return (
+                                                <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-white group animate-in slide-in-from-right-4">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center font-black">
+                                                            {p.installments > 1 ? `${p.installments}x` : '1x'}
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-sm font-black text-slate-700 uppercase">{name}</span>
+                                                            <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Saldo Líquido: R$ {Number(p.net_value).toFixed(2)}</p>
+                                                        </div>
                                                     </div>
-                                                    <div>
-                                                        <span className="text-sm font-black text-slate-700 uppercase">
-                                                            {p.method.replace('_', ' ')} {p.brand ? `• ${p.brand}` : ''}
-                                                        </span>
-                                                        <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Saldo Líquido: R$ {p.net_value.toFixed(2)}</p>
+                                                    <div className="flex items-center gap-4">
+                                                        <span className="font-black text-slate-800 text-lg">R$ {Number(p.amount).toFixed(2)}</span>
+                                                        {!isLocked && <button onClick={() => setAddedPayments(prev => prev.filter(i => i.id !== p.id))} className="p-2 text-slate-200 hover:text-rose-500 transition-colors"><X size={18} /></button>}
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-4">
-                                                    <span className="font-black text-slate-800 text-lg">R$ {p.amount.toFixed(2)}</span>
-                                                    {!isLocked && <button onClick={() => setAddedPayments(prev => prev.filter(i => i.id !== p.id))} className="p-2 text-slate-200 hover:text-rose-500 transition-colors"><X size={18} /></button>}
-                                                </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             )}
@@ -354,13 +367,15 @@ import React, { useState, useEffect, useMemo } from 'react';
                                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Valor Total</p>
                                         <h2 className="text-5xl font-black tracking-tighter text-emerald-400">R$ {totals.total.toFixed(2)}</h2>
                                     </div>
-                                    {totals.paid > 0 && (
+                                    {(totals.paid > 0 || isLocked) && (
                                         <div className="bg-white/5 p-4 rounded-3xl border border-white/10 space-y-2">
-                                            <div className="flex justify-between text-xs font-bold text-slate-400"><span>Pago:</span><span className="text-emerald-400">R$ {totals.paid.toFixed(2)}</span></div>
-                                            <div className="flex justify-between items-center pt-2 border-t border-white/5">
-                                                <span className="text-xs font-black uppercase tracking-widest text-orange-400">Restante:</span>
-                                                <span className={`text-xl font-black ${totals.remaining === 0 ? 'text-emerald-400' : 'text-white'}`}>R$ {totals.remaining.toFixed(2)}</span>
-                                            </div>
+                                            <div className="flex justify-between text-xs font-bold text-slate-400"><span>Pago:</span><span className="text-emerald-400">R$ {(isLocked ? command.total_amount : totals.paid).toFixed(2)}</span></div>
+                                            {!isLocked && (
+                                                <div className="flex justify-between items-center pt-2 border-t border-white/5">
+                                                    <span className="text-xs font-black uppercase tracking-widest text-orange-400">Restante:</span>
+                                                    <span className={`text-xl font-black ${totals.remaining === 0 ? 'text-emerald-400' : 'text-white'}`}>R$ {totals.remaining.toFixed(2)}</span>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>

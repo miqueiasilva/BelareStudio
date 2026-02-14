@@ -51,7 +51,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
             }
 
             // 3. Busca Auditoria de Pagamentos (Fonte Obrigatória: command_payments)
-            // Ajustado conforme instrução técnica: join específico e maybeSingle()
+            // CORREÇÃO: Utilizando o relacionamento correto 'payment_methods_config'
             const { data: payData, error: payError } = await supabase
                 .from('command_payments')
                 .select(`
@@ -62,7 +62,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                     brand,
                     installments,
                     method_id,
-                    payment_methods!command_payments_method_id_fkey (
+                    payment_methods_config (
                         name,
                         brand
                     )
@@ -71,7 +71,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                 .maybeSingle();
 
             if (payError) {
-                console.error('❌ Erro ao buscar pagamento:', payError);
+                console.error('❌ Erro de relacionamento ou query:', payError);
             }
             
             console.log('✅ Pagamento encontrado:', payData);
@@ -88,15 +88,10 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
 
     // Cálculos de Auditoria baseados nos itens e no pagamento localizado
     const totals = useMemo(() => {
-        // Bruto vem sempre dos itens para garantir integridade se o financeiro falhar
         const grossFromItems = items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
         
         if (!payment) {
-            return {
-                gross: grossFromItems,
-                fees: 0,
-                net: grossFromItems
-            };
+            return { gross: grossFromItems, fees: 0, net: grossFromItems };
         }
 
         return {
@@ -121,11 +116,11 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
 
     const displayClientName = command.clients?.nome || command.clients?.name || command.client_name || "CONSUMIDOR FINAL";
     
-    // Lógica de exibição do método conforme instrução
-    const methodName = payment?.payment_methods?.name || payment?.brand || 'Pagamento em Aberto';
-    const feePercent = (payment && Number(payment.amount) > 0) 
-        ? ((Number(payment.fee_amount) / Number(payment.amount)) * 100).toFixed(2) 
-        : '0.00';
+    // CORREÇÃO: Exibição baseada na tabela payment_methods_config
+    const methodName = payment?.payment_methods_config?.name || payment?.brand || 'Pagamento Localizado';
+    const grossAmount = Number(payment?.amount || 0);
+    const feeAmount = Number(payment?.fee_amount || 0);
+    const feePercent = grossAmount > 0 ? ((feeAmount / grossAmount) * 100).toFixed(2) : '0.00';
 
     return (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
@@ -136,13 +131,12 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                             <Receipt className="text-emerald-500" size={24} />
                             Resumo da Venda
                         </h2>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Auditoria de Recebimento Direta (command_payments)</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Conferência BelareStudio • command_payments</p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400"><X size={24} /></button>
                 </header>
 
                 <div className="p-8 space-y-8 max-h-[75vh] overflow-y-auto custom-scrollbar text-left">
-                    {/* Header Cliente */}
                     <div className="flex items-center gap-6">
                         <div className="w-16 h-16 rounded-[24px] bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xl overflow-hidden shadow-sm">
                             {command.clients?.photo_url ? <img src={command.clients.photo_url} className="w-full h-full object-cover" /> : displayClientName.charAt(0).toUpperCase()}
@@ -156,7 +150,6 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                         </div>
                     </div>
 
-                    {/* Consumo Detalhado */}
                     <Card title="Itens do Atendimento" icon={<ShoppingCart size={16} className="text-orange-500" />}>
                         <div className="divide-y divide-slate-50">
                             {items.map((item: any) => (
@@ -176,14 +169,13 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                         </div>
                     </Card>
 
-                    {/* Fluxo de Recebimento - Auditoria Direta */}
                     <div className="space-y-4">
                         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
                             <Landmark size={14} /> Fluxo de Recebimento
                         </h4>
                         
                         {payment ? (
-                            <div className="p-6 bg-slate-50 rounded-[32px] border-2 border-white shadow-sm space-y-4 animate-in fade-in">
+                            <div className="p-6 bg-slate-50 rounded-[32px] border-2 border-white shadow-sm space-y-4">
                                 <div className="flex justify-between items-start">
                                     <div className="flex items-center gap-4">
                                         <div className="p-3 bg-white rounded-2xl text-slate-400 shadow-sm">
@@ -199,7 +191,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                                     </div>
                                     <div className="text-right">
                                         <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1.5">Valor Bruto</p>
-                                        <p className="text-lg font-black text-slate-800">{formatBRL(Number(payment.amount))}</p>
+                                        <p className="text-lg font-black text-slate-800">{formatBRL(grossAmount)}</p>
                                     </div>
                                 </div>
                                 
@@ -207,7 +199,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                                     <span className="text-[10px] font-black text-rose-500 uppercase flex items-center gap-1.5">
                                         <Percent size={12} /> Taxa Adquirente ({feePercent}%)
                                     </span>
-                                    <span className="text-sm font-black text-rose-500">- {formatBRL(Number(payment.fee_amount || 0))}</span>
+                                    <span className="text-sm font-black text-rose-500">- {formatBRL(feeAmount)}</span>
                                 </div>
 
                                 <div className="flex justify-between items-center bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100">
@@ -219,17 +211,13 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                             <div className="p-12 text-center bg-amber-50 rounded-[40px] border-2 border-dashed border-amber-100">
                                 <AlertTriangle className="mx-auto text-amber-400 mb-3" size={32} />
                                 <p className="text-xs font-black text-amber-600 uppercase tracking-widest leading-relaxed">
-                                    Pagamento não localizado na auditoria direta.<br/>
-                                    <span className="text-[9px] opacity-60">Verifique o status da transação em 'Controle de Caixa'</span>
+                                    Pagamento não localizado na auditoria direta.
                                 </p>
                             </div>
                         )}
                     </div>
 
-                    {/* Resultado Consolidado */}
                     <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-40 h-40 bg-orange-500/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
-                        
                         <div className="relative z-10 space-y-5">
                             <div className="flex justify-between items-center opacity-60">
                                 <span className="text-xs font-black uppercase tracking-widest">Total dos Itens</span>
@@ -238,7 +226,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                             
                             {totals.fees > 0 && (
                                 <div className="flex justify-between items-center text-rose-400">
-                                    <span className="text-xs font-black uppercase tracking-widest">Custo de Transação (Taxas)</span>
+                                    <span className="text-xs font-black uppercase tracking-widest">Taxas de Cartão</span>
                                     <span className="font-bold text-lg">- {formatBRL(totals.fees)}</span>
                                 </div>
                             )}
