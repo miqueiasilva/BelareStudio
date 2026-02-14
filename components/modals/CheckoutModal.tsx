@@ -50,7 +50,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const [isFetching, setIsFetching] = useState(true);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     
-    // Bloqueio de execução única para evitar cliques triplos/rápidos
+    // BARREIRA CONTRA MÚLTIPLOS CLIQUES
     const isProcessingRef = useRef(false);
 
     const [dbProfessionals, setDbProfessionals] = useState<any[]>([]);
@@ -83,7 +83,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
     useEffect(() => {
         if (isOpen) {
-            isProcessingRef.current = false; // Reset lock ao abrir
+            isProcessingRef.current = false;
             loadSystemData();
         }
     }, [isOpen]);
@@ -92,21 +92,14 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return dbPaymentMethods.filter(m => m.type === selectedCategory);
     }, [dbPaymentMethods, selectedCategory]);
 
-    useEffect(() => {
-        if (filteredMethods.length > 0) {
-            setSelectedMethodId(filteredMethods[0].id);
-            setInstallments(1);
-        }
-    }, [selectedCategory, filteredMethods]);
-
     const currentMethod = useMemo(() => {
         return dbPaymentMethods.find(m => m.id === selectedMethodId);
     }, [dbPaymentMethods, selectedMethodId]);
 
     const handleConfirmPayment = async () => {
-        // BARREIRA SÍNCRONA: Bloqueia imediatamente qualquer clique subsequente
+        // BLOQUEIO SÍNCRONO IMEDIATO
         if (isProcessingRef.current || isLoading || !currentMethod || !activeStudioId) {
-            console.log('🚫 Checkout bloqueado - Processamento em curso');
+            console.log('🚫 Bloqueado - Processamento ativo');
             return;
         }
         
@@ -137,73 +130,53 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 status: 'paid'
             };
 
-            let paymentSecured = false;
-
-            // 2. LÓGICA DE VERIFICAÇÃO ANTES DE INSERIR (Idempotência)
+            // 2. TENTATIVA DE INSERÇÃO COM RESILIÊNCIA 409
             if (commandId) {
-                const { data: existing, error: checkError } = await supabase
+                const { data: existing } = await supabase
                     .from('command_payments')
                     .select('id, status')
                     .eq('command_id', commandId)
+                    .eq('status', 'paid')
                     .maybeSingle();
 
-                if (checkError) throw checkError;
-
-                console.log('payment upsert path', { existing, status: existing?.status });
-
-                if (existing) {
-                    if (existing.status !== 'paid') {
-                        const { error: updErr } = await supabase
-                            .from('command_payments')
-                            .update(paymentPayload)
-                            .eq('id', existing.id);
-                        
-                        if (updErr) {
-                            console.error('payment error', { code: updErr.code, message: updErr.message });
-                            throw updErr;
-                        }
-                    }
-                    paymentSecured = true;
-                } else {
+                if (!existing) {
                     const { error: insErr } = await supabase
                         .from('command_payments')
                         .insert([paymentPayload]);
                     
-                    if (insErr) {
+                    // Se 409, o pagamento já entrou por outro clique, então ignoramos
+                    if (insErr && insErr.code !== '23505') {
                         console.error('payment error', { code: insErr.code, message: insErr.message });
                         throw insErr;
                     }
-                    paymentSecured = true;
                 }
             } else {
+                // Sem comanda (venda direta simplificada)
                 const { error: insErr } = await supabase.from('command_payments').insert([paymentPayload]);
                 if (insErr) throw insErr;
-                paymentSecured = true;
             }
 
-            // 3. ATUALIZAÇÃO DOS STATUS (SÓ APÓS GARANTIR O PAGAMENTO)
-            if (paymentSecured) {
-                if (commandId) {
-                    await supabase
-                        .from('commands')
-                        .update({ status: 'paid', closed_at: new Date().toISOString() })
-                        .eq('id', commandId);
-                }
-
+            // 3. ATUALIZAÇÃO DOS STATUS (SEMPRE APÓS GARANTIR O REGISTRO DO PAGAMENTO)
+            if (commandId) {
                 await supabase
-                    .from('appointments')
-                    .update({ status: 'concluido' })
-                    .eq('id', appointment.id);
-
-                setToast({ message: "Recebimento confirmado! ✅", type: 'success' });
-                onSuccess();
-                onClose();
+                    .from('commands')
+                    .update({ status: 'paid', closed_at: new Date().toISOString() })
+                    .eq('id', commandId);
             }
+
+            await supabase
+                .from('appointments')
+                .update({ status: 'concluido' })
+                .eq('id', appointment.id);
+
+            setToast({ message: "Recebimento confirmado! ✅", type: 'success' });
+            onSuccess();
+            onClose();
 
         } catch (error: any) {
             console.error("[CHECKOUT_EXCEPTION]", error);
-            setToast({ message: `Falha no processamento: ${error.message}`, type: 'error' });
-            // Destrava apenas se houver erro real para permitir tentar novamente
+            setToast({ message: `Erro no checkout: ${error.message}`, type: 'error' });
+            // Destrava para permitir correção pelo usuário
             isProcessingRef.current = false;
             setIsLoading(false);
         }

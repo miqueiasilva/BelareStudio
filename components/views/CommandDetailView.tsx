@@ -39,8 +39,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
         const [isFinishing, setIsFinishing] = useState(false);
         const [isLocked, setIsLocked] = useState(false);
 
-        // Bloqueio de processamento contra duplo clique/condição de corrida
+        // BARREIRA CONTRA MÚLTIPLOS CLIQUES
         const isProcessingRef = useRef(false);
+        const [buttonDisabled, setButtonDisabled] = useState(false);
         
         const [addedPayments, setAddedPayments] = useState<PaymentEntry[]>([]);
         const [historyPayments, setHistoryPayments] = useState<any[]>([]);
@@ -85,7 +86,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
     
                 setAvailableConfigs(configsRes.data || []);
                 
-                // BUSCA AUDITORIA DE PAGAMENTOS (Pode existir mesmo se status local não refletir)
+                // BUSCA AUDITORIA DE PAGAMENTOS
                 const { data: payHistory } = await supabase
                     .from('command_payments')
                     .select(`*, payment_methods_config (name, brand)`)
@@ -132,14 +133,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
             return { subtotal, total: totalAfterDiscount, paid: currentPaid, remaining };
         }, [command, discount, addedPayments]);
 
-        const filteredConfigs = useMemo(() => {
-            if (!selectedType) return [];
-            if (selectedType === 'parcelado') {
-                return availableConfigs.filter(c => c.type === 'credit' && c.allow_installments);
-            }
-            return availableConfigs.filter(c => c.type === selectedType);
-        }, [availableConfigs, selectedType]);
-    
         const handleSelectType = (type: string) => {
             setSelectedType(type);
             setAmountToPay(totals.remaining.toFixed(2));
@@ -192,48 +185,55 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
         };
     
         const handleFinishCheckout = async () => {
-            // BARREIRA SÍNCRONA CONTRA MÚLTIPLOS CLIQUES
-            if (isProcessingRef.current || isFinishing || isLocked || addedPayments.length === 0) {
-                console.log('🚫 Bloqueado - Processamento em curso');
+            // BARREIRA DUPLA CONTRA MÚLTIPLAS EXECUÇÕES
+            if (isProcessingRef.current || buttonDisabled || isLocked || addedPayments.length === 0) {
+                console.log('🚫 Bloqueado - já processando ou comanda liquidada');
                 return;
             }
             
             isProcessingRef.current = true;
+            setButtonDisabled(true);
             setIsFinishing(true);
 
             try {
-                const consolidatedPayment = {
-                    command_id: commandId,
-                    studio_id: activeStudioId,
-                    amount: addedPayments.reduce((acc, p) => acc + p.amount, 0),
-                    fee_amount: addedPayments.reduce((acc, p) => acc + p.fee_amount, 0),
-                    net_value: addedPayments.reduce((acc, p) => acc + p.net_value, 0),
-                    fee_applied: addedPayments[0].fee_rate,
-                    installments: Math.max(...addedPayments.map(p => p.installments)),
-                    method_id: addedPayments[0].method_id,
-                    brand: addedPayments.length > 1 ? 'Misto' : (addedPayments[0].brand || null),
-                    status: 'paid'
-                };
-
-                // TENTATIVA DE INSERÇÃO DIRETA
-                const { error: insErr } = await supabase
+                // 1. Verificar se já existe pagamento para esta comanda no banco
+                const { data: existing, error: checkError } = await supabase
                     .from('command_payments')
-                    .insert([consolidatedPayment]);
+                    .select('id, status')
+                    .eq('command_id', commandId)
+                    .eq('status', 'paid')
+                    .maybeSingle();
 
-                // TRATAMENTO DE ERRO 409 (23505 = UNIQUE VIOLATION)
-                // Se o erro for 409, significa que o pagamento já foi inserido (idempotência), então tratamos como sucesso.
-                if (insErr && insErr.code !== '23505') {
-                    console.error('payment error', { code: insErr.code, message: insErr.message });
-                    throw insErr;
+                if (checkError) throw checkError;
+
+                console.log('payment upsert path', { existing, status: existing?.status });
+
+                if (!existing) {
+                    const consolidatedPayment = {
+                        command_id: commandId,
+                        studio_id: activeStudioId,
+                        amount: addedPayments.reduce((acc, p) => acc + p.amount, 0),
+                        fee_amount: addedPayments.reduce((acc, p) => acc + p.fee_amount, 0),
+                        net_value: addedPayments.reduce((acc, p) => acc + p.net_value, 0),
+                        fee_applied: addedPayments[0].fee_rate,
+                        installments: Math.max(...addedPayments.map(p => p.installments)),
+                        method_id: addedPayments[0].method_id,
+                        brand: addedPayments.length > 1 ? 'Misto' : (addedPayments[0].brand || null),
+                        status: 'paid'
+                    };
+
+                    const { error: insErr } = await supabase
+                        .from('command_payments')
+                        .insert([consolidatedPayment]);
+
+                    // Tratar 409 (23505) como sucesso!
+                    if (insErr && insErr.code !== '23505') {
+                        console.error('payment error', { code: insErr.code, message: insErr.message });
+                        throw insErr;
+                    }
                 }
 
-                if (insErr && insErr.code === '23505') {
-                    console.log('payment upsert path', { existing: true, status: 'already_paid_handled' });
-                } else {
-                    console.log('payment upsert path', { existing: false, status: 'new_payment_inserted' });
-                }
-
-                // SEMPRE TENTA ATUALIZAR A COMANDA E STATUS SE CHEGOU AQUI
+                // 2. Sempre atualizar a comanda após garantir o pagamento (ou se ele já existia)
                 const { error: closeError } = await supabase
                     .from('commands')
                     .update({ 
@@ -245,7 +245,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 
                 if (closeError) {
                     console.error('[BALCAO_CLOSE_ERROR]', closeError);
-                    // Não lançamos erro aqui para não travar a UI caso o pagamento já tenha entrado
                 }
 
                 setToast({ message: "Atendimento finalizado com sucesso! ✅", type: 'success' });
@@ -255,11 +254,20 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
             } catch (e: any) {
                 console.error('[BALCAO_EXCEPTION]', e);
                 setToast({ message: `Falha no encerramento: ${e.message}`, type: 'error' });
-                // Só destrava em caso de erro real não-duplicate para permitir nova tentativa
+                // Só destrava se houver erro para permitir tentar novamente
                 isProcessingRef.current = false;
+                setButtonDisabled(false);
                 setIsFinishing(false);
             }
         };
+
+        const filteredConfigs = useMemo(() => {
+            if (!selectedType) return [];
+            if (selectedType === 'parcelado') {
+                return availableConfigs.filter(c => c.type === 'credit' && c.allow_installments);
+            }
+            return availableConfigs.filter(c => c.type === selectedType);
+        }, [availableConfigs, selectedType]);
     
         if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
     
@@ -383,7 +391,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
                                                     { id: 'credit', label: 'Crédito', icon: CardIcon },
                                                     { id: 'parcelado', label: 'Parcelado', icon: Layers }
                                                 ].map(pm => (
-                                                    <button key={pm.id} disabled={isFinishing} onClick={() => handleSelectType(pm.id)} className="flex flex-col items-center justify-center p-5 rounded-3xl bg-white border border-slate-100 hover:border-orange-300 transition-all group shadow-sm active:scale-95 disabled:opacity-50">
+                                                    <button key={pm.id} disabled={buttonDisabled} onClick={() => handleSelectType(pm.id)} className="flex flex-col items-center justify-center p-5 rounded-3xl bg-white border border-slate-100 hover:border-orange-300 transition-all group shadow-sm active:scale-95 disabled:opacity-50">
                                                         <pm.icon size={24} className="mb-2 text-slate-300 group-hover:text-orange-500 transition-colors" />
                                                         <span className="text-[9px] font-black uppercase">{pm.label}</span>
                                                     </button>
@@ -396,7 +404,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
                                                 <header className="flex justify-between items-center px-1"><span className="text-[9px] font-black uppercase text-orange-500 tracking-widest">Escolha a Bandeira</span><button onClick={() => setPaymentStep('type')}><X size={16} className="text-slate-300" /></button></header>
                                                 <div className="grid grid-cols-1 gap-2">
                                                     {filteredConfigs.map(cfg => (
-                                                        <button key={cfg.id} disabled={isFinishing} onClick={() => { setSelectedConfig(cfg); setPaymentStep(selectedType === 'parcelado' ? 'installments' : 'confirm'); }} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl hover:border-orange-400 transition-all group shadow-sm disabled:opacity-50">
+                                                        <button key={cfg.id} disabled={buttonDisabled} onClick={() => { setSelectedConfig(cfg); setPaymentStep(selectedType === 'parcelado' ? 'installments' : 'confirm'); }} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl hover:border-orange-400 transition-all group shadow-sm disabled:opacity-50">
                                                             <span className="text-xs font-black text-slate-700 uppercase">{cfg.brand || cfg.name}</span>
                                                             <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-tighter">{100 - cfg.rate_cash}% Líquido</span>
                                                         </button>
@@ -410,7 +418,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
                                                 <header className="flex justify-between items-center px-1"><span className="text-[9px] font-black uppercase text-orange-500 tracking-widest">Número de Parcelas</span><button onClick={() => setPaymentStep('brand')}><X size={16} className="text-slate-300" /></button></header>
                                                 <div className="grid grid-cols-3 gap-2">
                                                     {Array.from({ length: (selectedConfig?.max_installments || 12) - 1 }, (_, i) => i + 2).map(n => (
-                                                        <button key={n} disabled={isFinishing} onClick={() => { setInstallments(n); setPaymentStep('confirm'); }} className="py-3 bg-white border border-slate-100 rounded-xl font-black text-xs text-slate-600 hover:border-orange-400 hover:text-orange-600 transition-all disabled:opacity-50">
+                                                        <button key={n} disabled={buttonDisabled} onClick={() => { setInstallments(n); setPaymentStep('confirm'); }} className="py-3 bg-white border border-slate-100 rounded-xl font-black text-xs text-slate-600 hover:border-orange-400 hover:text-orange-600 transition-all disabled:opacity-50">
                                                             {n}x
                                                         </button>
                                                     ))}
@@ -430,10 +438,10 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
                                                 <div className="space-y-4 flex-1">
                                                     <div className="relative">
                                                         <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span>
-                                                        <input type="number" autoFocus disabled={isFinishing} value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all shadow-inner disabled:opacity-50" />
+                                                        <input type="number" autoFocus disabled={buttonDisabled} value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all shadow-inner disabled:opacity-50" />
                                                     </div>
                                                 </div>
-                                                <button onClick={handleConfirmPartialPayment} disabled={isFinishing} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+                                                <button onClick={handleConfirmPartialPayment} disabled={buttonDisabled} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
                                                     <Calculator size={18} /> Confirmar Recebimento
                                                 </button>
                                             </div>
@@ -442,10 +450,10 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
     
                                     <button 
                                         onClick={handleFinishCheckout} 
-                                        disabled={isFinishing || totals.remaining > 0 || addedPayments.length === 0} 
-                                        className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 && !isFinishing ? 'bg-emerald-600 text-white shadow-emerald-100' : 'bg-slate-100 text-slate-300'}`}
+                                        disabled={buttonDisabled || totals.remaining > 0 || addedPayments.length === 0} 
+                                        className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 && !buttonDisabled ? 'bg-emerald-600 text-white shadow-emerald-100' : 'bg-slate-100 text-slate-300'}`}
                                     >
-                                        {isFinishing ? (
+                                        {buttonDisabled ? (
                                             <div className="flex items-center gap-2"><Loader2 size={24} className="animate-spin" /><span>PROCESSANDO...</span></div>
                                         ) : (
                                             <><CheckCircle size={24} /> FECHAR ATENDIMENTO</>

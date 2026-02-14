@@ -51,11 +51,11 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand, on
             
             if (error) throw error;
 
-            // DEDUPLICAÇÃO: Se for a aba de comandas abertas, filtra apenas a mais recente por cliente
+            // DEDUPLICAÇÃO CRÍTICA: Se for a aba de comandas abertas, filtra apenas a mais recente por cliente
             if (currentTab === 'open' && data) {
                 const seenClients = new Set();
                 const uniqueCommands = data.filter(cmd => {
-                    // Se não tiver cliente_id (venda avulsa), sempre mostra
+                    // Vendas avulsas sem cliente_id sempre aparecem
                     if (!cmd.client_id) return true;
                     
                     if (seenClients.has(cmd.client_id)) {
