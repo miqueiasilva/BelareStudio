@@ -116,7 +116,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         setIsFinishing(true);
 
         try {
-            // 1. VERIFICAÇÃO PREVENTIVA DE DUPLICIDADE
+            // 1. Verificação de Idempotência
             const { data: existingPay } = await supabase
                 .from('command_payments')
                 .select('id, status')
@@ -127,7 +127,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             if (existingPay) {
                 console.log('✅ Pagamento já liquidado. Encerrando.');
             } else {
-                // 2. REGISTRO FINANCEIRO VIA RPC
+                // 2. RPC FINANCEIRO (Assinatura UUID Consolidada)
                 const mainPayment = addedPayments[0];
                 const totalAmount = addedPayments.reduce((acc, p) => acc + p.amount, 0);
 
@@ -143,7 +143,6 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 });
 
                 if (rpcError) {
-                    // Tratamento específico de erro de constraint vindo da RPC ou trigger associada
                     if (!rpcError.message.includes('unique constraint') && rpcError.code !== '23505') {
                         throw new Error(`Falha no Registro Financeiro: ${rpcError.message}`);
                     }
@@ -341,7 +340,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                                     )}
 
                                     {paymentStep === 'brand' && (
-                                        <div className="space-y-4 animate-in slide-in-from-right-4 flex-1">
+                                        <div className="space-y-4 animate-in slide-in-from-right-4 flex-1 text-left">
                                             <header className="flex justify-between items-center px-1"><span className="text-[9px] font-black uppercase text-orange-500 tracking-widest">Escolha a Bandeira</span><button onClick={() => setPaymentStep('type')}><X size={16} className="text-slate-300" /></button></header>
                                             <div className="grid grid-cols-1 gap-2">
                                                 {filteredConfigs.map(cfg => (
@@ -355,7 +354,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                                     )}
 
                                     {paymentStep === 'installments' && (
-                                        <div className="space-y-6 animate-in slide-in-from-right-4 flex-1">
+                                        <div className="space-y-6 animate-in slide-in-from-right-4 flex-1 text-left">
                                             <header className="flex justify-between items-center px-1"><span className="text-[9px] font-black uppercase text-orange-500 tracking-widest">Número de Parcelas</span><button onClick={() => setPaymentStep('brand')}><X size={16} className="text-slate-300" /></button></header>
                                             <div className="grid grid-cols-3 gap-2">
                                                 {Array.from({ length: (selectedConfig?.max_installments || 12) - 1 }, (_, i) => i + 2).map(n => (
@@ -366,7 +365,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                                     )}
 
                                     {paymentStep === 'confirm' && (
-                                        <div className="space-y-6 animate-in slide-in-from-bottom-4 flex-1 flex flex-col">
+                                        <div className="space-y-6 animate-in slide-in-from-bottom-4 flex-1 flex flex-col text-left">
                                             <header className="flex justify-between items-center px-1">
                                                 <div className="flex flex-col">
                                                     <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{selectedConfig?.brand || selectedConfig?.name}</span>

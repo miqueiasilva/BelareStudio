@@ -102,7 +102,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         const commandId = appointment.command_id;
 
         try {
-            // 1. VERIFICAÇÃO PREVENTIVA DE PAGAMENTO
+            // 1. Verificação de Idempotência no Front
             if (commandId) {
                 const { data: existing } = await supabase
                     .from('command_payments')
@@ -112,14 +112,15 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     .maybeSingle();
 
                 if (existing) {
-                    console.log('✅ Comanda já liquidada. Finalizando fluxo.');
+                    console.log('✅ Pagamento já liquidado.');
                     onSuccess();
                     onClose();
                     return;
                 }
             }
 
-            // 2. RPC FINANCEIRO (Com UUIDs explícitos)
+            // 2. RPC FINANCEIRO (Assinatura UUID Consolidada)
+            // IMPORTANTE: Passar os nomes dos parâmetros exatamente como no SQL
             const { data: financialTxId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: appointment.professional_id || null,
@@ -132,7 +133,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             });
 
             if (rpcError) {
-                // Se o erro for de duplicidade, não travamos o usuário, apenas prosseguimos
                 if (!rpcError.message.includes('unique constraint') && rpcError.code !== '23505') {
                     throw new Error(`Falha no Registro Financeiro: ${rpcError.message}`);
                 }
@@ -161,8 +161,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     status: 'paid'
                 }]);
 
-            // Se cair no erro 23505 aqui, significa que outra aba ou processo inseriu entre o nosso check e agora.
-            // Ignoramos o erro e seguimos para atualizar os status.
             if (insErr && insErr.code !== '23505') throw insErr;
 
             // 4. ATUALIZAÇÕES DE STATUS
@@ -198,7 +196,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     return (
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-300">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-            <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden">
+            <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden text-left">
                 <header className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                     <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Checkout Direto</h2>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
