@@ -22,7 +22,7 @@ interface DBPaymentMethod {
     type: 'credit' | 'debit' | 'pix' | 'money';
     brand: string | null;
     rate_cash: number;
-    rate_installment?: number; // Campo solicitado pelo diagnóstico
+    rate_installment?: number;
     allow_installments: boolean;
     max_installments: number;
     installment_rates: Record<string, number>;
@@ -72,7 +72,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 if (firstPix) setSelectedMethodId(firstPix.id);
             }
         } catch (err: any) {
-            console.error('[CHECKOUT_FETCH_ERROR]', err);
+            console.error('[CHECKOUT_INIT_ERROR]', err);
         } finally {
             setIsFetching(false);
         }
@@ -83,7 +83,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     }, [isOpen]);
 
     const filteredMethods = useMemo(() => {
-        return dbPaymentMethods.filter(m => m.type === setSelectedCategory ? selectedCategory : m.type === selectedCategory);
+        return dbPaymentMethods.filter(m => m.type === selectedCategory);
     }, [dbPaymentMethods, selectedCategory]);
 
     useEffect(() => {
@@ -97,34 +97,37 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         return dbPaymentMethods.find(m => m.id === selectedMethodId);
     }, [dbPaymentMethods, selectedMethodId]);
 
+    // --- HANDLER CORRIGIDO (SEQUÊNCIA OBRIGATÓRIA) ---
     const handleConfirmPayment = async () => {
         if (isLoading || !currentMethod || !activeStudioId) return;
         
         setIsLoading(true);
-        console.log('[CHECKOUT_START] Iniciando liquidação para o atendimento:', appointment.id);
+        console.log('[CHECKOUT_LOG] Iniciando fluxo de pagamento para command:', appointment.command_id);
 
         try {
             const commandId = appointment.command_id;
 
-            // 1. VERIFICAÇÃO DE IDEMPOTÊNCIA (Evitar duplicidade em command_payments)
+            // 1. VERIFICAÇÃO DE IDEMPOTÊNCIA
             if (commandId) {
-                const { data: existing } = await supabase
+                const { data: existing, error: checkError } = await supabase
                     .from('command_payments')
                     .select('id')
                     .eq('command_id', commandId)
                     .eq('status', 'paid')
                     .maybeSingle();
                 
+                if (checkError) console.error('[CHECKOUT_ERROR] Erro ao verificar duplicidade:', checkError);
+
                 if (existing) {
-                    console.warn('[CHECKOUT_ABORT] Pagamento já registrado para command:', commandId);
-                    setToast({ message: "Este atendimento já foi pago anteriormente.", type: 'info' });
+                    console.warn('[CHECKOUT_WARN] Pagamento já existente. Abortando gravação dupla.');
+                    setToast({ message: "Este atendimento já possui pagamento registrado.", type: 'info' });
                     onSuccess();
                     onClose();
                     return;
                 }
             }
 
-            // 2. CÁLCULO DE TAXAS BASEADO NA CONFIGURAÇÃO DO MÉTODO (ID da payment_methods_config)
+            // 2. CÁLCULO DE TAXAS E LÍQUIDO
             const feeRate = installments > 1 
                 ? Number(currentMethod.installment_rates?.[installments.toString()] || currentMethod.rate_installment || 0)
                 : Number(currentMethod.rate_cash || 0);
@@ -132,10 +135,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             const feeAmount = (appointment.price * feeRate) / 100;
             const netValue = appointment.price - feeAmount;
 
-            console.log(`[CHECKOUT_CALC] Valor: ${appointment.price}, Taxa: ${feeRate}%, Líquido: ${netValue}`);
-
-            // 3. GRAVAÇÃO DIRETAMENTE EM command_payments (Fonte da Verdade)
-            const { error: paymentError } = await supabase
+            // 3. INSERT EM command_payments (FONTE DA VERDADE)
+            const { data: paymentData, error: paymentError } = await supabase
                 .from('command_payments')
                 .insert({
                     command_id: commandId || null,
@@ -144,20 +145,23 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     net_value: netValue,
                     fee_amount: feeAmount,
                     fee_applied: feeRate,
-                    method_id: currentMethod.id, // Referencia payment_methods_config
+                    method_id: currentMethod.id,
                     brand: currentMethod.brand || null,
                     installments: installments || 1,
                     status: 'paid'
-                });
+                })
+                .select();
 
             if (paymentError) {
-                console.error('[CHECKOUT_ERROR] Erro ao gravar em command_payments:', paymentError);
-                throw new Error("Erro ao registrar auditoria de pagamento.");
+                console.error('[CHECKOUT_CRITICAL] Falha ao inserir em command_payments:', paymentError);
+                throw new Error(`Erro de Auditoria: ${paymentError.message}`);
             }
 
-            // 4. ATUALIZAR STATUS DA COMANDA (SE EXISTIR)
+            console.log('[CHECKOUT_LOG] Auditoria gravada com sucesso:', paymentData);
+
+            // 4. ATUALIZAÇÃO DA COMANDA (SOMENTE SE O PASSO 3 FOR OK)
             if (commandId) {
-                const { error: cmdError } = await supabase
+                const { error: commandError } = await supabase
                     .from('commands')
                     .update({ 
                         status: 'paid',
@@ -165,7 +169,11 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     })
                     .eq('id', commandId);
                 
-                if (cmdError) console.error('[CHECKOUT_WARN] Falha ao atualizar status da comanda:', cmdError);
+                if (commandError) {
+                    console.error('[CHECKOUT_CRITICAL] Falha ao atualizar status da comanda:', commandError);
+                    // Aqui o pagamento já entrou, mas a comanda falhou ao fechar. 
+                    // O log é vital para correção manual se necessário.
+                }
             }
 
             // 5. ATUALIZAR STATUS DO AGENDAMENTO
@@ -174,16 +182,15 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 .update({ status: 'concluido' })
                 .eq('id', appointment.id);
             
-            if (apptError) throw apptError;
+            if (apptError) console.error('[CHECKOUT_ERROR] Erro ao concluir agendamento:', apptError);
 
-            console.log('[CHECKOUT_SUCCESS] Liquidação concluída.');
-            setToast({ message: "Venda liquidada e auditada com sucesso!", type: 'success' });
+            setToast({ message: "Venda liquidada e auditada com sucesso! ✅", type: 'success' });
             onSuccess();
             onClose();
 
         } catch (error: any) {
-            console.error("[CHECKOUT_CRITICAL]", error);
-            setToast({ message: error.message || "Erro interno no processamento.", type: 'error' });
+            console.error("[CHECKOUT_EXCEPTION]", error);
+            setToast({ message: error.message || "Falha no processamento financeiro.", type: 'error' });
         } finally {
             setIsLoading(false);
         }

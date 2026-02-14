@@ -123,16 +123,11 @@ import React, { useState, useEffect, useMemo } from 'react';
             return { subtotal, total: totalAfterDiscount, paid: currentPaid, remaining };
         }, [command, discount, addedPayments]);
 
-        // FIX: Added filteredConfigs to resolve 'Cannot find name' error
         const filteredConfigs = useMemo(() => {
             if (!selectedType) return [];
-            
-            // Se o usuário selecionou 'parcelado', filtramos por crédito que permite parcelamento
             if (selectedType === 'parcelado') {
                 return availableConfigs.filter(c => c.type === 'credit' && c.allow_installments);
             }
-            
-            // Caso contrário, filtramos pelo tipo selecionado (credit ou debit)
             return availableConfigs.filter(c => c.type === selectedType);
         }, [availableConfigs, selectedType]);
     
@@ -187,32 +182,35 @@ import React, { useState, useEffect, useMemo } from 'react';
             setPaymentStep('type');
         };
     
+        // --- HANDLER CORRIGIDO (SEQUÊNCIA OBRIGATÓRIA) ---
         const handleFinishCheckout = async () => {
             if (isFinishing || isLocked || addedPayments.length === 0) return;
             
             setIsFinishing(true);
-            console.log('[FINALIZE_START] Comanda:', commandId);
+            console.log('[BALCAO_FINALIZE] Iniciando fechamento de comanda:', commandId);
 
             try {
                 // 1. VERIFICAÇÃO DE IDEMPOTÊNCIA
-                const { data: existing } = await supabase
+                const { data: existing, error: checkError } = await supabase
                     .from('command_payments')
                     .select('id')
                     .eq('command_id', commandId)
                     .eq('status', 'paid')
                     .maybeSingle();
                 
+                if (checkError) console.error('[BALCAO_ERROR] Erro na verificação:', checkError);
+
                 if (existing) {
-                    console.warn('[FINALIZE_ABORT] Comanda já possui registro pago.');
+                    console.warn('[BALCAO_WARN] Comanda já possui auditoria paga. Bloqueando re-fechamento.');
                     setToast({ message: "Esta comanda já foi liquidada.", type: 'info' });
                     setIsLocked(true);
                     setIsFinishing(false);
                     return;
                 }
 
-                // 2. REGISTRO DIRETO DOS PAGAMENTOS NA AUDITORIA
+                // 2. REGISTRO DOS PAGAMENTOS (INSERT DIRETO)
                 for (const p of addedPayments) {
-                    const { error: cpErr } = await supabase.from('command_payments').insert([{
+                    const { data: pInsert, error: cpErr } = await supabase.from('command_payments').insert([{
                         command_id: commandId,
                         studio_id: activeStudioId,
                         method_id: p.method_id,
@@ -223,15 +221,16 @@ import React, { useState, useEffect, useMemo } from 'react';
                         installments: p.installments,
                         brand: p.brand || null,
                         status: 'paid'
-                    }]);
+                    }]).select();
                     
                     if (cpErr) {
-                        console.error('[FINALIZE_ERROR] Falha ao registrar pagamento individual:', cpErr);
-                        throw new Error("Erro ao salvar um ou mais pagamentos na auditoria.");
+                        console.error('[BALCAO_CRITICAL] Falha ao inserir auditoria:', cpErr);
+                        throw new Error(`Erro de Registro: ${cpErr.message}`);
                     }
+                    console.log('[BALCAO_LOG] Auditoria registrada:', pInsert);
                 }
     
-                // 3. ATUALIZAÇÃO DO STATUS DA COMANDA
+                // 3. ATUALIZAÇÃO DO STATUS DA COMANDA (SOMENTE SE PASSO 2 FOR SUCESSO)
                 const { error: closeError } = await supabase
                     .from('commands')
                     .update({ 
@@ -242,18 +241,18 @@ import React, { useState, useEffect, useMemo } from 'react';
                     .eq('id', commandId);
     
                 if (closeError) {
-                    console.error('[FINALIZE_ERROR] Falha ao atualizar comando:', closeError);
-                    throw new Error("Pagamento salvo, mas erro ao arquivar comanda.");
+                    console.error('[BALCAO_CRITICAL] Falha ao encerrar comanda após auditoria:', closeError);
+                    throw new Error("Auditoria ok, mas erro ao arquivar comanda.");
                 }
     
-                console.log('[FINALIZE_SUCCESS] Comanda liquidada com sucesso.');
+                console.log('[BALCAO_SUCCESS] Comanda finalizada com sucesso.');
                 setToast({ message: "Venda finalizada com sucesso! ✅", type: 'success' });
                 setIsLocked(true);
                 setTimeout(onBack, 800);
     
             } catch (e: any) {
-                console.error('[FINALIZE_CRITICAL]', e);
-                setToast({ message: `Falha no fechamento: ${e.message}`, type: 'error' });
+                console.error('[BALCAO_EXCEPTION]', e);
+                setToast({ message: `Falha no checkout: ${e.message}`, type: 'error' });
             } finally {
                 setIsFinishing(false);
             }
