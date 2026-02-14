@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
     X, CheckCircle, Wallet, CreditCard, Banknote, 
     Smartphone, Loader2, ShoppingCart, ArrowRight,
@@ -49,6 +49,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const [isLoading, setIsLoading] = useState(false);
     const [isFetching, setIsFetching] = useState(true);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+    
+    // Bloqueio de execução única para evitar cliques triplos/rápidos
+    const isProcessingRef = useRef(false);
 
     const [dbProfessionals, setDbProfessionals] = useState<any[]>([]);
     const [dbPaymentMethods, setDbPaymentMethods] = useState<DBPaymentMethod[]>([]);
@@ -79,7 +82,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     };
 
     useEffect(() => {
-        if (isOpen) loadSystemData();
+        if (isOpen) {
+            isProcessingRef.current = false; // Reset lock ao abrir
+            loadSystemData();
+        }
     }, [isOpen]);
 
     const filteredMethods = useMemo(() => {
@@ -98,9 +104,15 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     }, [dbPaymentMethods, selectedMethodId]);
 
     const handleConfirmPayment = async () => {
-        if (isLoading || !currentMethod || !activeStudioId) return;
+        // BARREIRA SÍNCRONA: Bloqueia imediatamente qualquer clique subsequente
+        if (isProcessingRef.current || isLoading || !currentMethod || !activeStudioId) {
+            console.log('🚫 Checkout bloqueado - Processamento em curso');
+            return;
+        }
         
+        isProcessingRef.current = true;
         setIsLoading(true);
+
         const commandId = appointment.command_id;
 
         try {
@@ -125,9 +137,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 status: 'paid'
             };
 
-            // 2. LÓGICA DE AUDITORIA ROBUSTA (FETCH-THEN-ACTION)
             let paymentSecured = false;
 
+            // 2. LÓGICA DE VERIFICAÇÃO ANTES DE INSERIR (Idempotência)
             if (commandId) {
                 const { data: existing, error: checkError } = await supabase
                     .from('command_payments')
@@ -141,7 +153,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
                 if (existing) {
                     if (existing.status !== 'paid') {
-                        // Existe mas está pendente ou cancelado, atualizamos para pago
                         const { error: updErr } = await supabase
                             .from('command_payments')
                             .update(paymentPayload)
@@ -151,14 +162,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                             console.error('payment error', { code: updErr.code, message: updErr.message });
                             throw updErr;
                         }
-                        paymentSecured = true;
-                    } else {
-                        // Já está pago, apenas ignoramos a inserção mas permitimos avançar o status da comanda se necessário
-                        console.warn('[CHECKOUT] Pagamento já estava liquidado no banco.');
-                        paymentSecured = true;
                     }
+                    paymentSecured = true;
                 } else {
-                    // Não existe, inserimos
                     const { error: insErr } = await supabase
                         .from('command_payments')
                         .insert([paymentPayload]);
@@ -170,15 +176,12 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     paymentSecured = true;
                 }
             } else {
-                // Sem command_id (venda direta simplificada), apenas inserimos
-                const { error: insErr } = await supabase
-                    .from('command_payments')
-                    .insert([paymentPayload]);
+                const { error: insErr } = await supabase.from('command_payments').insert([paymentPayload]);
                 if (insErr) throw insErr;
                 paymentSecured = true;
             }
 
-            // 3. ATUALIZAÇÃO DOS STATUS (APENAS SE O PAGAMENTO FOI GARANTIDO)
+            // 3. ATUALIZAÇÃO DOS STATUS (SÓ APÓS GARANTIR O PAGAMENTO)
             if (paymentSecured) {
                 if (commandId) {
                     await supabase
@@ -192,7 +195,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     .update({ status: 'concluido' })
                     .eq('id', appointment.id);
 
-                setToast({ message: "Venda finalizada com sucesso! ✅", type: 'success' });
+                setToast({ message: "Recebimento confirmado! ✅", type: 'success' });
                 onSuccess();
                 onClose();
             }
@@ -200,7 +203,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         } catch (error: any) {
             console.error("[CHECKOUT_EXCEPTION]", error);
             setToast({ message: `Falha no processamento: ${error.message}`, type: 'error' });
-        } finally {
+            // Destrava apenas se houver erro real para permitir tentar novamente
+            isProcessingRef.current = false;
             setIsLoading(false);
         }
     };
@@ -240,8 +244,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                 {categories.map((cat) => (
                                     <button
                                         key={cat.id}
+                                        disabled={isLoading}
                                         onClick={() => setSelectedCategory(cat.id as any)}
-                                        className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${selectedCategory === cat.id ? 'border-orange-500 bg-orange-50' : 'bg-white border-slate-100'}`}
+                                        className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${selectedCategory === cat.id ? 'border-orange-500 bg-orange-50' : 'bg-white border-slate-100'} disabled:opacity-50`}
                                     >
                                         <div className={`p-2 rounded-xl mb-1 ${cat.bg} ${cat.color}`}><cat.icon size={20} /></div>
                                         <span className="text-[9px] font-black uppercase">{cat.label}</span>
@@ -252,6 +257,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                             {filteredMethods.length > 0 && (
                                 <div className="space-y-4 animate-in slide-in-from-top-2">
                                     <select 
+                                        disabled={isLoading}
                                         value={selectedMethodId}
                                         onChange={(e) => setSelectedMethodId(e.target.value)}
                                         className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none"
@@ -262,6 +268,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                                     </select>
                                     {currentMethod?.type === 'credit' && currentMethod.allow_installments && (
                                         <select 
+                                            disabled={isLoading}
                                             value={installments}
                                             onChange={(e) => setInstallments(parseInt(e.target.value))}
                                             className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none"
@@ -279,14 +286,14 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 </main>
 
                 <footer className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
-                    <button onClick={onClose} className="flex-1 py-4 text-slate-500 font-black uppercase text-xs">Cancelar</button>
+                    <button onClick={onClose} disabled={isLoading} className="flex-1 py-4 text-slate-500 font-black uppercase text-xs disabled:opacity-50">Cancelar</button>
                     <button
                         onClick={handleConfirmPayment}
                         disabled={isLoading || isFetching || !currentMethod}
                         className="flex-[2] bg-slate-800 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
                     >
                         {isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
-                        Confirmar Venda
+                        {isLoading ? 'PROCESSANDO...' : 'Confirmar Venda'}
                     </button>
                 </footer>
             </div>

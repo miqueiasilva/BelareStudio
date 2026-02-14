@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
     import { 
         ChevronLeft, CreditCard, Smartphone, Banknote, 
         Plus, Loader2, CheckCircle,
@@ -38,6 +38,9 @@ import React, { useState, useEffect, useMemo } from 'react';
         const [loading, setLoading] = useState(true);
         const [isFinishing, setIsFinishing] = useState(false);
         const [isLocked, setIsLocked] = useState(false);
+
+        // Bloqueio de processamento contra duplo clique/condição de corrida
+        const isProcessingRef = useRef(false);
         
         const [addedPayments, setAddedPayments] = useState<PaymentEntry[]>([]);
         const [historyPayments, setHistoryPayments] = useState<any[]>([]);
@@ -82,7 +85,7 @@ import React, { useState, useEffect, useMemo } from 'react';
     
                 setAvailableConfigs(configsRes.data || []);
                 
-                // BUSCA AUDITORIA DE PAGAMENTOS (Independente do status local da comanda)
+                // BUSCA AUDITORIA DE PAGAMENTOS (Pode existir mesmo se status local não refletir)
                 const { data: payHistory } = await supabase
                     .from('command_payments')
                     .select(`*, payment_methods_config (name, brand)`)
@@ -90,7 +93,6 @@ import React, { useState, useEffect, useMemo } from 'react';
                 
                 if (payHistory && payHistory.length > 0) {
                     setHistoryPayments(payHistory);
-                    // Se existe auditoria paga, consideramos a visualização bloqueada/paga
                     if (payHistory.some(p => p.status === 'paid')) {
                         setIsLocked(true);
                     }
@@ -104,7 +106,6 @@ import React, { useState, useEffect, useMemo } from 'react';
                     display_client_photo: cmdData.clients?.photo_url || null
                 });
 
-                // Trava se o status na comanda já for pago
                 if (cmdData.status === 'paid') setIsLocked(true);
 
             } catch (e: any) {
@@ -114,7 +115,10 @@ import React, { useState, useEffect, useMemo } from 'react';
             }
         };
     
-        useEffect(() => { fetchContext(); }, [commandId, activeStudioId]);
+        useEffect(() => { 
+            isProcessingRef.current = false;
+            fetchContext(); 
+        }, [commandId, activeStudioId]);
     
         const totals = useMemo(() => {
             if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0 };
@@ -188,11 +192,16 @@ import React, { useState, useEffect, useMemo } from 'react';
         };
     
         const handleFinishCheckout = async () => {
-            if (isFinishing || isLocked || addedPayments.length === 0) return;
+            // BLOQUEIO CRÍTICO DE EXECUÇÃO ÚNICA
+            if (isProcessingRef.current || isFinishing || isLocked || addedPayments.length === 0) {
+                console.log('🚫 Bloqueado - Processamento ou trava ativa');
+                return;
+            }
             
+            isProcessingRef.current = true;
             setIsFinishing(true);
+
             try {
-                // 1. CONSOLIDAÇÃO DOS PAGAMENTOS
                 const consolidatedPayment = {
                     command_id: commandId,
                     studio_id: activeStudioId,
@@ -206,7 +215,7 @@ import React, { useState, useEffect, useMemo } from 'react';
                     status: 'paid'
                 };
 
-                // 2. VERIFICAÇÃO DE AUDITORIA EXISTENTE (UPSERT MANUAL)
+                // 2. VERIFICAÇÃO DE IDEMPOTÊNCIA NO DB
                 const { data: existing, error: checkError } = await supabase
                     .from('command_payments')
                     .select('id, status')
@@ -241,7 +250,7 @@ import React, { useState, useEffect, useMemo } from 'react';
                     secured = true;
                 }
 
-                // 3. ATUALIZAÇÃO DA COMANDA (SÓ APÓS GARANTIR O PAGAMENTO)
+                // 3. FINALIZAÇÃO DA COMANDA (APENAS SE O FINANCEIRO FOR GARANTIDO)
                 if (secured) {
                     const { error: closeError } = await supabase
                         .from('commands')
@@ -252,17 +261,20 @@ import React, { useState, useEffect, useMemo } from 'react';
                         })
                         .eq('id', commandId);
     
-                    if (closeError) throw closeError;
+                    if (closeError) {
+                        console.error('[BALCAO_CLOSE_ERROR]', closeError);
+                    }
     
-                    setToast({ message: "Atendimento finalizado! ✅", type: 'success' });
+                    setToast({ message: "Atendimento finalizado com sucesso! ✅", type: 'success' });
                     setIsLocked(true);
                     setTimeout(onBack, 800);
                 }
     
             } catch (e: any) {
                 console.error('[BALCAO_EXCEPTION]', e);
-                setToast({ message: `Falha no checkout: ${e.message}`, type: 'error' });
-            } finally {
+                setToast({ message: `Falha no encerramento: ${e.message}`, type: 'error' });
+                // Só destrava em caso de erro para permitir nova tentativa
+                isProcessingRef.current = false;
                 setIsFinishing(false);
             }
         };
@@ -389,7 +401,7 @@ import React, { useState, useEffect, useMemo } from 'react';
                                                     { id: 'credit', label: 'Crédito', icon: CardIcon },
                                                     { id: 'parcelado', label: 'Parcelado', icon: Layers }
                                                 ].map(pm => (
-                                                    <button key={pm.id} onClick={() => handleSelectType(pm.id)} className="flex flex-col items-center justify-center p-5 rounded-3xl bg-white border border-slate-100 hover:border-orange-300 transition-all group shadow-sm active:scale-95">
+                                                    <button key={pm.id} disabled={isFinishing} onClick={() => handleSelectType(pm.id)} className="flex flex-col items-center justify-center p-5 rounded-3xl bg-white border border-slate-100 hover:border-orange-300 transition-all group shadow-sm active:scale-95 disabled:opacity-50">
                                                         <pm.icon size={24} className="mb-2 text-slate-300 group-hover:text-orange-500 transition-colors" />
                                                         <span className="text-[9px] font-black uppercase">{pm.label}</span>
                                                     </button>
@@ -402,7 +414,7 @@ import React, { useState, useEffect, useMemo } from 'react';
                                                 <header className="flex justify-between items-center px-1"><span className="text-[9px] font-black uppercase text-orange-500 tracking-widest">Escolha a Bandeira</span><button onClick={() => setPaymentStep('type')}><X size={16} className="text-slate-300" /></button></header>
                                                 <div className="grid grid-cols-1 gap-2">
                                                     {filteredConfigs.map(cfg => (
-                                                        <button key={cfg.id} onClick={() => { setSelectedConfig(cfg); setPaymentStep(selectedType === 'parcelado' ? 'installments' : 'confirm'); }} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl hover:border-orange-400 transition-all group shadow-sm">
+                                                        <button key={cfg.id} disabled={isFinishing} onClick={() => { setSelectedConfig(cfg); setPaymentStep(selectedType === 'parcelado' ? 'installments' : 'confirm'); }} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl hover:border-orange-400 transition-all group shadow-sm disabled:opacity-50">
                                                             <span className="text-xs font-black text-slate-700 uppercase">{cfg.brand || cfg.name}</span>
                                                             <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-tighter">{100 - cfg.rate_cash}% Líquido</span>
                                                         </button>
@@ -416,7 +428,7 @@ import React, { useState, useEffect, useMemo } from 'react';
                                                 <header className="flex justify-between items-center px-1"><span className="text-[9px] font-black uppercase text-orange-500 tracking-widest">Número de Parcelas</span><button onClick={() => setPaymentStep('brand')}><X size={16} className="text-slate-300" /></button></header>
                                                 <div className="grid grid-cols-3 gap-2">
                                                     {Array.from({ length: (selectedConfig?.max_installments || 12) - 1 }, (_, i) => i + 2).map(n => (
-                                                        <button key={n} onClick={() => { setInstallments(n); setPaymentStep('confirm'); }} className="py-3 bg-white border border-slate-100 rounded-xl font-black text-xs text-slate-600 hover:border-orange-400 hover:text-orange-600 transition-all">
+                                                        <button key={n} disabled={isFinishing} onClick={() => { setInstallments(n); setPaymentStep('confirm'); }} className="py-3 bg-white border border-slate-100 rounded-xl font-black text-xs text-slate-600 hover:border-orange-400 hover:text-orange-600 transition-all disabled:opacity-50">
                                                             {n}x
                                                         </button>
                                                     ))}
@@ -436,10 +448,10 @@ import React, { useState, useEffect, useMemo } from 'react';
                                                 <div className="space-y-4 flex-1">
                                                     <div className="relative">
                                                         <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-300">R$</span>
-                                                        <input type="number" autoFocus value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all shadow-inner" />
+                                                        <input type="number" autoFocus disabled={isFinishing} value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-2xl font-black text-slate-800 outline-none focus:border-orange-400 transition-all shadow-inner disabled:opacity-50" />
                                                     </div>
                                                 </div>
-                                                <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
+                                                <button onClick={handleConfirmPartialPayment} disabled={isFinishing} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
                                                     <Calculator size={18} /> Confirmar Recebimento
                                                 </button>
                                             </div>
@@ -452,7 +464,7 @@ import React, { useState, useEffect, useMemo } from 'react';
                                         className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 && !isFinishing ? 'bg-emerald-600 text-white shadow-emerald-100' : 'bg-slate-100 text-slate-300'}`}
                                     >
                                         {isFinishing ? (
-                                            <div className="flex items-center gap-2"><Loader2 size={24} className="animate-spin" /><span>FINALIZANDO...</span></div>
+                                            <div className="flex items-center gap-2"><Loader2 size={24} className="animate-spin" /><span>PROCESSANDO...</span></div>
                                         ) : (
                                             <><CheckCircle size={24} /> FECHAR ATENDIMENTO</>
                                         )}
