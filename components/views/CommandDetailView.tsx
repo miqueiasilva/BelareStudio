@@ -110,66 +110,101 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
     }, [command, discount, addedPayments]);
 
     const handleFinishCheckout = async () => {
-        if (!commandId || isProcessingRef.current || isLocked || addedPayments.length === 0) return;
+        // [CHECKOUT_VALIDATE]
+        if (!commandId || !activeStudioId) {
+            setToast({ message: "Sessão ou Comanda inválida.", type: 'error' });
+            return;
+        }
+
+        if (!command.client_id) {
+            setToast({ message: "Bloqueio: Selecione ou crie um cliente para esta comanda antes de liquidar.", type: 'error' });
+            return;
+        }
+
+        if (totals.total <= 0) {
+            setToast({ message: "O valor total deve ser maior que zero.", type: 'error' });
+            return;
+        }
+
+        if (addedPayments.length === 0) {
+            setToast({ message: "Adicione pelo menos uma forma de pagamento.", type: 'error' });
+            return;
+        }
+
+        if (isProcessingRef.current || isLocked) return;
         
         isProcessingRef.current = true;
         setIsFinishing(true);
 
         try {
-            // 1. Verificação de Idempotência
+            console.log('[CHECKOUT_START] Iniciando liquidação para:', commandId);
+
+            // 1. IDEMPOTÊNCIA: Checar se já existe pagamento PAID
             const { data: existingPay } = await supabase
                 .from('command_payments')
-                .select('id, status')
+                .select('id, status, financial_transaction_id')
                 .eq('command_id', commandId)
                 .eq('status', 'paid')
                 .maybeSingle();
 
             if (existingPay) {
-                console.log('✅ Pagamento já liquidado. Encerrando.');
-            } else {
-                // 2. RPC FINANCEIRO (Assinatura UUID Consolidada)
-                const mainPayment = addedPayments[0];
-                const totalAmount = addedPayments.reduce((acc, p) => acc + p.amount, 0);
-
-                const { data: financialTxId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                    p_studio_id: activeStudioId,
-                    p_professional_id: command.professional_id || null,
-                    p_client_id: command.client_id || null,
-                    p_command_id: commandId,
-                    p_amount: totalAmount,
-                    p_method: mainPayment.method,
-                    p_brand: mainPayment.brand || null,
-                    p_installments: Math.max(...addedPayments.map(p => p.installments))
-                });
-
-                if (rpcError) {
-                    if (!rpcError.message.includes('unique constraint') && rpcError.code !== '23505') {
-                        throw new Error(`Falha no Registro Financeiro: ${rpcError.message}`);
-                    }
-                }
-
-                // 3. PERSISTÊNCIA EM COMMAND_PAYMENTS
-                const totalNet = addedPayments.reduce((acc, p) => acc + p.net_value, 0);
-                const totalFees = addedPayments.reduce((acc, p) => acc + p.fee_amount, 0);
-
-                const { error: insError } = await supabase
-                    .from('command_payments')
-                    .insert([{
-                        command_id: commandId,
-                        studio_id: activeStudioId,
-                        amount: totalAmount,
-                        fee_amount: totalFees,
-                        net_value: totalNet,
-                        fee_applied: mainPayment.fee_rate,
-                        installments: Math.max(...addedPayments.map(p => p.installments)),
-                        method_id: mainPayment.method_id,
-                        brand: addedPayments.length > 1 ? 'Misto' : mainPayment.brand,
-                        financial_transaction_id: financialTxId,
-                        status: 'paid'
-                    }]);
-
-                if (insError && insError.code !== '23505') throw insError;
+                console.log('[CHECKOUT_IDEMPOTENCY] Pagamento já detectado. Pulando para atualização de status.');
+                await supabase.from('commands').update({ status: 'paid', closed_at: new Date().toISOString() }).eq('id', commandId);
+                setToast({ message: "Esta comanda já foi liquidada.", type: 'info' });
+                setIsLocked(true);
+                setTimeout(onBack, 1000);
+                return;
             }
+
+            // 2. REGISTRO FINANCEIRO VIA RPC
+            const mainPayment = addedPayments[0];
+            const totalAmountNumeric = totals.total;
+
+            const { data: financialTxId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                p_studio_id: activeStudioId,
+                p_professional_id: command.professional_id || null,
+                p_client_id: Number(command.client_id), // GARANTIA BIGINT
+                p_command_id: commandId,
+                p_amount: totalAmountNumeric,
+                p_method: mainPayment.method,
+                p_brand: mainPayment.brand || "N/A", // GARANTIA TEXT
+                p_installments: Math.floor(mainPayment.installments || 1) // GARANTIA INTEGER
+            });
+
+            if (rpcError) {
+                console.error('[CHECKOUT_RPC_FAIL]', rpcError);
+                throw new Error(`Falha no Registro Financeiro: ${rpcError.message}`);
+            }
+            console.log('[CHECKOUT_RPC_OK] Transação:', financialTxId);
+
+            // 3. REGISTRO DE AUDITORIA (COMMAND_PAYMENTS)
+            const totalNet = addedPayments.reduce((acc, p) => acc + p.net_value, 0);
+            const totalFees = addedPayments.reduce((acc, p) => acc + p.fee_amount, 0);
+
+            const { error: insError } = await supabase
+                .from('command_payments')
+                .insert([{
+                    command_id: commandId,
+                    studio_id: activeStudioId,
+                    amount: totalAmountNumeric,
+                    fee_amount: totalFees,
+                    net_value: totalNet,
+                    fee_applied: mainPayment.fee_rate,
+                    installments: Math.max(...addedPayments.map(p => p.installments)),
+                    method_id: mainPayment.method_id,
+                    brand: addedPayments.length > 1 ? 'Misto' : (mainPayment.brand || 'N/A'),
+                    financial_transaction_id: financialTxId,
+                    status: 'paid'
+                }]);
+
+            if (insError) {
+                if (insError.code === '23505') {
+                    console.warn('[CHECKOUT_AUDIT_DUPLICATE] Registro de auditoria já existia. Ignorando erro 23505.');
+                } else {
+                    throw insError;
+                }
+            }
+            console.log('[CHECKOUT_AUDIT_OK]');
 
             // 4. ATUALIZAÇÃO DA COMANDA
             const { error: cmdUpdateErr } = await supabase
@@ -177,11 +212,12 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 .update({ 
                     status: 'paid', 
                     closed_at: new Date().toISOString(),
-                    total_amount: totals.total
+                    total_amount: totalAmountNumeric
                 })
                 .eq('id', commandId);
 
             if (cmdUpdateErr) throw cmdUpdateErr;
+            console.log('[CHECKOUT_COMMANDS_OK] Comanda marcada como paga.');
 
             setToast({ message: "Atendimento finalizado com sucesso! ✅", type: 'success' });
             setIsLocked(true);
@@ -189,7 +225,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
         } catch (e: any) {
             console.error('[CHECKOUT_FATAL]', e);
-            setToast({ message: e.message || "Erro inesperado ao encerrar.", type: 'error' });
+            setToast({ message: e.message || "Erro crítico ao encerrar comanda.", type: 'error' });
             isProcessingRef.current = false;
             setIsFinishing(false);
         }
@@ -234,7 +270,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         return availableConfigs.filter(c => c.type === selectedType);
     }, [availableConfigs, selectedType]);
 
-    if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
+    if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-50" size={48} /></div>;
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
@@ -256,6 +292,18 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
                     <div className="lg:col-span-2 space-y-6">
+                        
+                        {/* AVISO DE CLIENTE FALTANTE */}
+                        {!command.client_id && !isLocked && (
+                            <div className="bg-rose-50 border-2 border-rose-200 p-6 rounded-[32px] flex items-center gap-4 animate-pulse">
+                                <AlertTriangle className="text-rose-500 flex-shrink-0" size={32} />
+                                <div>
+                                    <p className="font-black text-rose-800 text-sm uppercase tracking-tight">Vendedor/Cliente não Identificado</p>
+                                    <p className="text-xs text-rose-600 font-bold">Esta comanda precisa de um cliente vinculado para processar o financeiro.</p>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                             <header className="px-8 py-6 border-b border-slate-50 bg-slate-50/30 flex justify-between">
                                 <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest flex items-center gap-2"><ShoppingCart size={18} className="text-orange-500" /> Itens da Comanda</h3>
@@ -386,8 +434,8 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
                                 <button 
                                     onClick={handleFinishCheckout} 
-                                    disabled={isFinishing || totals.remaining > 0 || addedPayments.length === 0} 
-                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 && !isFinishing ? 'bg-emerald-600 text-white shadow-emerald-100' : 'bg-slate-100 text-slate-300'}`}
+                                    disabled={isFinishing || totals.remaining > 0 || addedPayments.length === 0 || !command.client_id} 
+                                    className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 && !isFinishing && command.client_id ? 'bg-emerald-600 text-white shadow-emerald-100' : 'bg-slate-100 text-slate-300'}`}
                                 >
                                     {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> LIQUIDAR CONTA</>}
                                 </button>
