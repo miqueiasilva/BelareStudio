@@ -94,7 +94,13 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     }, [dbPaymentMethods, selectedMethodId]);
 
     const handleConfirmPayment = async () => {
+        // [HARD_VALIDATION]
         if (isProcessingRef.current || isLoading || !currentMethod || !activeStudioId) return;
+
+        if (!appointment.client_id) {
+            setToast({ message: "Identifique o cliente no agendamento antes de liquidar.", type: 'error' });
+            return;
+        }
         
         isProcessingRef.current = true;
         setIsLoading(true);
@@ -102,7 +108,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         const commandId = appointment.command_id;
 
         try {
-            // 1. Verificação de Idempotência no Front
+            console.log("[CHECKOUT] Iniciando checkout rápido:", appointment.id);
+
+            // 1. [IDEMPOTENCY_CHECK]
             if (commandId) {
                 const { data: existing } = await supabase
                     .from('command_payments')
@@ -119,26 +127,27 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 }
             }
 
-            // 2. RPC FINANCEIRO (Assinatura UUID Consolidada)
-            // IMPORTANTE: Passar os nomes dos parâmetros exatamente como no SQL
+            // 2. [RPC_CALL]
             const { data: financialTxId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: appointment.professional_id || null,
-                p_client_id: appointment.client_id || null,
+                p_client_id: Number(appointment.client_id), // Garantia BIGINT
                 p_command_id: commandId || null,
                 p_amount: appointment.price,
                 p_method: currentMethod.type,
-                p_brand: currentMethod.brand || null,
-                p_installments: installments || 1
+                p_brand: currentMethod.brand || "N/A",
+                p_installments: Math.floor(installments || 1)
             });
 
             if (rpcError) {
-                if (!rpcError.message.includes('unique constraint') && rpcError.code !== '23505') {
-                    throw new Error(`Falha no Registro Financeiro: ${rpcError.message}`);
+                if (rpcError.code === '23505' || rpcError.message.includes('unique constraint')) {
+                    console.warn("[RPC] Transação financeira já registrada.");
+                } else {
+                    throw new Error(rpcError.message);
                 }
             }
 
-            // 3. PERSISTÊNCIA EM COMMAND_PAYMENTS
+            // 3. [AUDIT_PERSIST]
             const feeRate = installments > 1 
                 ? Number(currentMethod.installment_rates?.[installments.toString()] || 0)
                 : Number(currentMethod.rate_cash || 0);
@@ -155,7 +164,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     fee_amount: feeAmount,
                     fee_applied: feeRate,
                     method_id: currentMethod.id,
-                    brand: currentMethod.brand || null,
+                    brand: currentMethod.brand || "N/A",
                     installments: installments || 1,
                     financial_transaction_id: financialTxId,
                     status: 'paid'
@@ -163,7 +172,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
             if (insErr && insErr.code !== '23505') throw insErr;
 
-            // 4. ATUALIZAÇÕES DE STATUS
+            // 4. [STATUS_SYNC]
             const updates = [];
             if (commandId) {
                 updates.push(supabase.from('commands').update({ status: 'paid', closed_at: new Date().toISOString() }).eq('id', commandId));

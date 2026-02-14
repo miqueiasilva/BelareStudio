@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
     Receipt, Scissors, ShoppingBag, 
     CreditCard, Banknote, Smartphone, Loader2,
@@ -22,12 +22,17 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
     const [payment, setPayment] = useState<any>(null);
     const [professionalName, setProfessionalName] = useState<string>("GERAL");
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     const loadData = async () => {
         if (!commandId) return;
         setLoading(true);
+        setError(null);
         
         try {
+            console.log("[REPORT] Carregando auditoria para comanda:", commandId);
+
+            // 1. Busca dados da comanda e cliente
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select('*, clients:client_id (id, nome, name, photo_url)')
@@ -37,28 +42,41 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
             if (cmdError) throw cmdError;
             setCommand(cmdData);
 
+            // 2. Busca itens consumidos
             const { data: itemsData } = await supabase
                 .from('command_items')
                 .select('*')
                 .eq('command_id', commandId);
             setItems(itemsData || []);
 
+            // 3. Busca profissional responsável
             if (cmdData?.professional_id) {
                 const { data: prof } = await supabase.from('team_members').select('name').eq('id', cmdData.professional_id).maybeSingle();
                 if (prof) setProfessionalName(prof.name);
             }
 
-            // BUSCA DADOS REAIS DE PAGAMENTO PERSISTIDOS
-            const { data: payData } = await supabase
+            // 4. [AUDIT_DIRECT_QUERY] - Busca registro REAL de pagamento em command_payments
+            const { data: payData, error: payError } = await supabase
                 .from('command_payments')
                 .select(`*, payment_methods_config (name, brand)`)
                 .eq('command_id', commandId)
+                .eq('status', 'paid')
+                .order('created_at', { ascending: false })
+                .limit(1)
                 .maybeSingle();
+
+            if (payError) throw payError;
+            
+            if (!payData) {
+                console.error("[REPORT_AUDIT_FAIL] Registro command_payments ausente para ID:", commandId);
+                setError("O registro de auditoria financeira não foi encontrado para esta venda.");
+            }
 
             setPayment(payData);
 
         } catch (e: any) {
             console.error('[PAID_DETAIL_ERROR]', e);
+            setError("Falha crítica ao recuperar os dados da transação.");
         } finally {
             setLoading(false);
         }
@@ -72,7 +90,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center">
             <div className="bg-white p-8 rounded-[32px] flex flex-col items-center">
                 <Loader2 className="animate-spin text-orange-500 mb-4" size={40} />
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Recuperando Financeiro...</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Validando Auditoria...</p>
             </div>
         </div>
     );
@@ -86,19 +104,27 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
 
     return (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
-            <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-white/10">
                 <header className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <div>
                         <h2 className="text-xl font-black text-slate-800 flex items-center gap-3 uppercase tracking-tighter">
                             <Receipt className="text-emerald-500" size={24} />
                             Relatório de Venda
                         </h2>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Conferência Auditada em command_payments</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Conferência Auditada Digitalmente</p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400"><X size={24} /></button>
                 </header>
 
                 <div className="p-8 space-y-8 max-h-[75vh] overflow-y-auto custom-scrollbar text-left">
+                    
+                    {error && (
+                        <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-center gap-3 text-rose-600 animate-pulse">
+                            <AlertTriangle size={20} />
+                            <p className="text-xs font-bold uppercase">{error}</p>
+                        </div>
+                    )}
+
                     <div className="flex items-center gap-6">
                         <div className="w-16 h-16 rounded-[24px] bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xl overflow-hidden shadow-sm">
                             {command.clients?.photo_url ? <img src={command.clients.photo_url} className="w-full h-full object-cover" /> : displayClientName.charAt(0).toUpperCase()}
@@ -152,36 +178,43 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1.5">Bruto</p>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1.5">Bruto Recebido</p>
                                         <p className="text-lg font-black text-slate-800">{formatBRL(grossAmount)}</p>
                                     </div>
                                 </div>
                                 
                                 <div className="pt-4 border-t border-slate-200/50 flex justify-between items-center">
                                     <span className="text-[10px] font-black text-rose-500 uppercase flex items-center gap-1.5">
-                                        <Percent size={12} /> Taxa da Operação
+                                        <Percent size={12} /> Taxas da Transação
                                     </span>
                                     <span className="text-sm font-black text-rose-500">- {formatBRL(feeAmount)}</span>
                                 </div>
 
                                 <div className="flex justify-between items-center bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100">
-                                    <span className="text-[10px] font-black text-emerald-700 uppercase">Líquido Creditado</span>
+                                    <span className="text-[10px] font-black text-emerald-700 uppercase">Líquido na Unidade</span>
                                     <span className="text-lg font-black text-emerald-700">{formatBRL(netValue)}</span>
+                                </div>
+                                
+                                <div className="mt-4 pt-4 border-t border-slate-200/50">
+                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest text-center">
+                                        Transação Financeira: {payment.financial_transaction_id}
+                                    </p>
                                 </div>
                             </div>
                         ) : (
-                            <div className="p-10 text-center bg-amber-50 rounded-[40px] border-2 border-dashed border-amber-100">
-                                <AlertTriangle className="mx-auto text-amber-400 mb-3" size={32} />
-                                <p className="text-xs font-black text-amber-600 uppercase tracking-widest">
-                                    Falha na auditoria direta: Registro command_payments ausente.
+                            <div className="p-10 text-center bg-amber-50 rounded-[40px] border-2 border-dashed border-amber-200 animate-in fade-in">
+                                <AlertTriangle className="mx-auto text-amber-500 mb-3" size={32} />
+                                <p className="text-xs font-black text-amber-700 uppercase tracking-widest leading-relaxed">
+                                    Aviso: Os dados de auditoria não foram localizados.<br/>
+                                    Isso pode ocorrer se a venda foi finalizada manualmente sem registro de taxa.
                                 </p>
                             </div>
                         )}
                     </div>
                 </div>
 
-                <footer className="p-8 bg-slate-50 border-t border-slate-100">
-                    <button onClick={onClose} className="w-full py-4 bg-slate-800 text-white font-black rounded-2xl shadow-xl hover:bg-slate-900 transition-all active:scale-95 uppercase text-xs tracking-widest">Fechar Relatório</button>
+                <footer className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
+                    <button onClick={onClose} className="flex-1 py-4 bg-slate-800 text-white font-black rounded-2xl shadow-xl hover:bg-slate-900 transition-all active:scale-95 uppercase text-xs tracking-widest">Fechar Relatório</button>
                 </footer>
             </div>
         </div>
