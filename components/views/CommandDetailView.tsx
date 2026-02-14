@@ -192,9 +192,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
         };
     
         const handleFinishCheckout = async () => {
-            // BLOQUEIO CRÍTICO DE EXECUÇÃO ÚNICA
+            // BARREIRA SÍNCRONA CONTRA MÚLTIPLOS CLIQUES
             if (isProcessingRef.current || isFinishing || isLocked || addedPayments.length === 0) {
-                console.log('🚫 Bloqueado - Processamento ou trava ativa');
+                console.log('🚫 Bloqueado - Processamento em curso');
                 return;
             }
             
@@ -215,65 +215,47 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
                     status: 'paid'
                 };
 
-                // 2. VERIFICAÇÃO DE IDEMPOTÊNCIA NO DB
-                const { data: existing, error: checkError } = await supabase
+                // TENTATIVA DE INSERÇÃO DIRETA
+                const { error: insErr } = await supabase
                     .from('command_payments')
-                    .select('id, status')
-                    .eq('command_id', commandId)
-                    .maybeSingle();
+                    .insert([consolidatedPayment]);
 
-                if (checkError) throw checkError;
+                // TRATAMENTO DE ERRO 409 (23505 = UNIQUE VIOLATION)
+                // Se o erro for 409, significa que o pagamento já foi inserido (idempotência), então tratamos como sucesso.
+                if (insErr && insErr.code !== '23505') {
+                    console.error('payment error', { code: insErr.code, message: insErr.message });
+                    throw insErr;
+                }
 
-                console.log('payment upsert path', { existing, status: existing?.status });
-
-                let secured = false;
-                if (existing) {
-                    if (existing.status !== 'paid') {
-                        const { error: updErr } = await supabase
-                            .from('command_payments')
-                            .update(consolidatedPayment)
-                            .eq('id', existing.id);
-                        if (updErr) {
-                            console.error('payment error', { code: updErr.code, message: updErr.message });
-                            throw updErr;
-                        }
-                    }
-                    secured = true;
+                if (insErr && insErr.code === '23505') {
+                    console.log('payment upsert path', { existing: true, status: 'already_paid_handled' });
                 } else {
-                    const { error: insErr } = await supabase
-                        .from('command_payments')
-                        .insert([consolidatedPayment]);
-                    if (insErr) {
-                        console.error('payment error', { code: insErr.code, message: insErr.message });
-                        throw insErr;
-                    }
-                    secured = true;
+                    console.log('payment upsert path', { existing: false, status: 'new_payment_inserted' });
                 }
 
-                // 3. FINALIZAÇÃO DA COMANDA (APENAS SE O FINANCEIRO FOR GARANTIDO)
-                if (secured) {
-                    const { error: closeError } = await supabase
-                        .from('commands')
-                        .update({ 
-                            status: 'paid', 
-                            closed_at: new Date().toISOString(),
-                            total_amount: totals.total
-                        })
-                        .eq('id', commandId);
-    
-                    if (closeError) {
-                        console.error('[BALCAO_CLOSE_ERROR]', closeError);
-                    }
-    
-                    setToast({ message: "Atendimento finalizado com sucesso! ✅", type: 'success' });
-                    setIsLocked(true);
-                    setTimeout(onBack, 800);
+                // SEMPRE TENTA ATUALIZAR A COMANDA E STATUS SE CHEGOU AQUI
+                const { error: closeError } = await supabase
+                    .from('commands')
+                    .update({ 
+                        status: 'paid', 
+                        closed_at: new Date().toISOString(),
+                        total_amount: totals.total
+                    })
+                    .eq('id', commandId);
+
+                if (closeError) {
+                    console.error('[BALCAO_CLOSE_ERROR]', closeError);
+                    // Não lançamos erro aqui para não travar a UI caso o pagamento já tenha entrado
                 }
+
+                setToast({ message: "Atendimento finalizado com sucesso! ✅", type: 'success' });
+                setIsLocked(true);
+                setTimeout(onBack, 800);
     
             } catch (e: any) {
                 console.error('[BALCAO_EXCEPTION]', e);
                 setToast({ message: `Falha no encerramento: ${e.message}`, type: 'error' });
-                // Só destrava em caso de erro para permitir nova tentativa
+                // Só destrava em caso de erro real não-duplicate para permitir nova tentativa
                 isProcessingRef.current = false;
                 setIsFinishing(false);
             }

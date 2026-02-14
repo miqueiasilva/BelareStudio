@@ -50,7 +50,25 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand, on
                 .order('created_at', { ascending: false });
             
             if (error) throw error;
-            setTabs(data || []);
+
+            // DEDUPLICAÇÃO: Se for a aba de comandas abertas, filtra apenas a mais recente por cliente
+            if (currentTab === 'open' && data) {
+                const seenClients = new Set();
+                const uniqueCommands = data.filter(cmd => {
+                    // Se não tiver cliente_id (venda avulsa), sempre mostra
+                    if (!cmd.client_id) return true;
+                    
+                    if (seenClients.has(cmd.client_id)) {
+                        return false;
+                    }
+                    seenClients.add(cmd.client_id);
+                    return true;
+                });
+                setTabs(uniqueCommands);
+            } else {
+                setTabs(data || []);
+            }
+            
         } catch (e: any) {
             console.error("Erro Comandas:", e);
             setToast({ message: "Erro ao carregar comandas.", type: 'error' });
@@ -146,7 +164,7 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand, on
                 <div>
                     <h1 className="text-xl font-black text-slate-800 flex items-center gap-2 leading-none uppercase tracking-tighter"><FileText className="text-orange-500" size={24} /> Balcão / Comandas</h1>
                     <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 mt-2">
-                        <button onClick={() => setCurrentTab('open')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'open' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500'}`}>Em Atendimento</button>
+                        <button onClick={() => setCurrentTab('open')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'open' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-50'}`}>Em Atendimento</button>
                         <button onClick={() => setCurrentTab('paid')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'paid' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500'}`}>Pagos / Arquivo</button>
                     </div>
                 </div>
