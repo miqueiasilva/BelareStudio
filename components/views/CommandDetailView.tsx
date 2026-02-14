@@ -14,6 +14,12 @@ import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import Toast, { ToastType } from '../shared/Toast';
 
+// Auxiliar para validar UUID antes de enviar para a RPC
+const isValidUUID = (str: any): boolean => {
+    if (!str || typeof str !== 'string') return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+};
+
 interface PaymentEntry {
     id: string;
     method: string;
@@ -161,29 +167,33 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
             // 2. [CHECKOUT_RPC_START] - Registrar Financeiro via RPC
             const mainPayment = addedPayments[0];
-            const totalAmountNumeric = totals.total;
+            const totalAmountNumeric = parseFloat(totals.total.toFixed(2));
+
+            // Sanitização de UUID: Se não for um UUID válido (ex: números de mock), enviar NULL
+            const safeProfessionalId = isValidUUID(command.professional_id) ? command.professional_id : null;
 
             const rpcPayload = {
                 p_studio_id: activeStudioId,
-                p_professional_id: command.professional_id || null,
-                p_client_id: Number(command.client_id), // Garantia BIGINT (number)
+                p_professional_id: safeProfessionalId,
+                p_client_id: Number(command.client_id), 
                 p_command_id: commandId,
                 p_amount: totalAmountNumeric,
                 p_method: mainPayment.method,
                 p_brand: mainPayment.brand || "N/A",
-                p_installments: Math.floor(mainPayment.installments || 1)
+                p_installments: parseInt(String(mainPayment.installments || 1))
             };
 
-            console.log("[CHECKOUT_RPC_CALL] Parâmetros:", rpcPayload);
+            console.log("[CHECKOUT_RPC_CALL] Enviando carga útil para register_payment_transaction:", rpcPayload);
 
             const { data: financialTxId, error: rpcError } = await supabase.rpc('register_payment_transaction', rpcPayload);
 
             if (rpcError) {
-                console.error("[CHECKOUT_RPC_FAIL]", rpcError);
+                console.error("[CHECKOUT_RPC_FAIL] Erro retornado pela função RPC:", rpcError);
+                // Se o erro contém a mensagem do trigger, reportamos com clareza
                 throw new Error(rpcError.message);
             }
 
-            console.log("[CHECKOUT_RPC_OK] Transação UUID:", financialTxId);
+            console.log("[CHECKOUT_RPC_OK] Transação financeira vinculada:", financialTxId);
 
             // 3. [CHECKOUT_AUDIT_START] - Registrar Auditoria em command_payments
             const totalNet = addedPayments.reduce((acc, p) => acc + p.net_value, 0);
@@ -209,13 +219,13 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
             if (insError) {
                 if (insError.code === '23505') {
-                    console.warn("[CHECKOUT_AUDIT_DUPLICATE] Registro de auditoria já existia.");
+                    console.warn("[CHECKOUT_AUDIT_DUPLICATE] Registro de auditoria ignorado (já existe).");
                 } else {
-                    console.error("[CHECKOUT_AUDIT_FAIL]", insError);
+                    console.error("[CHECKOUT_AUDIT_FAIL] Falha crítica na auditoria:", insError);
                     throw insError;
                 }
             } else {
-                console.log("[CHECKOUT_AUDIT_OK] Registro persistido.");
+                console.log("[CHECKOUT_AUDIT_OK] Registro de auditoria persistido.");
             }
 
             // 4. [CHECKOUT_COMMANDS_START] - Atualizar Status da Comanda
@@ -229,15 +239,20 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 .eq('id', commandId);
 
             if (cmdUpdateErr) throw cmdUpdateErr;
-            console.log("[CHECKOUT_COMMANDS_OK] Fluxo completo.");
+            console.log("[CHECKOUT_COMMANDS_OK] Comanda atualizada com sucesso.");
 
-            setToast({ message: "Recebimento confirmado com sucesso! ✅", type: 'success' });
+            setToast({ message: "Conta liquidada com sucesso! ✅", type: 'success' });
             setIsLocked(true);
             setTimeout(onBack, 1000);
 
         } catch (e: any) {
-            console.error('[CHECKOUT_FATAL]', e);
-            setToast({ message: `Falha no Registro: ${e.message}`, type: 'error' });
+            console.error('[CHECKOUT_FATAL] Erro durante o pipeline de encerramento:', e);
+            setToast({ 
+                message: e.message === "Use register_payment_transaction() para inserir pagamentos." 
+                    ? "Erro de Segurança: Falha ao validar transação no servidor." 
+                    : `Falha no Registro: ${e.message}`, 
+                type: 'error' 
+            });
             isProcessingRef.current = false;
             setIsFinishing(false);
         }

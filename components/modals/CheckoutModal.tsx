@@ -16,6 +16,12 @@ const formatCurrency = (value: number) => {
     }).format(value);
 };
 
+// Auxiliar para validar UUID antes de enviar para a RPC
+const isValidUUID = (str: any): boolean => {
+    if (!str || typeof str !== 'string') return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+};
+
 interface DBPaymentMethod {
     id: string; 
     name: string;
@@ -127,24 +133,25 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 }
             }
 
+            // Sanitização de IDs para a RPC
+            const safeProfessionalId = isValidUUID(appointment.professional_id) ? appointment.professional_id : null;
+            const safeCommandId = isValidUUID(commandId) ? commandId : null;
+
             // 2. [RPC_CALL]
             const { data: financialTxId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
-                p_professional_id: appointment.professional_id || null,
+                p_professional_id: safeProfessionalId,
                 p_client_id: Number(appointment.client_id), // Garantia BIGINT
-                p_command_id: commandId || null,
-                p_amount: appointment.price,
+                p_command_id: safeCommandId,
+                p_amount: parseFloat(appointment.price.toFixed(2)),
                 p_method: currentMethod.type,
                 p_brand: currentMethod.brand || "N/A",
-                p_installments: Math.floor(installments || 1)
+                p_installments: parseInt(String(installments || 1))
             });
 
             if (rpcError) {
-                if (rpcError.code === '23505' || rpcError.message.includes('unique constraint')) {
-                    console.warn("[RPC] Transação financeira já registrada.");
-                } else {
-                    throw new Error(rpcError.message);
-                }
+                console.error("[RPC_FAIL] Erro retornado pela função de registro financeiro:", rpcError);
+                throw new Error(rpcError.message);
             }
 
             // 3. [AUDIT_PERSIST]
@@ -157,7 +164,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             const { error: insErr } = await supabase
                 .from('command_payments')
                 .insert([{
-                    command_id: commandId || null,
+                    command_id: safeCommandId,
                     studio_id: activeStudioId,
                     amount: appointment.price,
                     net_value: appointment.price - feeAmount,
@@ -165,7 +172,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     fee_applied: feeRate,
                     method_id: currentMethod.id,
                     brand: currentMethod.brand || "N/A",
-                    installments: installments || 1,
+                    installments: parseInt(String(installments || 1)),
                     financial_transaction_id: financialTxId,
                     status: 'paid'
                 }]);
@@ -174,8 +181,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
             // 4. [STATUS_SYNC]
             const updates = [];
-            if (commandId) {
-                updates.push(supabase.from('commands').update({ status: 'paid', closed_at: new Date().toISOString() }).eq('id', commandId));
+            if (safeCommandId) {
+                updates.push(supabase.from('commands').update({ status: 'paid', closed_at: new Date().toISOString() }).eq('id', safeCommandId));
             }
             updates.push(supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id));
 
@@ -187,7 +194,12 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         } catch (error: any) {
             console.error("[CHECKOUT_EXCEPTION]", error);
-            setToast({ message: `Erro no checkout: ${error.message}`, type: 'error' });
+            setToast({ 
+                message: error.message === "Use register_payment_transaction() para inserir pagamentos." 
+                    ? "Bloqueio de Segurança: A transação foi recusada pelo servidor."
+                    : `Erro no checkout: ${error.message}`, 
+                type: 'error' 
+            });
             isProcessingRef.current = false;
             setIsLoading(false);
         }
