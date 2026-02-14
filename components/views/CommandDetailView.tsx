@@ -182,7 +182,6 @@ import React, { useState, useEffect, useMemo } from 'react';
             setPaymentStep('type');
         };
     
-        // --- HANDLER CORRIGIDO (SEQUÊNCIA OBRIGATÓRIA) ---
         const handleFinishCheckout = async () => {
             if (isFinishing || isLocked || addedPayments.length === 0) return;
             
@@ -190,7 +189,7 @@ import React, { useState, useEffect, useMemo } from 'react';
             console.log('[BALCAO_FINALIZE] Iniciando fechamento de comanda:', commandId);
 
             try {
-                // 1. VERIFICAÇÃO DE IDEMPOTÊNCIA
+                // 1. VERIFICAÇÃO DE IDEMPOTÊNCIA (UI LEVEL)
                 const { data: existing, error: checkError } = await supabase
                     .from('command_payments')
                     .select('id')
@@ -208,29 +207,36 @@ import React, { useState, useEffect, useMemo } from 'react';
                     return;
                 }
 
-                // 2. REGISTRO DOS PAGAMENTOS (INSERT DIRETO)
-                for (const p of addedPayments) {
-                    const { data: pInsert, error: cpErr } = await supabase.from('command_payments').insert([{
-                        command_id: commandId,
-                        studio_id: activeStudioId,
-                        method_id: p.method_id,
-                        amount: p.amount,
-                        fee_amount: p.fee_amount,
-                        net_value: p.net_value,
-                        fee_applied: p.fee_rate,
-                        installments: p.installments,
-                        brand: p.brand || null,
-                        status: 'paid'
-                    }]).select();
-                    
-                    if (cpErr) {
-                        console.error('[BALCAO_CRITICAL] Falha ao inserir auditoria:', cpErr);
-                        throw new Error(`Erro de Registro: ${cpErr.message}`);
-                    }
-                    console.log('[BALCAO_LOG] Auditoria registrada:', pInsert);
+                // 2. CONSOLIDAÇÃO DOS PAGAMENTOS COM UPSERT (RESOLVE DUPLICATE KEY ERROR)
+                // Usamos UPSERT com ignoreDuplicates para que, se houver uma condição de corrida no DB,
+                // a segunda requisição não falhe com erro de constraint de unicidade.
+                const consolidatedPayment = {
+                    command_id: commandId,
+                    studio_id: activeStudioId,
+                    amount: addedPayments.reduce((acc, p) => acc + p.amount, 0),
+                    fee_amount: addedPayments.reduce((acc, p) => acc + p.fee_amount, 0),
+                    net_value: addedPayments.reduce((acc, p) => acc + p.net_value, 0),
+                    fee_applied: addedPayments[0].fee_rate,
+                    installments: Math.max(...addedPayments.map(p => p.installments)),
+                    method_id: addedPayments[0].method_id,
+                    brand: addedPayments.length > 1 ? 'Misto' : (addedPayments[0].brand || null),
+                    status: 'paid'
+                };
+
+                const { error: cpErr } = await supabase
+                    .from('command_payments')
+                    .upsert(consolidatedPayment, { 
+                        onConflict: 'command_id',
+                        ignoreDuplicates: true 
+                    });
+                
+                if (cpErr) {
+                    console.error('[BALCAO_CRITICAL] Falha ao registrar auditoria:', cpErr);
+                    throw new Error(`Erro de Registro: ${cpErr.message}`);
                 }
+                console.log('[BALCAO_LOG] Auditoria processada com sucesso.');
     
-                // 3. ATUALIZAÇÃO DO STATUS DA COMANDA (SOMENTE SE PASSO 2 FOR SUCESSO)
+                // 3. ATUALIZAÇÃO DO STATUS DA COMANDA
                 const { error: closeError } = await supabase
                     .from('commands')
                     .update({ 
