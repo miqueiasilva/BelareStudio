@@ -82,26 +82,31 @@ import React, { useState, useEffect, useMemo } from 'react';
     
                 setAvailableConfigs(configsRes.data || []);
                 
-                const alreadyPaid = cmdData.status === 'paid';
-                const clientInfo = cmdData.clients;
-
-                if (alreadyPaid) {
-                    const { data: payHistory } = await supabase
-                        .from('command_payments')
-                        .select(`*, payment_methods_config (name, brand)`)
-                        .eq('command_id', commandId);
-                    if (payHistory) setHistoryPayments(payHistory);
+                // BUSCA AUDITORIA DE PAGAMENTOS (Independente do status local da comanda)
+                const { data: payHistory } = await supabase
+                    .from('command_payments')
+                    .select(`*, payment_methods_config (name, brand)`)
+                    .eq('command_id', commandId);
+                
+                if (payHistory && payHistory.length > 0) {
+                    setHistoryPayments(payHistory);
+                    // Se existe auditoria paga, consideramos a visualização bloqueada/paga
+                    if (payHistory.some(p => p.status === 'paid')) {
+                        setIsLocked(true);
+                    }
                 }
     
                 setCommand({
                     ...cmdData,
                     command_items: itemsData || [],
-                    display_client_name: clientInfo?.nome || clientInfo?.name || cmdData.client_name || "Consumidor Final",
-                    display_client_phone: clientInfo?.whatsapp || "S/ CONTATO",
-                    display_client_photo: clientInfo?.photo_url || null
+                    display_client_name: cmdData.clients?.nome || cmdData.clients?.name || cmdData.client_name || "Consumidor Final",
+                    display_client_phone: cmdData.clients?.whatsapp || "S/ CONTATO",
+                    display_client_photo: cmdData.clients?.photo_url || null
                 });
-    
-                setIsLocked(alreadyPaid);
+
+                // Trava se o status na comanda já for pago
+                if (cmdData.status === 'paid') setIsLocked(true);
+
             } catch (e: any) {
                 console.error('[COMMAND_DETAIL_FETCH_ERROR]', e);
             } finally {
@@ -186,29 +191,8 @@ import React, { useState, useEffect, useMemo } from 'react';
             if (isFinishing || isLocked || addedPayments.length === 0) return;
             
             setIsFinishing(true);
-            console.log('[BALCAO_FINALIZE] Iniciando fechamento de comanda:', commandId);
-
             try {
-                // 1. VERIFICAÇÃO DE IDEMPOTÊNCIA (UI LEVEL)
-                const { data: existing, error: checkError } = await supabase
-                    .from('command_payments')
-                    .select('id')
-                    .eq('command_id', commandId)
-                    .eq('status', 'paid')
-                    .maybeSingle();
-                
-                if (checkError) console.error('[BALCAO_ERROR] Erro na verificação:', checkError);
-
-                if (existing) {
-                    console.warn('[BALCAO_WARN] Comanda já possui auditoria paga. Bloqueando re-fechamento.');
-                    setToast({ message: "Esta comanda já foi liquidada.", type: 'info' });
-                    setIsLocked(true);
-                    setIsFinishing(false);
-                    return;
-                }
-
-                // 2. CONSOLIDAÇÃO DOS PAGAMENTOS COM INSERT
-                // Se o DB já tiver o registro (código 23505), tratamos como sucesso silencioso.
+                // 1. CONSOLIDAÇÃO DOS PAGAMENTOS
                 const consolidatedPayment = {
                     command_id: commandId,
                     studio_id: activeStudioId,
@@ -222,39 +206,58 @@ import React, { useState, useEffect, useMemo } from 'react';
                     status: 'paid'
                 };
 
-                const { error: cpErr } = await supabase
+                // 2. VERIFICAÇÃO DE AUDITORIA EXISTENTE (UPSERT MANUAL)
+                const { data: existing, error: checkError } = await supabase
                     .from('command_payments')
-                    .insert([consolidatedPayment]);
-                
-                if (cpErr) {
-                    if (cpErr.code === '23505') {
-                        console.warn('[BALCAO_WARN] Registro duplicado no insert (conflito resolvido via código 23505).');
-                    } else {
-                        console.error('[BALCAO_CRITICAL] Falha ao registrar auditoria:', cpErr);
-                        throw new Error(`Erro de Registro: ${cpErr.message}`);
+                    .select('id, status')
+                    .eq('command_id', commandId)
+                    .maybeSingle();
+
+                if (checkError) throw checkError;
+
+                console.log('payment upsert path', { existing, status: existing?.status });
+
+                let secured = false;
+                if (existing) {
+                    if (existing.status !== 'paid') {
+                        const { error: updErr } = await supabase
+                            .from('command_payments')
+                            .update(consolidatedPayment)
+                            .eq('id', existing.id);
+                        if (updErr) {
+                            console.error('payment error', { code: updErr.code, message: updErr.message });
+                            throw updErr;
+                        }
                     }
+                    secured = true;
+                } else {
+                    const { error: insErr } = await supabase
+                        .from('command_payments')
+                        .insert([consolidatedPayment]);
+                    if (insErr) {
+                        console.error('payment error', { code: insErr.code, message: insErr.message });
+                        throw insErr;
+                    }
+                    secured = true;
                 }
-                console.log('[BALCAO_LOG] Auditoria processada com sucesso.');
+
+                // 3. ATUALIZAÇÃO DA COMANDA (SÓ APÓS GARANTIR O PAGAMENTO)
+                if (secured) {
+                    const { error: closeError } = await supabase
+                        .from('commands')
+                        .update({ 
+                            status: 'paid', 
+                            closed_at: new Date().toISOString(),
+                            total_amount: totals.total
+                        })
+                        .eq('id', commandId);
     
-                // 3. ATUALIZAÇÃO DO STATUS DA COMANDA
-                const { error: closeError } = await supabase
-                    .from('commands')
-                    .update({ 
-                        status: 'paid', 
-                        closed_at: new Date().toISOString(),
-                        total_amount: totals.total
-                    })
-                    .eq('id', commandId);
+                    if (closeError) throw closeError;
     
-                if (closeError) {
-                    console.error('[BALCAO_CRITICAL] Falha ao encerrar comanda após auditoria:', closeError);
-                    throw new Error("Auditoria ok, mas erro ao arquivar comanda.");
+                    setToast({ message: "Atendimento finalizado! ✅", type: 'success' });
+                    setIsLocked(true);
+                    setTimeout(onBack, 800);
                 }
-    
-                console.log('[BALCAO_SUCCESS] Comanda finalizada com sucesso.');
-                setToast({ message: "Venda finalizada com sucesso! ✅", type: 'success' });
-                setIsLocked(true);
-                setTimeout(onBack, 800);
     
             } catch (e: any) {
                 console.error('[BALCAO_EXCEPTION]', e);
@@ -317,7 +320,7 @@ import React, { useState, useEffect, useMemo } from 'react';
                                         {(isLocked ? historyPayments : addedPayments).map(p => {
                                             const name = isLocked 
                                                 ? (p.payment_methods_config?.name || p.brand || 'Pagamento')
-                                                : (p.brand || p.method.replace('_', ' '));
+                                                : (p.brand || p.method?.replace('_', ' '));
                                             
                                             return (
                                                 <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-white group animate-in slide-in-from-right-4">

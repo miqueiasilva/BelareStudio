@@ -101,32 +101,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         if (isLoading || !currentMethod || !activeStudioId) return;
         
         setIsLoading(true);
-        console.log('[CHECKOUT_LOG] Iniciando fluxo de pagamento para command:', appointment.command_id);
+        const commandId = appointment.command_id;
 
         try {
-            const commandId = appointment.command_id;
-
-            // 1. VERIFICAÇÃO DE IDEMPOTÊNCIA (UI LEVEL)
-            if (commandId) {
-                const { data: existing, error: checkError } = await supabase
-                    .from('command_payments')
-                    .select('id')
-                    .eq('command_id', commandId)
-                    .eq('status', 'paid')
-                    .maybeSingle();
-                
-                if (checkError) console.error('[CHECKOUT_ERROR] Erro ao verificar duplicidade:', checkError);
-
-                if (existing) {
-                    console.warn('[CHECKOUT_WARN] Pagamento já existente. Abortando gravação dupla.');
-                    setToast({ message: "Este atendimento já possui pagamento registrado.", type: 'info' });
-                    onSuccess();
-                    onClose();
-                    return;
-                }
-            }
-
-            // 2. CÁLCULO DE TAXAS E LÍQUIDO
+            // 1. CÁLCULO DE VALORES
             const feeRate = installments > 1 
                 ? Number(currentMethod.installment_rates?.[installments.toString()] || currentMethod.rate_installment || 0)
                 : Number(currentMethod.rate_cash || 0);
@@ -134,63 +112,94 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             const feeAmount = (appointment.price * feeRate) / 100;
             const netValue = appointment.price - feeAmount;
 
-            // 3. REGISTRO ATÔMICO
-            // Usamos .insert(). Se houver erro de chave duplicada (código 23505), tratamos como sucesso de idempotência.
-            const { error: paymentError } = await supabase
-                .from('command_payments')
-                .insert({
-                    command_id: commandId || null,
-                    studio_id: activeStudioId,
-                    amount: appointment.price,
-                    net_value: netValue,
-                    fee_amount: feeAmount,
-                    fee_applied: feeRate,
-                    method_id: currentMethod.id,
-                    brand: currentMethod.brand || null,
-                    installments: installments || 1,
-                    status: 'paid'
-                });
+            const paymentPayload = {
+                command_id: commandId || null,
+                studio_id: activeStudioId,
+                amount: appointment.price,
+                net_value: netValue,
+                fee_amount: feeAmount,
+                fee_applied: feeRate,
+                method_id: currentMethod.id,
+                brand: currentMethod.brand || null,
+                installments: installments || 1,
+                status: 'paid'
+            };
 
-            if (paymentError) {
-                // Código 23505 = Unique Violation (Alguém inseriu entre nosso check e agora)
-                if (paymentError.code === '23505') {
-                    console.warn('[CHECKOUT_WARN] Conflito de unicidade detectado no DB. Prosseguindo como idempotência.');
-                } else {
-                    console.error('[CHECKOUT_CRITICAL] Falha ao registrar pagamento:', paymentError);
-                    throw new Error(`Erro de Registro: ${paymentError.message}`);
-                }
-            }
+            // 2. LÓGICA DE AUDITORIA ROBUSTA (FETCH-THEN-ACTION)
+            let paymentSecured = false;
 
-            // 4. ATUALIZAÇÃO DA COMANDA (SOMENTE SE O PASSO 3 FOR OK OU DUPLICADO)
             if (commandId) {
-                const { error: commandError } = await supabase
-                    .from('commands')
-                    .update({ 
-                        status: 'paid',
-                        closed_at: new Date().toISOString()
-                    })
-                    .eq('id', commandId);
-                
-                if (commandError) {
-                    console.error('[CHECKOUT_CRITICAL] Falha ao fechar comanda:', commandError);
+                const { data: existing, error: checkError } = await supabase
+                    .from('command_payments')
+                    .select('id, status')
+                    .eq('command_id', commandId)
+                    .maybeSingle();
+
+                if (checkError) throw checkError;
+
+                console.log('payment upsert path', { existing, status: existing?.status });
+
+                if (existing) {
+                    if (existing.status !== 'paid') {
+                        // Existe mas está pendente ou cancelado, atualizamos para pago
+                        const { error: updErr } = await supabase
+                            .from('command_payments')
+                            .update(paymentPayload)
+                            .eq('id', existing.id);
+                        
+                        if (updErr) {
+                            console.error('payment error', { code: updErr.code, message: updErr.message });
+                            throw updErr;
+                        }
+                        paymentSecured = true;
+                    } else {
+                        // Já está pago, apenas ignoramos a inserção mas permitimos avançar o status da comanda se necessário
+                        console.warn('[CHECKOUT] Pagamento já estava liquidado no banco.');
+                        paymentSecured = true;
+                    }
+                } else {
+                    // Não existe, inserimos
+                    const { error: insErr } = await supabase
+                        .from('command_payments')
+                        .insert([paymentPayload]);
+                    
+                    if (insErr) {
+                        console.error('payment error', { code: insErr.code, message: insErr.message });
+                        throw insErr;
+                    }
+                    paymentSecured = true;
                 }
+            } else {
+                // Sem command_id (venda direta simplificada), apenas inserimos
+                const { error: insErr } = await supabase
+                    .from('command_payments')
+                    .insert([paymentPayload]);
+                if (insErr) throw insErr;
+                paymentSecured = true;
             }
 
-            // 5. ATUALIZAR STATUS DO AGENDAMENTO
-            const { error: apptError } = await supabase
-                .from('appointments')
-                .update({ status: 'concluido' })
-                .eq('id', appointment.id);
-            
-            if (apptError) console.error('[CHECKOUT_ERROR] Erro ao concluir agendamento:', apptError);
+            // 3. ATUALIZAÇÃO DOS STATUS (APENAS SE O PAGAMENTO FOI GARANTIDO)
+            if (paymentSecured) {
+                if (commandId) {
+                    await supabase
+                        .from('commands')
+                        .update({ status: 'paid', closed_at: new Date().toISOString() })
+                        .eq('id', commandId);
+                }
 
-            setToast({ message: "Venda liquidada e auditada com sucesso! ✅", type: 'success' });
-            onSuccess();
-            onClose();
+                await supabase
+                    .from('appointments')
+                    .update({ status: 'concluido' })
+                    .eq('id', appointment.id);
+
+                setToast({ message: "Venda finalizada com sucesso! ✅", type: 'success' });
+                onSuccess();
+                onClose();
+            }
 
         } catch (error: any) {
             console.error("[CHECKOUT_EXCEPTION]", error);
-            setToast({ message: error.message || "Falha no processamento financeiro.", type: 'error' });
+            setToast({ message: `Falha no processamento: ${error.message}`, type: 'error' });
         } finally {
             setIsLoading(false);
         }
