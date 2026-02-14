@@ -46,7 +46,12 @@ const AppContent: React.FC = () => {
   const { activeStudioId, isSyncing, refreshStudios } = useStudio();
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
-  const [viewingPaidId, setViewingPaidId] = useState<string | null>(() => sessionStorage.getItem('open_paid_command'));
+  
+  // PERSISTÊNCIA DO MODAL: Salva no sessionStorage para sobreviver a trocas de aba e syncs
+  const [viewingPaidId, setViewingPaidId] = useState<string | null>(() => {
+    return sessionStorage.getItem('belare.open_paid_command');
+  });
+
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
   const [hash, setHash] = useState(window.location.hash);
 
@@ -92,18 +97,19 @@ const AppContent: React.FC = () => {
   }
 
   const handleAddTransaction = (t: FinancialTransaction) => setTransactions(prev => [t, ...prev]);
+  
   const navigateToCommand = (id: string) => {
       setActiveCommandId(id);
       setCurrentView('comanda_detalhe');
   };
 
   const openPaidSummary = (id: string) => {
-    sessionStorage.setItem('open_paid_command', id);
+    sessionStorage.setItem('belare.open_paid_command', id);
     setViewingPaidId(id);
   };
 
   const closePaidSummary = () => {
-    sessionStorage.removeItem('open_paid_command');
+    sessionStorage.removeItem('belare.open_paid_command');
     setViewingPaidId(null);
   };
 
