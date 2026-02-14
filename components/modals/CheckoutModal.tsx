@@ -50,10 +50,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const [isFetching, setIsFetching] = useState(true);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     
-    // BARREIRA CONTRA MÚLTIPLOS CLIQUES
     const isProcessingRef = useRef(false);
 
-    const [dbProfessionals, setDbProfessionals] = useState<any[]>([]);
     const [dbPaymentMethods, setDbPaymentMethods] = useState<DBPaymentMethod[]>([]);
     const [selectedCategory, setSelectedCategory] = useState<'pix' | 'money' | 'credit' | 'debit'>('pix');
     const [selectedMethodId, setSelectedMethodId] = useState<string>('');
@@ -62,16 +60,15 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const loadSystemData = async () => {
         setIsFetching(true);
         try {
-            const [profsRes, methodsRes] = await Promise.all([
-                supabase.from('team_members').select('id, name').order('name'),
-                supabase.from('payment_methods_config').select('*').eq('is_active', true)
-            ]);
+            const { data: methodsRes } = await supabase
+                .from('payment_methods_config')
+                .select('*')
+                .eq('is_active', true);
 
-            setDbProfessionals(profsRes.data || []);
-            setDbPaymentMethods(methodsRes.data || []);
+            setDbPaymentMethods(methodsRes || []);
 
-            if (methodsRes.data?.length) {
-                const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
+            if (methodsRes?.length) {
+                const firstPix = methodsRes.find((m: any) => m.type === 'pix');
                 if (firstPix) setSelectedMethodId(firstPix.id);
             }
         } catch (err: any) {
@@ -97,11 +94,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     }, [dbPaymentMethods, selectedMethodId]);
 
     const handleConfirmPayment = async () => {
-        // BLOQUEIO SÍNCRONO IMEDIATO
-        if (isProcessingRef.current || isLoading || !currentMethod || !activeStudioId) {
-            console.log('🚫 Bloqueado - Processamento ativo');
-            return;
-        }
+        if (isProcessingRef.current || isLoading || !currentMethod || !activeStudioId) return;
         
         isProcessingRef.current = true;
         setIsLoading(true);
@@ -109,65 +102,77 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         const commandId = appointment.command_id;
 
         try {
-            // 1. CÁLCULO DE VALORES
-            const feeRate = installments > 1 
-                ? Number(currentMethod.installment_rates?.[installments.toString()] || currentMethod.rate_installment || 0)
-                : Number(currentMethod.rate_cash || 0);
-            
-            const feeAmount = (appointment.price * feeRate) / 100;
-            const netValue = appointment.price - feeAmount;
-
-            const paymentPayload = {
-                command_id: commandId || null,
-                studio_id: activeStudioId,
-                amount: appointment.price,
-                net_value: netValue,
-                fee_amount: feeAmount,
-                fee_applied: feeRate,
-                method_id: currentMethod.id,
-                brand: currentMethod.brand || null,
-                installments: installments || 1,
-                status: 'paid'
-            };
-
-            // 2. TENTATIVA DE INSERÇÃO COM RESILIÊNCIA 409
+            // 1. VERIFICAÇÃO PREVENTIVA DE PAGAMENTO
             if (commandId) {
                 const { data: existing } = await supabase
                     .from('command_payments')
-                    .select('id, status')
+                    .select('id')
                     .eq('command_id', commandId)
                     .eq('status', 'paid')
                     .maybeSingle();
 
-                if (!existing) {
-                    const { error: insErr } = await supabase
-                        .from('command_payments')
-                        .insert([paymentPayload]);
-                    
-                    // Se 409, o pagamento já entrou por outro clique, então ignoramos
-                    if (insErr && insErr.code !== '23505') {
-                        console.error('payment error', { code: insErr.code, message: insErr.message });
-                        throw insErr;
-                    }
+                if (existing) {
+                    console.log('✅ Comanda já liquidada. Finalizando fluxo.');
+                    onSuccess();
+                    onClose();
+                    return;
                 }
-            } else {
-                // Sem comanda (venda direta simplificada)
-                const { error: insErr } = await supabase.from('command_payments').insert([paymentPayload]);
-                if (insErr) throw insErr;
             }
 
-            // 3. ATUALIZAÇÃO DOS STATUS (SEMPRE APÓS GARANTIR O REGISTRO DO PAGAMENTO)
+            // 2. RPC FINANCEIRO (Com UUIDs explícitos)
+            const { data: financialTxId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                p_studio_id: activeStudioId,
+                p_professional_id: appointment.professional_id || null,
+                p_client_id: appointment.client_id || null,
+                p_command_id: commandId || null,
+                p_amount: appointment.price,
+                p_method: currentMethod.type,
+                p_brand: currentMethod.brand || null,
+                p_installments: installments || 1
+            });
+
+            if (rpcError) {
+                // Se o erro for de duplicidade, não travamos o usuário, apenas prosseguimos
+                if (!rpcError.message.includes('unique constraint') && rpcError.code !== '23505') {
+                    throw new Error(`Falha no Registro Financeiro: ${rpcError.message}`);
+                }
+            }
+
+            // 3. PERSISTÊNCIA EM COMMAND_PAYMENTS
+            const feeRate = installments > 1 
+                ? Number(currentMethod.installment_rates?.[installments.toString()] || 0)
+                : Number(currentMethod.rate_cash || 0);
+            
+            const feeAmount = (appointment.price * feeRate) / 100;
+
+            const { error: insErr } = await supabase
+                .from('command_payments')
+                .insert([{
+                    command_id: commandId || null,
+                    studio_id: activeStudioId,
+                    amount: appointment.price,
+                    net_value: appointment.price - feeAmount,
+                    fee_amount: feeAmount,
+                    fee_applied: feeRate,
+                    method_id: currentMethod.id,
+                    brand: currentMethod.brand || null,
+                    installments: installments || 1,
+                    financial_transaction_id: financialTxId,
+                    status: 'paid'
+                }]);
+
+            // Se cair no erro 23505 aqui, significa que outra aba ou processo inseriu entre o nosso check e agora.
+            // Ignoramos o erro e seguimos para atualizar os status.
+            if (insErr && insErr.code !== '23505') throw insErr;
+
+            // 4. ATUALIZAÇÕES DE STATUS
+            const updates = [];
             if (commandId) {
-                await supabase
-                    .from('commands')
-                    .update({ status: 'paid', closed_at: new Date().toISOString() })
-                    .eq('id', commandId);
+                updates.push(supabase.from('commands').update({ status: 'paid', closed_at: new Date().toISOString() }).eq('id', commandId));
             }
+            updates.push(supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id));
 
-            await supabase
-                .from('appointments')
-                .update({ status: 'concluido' })
-                .eq('id', appointment.id);
+            await Promise.all(updates);
 
             setToast({ message: "Recebimento confirmado! ✅", type: 'success' });
             onSuccess();
@@ -176,7 +181,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         } catch (error: any) {
             console.error("[CHECKOUT_EXCEPTION]", error);
             setToast({ message: `Erro no checkout: ${error.message}`, type: 'error' });
-            // Destrava para permitir correção pelo usuário
             isProcessingRef.current = false;
             setIsLoading(false);
         }
@@ -196,7 +200,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden">
                 <header className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                    <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Recebimento Auditado</h2>
+                    <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Checkout Direto</h2>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
                 </header>
 
@@ -204,7 +208,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     {isFetching ? (
                         <div className="py-20 flex flex-col items-center justify-center">
                             <Loader2 className="animate-spin text-orange-500 mb-4" size={40} />
-                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Preparando Terminal...</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Preparando...</p>
                         </div>
                     ) : (
                         <>
@@ -266,7 +270,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                         className="flex-[2] bg-slate-800 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
                     >
                         {isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
-                        {isLoading ? 'PROCESSANDO...' : 'Confirmar Venda'}
+                        {isLoading ? 'CONFIRMANDO...' : 'Liquidar Agora'}
                     </button>
                 </footer>
             </div>
