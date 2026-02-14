@@ -207,9 +207,8 @@ import React, { useState, useEffect, useMemo } from 'react';
                     return;
                 }
 
-                // 2. CONSOLIDAÇÃO DOS PAGAMENTOS COM UPSERT (RESOLVE DUPLICATE KEY ERROR)
-                // Usamos UPSERT com ignoreDuplicates para que, se houver uma condição de corrida no DB,
-                // a segunda requisição não falhe com erro de constraint de unicidade.
+                // 2. CONSOLIDAÇÃO DOS PAGAMENTOS COM INSERT
+                // Se o DB já tiver o registro (código 23505), tratamos como sucesso silencioso.
                 const consolidatedPayment = {
                     command_id: commandId,
                     studio_id: activeStudioId,
@@ -225,14 +224,15 @@ import React, { useState, useEffect, useMemo } from 'react';
 
                 const { error: cpErr } = await supabase
                     .from('command_payments')
-                    .upsert(consolidatedPayment, { 
-                        onConflict: 'command_id',
-                        ignoreDuplicates: true 
-                    });
+                    .insert([consolidatedPayment]);
                 
                 if (cpErr) {
-                    console.error('[BALCAO_CRITICAL] Falha ao registrar auditoria:', cpErr);
-                    throw new Error(`Erro de Registro: ${cpErr.message}`);
+                    if (cpErr.code === '23505') {
+                        console.warn('[BALCAO_WARN] Registro duplicado no insert (conflito resolvido via código 23505).');
+                    } else {
+                        console.error('[BALCAO_CRITICAL] Falha ao registrar auditoria:', cpErr);
+                        throw new Error(`Erro de Registro: ${cpErr.message}`);
+                    }
                 }
                 console.log('[BALCAO_LOG] Auditoria processada com sucesso.');
     

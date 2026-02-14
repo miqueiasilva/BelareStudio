@@ -134,11 +134,11 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             const feeAmount = (appointment.price * feeRate) / 100;
             const netValue = appointment.price - feeAmount;
 
-            // 3. REGISTRO ATÔMICO COM UPSERT (RESOLVE DUPLICATE KEY ERROR)
-            // Se o command_id já existir com status paid, o upsert ignora a inserção sem disparar erro
-            const { data: paymentData, error: paymentError } = await supabase
+            // 3. REGISTRO ATÔMICO
+            // Usamos .insert(). Se houver erro de chave duplicada (código 23505), tratamos como sucesso de idempotência.
+            const { error: paymentError } = await supabase
                 .from('command_payments')
-                .upsert({
+                .insert({
                     command_id: commandId || null,
                     studio_id: activeStudioId,
                     amount: appointment.price,
@@ -149,18 +149,19 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     brand: currentMethod.brand || null,
                     installments: installments || 1,
                     status: 'paid'
-                }, { 
-                    onConflict: 'command_id',
-                    ignoreDuplicates: true 
-                })
-                .select();
+                });
 
             if (paymentError) {
-                console.error('[CHECKOUT_CRITICAL] Falha ao registrar pagamento:', paymentError);
-                throw new Error(`Erro de Auditoria: ${paymentError.message}`);
+                // Código 23505 = Unique Violation (Alguém inseriu entre nosso check e agora)
+                if (paymentError.code === '23505') {
+                    console.warn('[CHECKOUT_WARN] Conflito de unicidade detectado no DB. Prosseguindo como idempotência.');
+                } else {
+                    console.error('[CHECKOUT_CRITICAL] Falha ao registrar pagamento:', paymentError);
+                    throw new Error(`Erro de Registro: ${paymentError.message}`);
+                }
             }
 
-            // 4. ATUALIZAÇÃO DA COMANDA (SOMENTE SE O PASSO 3 FOR OK)
+            // 4. ATUALIZAÇÃO DA COMANDA (SOMENTE SE O PASSO 3 FOR OK OU DUPLICADO)
             if (commandId) {
                 const { error: commandError } = await supabase
                     .from('commands')
