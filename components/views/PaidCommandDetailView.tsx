@@ -28,7 +28,6 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
         setLoading(true);
         
         try {
-            // 1. Busca Comanda e Itens (Fonte do Bruto)
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select('*, clients:client_id (id, nome, name, photo_url)')
@@ -44,41 +43,22 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                 .eq('command_id', commandId);
             setItems(itemsData || []);
 
-            // 2. Resolver Profissional do Atendimento
             if (cmdData?.professional_id) {
                 const { data: prof } = await supabase.from('team_members').select('name').eq('id', cmdData.professional_id).maybeSingle();
                 if (prof) setProfessionalName(prof.name);
             }
 
-            // 3. Busca Auditoria de Pagamentos (Fonte Obrigatória: command_payments)
-            // CORREÇÃO: Utilizando o relacionamento correto 'payment_methods_config'
-            const { data: payData, error: payError } = await supabase
+            // BUSCA DADOS REAIS DE PAGAMENTO PERSISTIDOS
+            const { data: payData } = await supabase
                 .from('command_payments')
-                .select(`
-                    id,
-                    amount,
-                    net_value,
-                    fee_amount,
-                    brand,
-                    installments,
-                    method_id,
-                    payment_methods_config (
-                        name,
-                        brand
-                    )
-                `)
+                .select(`*, payment_methods_config (name, brand)`)
                 .eq('command_id', commandId)
                 .maybeSingle();
 
-            if (payError) {
-                console.error('❌ Erro de relacionamento ou query:', payError);
-            }
-            
-            console.log('✅ Pagamento encontrado:', payData);
             setPayment(payData);
 
         } catch (e: any) {
-            console.error('[PAID_DETAIL_CRITICAL_ERROR]', e);
+            console.error('[PAID_DETAIL_ERROR]', e);
         } finally {
             setLoading(false);
         }
@@ -86,28 +66,13 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
 
     useEffect(() => { loadData(); }, [commandId]);
 
-    // Cálculos de Auditoria baseados nos itens e no pagamento localizado
-    const totals = useMemo(() => {
-        const grossFromItems = items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
-        
-        if (!payment) {
-            return { gross: grossFromItems, fees: 0, net: grossFromItems };
-        }
-
-        return {
-            gross: grossFromItems,
-            fees: Number(payment.fee_amount || 0),
-            net: Number(payment.net_value || grossFromItems)
-        };
-    }, [items, payment]);
-
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
     if (loading) return (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center">
             <div className="bg-white p-8 rounded-[32px] flex flex-col items-center">
                 <Loader2 className="animate-spin text-orange-500 mb-4" size={40} />
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sincronizando Auditoria...</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Recuperando Financeiro...</p>
             </div>
         </div>
     );
@@ -115,12 +80,9 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
     if (!command) return null;
 
     const displayClientName = command.clients?.nome || command.clients?.name || command.client_name || "CONSUMIDOR FINAL";
-    
-    // CORREÇÃO: Exibição baseada na tabela payment_methods_config
-    const methodName = payment?.payment_methods_config?.name || payment?.brand || 'Pagamento Localizado';
-    const grossAmount = Number(payment?.amount || 0);
+    const grossAmount = Number(payment?.amount || command.total_amount || 0);
     const feeAmount = Number(payment?.fee_amount || 0);
-    const feePercent = grossAmount > 0 ? ((feeAmount / grossAmount) * 100).toFixed(2) : '0.00';
+    const netValue = Number(payment?.net_value || grossAmount);
 
     return (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
@@ -129,9 +91,9 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                     <div>
                         <h2 className="text-xl font-black text-slate-800 flex items-center gap-3 uppercase tracking-tighter">
                             <Receipt className="text-emerald-500" size={24} />
-                            Resumo da Venda
+                            Relatório de Venda
                         </h2>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Conferência BelareStudio • command_payments</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Conferência Auditada em command_payments</p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400"><X size={24} /></button>
                 </header>
@@ -150,10 +112,10 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                         </div>
                     </div>
 
-                    <Card title="Itens do Atendimento" icon={<ShoppingCart size={16} className="text-orange-500" />}>
+                    <Card title="Itens Vendidos" icon={<ShoppingCart size={16} className="text-orange-500" />}>
                         <div className="divide-y divide-slate-50">
                             {items.map((item: any) => (
-                                <div key={item.id} className="py-4 flex justify-between items-center group">
+                                <div key={item.id} className="py-4 flex justify-between items-center">
                                     <div className="flex items-center gap-4">
                                         <div className={`p-2 rounded-xl ${item.product_id ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
                                             {item.product_id ? <ShoppingBag size={18} /> : <Scissors size={18} />}
@@ -171,81 +133,55 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
 
                     <div className="space-y-4">
                         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-                            <Landmark size={14} /> Fluxo de Recebimento
+                            <Landmark size={14} /> Auditoria Financeira
                         </h4>
                         
                         {payment ? (
                             <div className="p-6 bg-slate-50 rounded-[32px] border-2 border-white shadow-sm space-y-4">
                                 <div className="flex justify-between items-start">
                                     <div className="flex items-center gap-4">
-                                        <div className="p-3 bg-white rounded-2xl text-slate-400 shadow-sm">
+                                        <div className="p-3 bg-white rounded-2xl text-orange-500 shadow-sm">
                                             <CreditCard size={20} />
                                         </div>
                                         <div>
-                                            <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1.5">Método</p>
-                                            <p className="text-sm font-black text-slate-800 flex items-center gap-2">
-                                                {methodName}
-                                                {payment.installments > 1 && <span className="text-orange-500">({payment.installments}x)</span>}
+                                            <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1.5">Forma de Recebimento</p>
+                                            <p className="text-sm font-black text-slate-800">
+                                                {payment.payment_methods_config?.name || payment.brand || 'Consolidado'}
+                                                {payment.installments > 1 && <span className="text-orange-500"> ({payment.installments}x)</span>}
                                             </p>
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1.5">Valor Bruto</p>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1.5">Bruto</p>
                                         <p className="text-lg font-black text-slate-800">{formatBRL(grossAmount)}</p>
                                     </div>
                                 </div>
                                 
                                 <div className="pt-4 border-t border-slate-200/50 flex justify-between items-center">
                                     <span className="text-[10px] font-black text-rose-500 uppercase flex items-center gap-1.5">
-                                        <Percent size={12} /> Taxa Adquirente ({feePercent}%)
+                                        <Percent size={12} /> Taxa da Operação
                                     </span>
                                     <span className="text-sm font-black text-rose-500">- {formatBRL(feeAmount)}</span>
                                 </div>
 
                                 <div className="flex justify-between items-center bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100">
-                                    <span className="text-[10px] font-black text-emerald-700 uppercase">Líquido em Conta</span>
-                                    <span className="text-lg font-black text-emerald-700">{formatBRL(Number(payment.net_value))}</span>
+                                    <span className="text-[10px] font-black text-emerald-700 uppercase">Líquido Creditado</span>
+                                    <span className="text-lg font-black text-emerald-700">{formatBRL(netValue)}</span>
                                 </div>
                             </div>
                         ) : (
-                            <div className="p-12 text-center bg-amber-50 rounded-[40px] border-2 border-dashed border-amber-100">
+                            <div className="p-10 text-center bg-amber-50 rounded-[40px] border-2 border-dashed border-amber-100">
                                 <AlertTriangle className="mx-auto text-amber-400 mb-3" size={32} />
-                                <p className="text-xs font-black text-amber-600 uppercase tracking-widest leading-relaxed">
-                                    Pagamento não localizado na auditoria direta.
+                                <p className="text-xs font-black text-amber-600 uppercase tracking-widest">
+                                    Falha na auditoria direta: Registro command_payments ausente.
                                 </p>
                             </div>
                         )}
                     </div>
-
-                    <div className="bg-slate-900 rounded-[48px] p-10 text-white shadow-2xl relative overflow-hidden">
-                        <div className="relative z-10 space-y-5">
-                            <div className="flex justify-between items-center opacity-60">
-                                <span className="text-xs font-black uppercase tracking-widest">Total dos Itens</span>
-                                <span className="font-bold text-lg">{formatBRL(totals.gross)}</span>
-                            </div>
-                            
-                            {totals.fees > 0 && (
-                                <div className="flex justify-between items-center text-rose-400">
-                                    <span className="text-xs font-black uppercase tracking-widest">Taxas de Cartão</span>
-                                    <span className="font-bold text-lg">- {formatBRL(totals.fees)}</span>
-                                </div>
-                            )}
-
-                            <div className="pt-6 border-t border-white/10 flex justify-between items-end">
-                                <div>
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-1">Faturamento Líquido Real</p>
-                                    <p className="text-5xl font-black text-emerald-400 tracking-tighter">{formatBRL(totals.net)}</p>
-                                </div>
-                                <div className="text-right pb-1">
-                                    <CheckCircle2 size={40} className="text-emerald-500/40" />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 <footer className="p-8 bg-slate-50 border-t border-slate-100">
-                    <button onClick={onClose} className="w-full py-4 bg-slate-800 text-white font-black rounded-2xl shadow-xl hover:bg-slate-900 transition-all active:scale-95 uppercase text-xs tracking-widest">Fechar Resumo</button>
+                    <button onClick={onClose} className="w-full py-4 bg-slate-800 text-white font-black rounded-2xl shadow-xl hover:bg-slate-900 transition-all active:scale-95 uppercase text-xs tracking-widest">Fechar Relatório</button>
                 </footer>
             </div>
         </div>
