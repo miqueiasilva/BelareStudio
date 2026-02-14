@@ -22,6 +22,7 @@ interface DBPaymentMethod {
     type: 'credit' | 'debit' | 'pix' | 'money';
     brand: string | null;
     rate_cash: number;
+    rate_installment?: number; // Campo solicitado pelo diagnóstico
     allow_installments: boolean;
     max_installments: number;
     installment_rates: Record<string, number>;
@@ -32,6 +33,7 @@ interface CheckoutModalProps {
     onClose: () => void;
     appointment: {
         id: number;
+        command_id?: string;
         client_id?: number | string;
         client_name: string;
         service_name: string;
@@ -50,23 +52,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
     const [dbProfessionals, setDbProfessionals] = useState<any[]>([]);
     const [dbPaymentMethods, setDbPaymentMethods] = useState<DBPaymentMethod[]>([]);
-    const [selectedProfessionalId, setSelectedProfessionalId] = useState<string>('');
     const [selectedCategory, setSelectedCategory] = useState<'pix' | 'money' | 'credit' | 'debit'>('pix');
     const [selectedMethodId, setSelectedMethodId] = useState<string>('');
     const [installments, setInstallments] = useState(1);
-
-    const isSafeUUID = (id: any): boolean => {
-        if (!id) return false;
-        const sid = String(id).trim();
-        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sid);
-    };
-
-    const resetLocalState = () => {
-        setSelectedProfessionalId('');
-        setSelectedCategory('pix');
-        setSelectedMethodId('');
-        setInstallments(1);
-    };
 
     const loadSystemData = async () => {
         setIsFetching(true);
@@ -76,18 +64,15 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 supabase.from('payment_methods_config').select('*').eq('is_active', true)
             ]);
 
-            if (profsRes.error) throw profsRes.error;
-            if (methodsRes.error) throw methodsRes.error;
-
             setDbProfessionals(profsRes.data || []);
             setDbPaymentMethods(methodsRes.data || []);
 
-            if (methodsRes.data && methodsRes.data.length > 0) {
+            if (methodsRes.data?.length) {
                 const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
                 if (firstPix) setSelectedMethodId(firstPix.id);
             }
         } catch (err: any) {
-            setToast({ message: "Erro ao sincronizar dados.", type: 'error' });
+            console.error('[CHECKOUT_FETCH_ERROR]', err);
         } finally {
             setIsFetching(false);
         }
@@ -95,31 +80,17 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
     useEffect(() => {
         if (isOpen) loadSystemData();
-        else resetLocalState();
     }, [isOpen]);
 
-    useEffect(() => {
-        if (isOpen && appointment && dbProfessionals.length > 0) {
-            if (selectedProfessionalId) return;
-            const profId = String(appointment.professional_id);
-            if (isSafeUUID(profId)) {
-                setSelectedProfessionalId(profId);
-            } else if (appointment.professional_name) {
-                const found = dbProfessionals.find(p => p.name.trim().toLowerCase() === appointment.professional_name.trim().toLowerCase());
-                if (found) setSelectedProfessionalId(String(found.id));
-            }
-        }
-    }, [isOpen, appointment, dbProfessionals]);
-
     const filteredMethods = useMemo(() => {
-        return dbPaymentMethods.filter(m => m.type === selectedCategory);
+        return dbPaymentMethods.filter(m => m.type === setSelectedCategory ? selectedCategory : m.type === selectedCategory);
     }, [dbPaymentMethods, selectedCategory]);
 
     useEffect(() => {
         if (filteredMethods.length > 0) {
             setSelectedMethodId(filteredMethods[0].id);
             setInstallments(1);
-        } else setSelectedMethodId('');
+        }
     }, [selectedCategory, filteredMethods]);
 
     const currentMethod = useMemo(() => {
@@ -127,76 +98,77 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     }, [dbPaymentMethods, selectedMethodId]);
 
     const handleConfirmPayment = async () => {
-        if (!currentMethod || !activeStudioId) return;
+        if (isLoading || !currentMethod || !activeStudioId) return;
+        
         setIsLoading(true);
+        console.log('[CHECKOUT_START] Iniciando liquidação para o atendimento:', appointment.id);
 
         try {
-            // 1. LOCALIZAR COMANDA VINCULADA AO AGENDAMENTO
-            const { data: command, error: cmdFindError } = await supabase
-                .from('commands')
-                .select('id, status')
-                .eq('id', (appointment as any).command_id || '') // Assume que pode haver um command_id no objeto
-                .maybeSingle();
+            const commandId = appointment.command_id;
 
-            // Se não houver comanda direta, precisamos lidar com o cenário de agendamento simples
-            // No BelaApp, o fluxo de agendamento concluído costuma gerar uma comanda.
-            // Para esta correção, focaremos na gravação direta do pagamento.
-
-            // 2. VERIFICAR DUPLICIDADE EM command_payments (Se aplicável)
-            if (command?.id) {
+            // 1. VERIFICAÇÃO DE IDEMPOTÊNCIA (Evitar duplicidade em command_payments)
+            if (commandId) {
                 const { data: existing } = await supabase
                     .from('command_payments')
                     .select('id')
-                    .eq('command_id', command.id)
+                    .eq('command_id', commandId)
                     .eq('status', 'paid')
                     .maybeSingle();
                 
                 if (existing) {
-                    setToast({ message: "Este atendimento já possui pagamento registrado!", type: 'error' });
-                    setIsLoading(false);
+                    console.warn('[CHECKOUT_ABORT] Pagamento já registrado para command:', commandId);
+                    setToast({ message: "Este atendimento já foi pago anteriormente.", type: 'info' });
+                    onSuccess();
+                    onClose();
                     return;
                 }
             }
 
-            // 3. CÁLCULO DE TAXAS
+            // 2. CÁLCULO DE TAXAS BASEADO NA CONFIGURAÇÃO DO MÉTODO (ID da payment_methods_config)
             const feeRate = installments > 1 
-                ? Number(currentMethod.installment_rates[installments.toString()] || 0)
+                ? Number(currentMethod.installment_rates?.[installments.toString()] || currentMethod.rate_installment || 0)
                 : Number(currentMethod.rate_cash || 0);
             
             const feeAmount = (appointment.price * feeRate) / 100;
             const netValue = appointment.price - feeAmount;
 
-            // 4. GRAVAÇÃO DIRETA EM command_payments
-            // Nota: Se não houver command_id (fluxo simplificado), o campo será null ou lidaremos com a falta.
+            console.log(`[CHECKOUT_CALC] Valor: ${appointment.price}, Taxa: ${feeRate}%, Líquido: ${netValue}`);
+
+            // 3. GRAVAÇÃO DIRETAMENTE EM command_payments (Fonte da Verdade)
             const { error: paymentError } = await supabase
                 .from('command_payments')
                 .insert({
-                    command_id: (appointment as any).command_id || null,
+                    command_id: commandId || null,
                     studio_id: activeStudioId,
                     amount: appointment.price,
                     net_value: netValue,
                     fee_amount: feeAmount,
                     fee_applied: feeRate,
-                    method_id: currentMethod.id,
+                    method_id: currentMethod.id, // Referencia payment_methods_config
                     brand: currentMethod.brand || null,
                     installments: installments || 1,
                     status: 'paid'
                 });
 
-            if (paymentError) throw paymentError;
+            if (paymentError) {
+                console.error('[CHECKOUT_ERROR] Erro ao gravar em command_payments:', paymentError);
+                throw new Error("Erro ao registrar auditoria de pagamento.");
+            }
 
-            // 5. ATUALIZAR STATUS DA COMANDA (SE EXISTIR)
-            if (command?.id) {
-                await supabase
+            // 4. ATUALIZAR STATUS DA COMANDA (SE EXISTIR)
+            if (commandId) {
+                const { error: cmdError } = await supabase
                     .from('commands')
                     .update({ 
                         status: 'paid',
                         closed_at: new Date().toISOString()
                     })
-                    .eq('id', command.id);
+                    .eq('id', commandId);
+                
+                if (cmdError) console.error('[CHECKOUT_WARN] Falha ao atualizar status da comanda:', cmdError);
             }
 
-            // 6. ATUALIZAR STATUS DO AGENDAMENTO
+            // 5. ATUALIZAR STATUS DO AGENDAMENTO
             const { error: apptError } = await supabase
                 .from('appointments')
                 .update({ status: 'concluido' })
@@ -204,12 +176,15 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             
             if (apptError) throw apptError;
 
-            setToast({ message: "Pagamento recebido e auditado!", type: 'success' });
+            console.log('[CHECKOUT_SUCCESS] Liquidação concluída.');
+            setToast({ message: "Venda liquidada e auditada com sucesso!", type: 'success' });
             onSuccess();
             onClose();
+
         } catch (error: any) {
-            console.error("Erro no checkout direto:", error);
-            setToast({ message: "Falha ao gravar pagamento: " + error.message, type: 'error' });
+            console.error("[CHECKOUT_CRITICAL]", error);
+            setToast({ message: error.message || "Erro interno no processamento.", type: 'error' });
+        } finally {
             setIsLoading(false);
         }
     };

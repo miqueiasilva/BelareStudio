@@ -29,14 +29,8 @@ import React, { useState, useEffect, useMemo } from 'react';
         net_value: number; 
         created_at?: string;
         brand?: string;
-        method_id?: string; 
+        method_id: string; 
     }
-    
-    const isSafeUUID = (str: any): boolean => {
-        if (!str) return false;
-        const s = String(str).trim();
-        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
-    };
     
     const CommandDetailView: React.FC<CommandDetailViewProps> = ({ commandId, onBack }) => {
         const { activeStudioId } = useStudio();
@@ -59,10 +53,7 @@ import React, { useState, useEffect, useMemo } from 'react';
         const [availableConfigs, setAvailableConfigs] = useState<any[]>([]);
     
         const fetchContext = async () => {
-            if (!activeStudioId || !commandId) {
-                setLoading(false);
-                return;
-            }
+            if (!activeStudioId || !commandId) return;
             
             setLoading(true);
             try {
@@ -97,12 +88,8 @@ import React, { useState, useEffect, useMemo } from 'react';
                 if (alreadyPaid) {
                     const { data: payHistory } = await supabase
                         .from('command_payments')
-                        .select(`
-                            *,
-                            payment_methods_config (name, brand)
-                        `)
+                        .select(`*, payment_methods_config (name, brand)`)
                         .eq('command_id', commandId);
-                    
                     if (payHistory) setHistoryPayments(payHistory);
                 }
     
@@ -111,14 +98,12 @@ import React, { useState, useEffect, useMemo } from 'react';
                     command_items: itemsData || [],
                     display_client_name: clientInfo?.nome || clientInfo?.name || cmdData.client_name || "Consumidor Final",
                     display_client_phone: clientInfo?.whatsapp || "S/ CONTATO",
-                    display_client_photo: clientInfo?.photo_url || null,
-                    professional_id: cmdData.professional_id
+                    display_client_photo: clientInfo?.photo_url || null
                 });
     
                 setIsLocked(alreadyPaid);
             } catch (e: any) {
-                console.error('[FETCH_CONTEXT_ERROR]', e);
-                setToast({ message: "Erro ao carregar comanda.", type: 'error' });
+                console.error('[COMMAND_DETAIL_FETCH_ERROR]', e);
             } finally {
                 setLoading(false);
             }
@@ -137,25 +122,19 @@ import React, { useState, useEffect, useMemo } from 'react';
             
             return { subtotal, total: totalAfterDiscount, paid: currentPaid, remaining };
         }, [command, discount, addedPayments]);
-    
+
+        // FIX: Added filteredConfigs to resolve 'Cannot find name' error
         const filteredConfigs = useMemo(() => {
             if (!selectedType) return [];
-            const typeMap: Record<string, string> = {
-                'pix': 'pix',
-                'money': 'money',
-                'debit': 'debit',
-                'credit': 'credit',
-                'parcelado': 'credit'
-            };
-            const targetType = typeMap[selectedType];
-            return availableConfigs.filter(c => {
-                const matchType = c.type === targetType;
-                if (selectedType === 'parcelado') {
-                    return matchType && (c.max_installments >= 2 || c.allow_installments);
-                }
-                return matchType;
-            });
-        }, [selectedType, availableConfigs]);
+            
+            // Se o usuário selecionou 'parcelado', filtramos por crédito que permite parcelamento
+            if (selectedType === 'parcelado') {
+                return availableConfigs.filter(c => c.type === 'credit' && c.allow_installments);
+            }
+            
+            // Caso contrário, filtramos pelo tipo selecionado (credit ou debit)
+            return availableConfigs.filter(c => c.type === selectedType);
+        }, [availableConfigs, selectedType]);
     
         const handleSelectType = (type: string) => {
             setSelectedType(type);
@@ -183,7 +162,7 @@ import React, { useState, useEffect, useMemo } from 'react';
             if (isNaN(amount) || amount <= 0) return;
     
             const feeRate = installments > 1 
-                ? (selectedConfig.installment_rates?.[installments] || selectedConfig.rate_cash || 0)
+                ? (selectedConfig.installment_rates?.[installments] || selectedConfig.rate_installment || 0)
                 : (selectedConfig.rate_cash || 0);
                 
             const feeAmount = Number((amount * (feeRate / 100)).toFixed(2));
@@ -209,17 +188,13 @@ import React, { useState, useEffect, useMemo } from 'react';
         };
     
         const handleFinishCheckout = async () => {
-            if (isFinishing) return;
-            if (!command || isLocked || addedPayments.length === 0) return;
-            if (!command.client_id) {
-                setToast({ message: "Vincule um cliente para fechar a comanda.", type: 'error' });
-                return;
-            }
-    
+            if (isFinishing || isLocked || addedPayments.length === 0) return;
+            
             setIsFinishing(true);
-    
+            console.log('[FINALIZE_START] Comanda:', commandId);
+
             try {
-                // 1. VERIFICAR DUPLICIDADE
+                // 1. VERIFICAÇÃO DE IDEMPOTÊNCIA
                 const { data: existing } = await supabase
                     .from('command_payments')
                     .select('id')
@@ -228,17 +203,19 @@ import React, { useState, useEffect, useMemo } from 'react';
                     .maybeSingle();
                 
                 if (existing) {
-                    setToast({ message: "Esta comanda já foi liquidada!", type: 'error' });
+                    console.warn('[FINALIZE_ABORT] Comanda já possui registro pago.');
+                    setToast({ message: "Esta comanda já foi liquidada.", type: 'info' });
+                    setIsLocked(true);
                     setIsFinishing(false);
                     return;
                 }
 
-                // 2. GRAVAÇÃO DIRETA DOS PAGAMENTOS EM command_payments
+                // 2. REGISTRO DIRETO DOS PAGAMENTOS NA AUDITORIA
                 for (const p of addedPayments) {
                     const { error: cpErr } = await supabase.from('command_payments').insert([{
                         command_id: commandId,
                         studio_id: activeStudioId,
-                        method_id: p.method_id || null,
+                        method_id: p.method_id,
                         amount: p.amount,
                         fee_amount: p.fee_amount,
                         net_value: p.net_value,
@@ -248,10 +225,13 @@ import React, { useState, useEffect, useMemo } from 'react';
                         status: 'paid'
                     }]);
                     
-                    if (cpErr) throw cpErr;
+                    if (cpErr) {
+                        console.error('[FINALIZE_ERROR] Falha ao registrar pagamento individual:', cpErr);
+                        throw new Error("Erro ao salvar um ou mais pagamentos na auditoria.");
+                    }
                 }
     
-                // 3. ATUALIZAR STATUS DA COMANDA
+                // 3. ATUALIZAÇÃO DO STATUS DA COMANDA
                 const { error: closeError } = await supabase
                     .from('commands')
                     .update({ 
@@ -261,15 +241,19 @@ import React, { useState, useEffect, useMemo } from 'react';
                     })
                     .eq('id', commandId);
     
-                if (closeError) throw closeError;
+                if (closeError) {
+                    console.error('[FINALIZE_ERROR] Falha ao atualizar comando:', closeError);
+                    throw new Error("Pagamento salvo, mas erro ao arquivar comanda.");
+                }
     
-                setToast({ message: "Venda liquidada with sucesso! ✅", type: 'success' });
+                console.log('[FINALIZE_SUCCESS] Comanda liquidada com sucesso.');
+                setToast({ message: "Venda finalizada com sucesso! ✅", type: 'success' });
                 setIsLocked(true);
                 setTimeout(onBack, 800);
     
             } catch (e: any) {
-                console.error('💥 Erro no fechamento:', e);
-                setToast({ message: `Falha no checkout: ${e.message}`, type: 'error' });
+                console.error('[FINALIZE_CRITICAL]', e);
+                setToast({ message: `Falha no fechamento: ${e.message}`, type: 'error' });
             } finally {
                 setIsFinishing(false);
             }
@@ -328,7 +312,7 @@ import React, { useState, useEffect, useMemo } from 'react';
                                         {(isLocked ? historyPayments : addedPayments).map(p => {
                                             const name = isLocked 
                                                 ? (p.payment_methods_config?.name || p.brand || 'Pagamento')
-                                                : (p.method.replace('_', ' ') + (p.brand ? ` • ${p.brand}` : ''));
+                                                : (p.brand || p.method.replace('_', ' '));
                                             
                                             return (
                                                 <div key={p.id} className="px-8 py-5 flex items-center justify-between bg-white group animate-in slide-in-from-right-4">
