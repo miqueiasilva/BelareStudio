@@ -15,7 +15,7 @@ import { useStudio } from '../../contexts/StudioContext';
 import Toast, { ToastType } from '../shared/Toast';
 
 // Auxiliar para validar UUID antes de enviar para a RPC
-const isValidUUID = (str: any): boolean => {
+const isSafeUUID = (str: any): boolean => {
     if (!str || typeof str !== 'string') return false;
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 };
@@ -116,14 +116,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
     }, [command, discount, addedPayments]);
 
     const handleFinishCheckout = async () => {
-        // [STEP A: VALIDATION]
         if (!commandId || !activeStudioId) return;
-
-        if (!command?.client_id || isNaN(Number(command.client_id))) {
-            console.error("[CHECKOUT_VALIDATE] client_id is missing or invalid");
-            setToast({ message: "Selecione/Crie um cliente antes de liquidar a comanda.", type: 'error' });
-            return;
-        }
 
         if (totals.total <= 0) {
             setToast({ message: "O valor total deve ser maior que zero.", type: 'error' });
@@ -131,7 +124,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         }
 
         if (addedPayments.length === 0) {
-            setToast({ message: "Adicione uma forma de pagamento no carrinho.", type: 'error' });
+            setToast({ message: "Adicione uma forma de pagamento para liquidar.", type: 'error' });
             return;
         }
 
@@ -141,10 +134,8 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         setIsFinishing(true);
 
         try {
-            console.log("[CHECKOUT_VALIDATE] Iniciando liquidação para:", commandId);
-
-            // [STEP B: IDEMPOTENCY CHECK]
-            const { data: existingPay, error: checkError } = await supabase
+            // [STEP 1: IDEMPOTENCY CHECK]
+            const { data: existingPay } = await supabase
                 .from('command_payments')
                 .select('id, status')
                 .eq('command_id', commandId)
@@ -152,63 +143,61 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 .maybeSingle();
 
             if (existingPay) {
-                console.log("[CHECKOUT_IDEMPOTENCY] Pagamento já detectado. Atualizando comanda.");
-                await supabase.from('commands').update({ status: 'paid', closed_at: new Date().toISOString() }).eq('id', commandId);
                 setToast({ message: "Esta comanda já foi liquidada.", type: 'info' });
                 setIsLocked(true);
                 setTimeout(onBack, 1000);
                 return;
             }
 
-            // [STEP C: REGISTER FINANCIAL VIA RPC]
+            // [STEP 2: RPC TRANSACTION]
             const mainPayment = addedPayments[0];
             const totalAmountNumeric = parseFloat(totals.total.toFixed(2));
-            const safeProfessionalId = isValidUUID(command.professional_id) ? command.professional_id : null;
+            const safeProfessionalId = isSafeUUID(command.professional_id) ? command.professional_id : null;
+            const safeClientId = command.client_id ? Number(command.client_id) : null;
+
+            // Mapeamento de métodos para compatibilidade com o backend
+            const methodMap: Record<string, string> = {
+                'credit': 'cartao_credito',
+                'debit': 'cartao_debito',
+                'pix': 'pix',
+                'money': 'dinheiro',
+                'parcelado': 'cartao_credito'
+            };
 
             const rpcPayload = {
                 p_studio_id: activeStudioId,
                 p_professional_id: safeProfessionalId,
-                p_client_id: Number(command.client_id), 
+                p_client_id: safeClientId, 
                 p_command_id: commandId,
                 p_amount: totalAmountNumeric,
-                p_method: mainPayment.method,
+                p_method: methodMap[mainPayment.method] || mainPayment.method,
                 p_brand: mainPayment.brand || "N/A",
                 p_installments: parseInt(String(mainPayment.installments || 1))
             };
 
-            console.log("[CHECKOUT_RPC_PARAMS]", rpcPayload);
-
             const { data: financialTxId, error: rpcError } = await supabase.rpc('register_payment_transaction', rpcPayload);
 
-            if (rpcError) {
-                console.error("[CHECKOUT_RPC_FAIL]", rpcError);
-                throw new Error(rpcError.message);
-            }
+            if (rpcError) throw new Error(rpcError.message);
 
-            console.log("[CHECKOUT_RPC_OK] Transação UUID:", financialTxId);
-
-            // O INSERT manual em command_payments foi removido para evitar violação de trigger.
-            // A RPC register_payment_transaction agora é a única responsável por inserir o pagamento.
-
-            // [STEP E: UPDATE COMMAND STATUS]
+            // [STEP 3: UPDATE COMMAND STATUS]
             const { error: cmdUpdateErr } = await supabase
                 .from('commands')
                 .update({ 
                     status: 'paid', 
                     closed_at: new Date().toISOString(),
-                    total_amount: totalAmountNumeric
+                    total_amount: totalAmountNumeric,
+                    payment_method: methodMap[mainPayment.method] || mainPayment.method
                 })
                 .eq('id', commandId);
 
             if (cmdUpdateErr) throw cmdUpdateErr;
-            console.log("[CHECKOUT_COMMANDS_OK] Finalizado.");
 
-            setToast({ message: "Liquidação realizada com sucesso! ✅", type: 'success' });
+            setToast({ message: "Recebimento confirmado com sucesso! ✅", type: 'success' });
             setIsLocked(true);
             setTimeout(onBack, 1000);
 
         } catch (e: any) {
-            console.error('[CHECKOUT_FATAL] Erro crítico:', e);
+            console.error('[CHECKOUT_FATAL]', e);
             setToast({ message: `Falha no Registro: ${e.message}`, type: 'error' });
             isProcessingRef.current = false;
             setIsFinishing(false);
@@ -276,8 +265,6 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
                     <div className="lg:col-span-2 space-y-6">
-                        
-                        {/* AVISO DE CLIENTE FALTANTE */}
                         {!command.client_id && !isLocked && (
                             <div className="bg-rose-50 border-2 border-rose-200 p-6 rounded-[32px] flex items-center gap-4 animate-pulse">
                                 <AlertTriangle className="text-rose-500 flex-shrink-0" size={32} />
@@ -421,7 +408,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                                     disabled={isFinishing || totals.remaining > 0 || addedPayments.length === 0 || !command.client_id} 
                                     className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 && !isFinishing && command.client_id ? 'bg-emerald-600 text-white shadow-emerald-100' : 'bg-slate-100 text-slate-300'}`}
                                 >
-                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> LIQUIDAR CONTA</>}
+                                    {isFinishing ? <Loader2 className="animate-spin" size={24} /> : <><CheckCircle size={24} /> LIQUIDAR CONTA</>}
                                 </button>
                             </div>
                         )}

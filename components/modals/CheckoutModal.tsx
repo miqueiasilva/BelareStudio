@@ -17,7 +17,7 @@ const formatCurrency = (value: number) => {
 };
 
 // Auxiliar para validar UUID antes de enviar para a RPC
-const isValidUUID = (str: any): boolean => {
+const isSafeUUID = (str: any): boolean => {
     if (!str || typeof str !== 'string') return false;
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 };
@@ -100,10 +100,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     }, [dbPaymentMethods, selectedMethodId]);
 
     const handleConfirmPayment = async () => {
-        // [HARD_VALIDATION]
         if (isProcessingRef.current || isLoading || !currentMethod || !activeStudioId) return;
 
-        if (!appointment.client_id || isNaN(Number(appointment.client_id))) {
+        if (!appointment.client_id) {
             setToast({ message: "Identifique o cliente no agendamento antes de liquidar.", type: 'error' });
             return;
         }
@@ -114,8 +113,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         const commandId = appointment.command_id;
 
         try {
-            console.log("[CHECKOUT_START] Início RPC para agendamento:", appointment.id);
-
             // [IDEMPOTENCY_CHECK]
             if (commandId) {
                 const { data: existing } = await supabase
@@ -126,7 +123,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     .maybeSingle();
 
                 if (existing) {
-                    console.log('✅ Pagamento já liquidado.');
                     onSuccess();
                     onClose();
                     return;
@@ -134,31 +130,40 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             }
 
             // Sanitização de IDs para a RPC
-            const safeProfessionalId = isValidUUID(appointment.professional_id) ? appointment.professional_id : null;
-            const safeCommandId = isValidUUID(commandId) ? commandId : null;
+            const safeProfessionalId = isSafeUUID(appointment.professional_id) ? appointment.professional_id : null;
+            const safeCommandId = isSafeUUID(commandId) ? commandId : null;
+            const safeClientId = appointment.client_id ? Number(appointment.client_id) : null;
+
+            // Mapeamento de métodos
+            const methodMap: Record<string, string> = {
+                'credit': 'cartao_credito',
+                'debit': 'cartao_debito',
+                'pix': 'pix',
+                'money': 'dinheiro'
+            };
 
             // [RPC_CALL]
-            // Esta chamada deve ser a única responsável por criar o registro em command_payments via trigger/lógica interna
             const { data: financialTxId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: safeProfessionalId,
-                p_client_id: Number(appointment.client_id), 
+                p_client_id: safeClientId, 
                 p_command_id: safeCommandId,
                 p_amount: parseFloat(appointment.price.toFixed(2)),
-                p_method: currentMethod.type,
+                p_method: methodMap[currentMethod.type] || currentMethod.type,
                 p_brand: currentMethod.brand || "N/A",
                 p_installments: parseInt(String(installments || 1))
             });
 
-            if (rpcError) {
-                console.error("[RPC_FAIL]", rpcError);
-                throw new Error(rpcError.message);
-            }
+            if (rpcError) throw new Error(rpcError.message);
 
             // [STATUS_SYNC]
             const updates = [];
             if (safeCommandId) {
-                updates.push(supabase.from('commands').update({ status: 'paid', closed_at: new Date().toISOString() }).eq('id', safeCommandId));
+                updates.push(supabase.from('commands').update({ 
+                    status: 'paid', 
+                    closed_at: new Date().toISOString(),
+                    payment_method: methodMap[currentMethod.type] || currentMethod.type
+                }).eq('id', safeCommandId));
             }
             updates.push(supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id));
 
