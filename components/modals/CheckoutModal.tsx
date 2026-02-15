@@ -137,6 +137,17 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             // Mapeamento de métodos compatíveis
             const p_method = (currentMethod.type === 'credit' && installments > 1) ? 'parcelado' : currentMethod.type;
 
+            console.log('🚀 Enviando RPC Checkout com:', {
+                p_studio_id: activeStudioId,
+                p_professional_id: safeProfessionalId,
+                p_client_id: safeClientId, 
+                p_command_id: safeCommandId,
+                p_amount: appointment.price,
+                p_method: p_method,
+                p_brand: currentMethod.brand || "N/A",
+                p_installments: installments
+            });
+
             // [RPC_CALL] - Única via permitida para inserção de pagamentos
             const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
@@ -158,7 +169,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             if (safeCommandId) {
                 updates.push(supabase.from('commands').update({ 
                     status: 'paid', 
-                    closed_at: new Date().toISOString()
+                    closed_at: new Date().toISOString(),
+                    total_amount: parseFloat(appointment.price.toFixed(2)),
+                    payment_method: p_method
                 }).eq('id', safeCommandId));
             }
             updates.push(supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id));

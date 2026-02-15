@@ -116,78 +116,61 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
     }, [command, discount, addedPayments]);
 
     const handleFinishCheckout = async () => {
-        if (!commandId || !activeStudioId) return;
-
-        if (totals.total <= 0) {
-            setToast({ message: "O valor total deve ser maior que zero.", type: 'error' });
-            return;
-        }
-
-        if (addedPayments.length === 0) {
-            setToast({ message: "Adicione uma forma de pagamento para liquidar.", type: 'error' });
-            return;
-        }
-
         if (isProcessingRef.current || isLocked) return;
-        
         isProcessingRef.current = true;
         setIsFinishing(true);
 
         try {
-            // [IDEMPOTENCY CHECK]
-            const { data: existingPay } = await supabase
-                .from('command_payments')
-                .select('id, status')
-                .eq('command_id', commandId)
-                .eq('status', 'paid')
-                .maybeSingle();
-
-            if (existingPay) {
-                setToast({ message: "Esta comanda já foi liquidada.", type: 'info' });
-                setIsLocked(true);
-                setTimeout(onBack, 1000);
-                return;
+            if (addedPayments.length === 0) {
+                throw new Error("Adicione uma forma de pagamento.");
             }
 
-            // [RPC TRANSACTION]
             const mainPayment = addedPayments[0];
-            const safeProfessionalId = isSafeUUID(command.professional_id) ? command.professional_id : null;
-            const safeClientId = command.client_id ? Number(command.client_id) : null;
-
-            // Mapeamento de métodos conforme strings esperadas pelo Backend
+            
+            // Garantia de método para parcelados
             const p_method = (mainPayment.method === 'credit' && mainPayment.installments > 1) ? 'parcelado' : mainPayment.method;
 
-            const rpcPayload = {
+            console.log('🚀 Enviando RPC com:', {
                 p_studio_id: activeStudioId,
-                p_professional_id: safeProfessionalId,
-                p_client_id: safeClientId, 
+                p_professional_id: command.professional_id || null,
+                p_client_id: command.client_id ? Number(command.client_id) : null,
+                p_command_id: commandId,
+                p_amount: totals.total,
+                p_method: p_method,
+                p_brand: mainPayment.brand || 'N/A',
+                p_installments: Number(mainPayment.installments || 1)
+            });
+
+            const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                p_studio_id: activeStudioId,
+                p_professional_id: command.professional_id || null,
+                p_client_id: command.client_id ? Number(command.client_id) : null,
                 p_command_id: commandId,
                 p_amount: parseFloat(totals.total.toFixed(2)),
                 p_method: p_method,
                 p_brand: mainPayment.brand || 'N/A',
                 p_installments: parseInt(String(mainPayment.installments || 1))
-            };
+            });
 
-            // Chamada RPC - Única fonte de verdade financeira
-            const { error: rpcError } = await supabase.rpc('register_payment_transaction', rpcPayload);
-
-            // Código 23505 (duplicate key) em sistemas de banco costuma indicar que a transação já foi processada
+            // Erro 23505 (duplicate key) indica que a transação já foi registrada, tratamos como sucesso.
             if (rpcError && rpcError.code !== '23505') {
                 throw new Error(rpcError.message);
             }
 
-            // [SYNC STATUS] Atualiza status da comanda após confirmação financeira
-            const { error: cmdUpdateErr } = await supabase
+            // Atualizar status da comanda após a transação financeira
+            const { error: cmdError } = await supabase
                 .from('commands')
                 .update({ 
                     status: 'paid', 
-                    closed_at: new Date().toISOString()
+                    closed_at: new Date().toISOString(),
+                    total_amount: parseFloat(totals.total.toFixed(2)),
+                    payment_method: p_method
                 })
                 .eq('id', commandId);
 
-            if (cmdUpdateErr) throw cmdUpdateErr;
+            if (cmdError) throw cmdError;
 
-            setToast({ message: "Recebimento confirmado com sucesso! ✅", type: 'success' });
+            setToast({ message: 'Recebimento confirmado! ✅', type: 'success' });
             setIsLocked(true);
             setTimeout(onBack, 1500);
 
@@ -403,7 +386,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                                     disabled={isFinishing || totals.remaining > 0 || addedPayments.length === 0 || !command.client_id} 
                                     className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 && !isFinishing && command.client_id ? 'bg-emerald-600 text-white shadow-emerald-100' : 'bg-slate-100 text-slate-300'}`}
                                 >
-                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> LIQUIDAR CONTA</>}
+                                    {isFinishing ? <Loader2 className="animate-spin" size={24} /> : <><CheckCircle size={24} /> LIQUIDAR CONTA</>}
                                 </button>
                             </div>
                         )}
