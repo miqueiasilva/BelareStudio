@@ -100,6 +100,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     }, [dbPaymentMethods, selectedMethodId]);
 
     const handleConfirmPayment = async () => {
+        // [HARD_VALIDATION]
         if (isProcessingRef.current || isLoading || !currentMethod || !activeStudioId) return;
 
         if (!appointment.client_id || isNaN(Number(appointment.client_id))) {
@@ -113,9 +114,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         const commandId = appointment.command_id;
 
         try {
-            console.log("[CHECKOUT_START] Iniciando RPC...");
+            console.log("[CHECKOUT_START] Início RPC para agendamento:", appointment.id);
 
-            // 1. Idempotência
+            // [IDEMPOTENCY_CHECK]
             if (commandId) {
                 const { data: existing } = await supabase
                     .from('command_payments')
@@ -125,16 +126,19 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     .maybeSingle();
 
                 if (existing) {
+                    console.log('✅ Pagamento já liquidado.');
                     onSuccess();
                     onClose();
                     return;
                 }
             }
 
+            // Sanitização de IDs para a RPC
             const safeProfessionalId = isValidUUID(appointment.professional_id) ? appointment.professional_id : null;
             const safeCommandId = isValidUUID(commandId) ? commandId : null;
 
-            // 2. CHAMADA RPC (A RPC deve criar o registro em command_payments)
+            // [RPC_CALL]
+            // Esta chamada deve ser a única responsável por criar o registro em command_payments via trigger/lógica interna
             const { data: financialTxId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: safeProfessionalId,
@@ -151,7 +155,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 throw new Error(rpcError.message);
             }
 
-            // 3. ATUALIZAÇÃO DE STATUS (Sincronização)
+            // [STATUS_SYNC]
             const updates = [];
             if (safeCommandId) {
                 updates.push(supabase.from('commands').update({ status: 'paid', closed_at: new Date().toISOString() }).eq('id', safeCommandId));

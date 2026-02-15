@@ -116,9 +116,11 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
     }, [command, discount, addedPayments]);
 
     const handleFinishCheckout = async () => {
+        // [STEP A: VALIDATION]
         if (!commandId || !activeStudioId) return;
 
         if (!command?.client_id || isNaN(Number(command.client_id))) {
+            console.error("[CHECKOUT_VALIDATE] client_id is missing or invalid");
             setToast({ message: "Selecione/Crie um cliente antes de liquidar a comanda.", type: 'error' });
             return;
         }
@@ -129,7 +131,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         }
 
         if (addedPayments.length === 0) {
-            setToast({ message: "Adicione uma forma de pagamento.", type: 'error' });
+            setToast({ message: "Adicione uma forma de pagamento no carrinho.", type: 'error' });
             return;
         }
 
@@ -139,10 +141,10 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         setIsFinishing(true);
 
         try {
-            console.log("[CHECKOUT_IDEMPOTENCY] Verificando se já existe pagamento...");
+            console.log("[CHECKOUT_VALIDATE] Iniciando liquidação para:", commandId);
 
-            // 1. Verificação de idempotência (SELECT)
-            const { data: existingPay } = await supabase
+            // [STEP B: IDEMPOTENCY CHECK]
+            const { data: existingPay, error: checkError } = await supabase
                 .from('command_payments')
                 .select('id, status')
                 .eq('command_id', commandId)
@@ -150,7 +152,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 .maybeSingle();
 
             if (existingPay) {
-                console.log("[CHECKOUT_IDEMPOTENCY] Pagamento já detectado.");
+                console.log("[CHECKOUT_IDEMPOTENCY] Pagamento já detectado. Atualizando comanda.");
                 await supabase.from('commands').update({ status: 'paid', closed_at: new Date().toISOString() }).eq('id', commandId);
                 setToast({ message: "Esta comanda já foi liquidada.", type: 'info' });
                 setIsLocked(true);
@@ -158,7 +160,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 return;
             }
 
-            // 2. REGISTRO FINANCEIRO VIA RPC (Única forma permitida pelo Trigger)
+            // [STEP C: REGISTER FINANCIAL VIA RPC]
             const mainPayment = addedPayments[0];
             const totalAmountNumeric = parseFloat(totals.total.toFixed(2));
             const safeProfessionalId = isValidUUID(command.professional_id) ? command.professional_id : null;
@@ -174,7 +176,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_installments: parseInt(String(mainPayment.installments || 1))
             };
 
-            console.log("[CHECKOUT_RPC_CALL]", rpcPayload);
+            console.log("[CHECKOUT_RPC_PARAMS]", rpcPayload);
 
             const { data: financialTxId, error: rpcError } = await supabase.rpc('register_payment_transaction', rpcPayload);
 
@@ -185,11 +187,10 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
             console.log("[CHECKOUT_RPC_OK] Transação UUID:", financialTxId);
 
-            // IMPORTANTE: O INSERT manual em command_payments foi removido.
-            // A RPC register_payment_transaction deve ser a responsável por criar o registro na command_payments.
-            // Se o registro não aparecer, o erro está na lógica da função SQL, não no frontend.
+            // O INSERT manual em command_payments foi removido para evitar violação de trigger.
+            // A RPC register_payment_transaction agora é a única responsável por inserir o pagamento.
 
-            // 3. ATUALIZAÇÃO DO STATUS DA COMANDA
+            // [STEP E: UPDATE COMMAND STATUS]
             const { error: cmdUpdateErr } = await supabase
                 .from('commands')
                 .update({ 
@@ -200,13 +201,14 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 .eq('id', commandId);
 
             if (cmdUpdateErr) throw cmdUpdateErr;
+            console.log("[CHECKOUT_COMMANDS_OK] Finalizado.");
 
-            setToast({ message: "Recebimento confirmado com sucesso! ✅", type: 'success' });
+            setToast({ message: "Liquidação realizada com sucesso! ✅", type: 'success' });
             setIsLocked(true);
             setTimeout(onBack, 1000);
 
         } catch (e: any) {
-            console.error('[CHECKOUT_FATAL]', e);
+            console.error('[CHECKOUT_FATAL] Erro crítico:', e);
             setToast({ message: `Falha no Registro: ${e.message}`, type: 'error' });
             isProcessingRef.current = false;
             setIsFinishing(false);
@@ -274,6 +276,8 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
                     <div className="lg:col-span-2 space-y-6">
+                        
+                        {/* AVISO DE CLIENTE FALTANTE */}
                         {!command.client_id && !isLocked && (
                             <div className="bg-rose-50 border-2 border-rose-200 p-6 rounded-[32px] flex items-center gap-4 animate-pulse">
                                 <AlertTriangle className="text-rose-500 flex-shrink-0" size={32} />
@@ -354,6 +358,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                         {!isLocked && (
                             <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
                                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Cobrança Terminal</h4>
+                                
                                 <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-slate-100 space-y-6 min-h-[320px] flex flex-col">
                                     {paymentStep === 'type' && (
                                         <div className="grid grid-cols-2 gap-3">
