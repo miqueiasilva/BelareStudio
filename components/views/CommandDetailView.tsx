@@ -116,11 +116,9 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
     }, [command, discount, addedPayments]);
 
     const handleFinishCheckout = async () => {
-        // [CHECKOUT_VALIDATE]
         if (!commandId || !activeStudioId) return;
 
-        if (!command?.client_id) {
-            console.error("[CHECKOUT_VALIDATE] client_id is missing");
+        if (!command?.client_id || isNaN(Number(command.client_id))) {
             setToast({ message: "Selecione/Crie um cliente antes de liquidar a comanda.", type: 'error' });
             return;
         }
@@ -131,7 +129,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         }
 
         if (addedPayments.length === 0) {
-            setToast({ message: "Nenhum pagamento registrado no carrinho.", type: 'error' });
+            setToast({ message: "Adicione uma forma de pagamento.", type: 'error' });
             return;
         }
 
@@ -141,35 +139,28 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         setIsFinishing(true);
 
         try {
-            console.log("[CHECKOUT_START] Verificando idempotência para comanda:", commandId);
+            console.log("[CHECKOUT_IDEMPOTENCY] Verificando se já existe pagamento...");
 
-            // 1. [CHECKOUT_IDEMPOTENCY] - SELECT antes de qualquer insert
+            // 1. Verificação de idempotência (SELECT)
             const { data: existingPay } = await supabase
                 .from('command_payments')
-                .select('id, status, financial_transaction_id')
+                .select('id, status')
                 .eq('command_id', commandId)
                 .eq('status', 'paid')
                 .maybeSingle();
 
             if (existingPay) {
-                console.log("[CHECKOUT_IDEMPOTENCY] Pagamento já detectado. Atualizando status final.");
-                await supabase.from('commands').update({ 
-                    status: 'paid', 
-                    closed_at: new Date().toISOString(),
-                    total_amount: totals.total 
-                }).eq('id', commandId);
-                
+                console.log("[CHECKOUT_IDEMPOTENCY] Pagamento já detectado.");
+                await supabase.from('commands').update({ status: 'paid', closed_at: new Date().toISOString() }).eq('id', commandId);
                 setToast({ message: "Esta comanda já foi liquidada.", type: 'info' });
                 setIsLocked(true);
                 setTimeout(onBack, 1000);
                 return;
             }
 
-            // 2. [CHECKOUT_RPC_START] - Registrar Financeiro via RPC
+            // 2. REGISTRO FINANCEIRO VIA RPC (Única forma permitida pelo Trigger)
             const mainPayment = addedPayments[0];
             const totalAmountNumeric = parseFloat(totals.total.toFixed(2));
-
-            // Sanitização de UUID: Se não for um UUID válido (ex: números de mock), enviar NULL
             const safeProfessionalId = isValidUUID(command.professional_id) ? command.professional_id : null;
 
             const rpcPayload = {
@@ -183,52 +174,22 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_installments: parseInt(String(mainPayment.installments || 1))
             };
 
-            console.log("[CHECKOUT_RPC_CALL] Enviando carga útil para register_payment_transaction:", rpcPayload);
+            console.log("[CHECKOUT_RPC_CALL]", rpcPayload);
 
             const { data: financialTxId, error: rpcError } = await supabase.rpc('register_payment_transaction', rpcPayload);
 
             if (rpcError) {
-                console.error("[CHECKOUT_RPC_FAIL] Erro retornado pela função RPC:", rpcError);
-                // Se o erro contém a mensagem do trigger, reportamos com clareza
+                console.error("[CHECKOUT_RPC_FAIL]", rpcError);
                 throw new Error(rpcError.message);
             }
 
-            console.log("[CHECKOUT_RPC_OK] Transação financeira vinculada:", financialTxId);
+            console.log("[CHECKOUT_RPC_OK] Transação UUID:", financialTxId);
 
-            // 3. [CHECKOUT_AUDIT_START] - Registrar Auditoria em command_payments
-            const totalNet = addedPayments.reduce((acc, p) => acc + p.net_value, 0);
-            const totalFees = addedPayments.reduce((acc, p) => acc + p.fee_amount, 0);
+            // IMPORTANTE: O INSERT manual em command_payments foi removido.
+            // A RPC register_payment_transaction deve ser a responsável por criar o registro na command_payments.
+            // Se o registro não aparecer, o erro está na lógica da função SQL, não no frontend.
 
-            const auditPayload = {
-                command_id: commandId,
-                studio_id: activeStudioId,
-                amount: totalAmountNumeric,
-                fee_amount: totalFees,
-                net_value: totalNet,
-                fee_applied: mainPayment.fee_rate,
-                installments: Math.max(...addedPayments.map(p => p.installments)),
-                method_id: mainPayment.method_id,
-                brand: addedPayments.length > 1 ? 'Misto' : (mainPayment.brand || 'N/A'),
-                financial_transaction_id: financialTxId,
-                status: 'paid'
-            };
-
-            const { error: insError } = await supabase
-                .from('command_payments')
-                .insert([auditPayload]);
-
-            if (insError) {
-                if (insError.code === '23505') {
-                    console.warn("[CHECKOUT_AUDIT_DUPLICATE] Registro de auditoria ignorado (já existe).");
-                } else {
-                    console.error("[CHECKOUT_AUDIT_FAIL] Falha crítica na auditoria:", insError);
-                    throw insError;
-                }
-            } else {
-                console.log("[CHECKOUT_AUDIT_OK] Registro de auditoria persistido.");
-            }
-
-            // 4. [CHECKOUT_COMMANDS_START] - Atualizar Status da Comanda
+            // 3. ATUALIZAÇÃO DO STATUS DA COMANDA
             const { error: cmdUpdateErr } = await supabase
                 .from('commands')
                 .update({ 
@@ -239,20 +200,14 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 .eq('id', commandId);
 
             if (cmdUpdateErr) throw cmdUpdateErr;
-            console.log("[CHECKOUT_COMMANDS_OK] Comanda atualizada com sucesso.");
 
-            setToast({ message: "Conta liquidada com sucesso! ✅", type: 'success' });
+            setToast({ message: "Recebimento confirmado com sucesso! ✅", type: 'success' });
             setIsLocked(true);
             setTimeout(onBack, 1000);
 
         } catch (e: any) {
-            console.error('[CHECKOUT_FATAL] Erro durante o pipeline de encerramento:', e);
-            setToast({ 
-                message: e.message === "Use register_payment_transaction() para inserir pagamentos." 
-                    ? "Erro de Segurança: Falha ao validar transação no servidor." 
-                    : `Falha no Registro: ${e.message}`, 
-                type: 'error' 
-            });
+            console.error('[CHECKOUT_FATAL]', e);
+            setToast({ message: `Falha no Registro: ${e.message}`, type: 'error' });
             isProcessingRef.current = false;
             setIsFinishing(false);
         }
@@ -319,8 +274,6 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
                     <div className="lg:col-span-2 space-y-6">
-                        
-                        {/* AVISO DE CLIENTE FALTANTE */}
                         {!command.client_id && !isLocked && (
                             <div className="bg-rose-50 border-2 border-rose-200 p-6 rounded-[32px] flex items-center gap-4 animate-pulse">
                                 <AlertTriangle className="text-rose-500 flex-shrink-0" size={32} />
@@ -401,7 +354,6 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                         {!isLocked && (
                             <div className="bg-white rounded-[48px] p-8 border border-slate-100 shadow-sm space-y-6">
                                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 flex items-center gap-2"><Tag size={14} className="text-orange-500" /> Cobrança Terminal</h4>
-                                
                                 <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-slate-100 space-y-6 min-h-[320px] flex flex-col">
                                     {paymentStep === 'type' && (
                                         <div className="grid grid-cols-2 gap-3">

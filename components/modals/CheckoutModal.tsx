@@ -100,10 +100,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     }, [dbPaymentMethods, selectedMethodId]);
 
     const handleConfirmPayment = async () => {
-        // [HARD_VALIDATION]
         if (isProcessingRef.current || isLoading || !currentMethod || !activeStudioId) return;
 
-        if (!appointment.client_id) {
+        if (!appointment.client_id || isNaN(Number(appointment.client_id))) {
             setToast({ message: "Identifique o cliente no agendamento antes de liquidar.", type: 'error' });
             return;
         }
@@ -114,9 +113,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         const commandId = appointment.command_id;
 
         try {
-            console.log("[CHECKOUT] Iniciando checkout rápido:", appointment.id);
+            console.log("[CHECKOUT_START] Iniciando RPC...");
 
-            // 1. [IDEMPOTENCY_CHECK]
+            // 1. Idempotência
             if (commandId) {
                 const { data: existing } = await supabase
                     .from('command_payments')
@@ -126,22 +125,20 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     .maybeSingle();
 
                 if (existing) {
-                    console.log('✅ Pagamento já liquidado.');
                     onSuccess();
                     onClose();
                     return;
                 }
             }
 
-            // Sanitização de IDs para a RPC
             const safeProfessionalId = isValidUUID(appointment.professional_id) ? appointment.professional_id : null;
             const safeCommandId = isValidUUID(commandId) ? commandId : null;
 
-            // 2. [RPC_CALL]
+            // 2. CHAMADA RPC (A RPC deve criar o registro em command_payments)
             const { data: financialTxId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: safeProfessionalId,
-                p_client_id: Number(appointment.client_id), // Garantia BIGINT
+                p_client_id: Number(appointment.client_id), 
                 p_command_id: safeCommandId,
                 p_amount: parseFloat(appointment.price.toFixed(2)),
                 p_method: currentMethod.type,
@@ -150,36 +147,11 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             });
 
             if (rpcError) {
-                console.error("[RPC_FAIL] Erro retornado pela função de registro financeiro:", rpcError);
+                console.error("[RPC_FAIL]", rpcError);
                 throw new Error(rpcError.message);
             }
 
-            // 3. [AUDIT_PERSIST]
-            const feeRate = installments > 1 
-                ? Number(currentMethod.installment_rates?.[installments.toString()] || 0)
-                : Number(currentMethod.rate_cash || 0);
-            
-            const feeAmount = (appointment.price * feeRate) / 100;
-
-            const { error: insErr } = await supabase
-                .from('command_payments')
-                .insert([{
-                    command_id: safeCommandId,
-                    studio_id: activeStudioId,
-                    amount: appointment.price,
-                    net_value: appointment.price - feeAmount,
-                    fee_amount: feeAmount,
-                    fee_applied: feeRate,
-                    method_id: currentMethod.id,
-                    brand: currentMethod.brand || "N/A",
-                    installments: parseInt(String(installments || 1)),
-                    financial_transaction_id: financialTxId,
-                    status: 'paid'
-                }]);
-
-            if (insErr && insErr.code !== '23505') throw insErr;
-
-            // 4. [STATUS_SYNC]
+            // 3. ATUALIZAÇÃO DE STATUS (Sincronização)
             const updates = [];
             if (safeCommandId) {
                 updates.push(supabase.from('commands').update({ status: 'paid', closed_at: new Date().toISOString() }).eq('id', safeCommandId));
@@ -194,12 +166,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
         } catch (error: any) {
             console.error("[CHECKOUT_EXCEPTION]", error);
-            setToast({ 
-                message: error.message === "Use register_payment_transaction() para inserir pagamentos." 
-                    ? "Bloqueio de Segurança: A transação foi recusada pelo servidor."
-                    : `Erro no checkout: ${error.message}`, 
-                type: 'error' 
-            });
+            setToast({ message: `Erro no checkout: ${error.message}`, type: 'error' });
             isProcessingRef.current = false;
             setIsLoading(false);
         }
