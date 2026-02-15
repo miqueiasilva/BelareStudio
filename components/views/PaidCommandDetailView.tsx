@@ -4,7 +4,7 @@ import {
     CreditCard, Banknote, Smartphone, Loader2,
     Clock, Landmark, CheckCircle2,
     AlertTriangle, ShoppingCart,
-    X, UserCheck, Percent
+    X, UserCheck, Percent, Hash
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { format } from 'date-fns';
@@ -30,7 +30,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
         setError(null);
         
         try {
-            console.log("[REPORT] Carregando auditoria para comanda:", commandId);
+            console.log("[REPORT] Iniciando auditoria profunda para ID:", commandId);
 
             // 1. Busca dados básicos da comanda e cliente
             const { data: cmdData, error: cmdError } = await supabase
@@ -40,7 +40,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                 .maybeSingle();
 
             if (cmdError) throw cmdError;
-            if (!cmdData) throw new Error("Comanda não encontrada.");
+            if (!cmdData) throw new Error("Comanda não localizada no sistema.");
             setCommand(cmdData);
 
             // 2. Busca itens consumidos
@@ -48,7 +48,8 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                 .from('command_items')
                 .select('*')
                 .eq('command_id', commandId);
-            setItems(itemsData || []);
+            const currentItems = itemsData || [];
+            setItems(currentItems);
 
             // 3. Busca nome do profissional
             if (cmdData.professional_id) {
@@ -56,8 +57,9 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                 if (prof) setProfessionalName(prof.name);
             }
 
-            // 4. BUSCA DE PAGAMENTO (Estratégia de Fallback)
-            // Tenta primeiro a tabela de auditoria (command_payments)
+            // 4. MOTOR DE BUSCA DE PAGAMENTO (MULTI-ESTÁGIO)
+            
+            // ESTÁGIO A: Tabela de Auditoria Direta
             const { data: payData } = await supabase
                 .from('command_payments')
                 .select(`*, payment_methods_config (name, brand)`)
@@ -66,37 +68,69 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                 .maybeSingle();
 
             if (payData) {
+                console.log("[REPORT_AUDIT_OK] Registro command_payments encontrado.");
                 setPayment(payData);
-            } else {
-                // FALLBACK: Se command_payments falhar, busca na financial_transactions
-                console.warn("[REPORT_AUDIT] Registro em command_payments não encontrado. Tentando financial_transactions...");
-                
-                const { data: txData } = await supabase
+                setLoading(false);
+                return;
+            }
+
+            // ESTÁGIO B: Fallback via Vínculo de Comanda em Transações Financeiras
+            console.warn("[REPORT_AUDIT] Registro direto ausente. Tentando vínculo em financial_transactions...");
+            const { data: txByCommand } = await supabase
+                .from('financial_transactions')
+                .select('*')
+                .eq('command_id', commandId)
+                .maybeSingle();
+
+            if (txByCommand) {
+                console.log("[REPORT_FALLBACK_OK] Transação via command_id encontrada.");
+                setPayment({
+                    amount: txByCommand.amount,
+                    net_value: txByCommand.net_value || txByCommand.amount,
+                    fee_amount: (txByCommand.amount - (txByCommand.net_value || txByCommand.amount)),
+                    payment_method: txByCommand.payment_method,
+                    brand: txByCommand.payment_method?.toUpperCase() || 'N/A',
+                    financial_transaction_id: txByCommand.id,
+                    created_at: txByCommand.date
+                });
+                setLoading(false);
+                return;
+            }
+
+            // ESTÁGIO C: Fallback via Appointment ID (Vínculo de Origem)
+            // Útil para comandos gerados a partir da agenda que podem não ter herdado o command_id na transação
+            const appointmentId = currentItems.find(i => i.appointment_id)?.appointment_id;
+            if (appointmentId) {
+                console.warn("[REPORT_AUDIT] Tentando fallback via Appointment ID:", appointmentId);
+                const { data: txByApp } = await supabase
                     .from('financial_transactions')
                     .select('*')
-                    .eq('command_id', commandId)
+                    .eq('appointment_id', appointmentId)
                     .maybeSingle();
 
-                if (txData) {
-                    // Normaliza os dados da transação financeira para o formato esperado pelo componente
+                if (txByApp) {
+                    console.log("[REPORT_FALLBACK_OK] Transação via appointment_id encontrada.");
                     setPayment({
-                        amount: txData.amount,
-                        net_value: txData.net_value || txData.amount,
-                        fee_amount: (txData.amount - (txData.net_value || txData.amount)),
-                        payment_method: txData.payment_method,
-                        brand: txData.payment_method?.toUpperCase() || 'N/A',
-                        financial_transaction_id: txData.id,
-                        created_at: txData.date
+                        amount: txByApp.amount,
+                        net_value: txByApp.net_value || txByApp.amount,
+                        fee_amount: (txByApp.amount - (txByApp.net_value || txByApp.amount)),
+                        payment_method: txByApp.payment_method,
+                        brand: txByApp.payment_method?.toUpperCase() || 'N/A',
+                        financial_transaction_id: txByApp.id,
+                        created_at: txByApp.date
                     });
-                } else {
-                    console.error("[REPORT_FAIL] Nenhum registro financeiro encontrado para esta comanda.");
-                    // Não bloqueamos a tela totalmente, exibiremos apenas os itens se houver total na comanda
+                    setLoading(false);
+                    return;
                 }
             }
 
+            // ESTÁGIO D: Fallback Final (Dados Nominais da Comanda)
+            console.error("[REPORT_FAIL] Nenhum vínculo financeiro absoluto encontrado.");
+            // Não bloqueamos, o componente renderizará com o aviso de dados parciais
+
         } catch (e: any) {
-            console.error('[PAID_DETAIL_ERROR]', e);
-            setError(e.message || "Falha ao recuperar dados da transação.");
+            console.error('[PAID_DETAIL_FATAL]', e);
+            setError(e.message || "Falha crítica ao recuperar auditoria.");
         } finally {
             setLoading(false);
         }
@@ -108,9 +142,12 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
 
     if (loading) return (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center">
-            <div className="bg-white p-8 rounded-[32px] flex flex-col items-center">
-                <Loader2 className="animate-spin text-orange-500 mb-4" size={40} />
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Validando Auditoria...</p>
+            <div className="bg-white p-10 rounded-[40px] flex flex-col items-center shadow-2xl">
+                <div className="relative mb-6">
+                    <Loader2 className="animate-spin text-orange-500 w-12 h-12" />
+                    <div className="absolute inset-0 border-4 border-orange-100 rounded-full animate-ping opacity-20"></div>
+                </div>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Rastreando Auditoria...</p>
             </div>
         </div>
     );
@@ -119,63 +156,70 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
 
     const displayClientName = command.clients?.nome || command.clients?.name || command.client_name || "CONSUMIDOR FINAL";
     
-    // Calcula valores baseando-se no que estiver disponível
     const grossAmount = Number(payment?.amount || command.total_amount || 0);
     const feeAmount = Number(payment?.fee_amount || 0);
     const netValue = Number(payment?.net_value || grossAmount);
 
     return (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
-            <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-white/20">
-                <header className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+            <div className="bg-white rounded-[48px] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-white/20 flex flex-col max-h-[90vh]">
+                <header className="px-10 py-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 flex-shrink-0">
                     <div>
-                        <h2 className="text-xl font-black text-slate-800 flex items-center gap-3 uppercase tracking-tighter">
-                            <Receipt className="text-emerald-500" size={24} />
+                        <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3 uppercase tracking-tighter">
+                            <Receipt className="text-emerald-500" size={28} />
                             Relatório de Venda
                         </h2>
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Conferência Auditada Digitalmente</p>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400"><X size={24} /></button>
+                    <button onClick={onClose} className="p-3 hover:bg-slate-200 rounded-full transition-colors text-slate-400"><X size={24} /></button>
                 </header>
 
-                <div className="p-8 space-y-8 max-h-[75vh] overflow-y-auto custom-scrollbar text-left">
+                <div className="flex-1 overflow-y-auto p-10 space-y-8 custom-scrollbar text-left">
                     
                     {error && (
-                        <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-center gap-3 text-rose-600 animate-pulse">
-                            <AlertTriangle size={20} />
-                            <p className="text-xs font-bold uppercase">{error}</p>
+                        <div className="p-5 bg-rose-50 border-2 border-rose-100 rounded-3xl flex items-center gap-4 text-rose-600 animate-in shake duration-500">
+                            <AlertTriangle size={24} />
+                            <p className="text-xs font-black uppercase tracking-tight">{error}</p>
                         </div>
                     )}
 
                     <div className="flex items-center gap-6">
-                        <div className="w-16 h-16 rounded-[24px] bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xl overflow-hidden shadow-sm">
+                        <div className="w-20 h-20 rounded-[32px] bg-orange-100 text-orange-600 flex items-center justify-center font-black text-2xl overflow-hidden shadow-inner">
                             {command.clients?.photo_url ? <img src={command.clients.photo_url} className="w-full h-full object-cover" /> : displayClientName.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1">
-                            <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">{displayClientName}</h3>
-                            <div className="flex gap-4 mt-1">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
-                                    <Clock size={12} /> {command.closed_at ? format(new Date(command.closed_at), "dd/MM/yyyy HH:mm") : format(new Date(command.created_at), "dd/MM/yyyy HH:mm")}
+                            <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">{displayClientName}</h3>
+                            <div className="flex flex-wrap gap-4 mt-1.5">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1.5">
+                                    <Clock size={12} className="text-orange-500" /> 
+                                    {command.closed_at ? format(new Date(command.closed_at), "dd/MM/yyyy HH:mm") : format(new Date(command.created_at), "dd/MM/yyyy HH:mm")}
                                 </span>
-                                <span className="text-[10px] font-bold text-orange-600 uppercase flex items-center gap-1"><UserCheck size={12} /> {professionalName}</span>
+                                <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1.5">
+                                    <UserCheck size={12} className="text-orange-500" /> {professionalName}
+                                </span>
+                                <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100 uppercase tracking-widest">
+                                    Liquidado
+                                </span>
                             </div>
                         </div>
                     </div>
 
-                    <Card title="Itens Vendidos" icon={<ShoppingCart size={16} className="text-orange-500" />}>
+                    <Card title="Itens da Transação" icon={<ShoppingCart size={18} className="text-orange-500" />} className="rounded-[32px] border-slate-100">
                         <div className="divide-y divide-slate-50">
                             {items.map((item: any) => (
-                                <div key={item.id} className="py-4 flex justify-between items-center">
+                                <div key={item.id} className="py-5 flex justify-between items-center group">
                                     <div className="flex items-center gap-4">
-                                        <div className={`p-2 rounded-xl ${item.product_id ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
-                                            {item.product_id ? <ShoppingBag size={18} /> : <Scissors size={18} />}
+                                        <div className={`p-3 rounded-2xl transition-colors ${item.product_id ? 'bg-purple-50 text-purple-600 group-hover:bg-purple-100' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-100'}`}>
+                                            {item.product_id ? <ShoppingBag size={20} /> : <Scissors size={20} />}
                                         </div>
                                         <div>
                                             <p className="text-sm font-black text-slate-700 leading-tight">{item.title}</p>
-                                            <p className="text-[10px] text-slate-400 font-bold mt-0.5">{item.quantity} un x {formatBRL(Number(item.price))}</p>
+                                            <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase">
+                                                {item.quantity} un <span className="mx-1">•</span> {formatBRL(Number(item.price))}
+                                            </p>
                                         </div>
                                     </div>
-                                    <span className="font-black text-slate-800">{formatBRL(item.quantity * item.price)}</span>
+                                    <span className="font-black text-slate-800 text-lg">{formatBRL(item.quantity * item.price)}</span>
                                 </div>
                             ))}
                         </div>
@@ -183,66 +227,71 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
 
                     <div className="space-y-4">
                         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-                            <Landmark size={14} /> Auditoria Financeira
+                            <Landmark size={14} className="text-orange-500" /> Auditoria de Recebimento
                         </h4>
                         
                         {payment ? (
-                            <div className="p-6 bg-slate-50 rounded-[32px] border-2 border-white shadow-sm space-y-4">
+                            <div className="p-8 bg-slate-50 rounded-[40px] border-2 border-white shadow-inner space-y-6">
                                 <div className="flex justify-between items-start">
                                     <div className="flex items-center gap-4">
-                                        <div className="p-3 bg-white rounded-2xl text-orange-500 shadow-sm">
-                                            <CreditCard size={20} />
+                                        <div className="p-4 bg-white rounded-3xl text-orange-500 shadow-sm border border-slate-100">
+                                            <CreditCard size={24} />
                                         </div>
                                         <div>
-                                            <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1.5">Forma de Recebimento</p>
-                                            <p className="text-sm font-black text-slate-800">
+                                            <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-2">Forma de Ingresso</p>
+                                            <p className="text-base font-black text-slate-800 uppercase tracking-tight">
                                                 {payment.payment_methods_config?.name || payment.brand || payment.payment_method?.toUpperCase() || 'N/A'}
-                                                {payment.installments > 1 && <span className="text-orange-500"> ({payment.installments}x)</span>}
+                                                {payment.installments > 1 && <span className="text-orange-600"> ({payment.installments}x)</span>}
                                             </p>
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1.5">Bruto Recebido</p>
-                                        <p className="text-lg font-black text-slate-800">{formatBRL(grossAmount)}</p>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-2">Valor Bruto</p>
+                                        <p className="text-2xl font-black text-slate-800">{formatBRL(grossAmount)}</p>
                                     </div>
                                 </div>
                                 
                                 {feeAmount > 0 && (
-                                    <div className="pt-4 border-t border-slate-200/50 flex justify-between items-center">
-                                        <span className="text-[10px] font-black text-rose-500 uppercase flex items-center gap-1.5">
-                                            <Percent size={12} /> Taxas da Transação
+                                    <div className="pt-5 border-t border-slate-200/50 flex justify-between items-center">
+                                        <span className="text-[10px] font-black text-rose-500 uppercase flex items-center gap-2">
+                                            <Percent size={14} strokeWidth={3} /> Taxas Adquirente
                                         </span>
-                                        <span className="text-sm font-black text-rose-500">- {formatBRL(feeAmount)}</span>
+                                        <span className="text-base font-black text-rose-500">- {formatBRL(feeAmount)}</span>
                                     </div>
                                 )}
 
-                                <div className="flex justify-between items-center bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100">
-                                    <span className="text-[10px] font-black text-emerald-700 uppercase">Líquido na Unidade</span>
-                                    <span className="text-lg font-black text-emerald-700">{formatBRL(netValue)}</span>
+                                <div className="flex justify-between items-center bg-emerald-500 text-white p-6 rounded-[32px] shadow-lg shadow-emerald-100 border-2 border-emerald-400">
+                                    <span className="text-[11px] font-black uppercase tracking-widest">Saldo Líquido</span>
+                                    <span className="text-2xl font-black">{formatBRL(netValue)}</span>
                                 </div>
                                 
                                 {payment.financial_transaction_id && (
                                     <div className="mt-4 pt-4 border-t border-slate-200/50">
-                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest text-center">
-                                            Protocolo Financeiro: {payment.financial_transaction_id}
+                                        <p className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] text-center flex items-center justify-center gap-2">
+                                            <Hash size={12} /> Transação: {payment.financial_transaction_id}
                                         </p>
                                     </div>
                                 )}
                             </div>
                         ) : (
-                            <div className="p-8 bg-amber-50 rounded-[40px] border-2 border-dashed border-amber-200 text-center animate-in fade-in">
-                                <AlertTriangle className="mx-auto text-amber-500 mb-3" size={24} />
-                                <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest leading-relaxed">
-                                    Aviso: Detalhes de taxa não encontrados.<br/>
-                                    Recuperando valor nominal da comanda: {formatBRL(command.total_amount)}
+                            <div className="p-10 bg-amber-50 rounded-[48px] border-2 border-dashed border-amber-200 text-center animate-in fade-in duration-700">
+                                <AlertTriangle className="mx-auto text-amber-500 mb-4" size={32} />
+                                <h4 className="text-sm font-black text-amber-800 uppercase mb-2">Dados Parciais de Auditoria</h4>
+                                <p className="text-[10px] font-bold text-amber-600/70 uppercase tracking-widest leading-relaxed max-w-sm mx-auto">
+                                    O detalhamento de taxas deste registro não foi localizado.<br/>
+                                    Valores baseados no fechamento nominal da comanda.
                                 </p>
+                                <div className="mt-6 pt-6 border-t border-amber-100 flex justify-between items-center px-4">
+                                    <span className="text-[10px] font-black text-amber-800 uppercase">Valor Nominal</span>
+                                    <span className="text-xl font-black text-amber-800">{formatBRL(command.total_amount)}</span>
+                                </div>
                             </div>
                         )}
                     </div>
                 </div>
 
-                <footer className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
-                    <button onClick={onClose} className="flex-1 py-4 bg-slate-800 text-white font-black rounded-2xl shadow-xl hover:bg-slate-900 transition-all active:scale-95 uppercase text-xs tracking-widest">Fechar Relatório</button>
+                <footer className="p-10 bg-slate-50 border-t border-slate-100 flex-shrink-0">
+                    <button onClick={onClose} className="w-full py-5 bg-slate-800 text-white font-black rounded-3xl shadow-2xl hover:bg-slate-900 transition-all active:scale-95 uppercase text-xs tracking-[0.2em]">Concluir Conferência</button>
                 </footer>
             </div>
         </div>
