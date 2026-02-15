@@ -135,12 +135,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             const safeClientId = appointment.client_id ? Number(appointment.client_id) : null;
 
             // Mapeamento de métodos compatíveis
-            const methodMap: Record<string, string> = {
-                'credit': 'cartao_credito',
-                'debit': 'cartao_debito',
-                'pix': 'pix',
-                'money': 'dinheiro'
-            };
+            const p_method = (currentMethod.type === 'credit' && installments > 1) ? 'parcelado' : currentMethod.type;
 
             // [RPC_CALL] - Única via permitida para inserção de pagamentos
             const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
@@ -149,15 +144,16 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 p_client_id: safeClientId, 
                 p_command_id: safeCommandId,
                 p_amount: parseFloat(appointment.price.toFixed(2)),
-                p_method: methodMap[currentMethod.type] || currentMethod.type,
+                p_method: p_method,
                 p_brand: currentMethod.brand || "N/A",
                 p_installments: parseInt(String(installments || 1))
             });
 
-            if (rpcError) throw new Error(rpcError.message);
+            if (rpcError && rpcError.code !== '23505') {
+                throw new Error(rpcError.message);
+            }
 
-            // [STATUS_SYNC]
-            // IMPORTANTE: Atualizamos apenas o status essencial para evitar recursão de triggers bloqueadas
+            // [STATUS_SYNC] Atualiza o status tanto no comando quanto no agendamento
             const updates = [];
             if (safeCommandId) {
                 updates.push(supabase.from('commands').update({ 

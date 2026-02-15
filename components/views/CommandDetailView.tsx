@@ -151,37 +151,32 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
             // [RPC TRANSACTION]
             const mainPayment = addedPayments[0];
-            const totalAmountNumeric = parseFloat(totals.total.toFixed(2));
             const safeProfessionalId = isSafeUUID(command.professional_id) ? command.professional_id : null;
             const safeClientId = command.client_id ? Number(command.client_id) : null;
 
-            // Mapeamento de métodos para compatibilidade com o backend
-            const methodMap: Record<string, string> = {
-                'credit': 'cartao_credito',
-                'debit': 'cartao_debito',
-                'pix': 'pix',
-                'money': 'dinheiro',
-                'parcelado': 'cartao_credito'
-            };
+            // Mapeamento de métodos conforme strings esperadas pelo Backend
+            const p_method = (mainPayment.method === 'credit' && mainPayment.installments > 1) ? 'parcelado' : mainPayment.method;
 
             const rpcPayload = {
                 p_studio_id: activeStudioId,
                 p_professional_id: safeProfessionalId,
                 p_client_id: safeClientId, 
                 p_command_id: commandId,
-                p_amount: totalAmountNumeric,
-                p_method: methodMap[mainPayment.method] || mainPayment.method,
-                p_brand: mainPayment.brand || "N/A",
+                p_amount: parseFloat(totals.total.toFixed(2)),
+                p_method: p_method,
+                p_brand: mainPayment.brand || 'N/A',
                 p_installments: parseInt(String(mainPayment.installments || 1))
             };
 
+            // Chamada RPC - Única fonte de verdade financeira
             const { error: rpcError } = await supabase.rpc('register_payment_transaction', rpcPayload);
 
-            if (rpcError) throw new Error(rpcError.message);
+            // Código 23505 (duplicate key) em sistemas de banco costuma indicar que a transação já foi processada
+            if (rpcError && rpcError.code !== '23505') {
+                throw new Error(rpcError.message);
+            }
 
-            // [UPDATE COMMAND STATUS]
-            // IMPORTANTE: Removemos payment_method e total_amount deste update manual
-            // para evitar gatilhos de banco que tentam sincronizar pagamentos e falham na trigger de proteção.
+            // [SYNC STATUS] Atualiza status da comanda após confirmação financeira
             const { error: cmdUpdateErr } = await supabase
                 .from('commands')
                 .update({ 
@@ -194,11 +189,11 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
             setToast({ message: "Recebimento confirmado com sucesso! ✅", type: 'success' });
             setIsLocked(true);
-            setTimeout(onBack, 1000);
+            setTimeout(onBack, 1500);
 
         } catch (e: any) {
             console.error('[CHECKOUT_FATAL]', e);
-            setToast({ message: `Falha no Registro: ${e.message}`, type: 'error' });
+            setToast({ message: `Falha: ${e.message}`, type: 'error' });
             isProcessingRef.current = false;
             setIsFinishing(false);
         }
@@ -408,7 +403,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                                     disabled={isFinishing || totals.remaining > 0 || addedPayments.length === 0 || !command.client_id} 
                                     className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 && !isFinishing && command.client_id ? 'bg-emerald-600 text-white shadow-emerald-100' : 'bg-slate-100 text-slate-300'}`}
                                 >
-                                    {isFinishing ? <Loader2 className="animate-spin" size={24} /> : <><CheckCircle size={24} /> LIQUIDAR CONTA</>}
+                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> LIQUIDAR CONTA</>}
                                 </button>
                             </div>
                         )}
