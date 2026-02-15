@@ -32,7 +32,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
         try {
             console.log("[REPORT] Carregando auditoria para comanda:", commandId);
 
-            // 1. Busca dados da comanda e cliente
+            // 1. Busca dados básicos da comanda e cliente
             const { data: cmdData, error: cmdError } = await supabase
                 .from('commands')
                 .select('*, clients:client_id (id, nome, name, photo_url)')
@@ -40,6 +40,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                 .maybeSingle();
 
             if (cmdError) throw cmdError;
+            if (!cmdData) throw new Error("Comanda não encontrada.");
             setCommand(cmdData);
 
             // 2. Busca itens consumidos
@@ -49,34 +50,53 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                 .eq('command_id', commandId);
             setItems(itemsData || []);
 
-            // 3. Busca profissional responsável
-            if (cmdData?.professional_id) {
+            // 3. Busca nome do profissional
+            if (cmdData.professional_id) {
                 const { data: prof } = await supabase.from('team_members').select('name').eq('id', cmdData.professional_id).maybeSingle();
                 if (prof) setProfessionalName(prof.name);
             }
 
-            // 4. [AUDIT_DIRECT_QUERY] - Busca registro REAL de pagamento em command_payments
-            const { data: payData, error: payError } = await supabase
+            // 4. BUSCA DE PAGAMENTO (Estratégia de Fallback)
+            // Tenta primeiro a tabela de auditoria (command_payments)
+            const { data: payData } = await supabase
                 .from('command_payments')
                 .select(`*, payment_methods_config (name, brand)`)
                 .eq('command_id', commandId)
                 .eq('status', 'paid')
-                .order('created_at', { ascending: false })
-                .limit(1)
                 .maybeSingle();
 
-            if (payError) throw payError;
-            
-            if (!payData) {
-                console.error("[REPORT_AUDIT_FAIL] Registro command_payments ausente para ID:", commandId);
-                setError("O registro de auditoria financeira não foi encontrado para esta venda.");
-            }
+            if (payData) {
+                setPayment(payData);
+            } else {
+                // FALLBACK: Se command_payments falhar, busca na financial_transactions
+                console.warn("[REPORT_AUDIT] Registro em command_payments não encontrado. Tentando financial_transactions...");
+                
+                const { data: txData } = await supabase
+                    .from('financial_transactions')
+                    .select('*')
+                    .eq('command_id', commandId)
+                    .maybeSingle();
 
-            setPayment(payData);
+                if (txData) {
+                    // Normaliza os dados da transação financeira para o formato esperado pelo componente
+                    setPayment({
+                        amount: txData.amount,
+                        net_value: txData.net_value || txData.amount,
+                        fee_amount: (txData.amount - (txData.net_value || txData.amount)),
+                        payment_method: txData.payment_method,
+                        brand: txData.payment_method?.toUpperCase() || 'N/A',
+                        financial_transaction_id: txData.id,
+                        created_at: txData.date
+                    });
+                } else {
+                    console.error("[REPORT_FAIL] Nenhum registro financeiro encontrado para esta comanda.");
+                    // Não bloqueamos a tela totalmente, exibiremos apenas os itens se houver total na comanda
+                }
+            }
 
         } catch (e: any) {
             console.error('[PAID_DETAIL_ERROR]', e);
-            setError("Falha crítica ao recuperar os dados da transação.");
+            setError(e.message || "Falha ao recuperar dados da transação.");
         } finally {
             setLoading(false);
         }
@@ -84,7 +104,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
 
     useEffect(() => { loadData(); }, [commandId]);
 
-    const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+    const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0);
 
     if (loading) return (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center">
@@ -98,13 +118,15 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
     if (!command) return null;
 
     const displayClientName = command.clients?.nome || command.clients?.name || command.client_name || "CONSUMIDOR FINAL";
+    
+    // Calcula valores baseando-se no que estiver disponível
     const grossAmount = Number(payment?.amount || command.total_amount || 0);
     const feeAmount = Number(payment?.fee_amount || 0);
     const netValue = Number(payment?.net_value || grossAmount);
 
     return (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
-            <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-white/10">
+            <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-white/20">
                 <header className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <div>
                         <h2 className="text-xl font-black text-slate-800 flex items-center gap-3 uppercase tracking-tighter">
@@ -132,7 +154,9 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                         <div className="flex-1">
                             <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">{displayClientName}</h3>
                             <div className="flex gap-4 mt-1">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Clock size={12} /> {command.closed_at ? format(new Date(command.closed_at), "dd/MM/yyyy HH:mm") : '---'}</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                                    <Clock size={12} /> {command.closed_at ? format(new Date(command.closed_at), "dd/MM/yyyy HH:mm") : format(new Date(command.created_at), "dd/MM/yyyy HH:mm")}
+                                </span>
                                 <span className="text-[10px] font-bold text-orange-600 uppercase flex items-center gap-1"><UserCheck size={12} /> {professionalName}</span>
                             </div>
                         </div>
@@ -172,7 +196,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                                         <div>
                                             <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1.5">Forma de Recebimento</p>
                                             <p className="text-sm font-black text-slate-800">
-                                                {payment.payment_methods_config?.name || payment.brand || 'Consolidado'}
+                                                {payment.payment_methods_config?.name || payment.brand || payment.payment_method?.toUpperCase() || 'N/A'}
                                                 {payment.installments > 1 && <span className="text-orange-500"> ({payment.installments}x)</span>}
                                             </p>
                                         </div>
@@ -183,30 +207,34 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                                     </div>
                                 </div>
                                 
-                                <div className="pt-4 border-t border-slate-200/50 flex justify-between items-center">
-                                    <span className="text-[10px] font-black text-rose-500 uppercase flex items-center gap-1.5">
-                                        <Percent size={12} /> Taxas da Transação
-                                    </span>
-                                    <span className="text-sm font-black text-rose-500">- {formatBRL(feeAmount)}</span>
-                                </div>
+                                {feeAmount > 0 && (
+                                    <div className="pt-4 border-t border-slate-200/50 flex justify-between items-center">
+                                        <span className="text-[10px] font-black text-rose-500 uppercase flex items-center gap-1.5">
+                                            <Percent size={12} /> Taxas da Transação
+                                        </span>
+                                        <span className="text-sm font-black text-rose-500">- {formatBRL(feeAmount)}</span>
+                                    </div>
+                                )}
 
                                 <div className="flex justify-between items-center bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100">
                                     <span className="text-[10px] font-black text-emerald-700 uppercase">Líquido na Unidade</span>
                                     <span className="text-lg font-black text-emerald-700">{formatBRL(netValue)}</span>
                                 </div>
                                 
-                                <div className="mt-4 pt-4 border-t border-slate-200/50">
-                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest text-center">
-                                        Transação Financeira: {payment.financial_transaction_id}
-                                    </p>
-                                </div>
+                                {payment.financial_transaction_id && (
+                                    <div className="mt-4 pt-4 border-t border-slate-200/50">
+                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest text-center">
+                                            Protocolo Financeiro: {payment.financial_transaction_id}
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         ) : (
-                            <div className="p-10 text-center bg-amber-50 rounded-[40px] border-2 border-dashed border-amber-200 animate-in fade-in">
-                                <AlertTriangle className="mx-auto text-amber-500 mb-3" size={32} />
-                                <p className="text-xs font-black text-amber-700 uppercase tracking-widest leading-relaxed">
-                                    Aviso: Os dados de auditoria não foram localizados.<br/>
-                                    Isso pode ocorrer se a venda foi finalizada manualmente sem registro de taxa.
+                            <div className="p-8 bg-amber-50 rounded-[40px] border-2 border-dashed border-amber-200 text-center animate-in fade-in">
+                                <AlertTriangle className="mx-auto text-amber-500 mb-3" size={24} />
+                                <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest leading-relaxed">
+                                    Aviso: Detalhes de taxa não encontrados.<br/>
+                                    Recuperando valor nominal da comanda: {formatBRL(command.total_amount)}
                                 </p>
                             </div>
                         )}
