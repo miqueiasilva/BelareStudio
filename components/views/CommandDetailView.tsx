@@ -14,10 +14,10 @@ import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import Toast, { ToastType } from '../shared/Toast';
 
-// Auxiliar para validar UUID antes de enviar para a RPC
+// Auxiliar para validar UUID antes de enviar para a RPC (Padrão 8-4-4-4-12)
 const isSafeUUID = (str: any): boolean => {
     if (!str || typeof str !== 'string') return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 };
 
 interface PaymentEntry {
@@ -134,7 +134,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         setIsFinishing(true);
 
         try {
-            // [STEP 1: IDEMPOTENCY CHECK]
+            // [IDEMPOTENCY CHECK]
             const { data: existingPay } = await supabase
                 .from('command_payments')
                 .select('id, status')
@@ -149,7 +149,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 return;
             }
 
-            // [STEP 2: RPC TRANSACTION]
+            // [RPC TRANSACTION]
             const mainPayment = addedPayments[0];
             const totalAmountNumeric = parseFloat(totals.total.toFixed(2));
             const safeProfessionalId = isSafeUUID(command.professional_id) ? command.professional_id : null;
@@ -175,18 +175,18 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_installments: parseInt(String(mainPayment.installments || 1))
             };
 
-            const { data: financialTxId, error: rpcError } = await supabase.rpc('register_payment_transaction', rpcPayload);
+            const { error: rpcError } = await supabase.rpc('register_payment_transaction', rpcPayload);
 
             if (rpcError) throw new Error(rpcError.message);
 
-            // [STEP 3: UPDATE COMMAND STATUS]
+            // [UPDATE COMMAND STATUS]
+            // IMPORTANTE: Removemos payment_method e total_amount deste update manual
+            // para evitar gatilhos de banco que tentam sincronizar pagamentos e falham na trigger de proteção.
             const { error: cmdUpdateErr } = await supabase
                 .from('commands')
                 .update({ 
                     status: 'paid', 
-                    closed_at: new Date().toISOString(),
-                    total_amount: totalAmountNumeric,
-                    payment_method: methodMap[mainPayment.method] || mainPayment.method
+                    closed_at: new Date().toISOString()
                 })
                 .eq('id', commandId);
 

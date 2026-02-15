@@ -16,10 +16,10 @@ const formatCurrency = (value: number) => {
     }).format(value);
 };
 
-// Auxiliar para validar UUID antes de enviar para a RPC
+// Auxiliar para validar UUID antes de enviar para a RPC (Padrão 8-4-4-4-12)
 const isSafeUUID = (str: any): boolean => {
     if (!str || typeof str !== 'string') return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 };
 
 interface DBPaymentMethod {
@@ -113,7 +113,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         const commandId = appointment.command_id;
 
         try {
-            // [IDEMPOTENCY_CHECK]
+            // [IDEMPOTENCY CHECK]
             if (commandId) {
                 const { data: existing } = await supabase
                     .from('command_payments')
@@ -134,7 +134,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             const safeCommandId = isSafeUUID(commandId) ? commandId : null;
             const safeClientId = appointment.client_id ? Number(appointment.client_id) : null;
 
-            // Mapeamento de métodos
+            // Mapeamento de métodos compatíveis
             const methodMap: Record<string, string> = {
                 'credit': 'cartao_credito',
                 'debit': 'cartao_debito',
@@ -142,8 +142,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 'money': 'dinheiro'
             };
 
-            // [RPC_CALL]
-            const { data: financialTxId, error: rpcError } = await supabase.rpc('register_payment_transaction', {
+            // [RPC_CALL] - Única via permitida para inserção de pagamentos
+            const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: safeProfessionalId,
                 p_client_id: safeClientId, 
@@ -157,12 +157,12 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             if (rpcError) throw new Error(rpcError.message);
 
             // [STATUS_SYNC]
+            // IMPORTANTE: Atualizamos apenas o status essencial para evitar recursão de triggers bloqueadas
             const updates = [];
             if (safeCommandId) {
                 updates.push(supabase.from('commands').update({ 
                     status: 'paid', 
-                    closed_at: new Date().toISOString(),
-                    payment_method: methodMap[currentMethod.type] || currentMethod.type
+                    closed_at: new Date().toISOString()
                 }).eq('id', safeCommandId));
             }
             updates.push(supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id));
