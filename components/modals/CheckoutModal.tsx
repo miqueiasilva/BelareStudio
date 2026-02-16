@@ -134,16 +134,13 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             const safeCommandId = isSafeUUID(commandId) ? commandId : null;
             const safeClientId = appointment.client_id ? Number(appointment.client_id) : null;
 
-            // Mapeamento de métodos compatíveis
-            const p_method = (currentMethod.type === 'credit' && installments > 1) ? 'parcelado' : currentMethod.type;
-
-            console.log('🚀 Enviando RPC Checkout com:', {
+            console.log('🚀 Enviando RPC Checkout Rápido com:', {
                 p_studio_id: activeStudioId,
                 p_professional_id: safeProfessionalId,
                 p_client_id: safeClientId, 
                 p_command_id: safeCommandId,
                 p_amount: appointment.price,
-                p_method: p_method,
+                p_method: currentMethod.type,
                 p_brand: currentMethod.brand || "N/A",
                 p_installments: installments
             });
@@ -155,7 +152,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 p_client_id: safeClientId, 
                 p_command_id: safeCommandId,
                 p_amount: parseFloat(appointment.price.toFixed(2)),
-                p_method: p_method,
+                p_method: currentMethod.type,
                 p_brand: currentMethod.brand || "N/A",
                 p_installments: parseInt(String(installments || 1))
             });
@@ -169,9 +166,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             if (safeCommandId) {
                 updates.push(supabase.from('commands').update({ 
                     status: 'paid', 
-                    closed_at: new Date().toISOString(),
-                    total_amount: parseFloat(appointment.price.toFixed(2)),
-                    payment_method: p_method
+                    closed_at: new Date().toISOString()
                 }).eq('id', safeCommandId));
             }
             updates.push(supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id));

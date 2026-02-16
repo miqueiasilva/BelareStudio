@@ -122,21 +122,18 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
         try {
             if (addedPayments.length === 0) {
-                throw new Error("Adicione uma forma de pagamento.");
+                throw new Error("Adicione uma forma de pagamento para liquidar.");
             }
 
             const mainPayment = addedPayments[0];
             
-            // Garantia de método para parcelados
-            const p_method = (mainPayment.method === 'credit' && mainPayment.installments > 1) ? 'parcelado' : mainPayment.method;
-
             console.log('🚀 Enviando RPC com:', {
                 p_studio_id: activeStudioId,
                 p_professional_id: command.professional_id || null,
                 p_client_id: command.client_id ? Number(command.client_id) : null,
                 p_command_id: commandId,
                 p_amount: totals.total,
-                p_method: p_method,
+                p_method: mainPayment.method,
                 p_brand: mainPayment.brand || 'N/A',
                 p_installments: Number(mainPayment.installments || 1)
             });
@@ -147,7 +144,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_client_id: command.client_id ? Number(command.client_id) : null,
                 p_command_id: commandId,
                 p_amount: parseFloat(totals.total.toFixed(2)),
-                p_method: p_method,
+                p_method: mainPayment.method,
                 p_brand: mainPayment.brand || 'N/A',
                 p_installments: parseInt(String(mainPayment.installments || 1))
             });
@@ -157,14 +154,12 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 throw new Error(rpcError.message);
             }
 
-            // Atualizar status da comanda após a transação financeira
+            // [STATUS_SYNC] Atualiza status da comanda após confirmação financeira
             const { error: cmdError } = await supabase
                 .from('commands')
                 .update({ 
                     status: 'paid', 
-                    closed_at: new Date().toISOString(),
-                    total_amount: parseFloat(totals.total.toFixed(2)),
-                    payment_method: p_method
+                    closed_at: new Date().toISOString()
                 })
                 .eq('id', commandId);
 
