@@ -127,24 +127,27 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
             const mainPayment = addedPayments[0];
             
+            // Garantia de método para parcelados conforme strings esperadas pelo Backend
+            const p_method = (mainPayment.method === 'credit' && mainPayment.installments > 1) ? 'parcelado' : mainPayment.method;
+
             console.log('🚀 Enviando RPC com:', {
                 p_studio_id: activeStudioId,
                 p_professional_id: command.professional_id || null,
                 p_client_id: command.client_id ? Number(command.client_id) : null,
                 p_command_id: commandId,
                 p_amount: totals.total,
-                p_method: mainPayment.method,
+                p_method: p_method,
                 p_brand: mainPayment.brand || 'N/A',
                 p_installments: Number(mainPayment.installments || 1)
             });
 
             const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
-                p_professional_id: command.professional_id || null,
+                p_professional_id: isSafeUUID(command.professional_id) ? command.professional_id : null,
                 p_client_id: command.client_id ? Number(command.client_id) : null,
                 p_command_id: commandId,
                 p_amount: parseFloat(totals.total.toFixed(2)),
-                p_method: mainPayment.method,
+                p_method: p_method,
                 p_brand: mainPayment.brand || 'N/A',
                 p_installments: parseInt(String(mainPayment.installments || 1))
             });
@@ -154,7 +157,8 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 throw new Error(rpcError.message);
             }
 
-            // [STATUS_SYNC] Atualiza status da comanda após confirmação financeira
+            // [STATUS_SYNC] Atualiza status da comanda após confirmação financeira via RPC
+            // Removemos campos redundantes do update manual para evitar disparar gatilhos de restrição
             const { error: cmdError } = await supabase
                 .from('commands')
                 .update({ 
