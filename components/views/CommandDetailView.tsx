@@ -147,7 +147,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 dbMethod = 'parcelado';
             }
 
-            console.log('🚀 Iniciando Liquidação RPC:', {
+            console.log('🚀 Iniciando Liquidação RPC Única:', {
                 p_studio_id: activeStudioId,
                 p_professional_id: safeProfessionalId,
                 p_client_id: safeClientId,
@@ -158,8 +158,11 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_installments: Number(mainPayment.installments || 1)
             });
 
-            // Chamada RPC - Única fonte de verdade financeira e de status.
-            // O backend gerencia o encerramento da comanda internamente.
+            // CHAMADA RPC ÚNICA - Responsável por:
+            // 1. Criar command_payments
+            // 2. Criar financial_transactions
+            // 3. Atualizar status da comanda para 'paid'
+            // 4. Setar closed_at
             const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: safeProfessionalId,
@@ -171,14 +174,15 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_installments: parseInt(String(mainPayment.installments || 1))
             });
 
-            // Erro 23505 (unique_violation) ou 21000 (cardinality_violation / ON CONFLICT DO UPDATE affecting row twice)
-            // Ambos indicam que a transação já foi processada ou houve uma tentativa redundante.
+            // Tratamento de Idempotência:
+            // Erro 23505 (unique_violation) ou 21000 (cardinality_violation)
+            // indicam que a transação já foi processada. Tratamos como sucesso.
             if (rpcError && !['23505', '21000'].includes(rpcError.code)) {
                 throw new Error(rpcError.message);
             }
 
-            // REMOVIDO: update manual do commands.status para evitar o erro "affect row a second time".
-            // A RPC register_payment_transaction já faz isso de forma atômica no banco.
+            // [REMOVIDO] UPDATE MANUAL DE COMMANDS
+            // A RPC já faz o fechamento interno. Adicionar um update aqui causava o erro 409/21000.
 
             setToast({ message: 'Recebimento confirmado! ✅', type: 'success' });
             setIsLocked(true);
@@ -186,7 +190,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
         } catch (e: any) {
             console.error('[CHECKOUT_FATAL]', e);
-            setToast({ message: `Falha: ${e.message}`, type: 'error' });
+            setToast({ message: `Falha na Liquidação: ${e.message}`, type: 'error' });
             isProcessingRef.current = false;
             setIsFinishing(false);
         }
@@ -198,7 +202,6 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         setSelectedConfig(null);
         setInstallments(1);
 
-        // Mapeamento para busca no banco: 'money' -> 'dinheiro'
         const dbType = type === 'money' ? 'dinheiro' : type;
 
         if (dbType === 'pix' || dbType === 'dinheiro') {

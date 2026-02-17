@@ -113,22 +113,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         const commandId = appointment.command_id;
 
         try {
-            // [IDEMPOTENCY CHECK]
-            if (commandId) {
-                const { data: existing } = await supabase
-                    .from('command_payments')
-                    .select('id')
-                    .eq('command_id', commandId)
-                    .eq('status', 'paid')
-                    .maybeSingle();
-
-                if (existing) {
-                    onSuccess();
-                    onClose();
-                    return;
-                }
-            }
-
             // Sanitização de IDs para a RPC
             const safeProfessionalId = isSafeUUID(appointment.professional_id) ? appointment.professional_id : null;
             const safeCommandId = isSafeUUID(commandId) ? commandId : null;
@@ -140,7 +124,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 p_method = 'parcelado';
             }
 
-            console.log('🚀 Enviando RPC Checkout Rápido com:', {
+            console.log('🚀 Executando RPC de Checkout Rápido:', {
                 p_studio_id: activeStudioId,
                 p_professional_id: safeProfessionalId,
                 p_client_id: safeClientId, 
@@ -151,7 +135,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 p_installments: installments
             });
 
-            // [RPC_CALL] - Única via permitida para inserção de pagamentos. Gerencia o encerramento da comanda.
+            // [RPC_CALL] - Única via permitida para inserção de pagamentos.
+            // O backend gerencia o encerramento da comanda de forma atômica.
             const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: safeProfessionalId,
@@ -163,12 +148,14 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 p_installments: parseInt(String(installments || 1))
             });
 
+            // Erro 23505 (unique_violation) ou 21000 (cardinality_violation)
+            // Ambos indicam tentativa redundante, mas que o dado já existe/está pago.
             if (rpcError && !['23505', '21000'].includes(rpcError.code)) {
                 throw new Error(rpcError.message);
             }
 
-            // [STATUS_SYNC] Atualiza apenas o status do agendamento.
-            // A comanda já foi fechada pela RPC. Update manual removido para evitar conflitos de linha.
+            // [STATUS_SYNC] Atualiza apenas o status do agendamento (que não é controlado pela RPC de pagamento)
+            // A comanda e o financeiro são resolvidos pela RPC acima.
             await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
 
             setToast({ message: "Recebimento confirmado! ✅", type: 'success' });
