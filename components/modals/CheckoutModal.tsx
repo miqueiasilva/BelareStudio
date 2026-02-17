@@ -25,7 +25,7 @@ const isSafeUUID = (str: any): boolean => {
 interface DBPaymentMethod {
     id: string; 
     name: string;
-    type: 'credit' | 'debit' | 'pix' | 'money';
+    type: 'credit' | 'debit' | 'pix' | 'money' | 'dinheiro';
     brand: string | null;
     rate_cash: number;
     rate_installment?: number;
@@ -59,7 +59,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const isProcessingRef = useRef(false);
 
     const [dbPaymentMethods, setDbPaymentMethods] = useState<DBPaymentMethod[]>([]);
-    const [selectedCategory, setSelectedCategory] = useState<'pix' | 'money' | 'credit' | 'debit'>('pix');
+    const [selectedCategory, setSelectedCategory] = useState<'pix' | 'dinheiro' | 'credit' | 'debit'>('pix');
     const [selectedMethodId, setSelectedMethodId] = useState<string>('');
     const [installments, setInstallments] = useState(1);
 
@@ -134,13 +134,19 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             const safeCommandId = isSafeUUID(commandId) ? commandId : null;
             const safeClientId = appointment.client_id ? Number(appointment.client_id) : null;
 
+            // Mapeamento de métodos compatíveis
+            let p_method = currentMethod.type === 'money' ? 'dinheiro' : currentMethod.type;
+            if (p_method === 'credit' && installments > 1) {
+                p_method = 'parcelado';
+            }
+
             console.log('🚀 Enviando RPC Checkout Rápido com:', {
                 p_studio_id: activeStudioId,
                 p_professional_id: safeProfessionalId,
                 p_client_id: safeClientId, 
                 p_command_id: safeCommandId,
                 p_amount: appointment.price,
-                p_method: currentMethod.type,
+                p_method: p_method,
                 p_brand: currentMethod.brand || "N/A",
                 p_installments: installments
             });
@@ -152,7 +158,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 p_client_id: safeClientId, 
                 p_command_id: safeCommandId,
                 p_amount: parseFloat(appointment.price.toFixed(2)),
-                p_method: currentMethod.type,
+                p_method: p_method,
                 p_brand: currentMethod.brand || "N/A",
                 p_installments: parseInt(String(installments || 1))
             });
@@ -181,7 +187,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
     const categories = [
         { id: 'pix', label: 'Pix', icon: Smartphone, color: 'text-teal-600', bg: 'bg-teal-50' },
-        { id: 'money', label: 'Dinheiro', icon: Banknote, color: 'text-green-600', bg: 'bg-green-50' },
+        { id: 'dinheiro', label: 'Dinheiro', icon: Banknote, color: 'text-green-600', bg: 'bg-green-50' },
         { id: 'credit', label: 'Crédito', icon: CreditCard, color: 'text-blue-600', bg: 'bg-blue-50' },
         { id: 'debit', label: 'Débito', icon: CreditCard, color: 'text-cyan-600', bg: 'bg-cyan-50' },
     ];

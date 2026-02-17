@@ -139,8 +139,13 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             const safeProfessionalId = isSafeUUID(command.professional_id) ? command.professional_id : null;
             const safeClientId = command.client_id ? Number(command.client_id) : null;
             
+            // Mapeamento do método para compatibilidade com o banco de dados
+            let dbMethod = mainPayment.method === 'money' ? 'dinheiro' : mainPayment.method;
+            
             // Mapeamento para o tipo 'parcelado' conforme especificação da RPC para créditos com mais de 1 parcela
-            const p_method = (mainPayment.method === 'credit' && mainPayment.installments > 1) ? 'parcelado' : mainPayment.method;
+            if (dbMethod === 'credit' && mainPayment.installments > 1) {
+                dbMethod = 'parcelado';
+            }
 
             console.log('🚀 Iniciando Liquidação RPC:', {
                 p_studio_id: activeStudioId,
@@ -148,7 +153,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_client_id: safeClientId,
                 p_command_id: commandId,
                 p_amount: totals.total,
-                p_method: p_method,
+                p_method: dbMethod,
                 p_brand: mainPayment.brand || 'N/A',
                 p_installments: Number(mainPayment.installments || 1)
             });
@@ -160,7 +165,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_client_id: safeClientId, 
                 p_command_id: commandId,
                 p_amount: parseFloat(totals.total.toFixed(2)),
-                p_method: p_method,
+                p_method: dbMethod,
                 p_brand: mainPayment.brand || 'N/A',
                 p_installments: parseInt(String(mainPayment.installments || 1))
             });
@@ -171,9 +176,6 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             if (rpcError && !['23505', '21000'].includes(rpcError.code)) {
                 throw new Error(rpcError.message);
             }
-
-            // [FIX] Removido update manual de 'commands'. A RPC já executa este encerramento.
-            // O duplo update causava concorrência de linha (Erro 21000 no Postgres).
 
             setToast({ message: 'Recebimento confirmado! ✅', type: 'success' });
             setIsLocked(true);
@@ -192,9 +194,13 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         setAmountToPay(totals.remaining.toFixed(2));
         setSelectedConfig(null);
         setInstallments(1);
-        if (type === 'pix' || type === 'money') {
-            const config = availableConfigs.find(c => c.type === (type === 'money' ? 'money' : 'pix'));
-            setSelectedConfig(config || { type, name: type.toUpperCase(), rate_cash: 0 });
+
+        // Mapeamento para busca no banco: 'money' -> 'dinheiro'
+        const dbType = type === 'money' ? 'dinheiro' : type;
+
+        if (dbType === 'pix' || dbType === 'dinheiro') {
+            const config = availableConfigs.find(c => c.type === dbType);
+            setSelectedConfig(config || { type: dbType, name: dbType.toUpperCase(), rate_cash: 0 });
             setPaymentStep('confirm');
         } else { setPaymentStep('brand'); }
     };
@@ -222,8 +228,9 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
     const filteredConfigs = useMemo(() => {
         if (!selectedType) return [];
-        if (selectedType === 'parcelado') return availableConfigs.filter(c => c.type === 'credit' && c.allow_installments);
-        return availableConfigs.filter(c => c.type === selectedType);
+        const typeToFilter = selectedType === 'money' ? 'dinheiro' : selectedType;
+        if (typeToFilter === 'parcelado') return availableConfigs.filter(c => c.type === 'credit' && c.allow_installments);
+        return availableConfigs.filter(c => c.type === typeToFilter);
     }, [availableConfigs, selectedType]);
 
     if (loading) return <div className="h-full flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={48} /></div>;
@@ -332,7 +339,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                                 <div className="bg-slate-50 p-6 rounded-[32px] border-2 border-slate-100 space-y-6 min-h-[320px] flex flex-col">
                                     {paymentStep === 'type' && (
                                         <div className="grid grid-cols-2 gap-3">
-                                            {[{ id: 'pix', label: 'Pix', icon: Smartphone }, { id: 'money', label: 'Dinheiro', icon: Banknote }, { id: 'debit', label: 'Débito', icon: CreditCard }, { id: 'credit', label: 'Crédito', icon: CardIcon }, { id: 'parcelado', label: 'Parcelado', icon: Layers }].map(pm => (
+                                            {[{ id: 'pix', label: 'Pix', icon: Smartphone }, { id: 'dinheiro', label: 'Dinheiro', icon: Banknote }, { id: 'debit', label: 'Débito', icon: CreditCard }, { id: 'credit', label: 'Crédito', icon: CardIcon }, { id: 'parcelado', label: 'Parcelado', icon: Layers }].map(pm => (
                                                 <button key={pm.id} onClick={() => handleSelectType(pm.id)} className="flex flex-col items-center justify-center p-5 rounded-3xl bg-white border border-slate-100 hover:border-orange-300 transition-all group shadow-sm active:scale-95">
                                                     <pm.icon size={24} className="mb-2 text-slate-300 group-hover:text-orange-500 transition-colors" />
                                                     <span className="text-[9px] font-black uppercase">{pm.label}</span>
