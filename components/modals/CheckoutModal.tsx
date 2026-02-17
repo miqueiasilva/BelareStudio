@@ -1,156 +1,245 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
     X, CheckCircle, Wallet, CreditCard, Banknote, 
-    Smartphone, Loader2, ShoppingCart, ArrowRight
+    Smartphone, Loader2, ShoppingCart, ArrowRight,
+    ChevronDown, Info, Percent, Layers, AlertTriangle,
+    User, Receipt, UserCheck, UserPlus
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
-import { useStudio } from '../../contexts/StudioContext';
 import Toast, { ToastType } from '../shared/Toast';
 
-const CheckoutModal: React.FC<any> = ({ isOpen, onClose, appointment, onSuccess }) => {
-    const { activeStudioId } = useStudio();
-    const [isLoading, setIsLoading] = useState(false);
-    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-    
-    // Trava para evitar múltiplos cliques
-    const isProcessingRef = useRef(false);
+const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+    }).format(value);
+};
 
-    const [dbPaymentMethods, setDbPaymentMethods] = useState<any[]>([]);
-    const [selectedCategory, setSelectedCategory] = useState<string>('pix');
+interface DBPaymentMethod {
+    id: string; 
+    name: string;
+    type: 'credit' | 'debit' | 'pix' | 'money';
+    rate_cash: number;
+    allow_installments: boolean;
+    max_installments: number;
+    installment_rates: Record<string, number>;
+}
+
+interface CheckoutModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    appointment: {
+        id: number;
+        client_id?: number | string;
+        client_name: string;
+        service_name: string;
+        price: number;
+        professional_id?: number | string; 
+        professional_name: string;
+    };
+    onSuccess: () => void;
+}
+
+const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointment, onSuccess }) => {
+    const [isLoading, setIsLoading] = useState(false);
+    const [isFetching, setIsFetching] = useState(true);
+    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+
+    const [dbProfessionals, setDbProfessionals] = useState<any[]>([]);
+    const [dbPaymentMethods, setDbPaymentMethods] = useState<DBPaymentMethod[]>([]);
+    const [selectedProfessionalId, setSelectedProfessionalId] = useState<string>('');
+    const [selectedCategory, setSelectedCategory] = useState<'pix' | 'money' | 'credit' | 'debit'>('pix');
     const [selectedMethodId, setSelectedMethodId] = useState<string>('');
+    const [installments, setInstallments] = useState(1);
+
+    const isSafeUUID = (id: any): boolean => {
+        if (!id) return false;
+        const sid = String(id).trim();
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sid);
+    };
+
+    const resetLocalState = () => {
+        setSelectedProfessionalId('');
+        setSelectedCategory('pix');
+        setSelectedMethodId('');
+        setInstallments(1);
+    };
+
+    const loadSystemData = async () => {
+        setIsFetching(true);
+        try {
+            const [profsRes, methodsRes] = await Promise.all([
+                supabase.from('team_members').select('id, name').order('name'),
+                supabase.from('payment_methods_config').select('*').eq('is_active', true)
+            ]);
+
+            if (profsRes.error) throw profsRes.error;
+            if (methodsRes.error) throw methodsRes.error;
+
+            setDbProfessionals(profsRes.data || []);
+            setDbPaymentMethods(methodsRes.data || []);
+
+            if (methodsRes.data && methodsRes.data.length > 0) {
+                const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
+                if (firstPix) setSelectedMethodId(firstPix.id);
+            }
+        } catch (err: any) {
+            setToast({ message: "Erro ao sincronizar dados.", type: 'error' });
+        } finally {
+            setIsFetching(false);
+        }
+    };
 
     useEffect(() => {
-        if (isOpen) {
-            isProcessingRef.current = false;
-            setIsLoading(true);
-            supabase.from('payment_methods_config')
-                .select('*')
-                .eq('is_active', true)
-                .then(({ data }) => {
-                    if (data) {
-                        setDbPaymentMethods(data);
-                        const first = data.find(m => m.type === 'pix');
-                        if (first) setSelectedMethodId(first.id);
-                        else if (data.length > 0) setSelectedMethodId(data[0].id);
-                    }
-                    setIsLoading(false);
-                });
-        }
+        if (isOpen) loadSystemData();
+        else resetLocalState();
     }, [isOpen]);
 
+    useEffect(() => {
+        if (isOpen && appointment && dbProfessionals.length > 0) {
+            if (selectedProfessionalId) return;
+            const profId = String(appointment.professional_id);
+            if (isSafeUUID(profId)) {
+                setSelectedProfessionalId(profId);
+            } else if (appointment.professional_name) {
+                const found = dbProfessionals.find(p => p.name.trim().toLowerCase() === appointment.professional_name.trim().toLowerCase());
+                if (found) setSelectedProfessionalId(String(found.id));
+            }
+        }
+    }, [isOpen, appointment, dbProfessionals]);
+
+    const filteredMethods = useMemo(() => {
+        return dbPaymentMethods.filter(m => m.type === selectedCategory);
+    }, [dbPaymentMethods, selectedCategory]);
+
+    useEffect(() => {
+        if (filteredMethods.length > 0) {
+            setSelectedMethodId(filteredMethods[0].id);
+            setInstallments(1);
+        } else setSelectedMethodId('');
+    }, [selectedCategory, filteredMethods]);
+
+    const currentMethod = useMemo(() => {
+        return dbPaymentMethods.find(m => m.id === selectedMethodId);
+    }, [dbPaymentMethods, selectedMethodId]);
+
+    const financialMetrics = useMemo(() => {
+        if (!currentMethod) return { rate: 0, netValue: appointment.price };
+        let rate = installments === 1 ? Number(currentMethod.rate_cash || 0) : Number(currentMethod.installment_rates[installments.toString()] || 0);
+        const discount = (appointment.price * rate) / 100;
+        return { rate, netValue: appointment.price - discount };
+    }, [currentMethod, installments, appointment.price]);
+
     const handleConfirmPayment = async () => {
-        if (isProcessingRef.current || isLoading || !activeStudioId) return;
-        
-        isProcessingRef.current = true;
+        if (!currentMethod) return;
         setIsLoading(true);
 
         try {
-            const currentMethod = dbPaymentMethods.find(m => m.id === selectedMethodId);
-            if (!currentMethod) throw new Error("Por favor, selecione um método de pagamento.");
-
-            // Chamada RPC Atômica (Agora idempotente no Banco)
-            const { data: rpcResponse, error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                p_studio_id: activeStudioId,
-                p_professional_id: appointment.professional_id,
-                p_client_id: appointment.client_id ? Number(appointment.client_id) : null,
-                p_command_id: appointment.command_id,
-                p_amount: Number(appointment.price),
-                p_method: currentMethod.type === 'money' ? 'dinheiro' : currentMethod.type,
-                p_brand: currentMethod.brand || "N/A",
-                p_installments: 1
+            const profId = isSafeUUID(selectedProfessionalId) ? selectedProfessionalId : null;
+            
+            // 1. REGISTRO DO PAGAMENTO (PRIMEIRO)
+            const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                p_studio_id: (window as any).activeStudioId || null,
+                p_professional_id: profId,
+                p_amount: appointment.price,
+                p_method: selectedCategory,
+                p_installments: installments,
+                p_appointment_id: appointment.id
             });
 
-            if (rpcError) {
-                // Se for erro de conflito, verificamos se a comanda já foi paga
-                if (rpcError.status === 409 || rpcError.code === '23505') {
-                    const { data: check } = await supabase.from('commands').select('status').eq('id', appointment.command_id).single();
-                    if (check?.status === 'paid') {
-                         await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
-                         setToast({ message: "Venda já liquidada no sistema! ✅", type: 'success' });
-                         setTimeout(() => { onSuccess(); onClose(); }, 1000);
-                         return;
-                    }
-                }
-                throw rpcError;
-            }
+            if (rpcError) throw rpcError;
 
-            // Sincroniza status do agendamento apenas após sucesso da RPC financeira
-            const { error: apptError } = await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
+            // 2. ATUALIZAÇÃO DO AGENDAMENTO (SÓ SE O PASSO 1 FOI OK)
+            const { error: apptError } = await supabase
+                .from('appointments')
+                .update({ status: 'concluido' })
+                .eq('id', appointment.id);
+            
             if (apptError) throw apptError;
 
-            setToast({ message: "Recebimento confirmado! ✅", type: 'success' });
-            setTimeout(() => {
-                onSuccess();
-                onClose();
-            }, 1000);
-
+            setToast({ message: "Pagamento recebido!", type: 'success' });
+            onSuccess();
+            onClose();
         } catch (error: any) {
-            console.error("[CHECKOUT_MODAL_ERROR]", error);
-            setToast({ message: `Erro: ${error.message || 'Falha na liquidação'}`, type: 'error' });
-            isProcessingRef.current = false;
+            console.error("Erro no recebimento:", error);
+            setToast({ message: "Erro ao finalizar recebimento: " + error.message, type: 'error' });
             setIsLoading(false);
         }
     };
 
     if (!isOpen) return null;
 
+    const categories = [
+        { id: 'pix', label: 'Pix', icon: Smartphone, color: 'text-teal-600', bg: 'bg-teal-50' },
+        { id: 'money', label: 'Dinheiro', icon: Banknote, color: 'text-green-600', bg: 'bg-green-50' },
+        { id: 'credit', label: 'Crédito', icon: CreditCard, color: 'text-blue-600', bg: 'bg-blue-50' },
+        { id: 'debit', label: 'Débito', icon: CreditCard, color: 'text-cyan-600', bg: 'bg-cyan-50' },
+    ];
+
     return (
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-300">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-            <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden text-left animate-in zoom-in-95">
-                <header className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                    <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Checkout Direto</h2>
+            <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden">
+                <header className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                    <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Recebimento</h2>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
                 </header>
+
                 <main className="p-8 space-y-6">
-                    <div className="bg-slate-900 rounded-[32px] p-6 text-white text-center shadow-xl">
-                        <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">{appointment.service_name}</p>
-                        <h3 className="text-3xl font-black text-emerald-400 tracking-tighter">R$ {Number(appointment.price).toFixed(2)}</h3>
+                    <div className="bg-slate-900 rounded-[32px] p-6 text-white text-center">
+                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">{appointment.service_name}</p>
+                        <h3 className="text-3xl font-black text-emerald-400">{formatCurrency(appointment.price)}</h3>
                     </div>
-                    
+
                     <div className="grid grid-cols-4 gap-2">
-                        {['pix', 'dinheiro', 'credit', 'debit'].map(cat => (
-                            <button 
-                                key={cat} 
-                                onClick={() => setSelectedCategory(cat)} 
-                                className={`p-4 rounded-2xl border-2 font-black text-[9px] uppercase transition-all ${selectedCategory === cat ? 'border-orange-500 bg-orange-50 text-orange-600 shadow-md' : 'border-slate-100 text-slate-400 hover:border-slate-200'}`}
+                        {categories.map((cat) => (
+                            <button
+                                key={cat.id}
+                                onClick={() => setSelectedCategory(cat.id as any)}
+                                className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${selectedCategory === cat.id ? 'border-orange-500 bg-orange-50' : 'bg-white border-slate-100'}`}
                             >
-                                {cat === 'pix' && <Smartphone size={16} className="mx-auto mb-1"/>}
-                                {cat === 'dinheiro' && <Banknote size={16} className="mx-auto mb-1"/>}
-                                {cat === 'credit' && <CreditCard size={16} className="mx-auto mb-1"/>}
-                                {cat === 'debit' && <CreditCard size={16} className="mx-auto mb-1"/>}
-                                {cat}
+                                <div className={`p-2 rounded-xl mb-1 ${cat.bg} ${cat.color}`}><cat.icon size={20} /></div>
+                                <span className="text-[9px] font-black uppercase">{cat.label}</span>
                             </button>
                         ))}
                     </div>
 
-                    <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Opções de Maquininha/Banco</label>
-                        <select 
-                            value={selectedMethodId} 
-                            onChange={e => setSelectedMethodId(e.target.value)} 
-                            className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-orange-400 transition-all"
-                        >
-                            {dbPaymentMethods
-                                .filter(m => m.type === (selectedCategory === 'dinheiro' ? 'money' : selectedCategory))
-                                .map(m => (
+                    {filteredMethods.length > 0 && (
+                        <div className="space-y-4">
+                            <select 
+                                value={selectedMethodId}
+                                onChange={(e) => setSelectedMethodId(e.target.value)}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none"
+                            >
+                                {filteredMethods.map(m => (
                                     <option key={m.id} value={m.id}>{m.name}</option>
-                                ))
-                            }
-                            {dbPaymentMethods.filter(m => m.type === (selectedCategory === 'dinheiro' ? 'money' : selectedCategory)).length === 0 && (
-                                <option value="">Nenhuma configuração ativa</option>
+                                ))}
+                            </select>
+                            {currentMethod?.type === 'credit' && currentMethod.allow_installments && (
+                                <select 
+                                    value={installments}
+                                    onChange={(e) => setInstallments(parseInt(e.target.value))}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none"
+                                >
+                                    <option value={1}>À vista (1x)</option>
+                                    {Array.from({ length: (currentMethod.max_installments || 1) - 1 }, (_, i) => i + 2).map(n => (
+                                        <option key={n} value={n}>{n} Vezes</option>
+                                    ))}
+                                </select>
                             )}
-                        </select>
-                    </div>
+                        </div>
+                    )}
                 </main>
-                <footer className="p-8 bg-slate-50 border-t flex gap-4">
-                    <button 
-                        onClick={handleConfirmPayment} 
-                        disabled={isLoading || !selectedMethodId} 
-                        className="flex-1 bg-slate-800 text-white py-5 rounded-[24px] font-black shadow-xl flex items-center justify-center gap-3 hover:bg-slate-900 transition-all active:scale-95 disabled:opacity-50"
+
+                <footer className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
+                    <button onClick={onClose} className="flex-1 py-4 text-slate-500 font-black uppercase text-xs">Cancelar</button>
+                    <button
+                        onClick={handleConfirmPayment}
+                        disabled={isLoading || !currentMethod}
+                        className="flex-[2] bg-slate-800 text-white py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2"
                     >
-                        {isLoading ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle size={24} />}
-                        {isLoading ? 'PROCESSANDO...' : 'CONFIRMAR RECEBIMENTO'}
+                        {isLoading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
+                        Finalizar Venda
                     </button>
                 </footer>
             </div>

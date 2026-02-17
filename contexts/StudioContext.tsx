@@ -18,7 +18,7 @@ type StudioContextValue = {
 
 const StudioContext = createContext<StudioContextValue | null>(null);
 const STORAGE_KEY = "belaapp.activeStudioId";
-const SYNC_COOLDOWN_MS = 60000; // 1 minuto de proteção contra re-syncs agressivos
+const SYNC_COOLDOWN_MS = 60000; // 1 minuto de intervalo mínimo entre syncs automáticos
 
 export function StudioProvider({ children }: { children?: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
@@ -38,13 +38,9 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
 
   const refreshStudios = async (force = false) => {
     const now = Date.now();
-    
-    // BLOQUEIO LÓGICO: Impede sync se já estiver em curso ou se ocorreu recentemente (cooldown)
+    // Bloqueia sync se já estiver ocorrendo ou se o cooldown não expirou (exceto se for forçado)
     if (syncInFlightRef.current) return;
-    if (!force && (now - lastSyncRef.current < SYNC_COOLDOWN_MS)) {
-        console.log("[STUDIO] Sincronização ignorada (Cooldown Ativo)");
-        return;
-    }
+    if (!force && (now - lastSyncRef.current < SYNC_COOLDOWN_MS)) return;
 
     syncInFlightRef.current = true;
     setIsSyncing(true);
@@ -56,13 +52,10 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
       if (!user) {
         setStudios([]);
         setActiveStudioIdState(null);
-        setLoading(false);
-        setIsSyncing(false);
-        syncInFlightRef.current = false;
         return;
       }
 
-      // GARANTIA DE PERFIL ADMIN: Prioriza metadados para evitar queda de permissão
+      // Prioridade Admin
       const userRole = (user.app_metadata?.role || user.user_metadata?.role || '').toLowerCase();
       const isAdmin = userRole === 'admin' || userRole === 'gestor' || user.email === 'admin@belarestudio.com';
 
@@ -94,7 +87,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
       
       lastSyncRef.current = Date.now();
     } catch (err) {
-      console.error("[StudioProvider] Erro crítico na sincronização:", err);
+      console.error("[StudioProvider] Erro na sincronização:", err);
     } finally {
       setLoading(false);
       setIsSyncing(false);
@@ -103,11 +96,10 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
   };
 
   useEffect(() => {
-    // Sync inicial obrigatório
     refreshStudios(true);
 
     const handleVisibility = () => {
-      // Sincroniza em background apenas se o cooldown expirou
+      // Só tenta sincronizar em background ao voltar se o cooldown expirou
       if (document.visibilityState === 'visible') {
         refreshStudios(false);
       }
