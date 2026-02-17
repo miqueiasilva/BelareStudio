@@ -200,7 +200,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments')
-                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origem')
+                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origem, command_id')
                     .eq('studio_id', activeStudioId)
                     .gte('date', startStr)
                     .lte('date', endStr)
@@ -330,6 +330,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         return {
             id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
             notas: row.notes || '', origem: row.origem || 'interno',
+            command_id: row.command_id,
             client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
             professional: prof || professionalsList[0] || { id: 0, name: row.professional_name, avatarUrl: '' },
             service: { id: 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : (row.service_color || '#3b82f6') }
@@ -433,12 +434,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
+            // 1. Cria a comanda
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
                     studio_id: activeStudioId,
                     client_id: appointment.client?.id ? appointment.client.id : null,
-                    client_name: appointment.client?.nome || null, // FIX: Envia null para disparar default do DB se não houver cliente
+                    client_name: appointment.client?.nome || null,
                     professional_id: appointment.professional.id ? appointment.professional.id : null,
                     status: 'open',
                     total_amount: appointment.service.price
@@ -448,6 +450,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             if (cmdError) throw cmdError;
 
+            // 2. Adiciona o item na comanda
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
@@ -463,9 +466,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             if (itemError) throw itemError;
 
+            // 3. ATUALIZAÇÃO CRÍTICA: Vincula o ID da comanda ao agendamento
             const { error: apptUpdateError } = await supabase
                 .from('appointments')
-                .update({ status: 'concluido' })
+                .update({ 
+                    status: 'concluido',
+                    command_id: command.id 
+                })
                 .eq('id', appointment.id);
 
             if (apptUpdateError) throw apptUpdateError;
@@ -773,7 +780,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             {isConfigModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsConfigModalOpen(false)}></div>
-                    <div className="relative w-full max-w-sm bg-white rounded-[32px] shadow-2xl overflow-hidden p-8 animate-in zoom-in-95 duration-200">
+                    <div className="relative w-full max-sm bg-white rounded-[32px] shadow-2xl overflow-hidden p-8 animate-in zoom-in-95 duration-200">
                         <header className="flex justify-between items-center mb-8"><h3 className="font-extrabold text-slate-800">Configuração de Grade</h3><button onClick={() => setIsConfigModalOpen(false)}><X size={20} /></button></header>
                         <div className="space-y-4">
                             <label className="text-sm font-black text-slate-700 uppercase">Largura das Colunas: {colWidth}px</label>
@@ -786,7 +793,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             {isPeriodModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsPeriodModalOpen(false)}></div>
-                    <div className="relative w-full max-w-xs bg-white rounded-[32px] shadow-2xl overflow-hidden p-4 animate-in zoom-in-95 duration-200">
+                    <div className="relative w-full max-xs bg-white rounded-[32px] shadow-2xl overflow-hidden p-4 animate-in zoom-in-95 duration-200">
                         <div className="space-y-2">
                             {['Dia', 'Semana', 'Mês', 'Lista'].map((item) => (
                                 <button key={item} onClick={() => { setPeriodType(item as any); setIsPeriodModalOpen(false); }} className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl text-sm font-bold transition-all ${periodType === item ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-slate-50'}`}>{item}{periodType === item && <Check size={18} />}</button>
