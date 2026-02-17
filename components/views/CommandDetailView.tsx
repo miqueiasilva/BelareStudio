@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
     ChevronLeft, CreditCard, Smartphone, Banknote, 
@@ -11,13 +10,12 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
-// FIX: Added missing Card component import
 import Card from '../shared/Card';
 import Toast, { ToastType } from '../shared/Toast';
 
 const isSafeUUID = (str: any): boolean => {
     if (!str || typeof str !== 'string') return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str) || str.length >= 32;
 };
 
 const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = ({ commandId, onBack }) => {
@@ -26,6 +24,8 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
     const [loading, setLoading] = useState(true);
     const [isFinishing, setIsFinishing] = useState(false);
     const [isLocked, setIsLocked] = useState(false);
+    
+    // Trava física contra cliques duplos
     const isProcessingRef = useRef(false);
     
     const [addedPayments, setAddedPayments] = useState<any[]>([]);
@@ -60,15 +60,21 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             setAvailableConfigs(configsRes.data || []);
             setHistoryPayments(payHistoryRes.data || []);
             setCommand({ ...cmdData, command_items: itemsData || [] });
-            if (cmdData.status === 'paid') setIsLocked(true);
+            
+            if (cmdData.status === 'paid') {
+                setIsLocked(true);
+            }
         } catch (e: any) {
-            setToast({ message: "Falha ao carregar dados", type: 'error' });
+            setToast({ message: "Falha ao carregar comanda", type: 'error' });
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => { fetchContext(); }, [commandId, activeStudioId]);
+    useEffect(() => { 
+        isProcessingRef.current = false;
+        fetchContext(); 
+    }, [commandId, activeStudioId]);
 
     const totals = useMemo(() => {
         if (!command) return { subtotal: 0, total: 0, paid: 0, remaining: 0 };
@@ -82,7 +88,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         if (isProcessingRef.current || isLocked || !activeStudioId) return;
         
         if (totals.remaining > 0 || addedPayments.length === 0) {
-            setToast({ message: "Valor total não atingido ou sem pagamento", type: 'error' });
+            setToast({ message: "Ainda há saldo pendente para liquidar", type: 'error' });
             return;
         }
 
@@ -93,10 +99,10 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             const mainPayment = addedPayments[0];
             const dbMethod = mainPayment.method === 'money' ? 'dinheiro' : mainPayment.method;
 
-            // Única chamada permitida para liquidação
+            // Única fonte de verdade para liquidação
             const { data, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
-                p_professional_id: isSafeUUID(command.professional_id) ? command.professional_id : null,
+                p_professional_id: command.professional_id,
                 p_client_id: command.client_id ? Number(command.client_id) : null,
                 p_command_id: commandId,
                 p_amount: parseFloat(totals.total.toFixed(2)),
@@ -106,11 +112,16 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             });
 
             if (rpcError) {
-                // Se o erro for de conflito mas a comanda já estiver paga, tratamos como sucesso
-                if (rpcError.code === '23505' || rpcError.code === '409') {
-                    setToast({ message: 'Comanda já liquidada anteriormente', type: 'info' });
-                    setTimeout(onBack, 1500);
-                    return;
+                // Tratamento de Idempotência: Se o erro for 409 mas o banco estiver pago, tratamos como sucesso
+                if (rpcError.status === 409 || rpcError.code === '23505') {
+                    console.warn("[CHECKOUT] Conflito detectado, validando status real...");
+                    const { data: check } = await supabase.from('commands').select('status').eq('id', commandId).single();
+                    if (check?.status === 'paid') {
+                        setToast({ message: 'Comanda liquidada com sucesso! ✅', type: 'success' });
+                        setIsLocked(true);
+                        setTimeout(onBack, 1500);
+                        return;
+                    }
                 }
                 throw rpcError;
             }
@@ -120,8 +131,8 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             setTimeout(onBack, 1500);
 
         } catch (e: any) {
-            console.error('[CHECKOUT_ERROR]', e);
-            setToast({ message: `Erro na liquidação: ${e.message}`, type: 'error' });
+            console.error('[CHECKOUT_FATAL]', e);
+            setToast({ message: `Erro: ${e.message || 'Falha na comunicação com o banco'}`, type: 'error' });
             isProcessingRef.current = false;
             setIsFinishing(false);
         }
@@ -162,17 +173,20 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center z-20 shadow-sm">
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400"><ChevronLeft size={24} /></button>
-                    <h1 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Encerramento Auditado</h1>
+                    <div>
+                        <h1 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Liquidando Comanda</h1>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none mt-1">Sincronização Ativa</p>
+                    </div>
                 </div>
-                <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${isLocked ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
-                    {isLocked ? 'Liquidado' : 'Em Aberto'}
+                <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${isLocked ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-orange-50 text-orange-600 border border-orange-100'}`}>
+                    {isLocked ? 'Liquidado' : 'Em Atendimento'}
                 </div>
             </header>
 
-            <div className="flex-1 overflow-y-auto p-4 md:p-8">
+            <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                 <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
                     <div className="lg:col-span-2 space-y-6">
-                        <Card title="Itens da Comanda" icon={<ShoppingCart size={18} className="text-orange-500" />}>
+                        <Card title="Resumo do Consumo" icon={<ShoppingCart size={18} className="text-orange-500" />}>
                             <div className="divide-y divide-slate-50">
                                 {command.command_items?.map((item: any) => (
                                     <div key={item.id} className="p-4 flex items-center justify-between">
@@ -187,17 +201,20 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                         </Card>
 
                         {(addedPayments.length > 0 || historyPayments.length > 0) && (
-                            <div className="bg-white rounded-[32px] border border-slate-100 overflow-hidden">
+                            <div className="bg-white rounded-[32px] border border-slate-100 overflow-hidden shadow-sm">
                                 <header className="px-6 py-4 border-b border-slate-50 bg-emerald-50/30">
-                                    <h3 className="font-black text-emerald-800 text-xs uppercase tracking-widest">Resumo de Pagamento</h3>
+                                    <h3 className="font-black text-emerald-800 text-[10px] uppercase tracking-widest">Confirmação de Pagamento</h3>
                                 </header>
                                 <div className="divide-y divide-slate-50">
                                     {(isLocked ? historyPayments : addedPayments).map(p => (
                                         <div key={p.id} className="px-6 py-4 flex items-center justify-between">
-                                            <span className="text-sm font-black text-slate-700 uppercase">{p.brand || p.method}</span>
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-lg bg-orange-50 text-orange-500 flex items-center justify-center font-black text-[10px]">{p.installments}x</div>
+                                                <span className="text-sm font-black text-slate-700 uppercase">{p.brand || p.method}</span>
+                                            </div>
                                             <div className="flex items-center gap-4">
                                                 <span className="font-black text-slate-800">R$ {Number(p.amount).toFixed(2)}</span>
-                                                {!isLocked && <button onClick={() => setAddedPayments(prev => prev.filter(i => i.id !== p.id))} className="text-rose-400"><X size={18} /></button>}
+                                                {!isLocked && <button onClick={() => setAddedPayments(prev => prev.filter(i => i.id !== p.id))} className="text-rose-400 p-2 hover:bg-rose-50 rounded-lg"><X size={18} /></button>}
                                             </div>
                                         </div>
                                     ))}
@@ -207,9 +224,10 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                     </div>
 
                     <div className="space-y-6">
-                        <div className="bg-slate-900 rounded-[40px] p-8 text-white shadow-2xl">
-                            <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Total Líquido</p>
-                            <h2 className="text-5xl font-black text-emerald-400">R$ {totals.total.toFixed(2)}</h2>
+                        <div className="bg-slate-900 rounded-[40px] p-8 text-white shadow-2xl relative overflow-hidden group">
+                            <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform"><Coins size={120} /></div>
+                            <p className="text-[10px] font-black uppercase text-slate-400 mb-2 tracking-widest">Total Líquido</p>
+                            <h2 className="text-5xl font-black text-emerald-400 tracking-tighter">R$ {totals.total.toFixed(2)}</h2>
                         </div>
 
                         {!isLocked && (
@@ -218,8 +236,8 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                                     {paymentStep === 'type' && (
                                         <div className="grid grid-cols-2 gap-2">
                                             {[{id:'pix',label:'Pix',icon:Smartphone},{id:'money',label:'Dinheiro',icon:Banknote},{id:'debit',label:'Débito',icon:CreditCard},{id:'credit',label:'Crédito',icon:CardIcon}].map(pm => (
-                                                <button key={pm.id} onClick={() => handleSelectType(pm.id)} className="flex flex-col items-center justify-center p-4 rounded-2xl bg-white border border-slate-100 hover:border-orange-300 transition-all shadow-sm">
-                                                    <pm.icon size={20} className="mb-2 text-slate-300" />
+                                                <button key={pm.id} onClick={() => handleSelectType(pm.id)} className="flex flex-col items-center justify-center p-4 rounded-2xl bg-white border border-slate-100 hover:border-orange-300 transition-all shadow-sm active:scale-95 group">
+                                                    <pm.icon size={20} className="mb-2 text-slate-300 group-hover:text-orange-500 transition-colors" />
                                                     <span className="text-[9px] font-black uppercase">{pm.label}</span>
                                                 </button>
                                             ))}
@@ -227,18 +245,20 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                                     )}
 
                                     {paymentStep === 'confirm' && (
-                                        <div className="space-y-4 flex-1 flex flex-col">
+                                        <div className="space-y-4 flex-1 flex flex-col animate-in slide-in-from-bottom-2">
+                                            <header className="flex justify-between items-center"><span className="text-[9px] font-black uppercase text-orange-500">Confirmar Valor</span><button onClick={() => setPaymentStep('type')}><X size={16} className="text-slate-300" /></button></header>
                                             <div className="relative flex-1">
-                                                <input type="number" autoFocus value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border-2 border-slate-100 rounded-2xl py-8 text-center text-3xl font-black text-slate-800 outline-none focus:border-orange-400" />
+                                                <input type="number" autoFocus value={amountToPay} onChange={e => setAmountToPay(e.target.value)} className="w-full bg-white border-2 border-slate-100 rounded-2xl py-8 text-center text-3xl font-black text-slate-800 outline-none focus:border-orange-400 shadow-inner" />
                                             </div>
-                                            <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl">Confirmar</button>
+                                            <button onClick={handleConfirmPartialPayment} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl active:scale-95 transition-all">Vincular Pagamento</button>
                                         </div>
                                     )}
 
                                     {paymentStep === 'brand' && (
-                                        <div className="grid grid-cols-1 gap-2">
+                                        <div className="grid grid-cols-1 gap-2 animate-in slide-in-from-right-2">
+                                            <header className="flex justify-between items-center px-1"><span className="text-[9px] font-black uppercase text-orange-500">Escolha a Bandeira</span><button onClick={() => setPaymentStep('type')}><X size={16} className="text-slate-300" /></button></header>
                                             {availableConfigs.filter(c => c.type === selectedType).map(cfg => (
-                                                <button key={cfg.id} onClick={() => { setSelectedConfig(cfg); setPaymentStep('confirm'); }} className="p-4 bg-white border border-slate-100 rounded-xl font-black text-xs uppercase">{cfg.brand || cfg.name}</button>
+                                                <button key={cfg.id} onClick={() => { setSelectedConfig(cfg); setPaymentStep('confirm'); }} className="p-4 bg-white border border-slate-100 rounded-xl font-black text-xs uppercase text-left hover:border-orange-400 transition-all">{cfg.brand || cfg.name}</button>
                                             ))}
                                         </div>
                                     )}
@@ -247,9 +267,9 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                                 <button 
                                     onClick={handleFinishCheckout} 
                                     disabled={isFinishing || totals.remaining > 0 || addedPayments.length === 0} 
-                                    className={`w-full py-5 rounded-3xl font-black text-lg uppercase transition-all shadow-xl ${totals.remaining === 0 && !isFinishing ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
+                                    className={`w-full py-5 rounded-[24px] font-black text-lg uppercase transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 ${totals.remaining === 0 && !isFinishing ? 'bg-emerald-600 text-white shadow-emerald-100' : 'bg-slate-100 text-slate-300'}`}
                                 >
-                                    {isFinishing ? <Loader2 size={24} className="animate-spin mx-auto" /> : 'LIQUIDAR CONTA'}
+                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> LIQUIDAR CONTA</>}
                                 </button>
                             </div>
                         )}
