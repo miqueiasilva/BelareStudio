@@ -134,7 +134,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             const safeCommandId = isSafeUUID(commandId) ? commandId : null;
             const safeClientId = appointment.client_id ? Number(appointment.client_id) : null;
 
-            // Mapeamento de métodos compatíveis
+            // Mapeamento de métodos compatíveis: 'money' no frontend -> 'dinheiro' no banco
             let p_method = currentMethod.type === 'money' ? 'dinheiro' : currentMethod.type;
             if (p_method === 'credit' && installments > 1) {
                 p_method = 'parcelado';
@@ -168,7 +168,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             }
 
             // [STATUS_SYNC] Atualiza apenas o status do agendamento.
-            // A comanda já foi fechada pela RPC.
+            // A comanda já foi fechada pela RPC. Update manual removido para evitar conflitos de linha.
             await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
 
             setToast({ message: "Recebimento confirmado! ✅", type: 'success' });

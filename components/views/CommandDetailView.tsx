@@ -158,7 +158,8 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_installments: Number(mainPayment.installments || 1)
             });
 
-            // Chamada RPC - Única fonte de verdade financeira e de status
+            // Chamada RPC - Única fonte de verdade financeira e de status.
+            // O backend gerencia o encerramento da comanda internamente.
             const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: safeProfessionalId,
@@ -172,10 +173,12 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
             // Erro 23505 (unique_violation) ou 21000 (cardinality_violation / ON CONFLICT DO UPDATE affecting row twice)
             // Ambos indicam que a transação já foi processada ou houve uma tentativa redundante.
-            // Tratamos como sucesso para permitir que o fluxo da UI continue.
             if (rpcError && !['23505', '21000'].includes(rpcError.code)) {
                 throw new Error(rpcError.message);
             }
+
+            // REMOVIDO: update manual do commands.status para evitar o erro "affect row a second time".
+            // A RPC register_payment_transaction já faz isso de forma atômica no banco.
 
             setToast({ message: 'Recebimento confirmado! ✅', type: 'success' });
             setIsLocked(true);
