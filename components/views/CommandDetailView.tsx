@@ -116,24 +116,36 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
     }, [command, discount, addedPayments]);
 
     const handleFinishCheckout = async () => {
+        if (!commandId || !activeStudioId) return;
+
+        if (totals.total <= 0) {
+            setToast({ message: "O valor total deve ser maior que zero.", type: 'error' });
+            return;
+        }
+
+        if (addedPayments.length === 0) {
+            setToast({ message: "Adicione uma forma de pagamento para liquidar.", type: 'error' });
+            return;
+        }
+
         if (isProcessingRef.current || isLocked) return;
+        
         isProcessingRef.current = true;
         setIsFinishing(true);
 
         try {
-            if (addedPayments.length === 0) {
-                throw new Error("Adicione uma forma de pagamento para liquidar.");
-            }
-
             const mainPayment = addedPayments[0];
             
-            // Garantia de método para parcelados conforme strings esperadas pelo Backend
+            const safeProfessionalId = isSafeUUID(command.professional_id) ? command.professional_id : null;
+            const safeClientId = command.client_id ? Number(command.client_id) : null;
+            
+            // Mapeamento para o tipo 'parcelado' conforme especificação da RPC para créditos com mais de 1 parcela
             const p_method = (mainPayment.method === 'credit' && mainPayment.installments > 1) ? 'parcelado' : mainPayment.method;
 
-            console.log('🚀 Enviando RPC com:', {
+            console.log('🚀 Iniciando Liquidação RPC:', {
                 p_studio_id: activeStudioId,
-                p_professional_id: command.professional_id || null,
-                p_client_id: command.client_id ? Number(command.client_id) : null,
+                p_professional_id: safeProfessionalId,
+                p_client_id: safeClientId,
                 p_command_id: commandId,
                 p_amount: totals.total,
                 p_method: p_method,
@@ -143,8 +155,8 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
             const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
-                p_professional_id: isSafeUUID(command.professional_id) ? command.professional_id : null,
-                p_client_id: command.client_id ? Number(command.client_id) : null,
+                p_professional_id: safeProfessionalId,
+                p_client_id: safeClientId, 
                 p_command_id: commandId,
                 p_amount: parseFloat(totals.total.toFixed(2)),
                 p_method: p_method,
@@ -152,18 +164,21 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_installments: parseInt(String(mainPayment.installments || 1))
             });
 
-            // Erro 23505 (duplicate key) indica que a transação já foi registrada, tratamos como sucesso.
-            if (rpcError && rpcError.code !== '23505') {
+            // Erro 23505 (unique_violation) ou 21000 (cardinality_violation / ON CONFLICT DO UPDATE affecting row twice)
+            // Ambos indicam que a transação já foi processada ou houve uma tentativa redundante.
+            // Tratamos como sucesso para permitir que o fluxo da UI continue.
+            if (rpcError && !['23505', '21000'].includes(rpcError.code)) {
                 throw new Error(rpcError.message);
             }
 
-            // [STATUS_SYNC] Atualiza status da comanda após confirmação financeira via RPC
-            // Removemos campos redundantes do update manual para evitar disparar gatilhos de restrição
+            // [STATUS_SYNC] Atualiza status da comanda após confirmação financeira
             const { error: cmdError } = await supabase
                 .from('commands')
                 .update({ 
                     status: 'paid', 
-                    closed_at: new Date().toISOString()
+                    closed_at: new Date().toISOString(),
+                    total_amount: parseFloat(totals.total.toFixed(2)),
+                    payment_method: p_method
                 })
                 .eq('id', commandId);
 
@@ -385,7 +400,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                                     disabled={isFinishing || totals.remaining > 0 || addedPayments.length === 0 || !command.client_id} 
                                     className={`w-full mt-6 py-6 rounded-[32px] font-black flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-2xl ${totals.remaining === 0 && !isFinishing && command.client_id ? 'bg-emerald-600 text-white shadow-emerald-100' : 'bg-slate-100 text-slate-300'}`}
                                 >
-                                    {isFinishing ? <Loader2 className="animate-spin" size={24} /> : <><CheckCircle size={24} /> LIQUIDAR CONTA</>}
+                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> LIQUIDAR CONTA</>}
                                 </button>
                             </div>
                         )}
