@@ -153,6 +153,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_installments: Number(mainPayment.installments || 1)
             });
 
+            // Chamada RPC - Única fonte de verdade financeira e de status
             const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: safeProfessionalId,
@@ -171,18 +172,8 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 throw new Error(rpcError.message);
             }
 
-            // [STATUS_SYNC] Atualiza status da comanda após confirmação financeira
-            const { error: cmdError } = await supabase
-                .from('commands')
-                .update({ 
-                    status: 'paid', 
-                    closed_at: new Date().toISOString(),
-                    total_amount: parseFloat(totals.total.toFixed(2)),
-                    payment_method: p_method
-                })
-                .eq('id', commandId);
-
-            if (cmdError) throw cmdError;
+            // [FIX] Removido update manual de 'commands'. A RPC já executa este encerramento.
+            // O duplo update causava concorrência de linha (Erro 21000 no Postgres).
 
             setToast({ message: 'Recebimento confirmado! ✅', type: 'success' });
             setIsLocked(true);

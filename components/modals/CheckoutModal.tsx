@@ -145,7 +145,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 p_installments: installments
             });
 
-            // [RPC_CALL] - Única via permitida para inserção de pagamentos
+            // [RPC_CALL] - Única via permitida para inserção de pagamentos. Gerencia o encerramento da comanda.
             const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: safeProfessionalId,
@@ -157,21 +157,13 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 p_installments: parseInt(String(installments || 1))
             });
 
-            if (rpcError && rpcError.code !== '23505') {
+            if (rpcError && !['23505', '21000'].includes(rpcError.code)) {
                 throw new Error(rpcError.message);
             }
 
-            // [STATUS_SYNC] Atualiza o status tanto no comando quanto no agendamento
-            const updates = [];
-            if (safeCommandId) {
-                updates.push(supabase.from('commands').update({ 
-                    status: 'paid', 
-                    closed_at: new Date().toISOString()
-                }).eq('id', safeCommandId));
-            }
-            updates.push(supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id));
-
-            await Promise.all(updates);
+            // [STATUS_SYNC] Atualiza apenas o status do agendamento.
+            // A comanda já foi fechada pela RPC.
+            await supabase.from('appointments').update({ status: 'concluido' }).eq('id', appointment.id);
 
             setToast({ message: "Recebimento confirmado! ✅", type: 'success' });
             onSuccess();
