@@ -123,7 +123,9 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_amount: totals.total,
                 p_method: dbMethod,
                 p_brand: mainPayment.brand || 'N/A',
-                p_installments: Number(mainPayment.installments || 1)
+                p_installments: Number(mainPayment.installments || 1),
+                p_tax_rate: Number(mainPayment.rate || 0),
+                p_net_value: Number(mainPayment.netAmount || totals.total)
             });
 
             if (rpcError) {
@@ -410,12 +412,4 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                                     {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> LIQUIDAR CONTA</>}
                                 </button>
                             </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-export default CommandDetailView;
+                     
