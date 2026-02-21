@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
     Receipt, Clock, User, Landmark, DollarSign,
@@ -32,11 +31,23 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                 .single();
             
             const { data: itemsData } = await supabase.from('command_items').select('*').eq('command_id', commandId);
-            const { data: payData } = await supabase.from('command_payments').select('*').eq('command_id', commandId);
+            
+            // Busca da financial_transactions (fonte principal com tax_rate e net_value)
+            const { data: ftData } = await supabase
+                .from('financial_transactions')
+                .select('*')
+                .eq('command_id', commandId);
+
+            // Fallback para command_payments se não houver dados em financial_transactions
+            let payData = ftData && ftData.length > 0 ? ftData : [];
+            if (payData.length === 0) {
+                const { data: cpData } = await supabase.from('command_payments').select('*').eq('command_id', commandId);
+                payData = cpData || [];
+            }
 
             setCommand(cmdData);
             setItems(itemsData || []);
-            setPayments(payData || []);
+            setPayments(payData);
         } catch (e) {
             console.error(e);
         } finally {
@@ -88,12 +99,34 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                         </div>
                         
                         {payments.map(p => (
-                            <div key={p.id} className="pt-4 border-t border-white/10 flex justify-between items-end relative z-10">
-                                <div>
-                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Líquido de taxas ({p.brand})</p>
-                                    <p className="text-lg font-black text-white">{formatBRL(Number(p.net_value))}</p>
+                            <div key={p.id} className="pt-4 border-t border-white/10 space-y-2 relative z-10">
+                                <div className="flex justify-between items-center">
+                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Forma de Pagamento</p>
+                                    <span className="text-[10px] font-black text-emerald-400 uppercase">
+                                        {p.brand || p.payment_method || p.method}
+                                        {p.installments > 1 ? ` — ${p.installments}x` : ''}
+                                    </span>
                                 </div>
-                                <CheckCircle2 className="text-emerald-500/50" size={24} />
+                                
+                                <div className="flex justify-between items-center">
+                                    <span className="text-xs text-slate-400">Valor Bruto</span>
+                                    <span className="text-sm font-bold text-white">{formatBRL(Number(p.amount))}</span>
+                                </div>
+
+                                {Number(p.tax_rate) > 0 && (
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-xs text-rose-400">Taxa ({Number(p.tax_rate)}%)</span>
+                                        <span className="text-sm font-bold text-rose-400">- {formatBRL((Number(p.amount) * Number(p.tax_rate)) / 100)}</span>
+                                    </div>
+                                )}
+
+                                <div className="flex justify-between items-center pt-2 border-t border-white/5">
+                                    <span className="text-xs font-black text-slate-300 uppercase">Valor Líquido</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-lg font-black text-white">{formatBRL(Number(p.net_value || p.amount))}</span>
+                                        <CheckCircle2 className="text-emerald-500" size={16} />
+                                    </div>
+                                </div>
                             </div>
                         ))}
                     </div>
