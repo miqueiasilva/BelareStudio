@@ -144,7 +144,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 p_amount: appointment.price,
                 p_method: selectedCategory,
                 p_installments: installments,
-                p_appointment_id: appointment.id
+                p_appointment_id: appointment.id,
+                p_tax_rate: Number(financialMetrics.rate || 0),
+                p_net_value: Number(financialMetrics.netValue || appointment.price)
             });
 
             if (rpcError) throw rpcError;

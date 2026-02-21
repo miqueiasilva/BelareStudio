@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
     ChevronLeft, CreditCard, Smartphone, Banknote, 
@@ -412,4 +411,12 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                                     {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> LIQUIDAR CONTA</>}
                                 </button>
                             </div>
-                     
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default CommandDetailView;
