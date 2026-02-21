@@ -15,7 +15,7 @@ import {
     ChevronDown, ChevronUp, Share2, Loader2, MapPin, Phone, 
     User, Mail, ShoppingBag, Clock, Calendar, Scissors, 
     CheckCircle2, ArrowRight, UserCircle2, X, AlertTriangle,
-    ArrowLeft, ChevronRight
+    ArrowLeft, ChevronRight, Plus
 } from 'lucide-react';
 
 const DEFAULT_COVER = "https://images.unsplash.com/photo-1560066984-138dadb4c035?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80";
@@ -323,11 +323,20 @@ const PublicBookingPreview: React.FC = () => {
             if (existingClient) {
                 clientId = existingClient.id;
             } else {
-                const { data: newClient } = await supabase
+                const { data: newClient, error: clientErr } = await supabase
                     .from('clients')
                     .insert([{ nome: clientName, whatsapp: cleanPhone, consent: true, origem: 'Link Público' }])
-                    .select().single();
+                    .select()
+                    .single();
+                
+                if (clientErr || !newClient) {
+                    throw new Error("Não foi possível cadastrar seus dados. Por favor, tente novamente.");
+                }
                 clientId = newClient.id;
+            }
+
+            if (!selectedProfessional) {
+                throw new Error("Profissional não selecionado.");
             }
 
             const [h, m] = selectedTime.split(':').map(Number);
