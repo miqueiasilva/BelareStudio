@@ -4,7 +4,7 @@ import { useStudio } from './contexts/StudioContext';
 import { ViewState, FinancialTransaction, UserRole } from './types';
 import EnvGate from './components/EnvGate';
 import { hasAccess } from './utils/permissions';
-import { Loader2, ShieldAlert, LogOut, RefreshCw } from 'lucide-react';
+import { Loader2, ShieldAlert, RefreshCw } from 'lucide-react';
 
 // Componentes estáticos
 import MainLayout from './components/layout/MainLayout';

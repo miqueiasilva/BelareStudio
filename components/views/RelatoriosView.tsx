@@ -1,36 +1,23 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
-    BarChart3, TrendingUp, TrendingDown, DollarSign, Calendar, 
-    ChevronLeft, ChevronRight, FileSpreadsheet, FileText,
-    Users, Scissors, Wallet, ArrowRight, Loader2, 
-    AlertTriangle, FilePieChart, Table, CheckCircle2,
-    BarChart, PieChart as PieChartIcon, Search, Printer, 
-    Download, Filter, CalendarDays, Clock, CreditCard, Banknote, Smartphone,
-    RefreshCw, Info, UserCheck, Zap, RotateCcw, MessageCircle, 
-    Package, AlertOctagon, Layers, Coins, CheckSquare, Square,
-    BarChart4, Tags, ShoppingBag, Sparkles, ArrowUpRight,
-    ArrowUp, ArrowDown, PieChart, Receipt, Target, LayoutDashboard,
-    HardDrive, History, Archive, Cake, Gauge, FileDown, Sheet
+    BarChart3, TrendingUp, DollarSign, 
+    RefreshCw, 
+    LayoutDashboard,
+    ArrowUp, ArrowDown, Target, Package, Users, Wallet, Loader2, PieChart as PieChartIcon
 } from 'lucide-react';
 // FIX: Grouping date-fns imports and removing problematic members startOfMonth, subMonths, startOfDay, subDays, startOfYesterday.
 import { 
-    format, endOfMonth, 
-    differenceInDays, isSameDay, endOfDay,
-    eachDayOfInterval, isWithinInterval, addDays, addMonths, endOfYesterday
+    format, 
+    differenceInDays, endOfDay,
+    eachDayOfInterval, addDays
 } from 'date-fns';
-import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { 
-    ResponsiveContainer, BarChart as RechartsBarChart, Bar, XAxis, YAxis, 
-    CartesianGrid, Tooltip, Cell, PieChart as RechartsPieChart, Pie, AreaChart, Area
+    ResponsiveContainer, Tooltip, Cell, PieChart as RechartsPieChart, Pie
 } from 'recharts';
 import Card from '../shared/Card';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
-
-import * as XLSX from 'xlsx';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 const TrendBadge = ({ current, previous, label = "vs ant." }: { current: number, previous: number, label?: string }) => {
     const variation = previous > 0 ? ((current - previous) / previous) * 100 : 0;
@@ -161,37 +148,6 @@ const RelatoriosView: React.FC = () => {
             vipClients, criticalStock, evolutionData, categoryData
         };
     }, [transactions, prevTransactions, lifetimeTransactions, appointments, products, clients, startDate, endDate]);
-
-    const generatePDF = (type: 'executivo' | 'financeiro' | 'estoque' | 'clientes') => {
-        const doc = new jsPDF();
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const nowFormatted = format(new Date(), 'dd/MM/yyyy HH:mm');
-
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(20);
-        doc.setTextColor(30, 41, 59);
-        doc.text("BelareStudio - Gestão Inteligente", 14, 20);
-        doc.setFontSize(10);
-        doc.setTextColor(100, 116, 139);
-        doc.text("CENTRAL DE INTELIGÊNCIA E NEGÓCIOS", 14, 26);
-        
-        doc.setDrawColor(226, 232, 240);
-        doc.line(14, 32, pageWidth - 14, 32);
-
-        doc.setFontSize(12);
-        doc.setTextColor(30, 41, 59);
-        const titleMap = {
-            executivo: 'Relatório Executivo Geral',
-            financeiro: 'Fluxo de Caixa Consolidado',
-            estoque: 'Inventário e Saúde de Estoque',
-            clientes: 'Ranking VIP (Unidade Ativa)'
-        };
-        doc.text(titleMap[type], 14, 42);
-        doc.setFontSize(9);
-        doc.text(`Período: ${format(new Date(startDate), 'dd/MM/yy')} at ${format(new Date(endDate), 'dd/MM/yy')}`, 14, 48);
-
-        doc.save(`Relatorio_${type}_${activeStudioId?.split('-')[0]}.pdf`);
-    };
 
     if (!isMounted) return null;
 

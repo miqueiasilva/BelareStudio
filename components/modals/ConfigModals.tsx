@@ -11,19 +11,9 @@ interface ProfessionalModalProps {
 }
 
 export const ProfessionalModal: React.FC<ProfessionalModalProps> = ({ professional, onClose, onSave }) => {
-    const [name, setName] = useState('');
-    const [avatarUrl, setAvatarUrl] = useState('');
+    const [name, setName] = useState(professional?.name || '');
+    const [avatarUrl, setAvatarUrl] = useState(professional?.avatarUrl || '');
     const fileInputRef = useRef<HTMLInputElement>(null);
-
-    useEffect(() => {
-        if (professional) {
-            setName(professional.name);
-            setAvatarUrl(professional.avatarUrl);
-        } else {
-            setName('');
-            setAvatarUrl('');
-        }
-    }, [professional]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];

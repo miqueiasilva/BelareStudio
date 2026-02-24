@@ -31,12 +31,12 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
   const lastSyncRef = useRef<number>(0);
   const syncInFlightRef = useRef<boolean>(false);
 
-  const setActiveStudioId = (id: string) => {
+  const setActiveStudioId = React.useCallback((id: string) => {
     setActiveStudioIdState(id);
     localStorage.setItem(STORAGE_KEY, id);
-  };
+  }, []);
 
-  const refreshStudios = async (force = false) => {
+  const refreshStudios = React.useCallback(async (force = false) => {
     const now = Date.now();
     // Bloqueia sync se já estiver ocorrendo ou se o cooldown não expirou (exceto se for forçado)
     if (syncInFlightRef.current) return;
@@ -93,7 +93,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
       setIsSyncing(false);
       syncInFlightRef.current = false;
     }
-  };
+  }, [setActiveStudioId]);
 
   useEffect(() => {
     refreshStudios(true);
@@ -121,11 +121,11 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
       document.removeEventListener("visibilitychange", handleVisibility);
       sub.subscription.unsubscribe();
     };
-  }, []);
+  }, [refreshStudios]);
 
   const value = useMemo(
     () => ({ loading, isSyncing, studios, activeStudioId, setActiveStudioId, refreshStudios }),
-    [loading, isSyncing, studios, activeStudioId]
+    [loading, isSyncing, studios, activeStudioId, setActiveStudioId, refreshStudios]
   );
 
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>;

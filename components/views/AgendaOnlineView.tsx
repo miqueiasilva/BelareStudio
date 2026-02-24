@@ -1,15 +1,15 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-    Globe, Settings, MessageSquare, BarChart2, ExternalLink, 
-    Copy, CheckCircle, Share2, Save, Eye, Star, MessageCircle,
+    Globe, MessageSquare, BarChart2, 
+    Copy, Share2, Save, Eye, Star,
     Clock, Calendar, AlertTriangle, ShieldCheck, Loader2, Info,
-    Trash2, User, Filter, EyeOff, StarHalf, TrendingUp, TrendingDown,
-    MousePointer2, CalendarCheck, DollarSign, RefreshCw, Sparkles, Scissors
+    Trash2, EyeOff, TrendingUp, TrendingDown,
+    MousePointer2, CalendarCheck, DollarSign, RefreshCw, Scissors
 } from 'lucide-react';
 import { 
     ResponsiveContainer, AreaChart, Area, XAxis, YAxis, 
-    CartesianGrid, Tooltip, BarChart, Bar, Cell 
+    CartesianGrid, Tooltip
 } from 'recharts';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
@@ -333,7 +333,7 @@ const AgendaOnlineView: React.FC = () => {
 
             <div className="bg-white border-b border-slate-200 flex overflow-x-auto scrollbar-hide flex-shrink-0 z-20">
                 <div className="flex px-4">
-                    <TabButton id="geral" label="Geral" icon={Settings} active={activeTab === 'geral'} onClick={setActiveTab} />
+                    <TabButton id="geral" label="Geral" icon={Globe} active={activeTab === 'geral'} onClick={setActiveTab} />
                     <TabButton id="regras" label="Regras" icon={ShieldCheck} active={activeTab === 'regras'} onClick={setActiveTab} />
                     <TabButton id="avaliacoes" label="Avaliações" icon={Star} active={activeTab === 'avaliacoes'} onClick={setActiveTab} />
                     <TabButton id="analytics" label="Desempenho" icon={BarChart2} active={activeTab === 'analytics'} onClick={setActiveTab} />

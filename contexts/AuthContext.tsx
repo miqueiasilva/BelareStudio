@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { User as SupabaseUser, Session } from '@supabase/supabase-js';
+import { User as SupabaseUser } from '@supabase/supabase-js';
 
 export type AppUser = SupabaseUser & {
   papel?: string;
@@ -28,7 +28,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   const lastProcessedId = useRef<string | null>(null);
   const isMounted = useRef(true);
 
-  const fetchProfile = async (authUser: SupabaseUser): Promise<AppUser> => {
+  const fetchProfile = React.useCallback(async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
       const { data: profData } = await supabase
         .from('team_members')
@@ -49,10 +49,27 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         nome: authUser.user_metadata?.full_name || 'Usuário' 
       };
     }
-  };
+  }, []);
 
   useEffect(() => {
     isMounted.current = true;
+
+    // Check initial session
+    const initSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const appUser = await fetchProfile(session.user);
+          if (isMounted.current) setUser(appUser);
+        }
+      } catch (err) {
+        console.error("[AUTH_DEBUG] Erro na sessão inicial:", err);
+      } finally {
+        if (isMounted.current) setLoading(false);
+      }
+    };
+
+    initSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       console.log(`[AUTH_DEBUG] Evento de Autenticação: ${event}`);
@@ -87,7 +104,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
       isMounted.current = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [fetchProfile]);
 
   const signIn = async (email: string, password: string) => {
     return supabase.auth.signInWithPassword({ email, password });

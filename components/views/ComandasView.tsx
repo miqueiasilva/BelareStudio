@@ -1,21 +1,18 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
-    Search, Plus, Clock, User, FileText, 
-    DollarSign, Coffee, Scissors, Trash2, ShoppingBag, X,
-    CreditCard, Banknote, Smartphone, CheckCircle, Loader2,
-    Receipt, History, LayoutGrid, CheckCircle2, AlertCircle, Edit2,
-    Briefcase, ArrowRight
+    Search, Plus, FileText, 
+    Trash2, ShoppingBag, Loader2,
+    ArrowRight
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
-import { FinancialTransaction, PaymentMethod, Client, Command, CommandItem, LegacyProfessional } from '../../types';
+import { Client } from '../../types';
 import Toast, { ToastType } from '../shared/Toast';
-import SelectionModal from '../modals/SelectionModal';
 import ClientSearchModal from '../modals/ClientSearchModal';
-import { differenceInMinutes, format } from 'date-fns';
+import { format } from 'date-fns';
 
-const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand, onOpenPaidSummary }) => {
+const ComandasView: React.FC<any> = ({ onNavigateToCommand, onOpenPaidSummary }) => {
     const { activeStudioId } = useStudio();
     const [tabs, setTabs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -110,7 +107,10 @@ const ComandasView: React.FC<any> = ({ onAddTransaction, onNavigateToCommand, on
             if (error) throw error;
             setTabs(prev => prev.filter(t => t.id !== commandId));
             setToast({ message: "Removida.", type: 'info' });
-        } catch (e) {}
+        } catch (e) {
+            console.error("Erro ao excluir comanda:", e);
+            setToast({ message: "Erro ao remover.", type: 'error' });
+        }
     };
 
     const getClientDisplayName = (tab: any) => {

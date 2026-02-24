@@ -215,6 +215,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             ...formData,
             client: { ...formData.client, email: clientEmail },
             service: compositeService,
+            services: selectedServices,
             notas: selectedServices.length > 1 
                 ? `${formData.notas || ''} \n[Serviços: ${selectedServices.map(s => s.name).join(', ')}]`
                 : formData.notas

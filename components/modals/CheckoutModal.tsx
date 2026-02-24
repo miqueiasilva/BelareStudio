@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-    X, CheckCircle, Wallet, CreditCard, Banknote, 
-    Smartphone, Loader2, ShoppingCart, ArrowRight,
-    ChevronDown, Info, Percent, Layers, AlertTriangle,
-    User, Receipt, UserCheck, UserPlus
+    X, CheckCircle, CreditCard, Banknote, 
+    Smartphone, Loader2
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import Toast, { ToastType } from '../shared/Toast';
@@ -42,7 +40,6 @@ interface CheckoutModalProps {
 
 const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointment, onSuccess }) => {
     const [isLoading, setIsLoading] = useState(false);
-    const [isFetching, setIsFetching] = useState(true);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
     const [dbProfessionals, setDbProfessionals] = useState<any[]>([]);
@@ -65,8 +62,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         setInstallments(1);
     };
 
-    const loadSystemData = async () => {
-        setIsFetching(true);
+    const loadSystemData = useCallback(async () => {
         try {
             const [profsRes, methodsRes] = await Promise.all([
                 supabase.from('team_members').select('id, name').order('name'),
@@ -83,17 +79,15 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 const firstPix = methodsRes.data.find((m: any) => m.type === 'pix');
                 if (firstPix) setSelectedMethodId(firstPix.id);
             }
-        } catch (err: any) {
+        } catch (_err: any) {
             setToast({ message: "Erro ao sincronizar dados.", type: 'error' });
-        } finally {
-            setIsFetching(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
         if (isOpen) loadSystemData();
         else resetLocalState();
-    }, [isOpen]);
+    }, [isOpen, loadSystemData]);
 
     useEffect(() => {
         if (isOpen && appointment && dbProfessionals.length > 0) {
@@ -125,7 +119,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
     const financialMetrics = useMemo(() => {
         if (!currentMethod) return { rate: 0, netValue: appointment.price };
-        let rate = installments === 1 ? Number(currentMethod.rate_cash || 0) : Number(currentMethod.installment_rates[installments.toString()] || 0);
+        const rate = installments === 1 ? Number(currentMethod.rate_cash || 0) : Number(currentMethod.installment_rates[installments.toString()] || 0);
         const discount = (appointment.price * rate) / 100;
         return { rate, netValue: appointment.price - discount };
     }, [currentMethod, installments, appointment.price]);

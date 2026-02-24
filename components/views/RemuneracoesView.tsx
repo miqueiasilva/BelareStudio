@@ -44,17 +44,20 @@ const RemuneracoesView: React.FC = () => {
             supabase.from('team_members')
                 .select('id, name, photo_url, commission_rate, commission_percent')
                 .eq('studio_id', activeStudioId)
-                .order('name'),
+                .order('name')
+                .abortSignal(abortControllerRef.current.signal),
             supabase.from('command_items')
                 .select('*, commands!inner(id, closed_at, status, payment_method)')
                 .eq('studio_id', activeStudioId)
                 .eq('commands.status', 'paid')
                 .gte('commands.closed_at', start)
-                .lte('commands.closed_at', end),
+                .lte('commands.closed_at', end)
+                .abortSignal(abortControllerRef.current.signal),
             supabase.from('payment_methods_config')
                 .select('*')
                 .eq('studio_id', activeStudioId)
                 .eq('is_active', true)
+                .abortSignal(abortControllerRef.current.signal)
         ]);
 
         if (teamRes.error) throw teamRes.error;
@@ -66,8 +69,9 @@ const RemuneracoesView: React.FC = () => {
             setCommandItems(itemsRes.data || []);
             setPaymentConfigs(configRes.data || []);
         }
-    } catch (e: any) {
-        if (isMounted.current && e.name !== 'AbortError') {
+        } catch (e: any) {
+        const isAbortError = e.name === 'AbortError' || e.message?.includes('aborted');
+        if (isMounted.current && !isAbortError) {
             console.error("[REMUNERATIONS] Erro ao buscar dados:", e);
         }
     } finally {

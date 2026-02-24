@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
-    Plus, Scissors, Clock, DollarSign, Edit2, Trash2, 
-    Loader2, Search, X, CheckCircle, AlertTriangle, RefreshCw,
-    LayoutGrid, List, FileSpreadsheet, SlidersHorizontal, ChevronRight,
-    Tag, MoreVertical, Filter, Download, ArrowUpRight, FolderPlus, ChevronDown
+    Plus, Scissors, Clock, Edit2, Trash2, 
+    Loader2, Search, List, LayoutGrid,
+    Tag, Filter, ChevronDown
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
@@ -19,7 +18,6 @@ const ServicosView: React.FC = () => {
     const [services, setServices] = useState<Service[]>([]);
     const [dbCategories, setDbCategories] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState<string>('all');
     const [viewMode, setViewMode] = useState<ViewMode>('list');
@@ -48,13 +46,12 @@ const ServicosView: React.FC = () => {
         }
     }, [activeStudioId]);
 
-    const fetchServices = async () => {
+    const fetchServices = useCallback(async () => {
         if (!isMounted.current || !activeStudioId) return;
         if (abortControllerRef.current) abortControllerRef.current.abort();
         abortControllerRef.current = new AbortController();
 
         setLoading(true);
-        setError(null);
 
         try {
             const { data, error: sbError } = await supabase
@@ -67,13 +64,14 @@ const ServicosView: React.FC = () => {
             if (sbError) throw sbError;
             if (isMounted.current) setServices(data || []);
         } catch (error: any) {
-            if (isMounted.current && error.name !== 'AbortError') {
-                setError(error.message || "Erro inesperado.");
+            const isAbortError = error.name === 'AbortError' || error.message?.includes('aborted');
+            if (isMounted.current && !isAbortError) {
+                console.error(error.message || "Erro inesperado.");
             }
         } finally {
             if (isMounted.current) setLoading(false);
         }
-    };
+    }, [activeStudioId]);
 
     useEffect(() => {
         isMounted.current = true;
@@ -84,7 +82,7 @@ const ServicosView: React.FC = () => {
             isMounted.current = false;
             if (abortControllerRef.current) abortControllerRef.current.abort();
         };
-    }, [activeStudioId, fetchCategories]);
+    }, [activeStudioId, fetchCategories, fetchServices]);
 
     const filteredServices = useMemo(() => {
         if (!Array.isArray(services)) return [];

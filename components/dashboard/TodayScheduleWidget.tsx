@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Clock, MessageCircle, ChevronRight, CalendarX, Plus, Scissors } from 'lucide-react';
+import { MessageCircle, ChevronRight, CalendarX, Plus, Scissors } from 'lucide-react';
 import { format } from 'date-fns';
 import { AppointmentStatus } from '../../types';
 

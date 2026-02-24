@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 // FIX: Use legacy types with aliases to match mock data structure and resolve type errors.
 import { LegacyAppointment as Appointment, LegacyProfessional as Professional, Client, LegacyService as Service, AppointmentStatus } from '../../types';
 import { format } from 'date-fns';
-import { ChevronLeft, ChevronRight, Calendar, Bell, MessageSquare } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, Bell, MessageSquare, Search, UserCheck, UserX } from 'lucide-react';
 
 // --- MOCK DATA ---
 const today = new Date();
@@ -142,12 +142,22 @@ const TimelineIndicator = () => {
 
 const AdminDashboard: React.FC = () => {
     const [visibleProfessionals, setVisibleProfessionals] = useState<number[]>(professionals.map(p => p.id));
+    const [profSearch, setProfSearch] = useState('');
+
+    const filteredProfList = useMemo(() => 
+        professionals.filter(p => p.name.toLowerCase().includes(profSearch.toLowerCase())),
+        [profSearch]
+    );
 
     const handleProfessionalToggle = (id: number) => {
         setVisibleProfessionals(prev =>
             prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]
         );
     };
+
+    const selectAllProfs = () => setVisibleProfessionals(professionals.map(p => p.id));
+    const clearProfs = () => setVisibleProfessionals([]);
+    const focusProf = (id: number) => setVisibleProfessionals([id]);
 
     const filteredProfessionals = useMemo(
         () => professionals.filter(p => visibleProfessionals.includes(p.id)),
@@ -184,21 +194,86 @@ const AdminDashboard: React.FC = () => {
             </header>
 
             <div className="flex-1 flex overflow-hidden">
-                <aside className="w-64 border-r border-slate-200 p-4 space-y-4 overflow-y-auto">
-                    <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider">Configurações</h3>
+                <aside className="w-64 border-r border-slate-200 p-4 space-y-6 overflow-y-auto bg-slate-50/50">
                     <div>
-                        <label className="text-xs font-semibold">Profissionais</label>
-                        <div className="mt-2 space-y-2">
-                            {professionals.map(prof => (
-                                <div key={prof.id} className="flex items-center">
-                                    <input
-                                        type="checkbox"
-                                        id={`prof-${prof.id}`}
-                                        checked={visibleProfessionals.includes(prof.id)}
-                                        onChange={() => handleProfessionalToggle(prof.id)}
-                                        className="h-4 w-4 rounded border-gray-300 text-[#705336] focus:ring-[#705336]"
-                                    />
-                                    <label htmlFor={`prof-${prof.id}`} className="ml-2 block text-sm text-gray-900">{prof.name}</label>
+                        <div className="flex items-center justify-between mb-2">
+                            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Profissionais</h3>
+                            <div className="flex gap-1">
+                                <button 
+                                    onClick={selectAllProfs}
+                                    title="Selecionar Todos"
+                                    className="p-1 hover:bg-slate-200 rounded text-slate-500 transition-colors"
+                                >
+                                    <UserCheck size={14} />
+                                </button>
+                                <button 
+                                    onClick={clearProfs}
+                                    title="Limpar Seleção"
+                                    className="p-1 hover:bg-slate-200 rounded text-slate-500 transition-colors"
+                                >
+                                    <UserX size={14} />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="relative mb-4">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                            <input 
+                                type="text"
+                                placeholder="Buscar..."
+                                value={profSearch}
+                                onChange={(e) => setProfSearch(e.target.value)}
+                                className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-[#705336]/20 focus:border-[#705336] outline-none transition-all"
+                            />
+                        </div>
+
+                        <div className="space-y-1 max-h-[400px] overflow-y-auto custom-scrollbar pr-1">
+                            {filteredProfList.map(prof => (
+                                <div 
+                                    key={prof.id} 
+                                    className={`group flex items-center justify-between p-2 rounded-xl transition-all cursor-pointer ${
+                                        visibleProfessionals.includes(prof.id) 
+                                        ? 'bg-white border border-slate-200 shadow-sm' 
+                                        : 'hover:bg-slate-100 border border-transparent'
+                                    }`}
+                                    onClick={() => handleProfessionalToggle(prof.id)}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <div className="relative">
+                                            <img src={prof.avatarUrl} alt={prof.name} className="w-7 h-7 rounded-full object-cover border border-slate-100" />
+                                            {visibleProfessionals.includes(prof.id) && (
+                                                <div className="absolute -right-0.5 -bottom-0.5 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full"></div>
+                                            )}
+                                        </div>
+                                        <span className={`text-xs font-bold truncate max-w-[100px] ${visibleProfessionals.includes(prof.id) ? 'text-slate-800' : 'text-slate-400'}`}>
+                                            {prof.name}
+                                        </span>
+                                    </div>
+                                    
+                                    <button 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            focusProf(prof.id);
+                                        }}
+                                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-200 rounded text-[10px] font-black text-[#705336] uppercase tracking-tighter transition-all"
+                                    >
+                                        Focar
+                                    </button>
+                                </div>
+                            ))}
+                            {filteredProfList.length === 0 && (
+                                <p className="text-[10px] text-slate-400 font-bold text-center py-4 uppercase tracking-widest">Nenhum profissional encontrado</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-200">
+                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Legenda</h3>
+                        <div className="grid grid-cols-1 gap-2">
+                            {Object.entries(statusClasses).map(([status, classes]) => (
+                                <div key={status} className="flex items-center gap-2">
+                                    <div className={`w-3 h-3 rounded-full border ${classes.split(' ')[0]} ${classes.split(' ')[1]}`}></div>
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">{status.replace('_', ' ')}</span>
                                 </div>
                             ))}
                         </div>

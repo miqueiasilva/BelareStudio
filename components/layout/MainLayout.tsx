@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import { ViewState } from '../../types';
-import { Menu, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Menu, ChevronLeft } from 'lucide-react';
 
 interface MainLayoutProps {
   children: React.ReactNode;

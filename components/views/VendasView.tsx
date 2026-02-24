@@ -1,14 +1,14 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-    Search, ShoppingCart, Plus, Minus, Trash2, CreditCard, 
-    Banknote, Smartphone, CheckCircle, Package, Scissors, 
-    Calendar, User, X, Printer, ArrowRight, Loader2,
+    Search, ShoppingCart, Plus, Trash2, CreditCard, 
+    Banknote, Smartphone, CheckCircle, Scissors, 
+    Calendar, X, Printer, ArrowRight, Loader2,
     Eraser
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
-import { FinancialTransaction, PaymentMethod, Client } from '../../types';
+import { PaymentMethod, Client } from '../../types';
 import Toast, { ToastType } from '../shared/Toast';
 import { format } from 'date-fns';
 
@@ -22,7 +22,6 @@ interface CartItem {
 }
 
 interface VendasViewProps {
-    onAddTransaction: (t: FinancialTransaction) => void;
 }
 
 const ReceiptModal = ({ transaction, onClose, onNewSale }: { transaction: any, onClose: () => void, onNewSale: () => void }) => (
@@ -67,7 +66,7 @@ const ReceiptModal = ({ transaction, onClose, onNewSale }: { transaction: any, o
     </div>
 );
 
-const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
+const VendasView: React.FC<VendasViewProps> = () => {
     const { activeStudioId } = useStudio();
     const [activeTab, setActiveTab] = useState<'servicos' | 'produtos' | 'agenda'>('servicos');
     const [searchTerm, setSearchTerm] = useState('');
@@ -214,7 +213,7 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                 <div className="bg-white p-4 border-b border-slate-200 space-y-4">
                     <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
                         <button onClick={() => setActiveTab('servicos')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'servicos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}><Scissors size={16} /> Serviços</button>
-                        <button onClick={() => setActiveTab('produtos')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'produtos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}><Package size={16} /> Produtos</button>
+                        <button onClick={() => setActiveTab('produtos')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'produtos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}><ShoppingCart size={16} /> Produtos</button>
                         <button onClick={() => setActiveTab('agenda')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'agenda' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}><Calendar size={16} /> Agenda</button>
                     </div>
                     <div className="relative">
@@ -259,7 +258,9 @@ const VendasView: React.FC<VendasViewProps> = ({ onAddTransaction }) => {
                             <div key={item.uuid} className="flex items-center gap-4 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm animate-in slide-in-from-right-4">
                                 <div className="flex-1 min-w-0"><p className="font-black text-slate-800 text-sm truncate">{item.name}</p><p className="text-[10px] text-slate-400 font-bold">R$ {item.price.toFixed(2)}</p></div>
                                 <div className="flex items-center bg-slate-50 rounded-2xl p-1 border border-slate-100">
-                                    <button onClick={() => updateQuantity(index, -1)} className="p-2 text-slate-400 hover:text-rose-500"><Minus size={14} /></button>
+                                    <button onClick={() => updateQuantity(index, -1)} className="p-2 text-slate-400 hover:text-rose-500">
+                                        <Plus size={14} className="rotate-45" />
+                                    </button>
                                     <span className="w-8 text-center text-xs font-black text-slate-800">{item.quantity}</span>
                                     <button onClick={() => updateQuantity(index, 1)} className="p-2 text-slate-400 hover:text-emerald-500"><Plus size={14} /></button>
                                 </div>

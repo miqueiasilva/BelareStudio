@@ -327,9 +327,19 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             prof = professionalsList.find(p => p.name.toLowerCase() === row.professional_name.toLowerCase());
         }
 
+        const notes = row.notes || '';
+        const servicesMatch = notes.match(/---SERVICES_JSON---\n([\s\S]*?)\n---END_SERVICES_JSON---/);
+        let services = [];
+        if (servicesMatch) {
+            try {
+                services = JSON.parse(servicesMatch[1]);
+            } catch (e) {}
+        }
+
         return {
             id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
             notas: row.notes || '', origem: row.origem || 'interno',
+            services: services.length > 0 ? services : undefined,
             client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
             professional: prof || professionalsList[0] || { id: 0, name: row.professional_name, avatarUrl: '' },
             service: { id: 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : (row.service_color || '#3b82f6') }
@@ -345,6 +355,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const startStr = format(app.start, "yyyy-MM-dd'T'HH:mm:ssXXX");
             const endStr = format(addMinutes(app.start, duration), "yyyy-MM-dd'T'HH:mm:ssXXX");
 
+            const servicesMetadata = app.services && app.services.length > 0 
+                ? `\n---SERVICES_JSON---\n${JSON.stringify(app.services)}\n---END_SERVICES_JSON---` 
+                : '';
+
             const payload = { 
                 studio_id: activeStudioId,
                 professional_id: app.professional.id ? String(app.professional.id) : null, 
@@ -358,7 +372,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 start_at: startStr,
                 end_at: endStr,
                 status: app.status || 'agendado', 
-                notes: app.notas || '', 
+                notes: (app.notas || '') + servicesMetadata, 
                 service_color: app.service.color || '#3b82f6'
             };
             

@@ -115,6 +115,7 @@ export interface LegacyAppointment {
   client?: Client;
   professional: LegacyProfessional;
   service: LegacyService;
+  services?: LegacyService[];
   start: Date;
   end: Date;
   status: AppointmentStatus;

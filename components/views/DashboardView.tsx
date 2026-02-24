@@ -3,12 +3,11 @@ import React, { useMemo, useState, useEffect } from 'react';
 import Card from '../shared/Card';
 import JaciBotAssistant from '../shared/JaciBotAssistant';
 import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
-import WeeklyChart from '../charts/WeeklyChart';
 import { getDashboardInsight } from '../../services/geminiService';
-import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Edit3, Loader2, BarChart3, AlertCircle, ChevronRight, CalendarRange, Filter as FilterIcon } from 'lucide-react';
+import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3 } from 'lucide-react';
 // FIX: Grouping date-fns imports and removing problematic members startOfDay, subDays, startOfMonth.
 import { 
-    format, addDays, endOfDay, endOfMonth, isSameDay 
+    format, addDays, endOfDay, endOfMonth
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
@@ -57,17 +56,13 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     
     // Filtro de Período
     const [filter, setFilter] = useState<'hoje' | 'semana' | 'mes' | 'custom'>('hoje');
-    const [customStart, setCustomStart] = useState(format(new Date(), 'yyyy-MM-dd'));
-    const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
+    const [customStart] = useState(format(new Date(), 'yyyy-MM-dd'));
+    const [customEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
     
-    // Estados temporários para o filtro personalizado (UX de confirmação)
-    const [tempStart, setTempStart] = useState(customStart);
-    const [tempEnd, setTempEnd] = useState(customEnd);
-
     const dateRange = useMemo(() => {
         const now = new Date();
         switch (filter) {
-            case 'hoje':
+            case 'hoje': {
                 // FIX: Manual startOfDay replacement.
                 const startToday = new Date(now);
                 startToday.setHours(0, 0, 0, 0);
@@ -76,7 +71,8 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     end: endOfDay(now).toISOString(),
                     label: 'Hoje'
                 };
-            case 'semana':
+            }
+            case 'semana': {
                 // FIX: Manual subDays and startOfDay replacement.
                 const startWeek = addDays(now, -7);
                 startWeek.setHours(0, 0, 0, 0);
@@ -85,7 +81,8 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     end: endOfDay(now).toISOString(),
                     label: 'Últimos 7 dias'
                 };
-            case 'mes':
+            }
+            case 'mes': {
                 // FIX: Manual startOfMonth replacement.
                 const startMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
                 return { 
@@ -93,7 +90,8 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     end: endOfMonth(now).toISOString(),
                     label: 'Este Mês'
                 };
-            case 'custom':
+            }
+            case 'custom': {
                 // FIX: Manual startOfDay replacement.
                 const startCustom = new Date(customStart);
                 startCustom.setHours(0, 0, 0, 0);
@@ -104,7 +102,8 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     end: endCustom.toISOString(),
                     label: `Período: ${format(new Date(customStart), 'dd/MM')} a ${format(new Date(customEnd), 'dd/MM')}`
                 };
-            default:
+            }
+            default: {
                 const sToday = new Date(now);
                 sToday.setHours(0, 0, 0, 0);
                 return { 
@@ -112,6 +111,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     end: endOfDay(now).toISOString(),
                     label: 'Hoje'
                 };
+            }
         }
     }, [filter, customStart, customEnd]);
 
@@ -202,11 +202,6 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
             visual: Math.min(goalProgress, 100)
         };
     }, [monthRevenueTotal, financialGoal]);
-
-    const handleApplyCustomFilter = () => {
-        setCustomStart(tempStart);
-        setCustomEnd(tempEnd);
-    };
 
     if (isLoading) {
         return (

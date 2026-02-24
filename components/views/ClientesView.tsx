@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { 
   UserPlus, Search, Phone, Trash2, Users, Loader2, 
   ChevronRight, FileSpreadsheet, MessageCircle, PhoneCall,
@@ -27,8 +27,23 @@ const ClientesView: React.FC = () => {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+    };
+  }, []);
+
   const fetchClients = useCallback(async (reset = false, searchVal = searchTerm) => {
     if (!activeStudioId) return;
+
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    abortControllerRef.current = new AbortController();
+
     if (reset) {
         setLoading(true);
         setPage(0);
@@ -44,7 +59,8 @@ const ClientesView: React.FC = () => {
         let query = supabase
             .from('clients')
             .select('*', { count: 'exact' })
-            .eq('studio_id', activeStudioId);
+            .eq('studio_id', activeStudioId)
+            .abortSignal(abortControllerRef.current.signal);
 
         if (searchVal.trim()) {
             query = query.or(`nome.ilike.%${searchVal}%,whatsapp.ilike.%${searchVal}%`);
@@ -57,21 +73,28 @@ const ClientesView: React.FC = () => {
         if (error) throw error;
 
         if (reset) {
-            setClients(data || []);
+            if (isMounted.current) setClients(data || []);
         } else {
-            setClients(prev => [...prev, ...(data || [])]);
+            if (isMounted.current) setClients(prev => [...prev, ...(data || [])]);
         }
         
-        if (count !== null) setTotalCount(count);
-        if (!reset) setPage(currentPage + 1);
-        else setPage(1);
+        if (isMounted.current) {
+            if (count !== null) setTotalCount(count);
+            if (!reset) setPage(currentPage + 1);
+            else setPage(1);
+        }
 
     } catch (e: any) {
-        console.error("Erro ao carregar clientes:", e);
-        setToast({ message: "Erro ao sincronizar com o banco.", type: 'error' });
+        const isAbortError = e.name === 'AbortError' || e.message?.includes('aborted');
+        if (isMounted.current && !isAbortError) {
+            console.error("Erro ao carregar clientes:", e);
+            setToast({ message: "Erro ao sincronizar com o banco.", type: 'error' });
+        }
     } finally {
-        setLoading(false);
-        setLoadingMore(false);
+        if (isMounted.current) {
+            setLoading(false);
+            setLoadingMore(false);
+        }
     }
   }, [page, searchTerm, activeStudioId]);
 

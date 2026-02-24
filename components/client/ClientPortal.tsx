@@ -29,6 +29,15 @@ const professionals = ["Maria Silva", "João Pereira", "Ana Costa"];
 const times = ["09:00", "10:00", "11:00", "14:00", "15:00", "16:00", "17:00"];
 
 
+const StepIndicator = ({ num, label, active, isCompleted }: { num: number, label: string, active: boolean, isCompleted: boolean }) => (
+    <div className={`flex items-center gap-2 ${active ? 'text-cyan-600' : 'text-slate-400'}`}>
+        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold ${active ? 'bg-cyan-600 text-white' : 'bg-slate-200'}`}>
+            {isCompleted ? <CheckCircle size={16}/> : num}
+        </div>
+        <span>{label}</span>
+    </div>
+);
+
 const BookingWizard: React.FC<{onClose: () => void}> = ({ onClose }) => {
     const [step, setStep] = useState(1);
     const [selection, setSelection] = useState({ service: '', professional: '', date: '', time: '' });
@@ -38,23 +47,14 @@ const BookingWizard: React.FC<{onClose: () => void}> = ({ onClose }) => {
         if (step < 4) setStep(step + 1);
     };
     
-    const StepIndicator = ({ num, label, active }: { num: number, label: string, active: boolean }) => (
-        <div className={`flex items-center gap-2 ${active ? 'text-cyan-600' : 'text-slate-400'}`}>
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold ${active ? 'bg-cyan-600 text-white' : 'bg-slate-200'}`}>
-                {selection[Object.keys(selection)[num-1] as keyof typeof selection] ? <CheckCircle size={16}/> : num}
-            </div>
-            <span>{label}</span>
-        </div>
-    );
-
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <Card title="Novo Agendamento" className="w-full max-w-2xl">
                 <div className="flex justify-around mb-6 pb-4 border-b">
-                    <StepIndicator num={1} label="Serviço" active={step >= 1} />
-                    <StepIndicator num={2} label="Profissional" active={step >= 2} />
-                    <StepIndicator num={3} label="Horário" active={step >= 3} />
-                    <StepIndicator num={4} label="Confirmar" active={step >= 4} />
+                    <StepIndicator num={1} label="Serviço" active={step >= 1} isCompleted={!!selection.service} />
+                    <StepIndicator num={2} label="Profissional" active={step >= 2} isCompleted={!!selection.professional} />
+                    <StepIndicator num={3} label="Horário" active={step >= 3} isCompleted={!!selection.time} />
+                    <StepIndicator num={4} label="Confirmar" active={step >= 4} isCompleted={false} />
                 </div>
 
                 {step === 1 && <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{services.map(s => <button key={s} onClick={() => handleSelect('service', s)} className="p-4 bg-slate-100 hover:bg-cyan-100 rounded-lg text-center font-medium transition">{s}</button>)}</div>}

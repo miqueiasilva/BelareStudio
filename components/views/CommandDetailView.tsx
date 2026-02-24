@@ -1,12 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
     ChevronLeft, CreditCard, Smartphone, Banknote, 
-    Plus, Loader2, CheckCircle,
-    Phone, Scissors, ShoppingBag, Receipt,
-    Percent, Calendar, ShoppingCart, X, Coins,
-    ArrowRight, ShieldCheck, Tag, CreditCard as CardIcon,
-    User, UserCheck, Trash2, Lock, MoreVertical, AlertTriangle,
-    Clock, Landmark, ChevronRight, Calculator, Layers
+    Loader2, CheckCircle,
+    ShoppingCart, X,
+    CreditCard as CardIcon
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
@@ -31,7 +28,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [availableConfigs, setAvailableConfigs] = useState<any[]>([]);
 
-    const fetchContext = async () => {
+    const fetchContext = useCallback(async () => {
         if (!activeStudioId || !commandId) return;
         setLoading(true);
         try {
@@ -56,17 +53,17 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             if (cmdData.status === 'paid') {
                 setIsLocked(true);
             }
-        } catch (e: any) {
+        } catch (_e: any) {
             setToast({ message: "Falha ao carregar comanda", type: 'error' });
         } finally {
             setLoading(false);
         }
-    };
+    }, [activeStudioId, commandId]);
 
     useEffect(() => { 
         isProcessingRef.current = false;
         fetchContext(); 
-    }, [commandId, activeStudioId]);
+    }, [fetchContext]);
 
     const totals = useMemo(() => {
         if (!command) return { total: 0, paid: 0, remaining: 0 };
@@ -114,7 +111,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             const mainPayment = addedPayments[0];
             const dbMethod = mainPayment.method === 'money' ? 'dinheiro' : mainPayment.method;
 
-            const { data, error: rpcError } = await supabase.rpc('register_payment_transaction', {
+            const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: command.professional_id,
                 p_client_id: command.client_id ? Number(command.client_id) : null,

@@ -7,7 +7,6 @@ import {
 import { ViewState, UserRole } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { hasAccess } from '../../utils/permissions';
-import { supabase } from '../../services/supabaseClient';
 import { StudioSwitcher } from './StudioSwitcher';
 
 interface SidebarProps {

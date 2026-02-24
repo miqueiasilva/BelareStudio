@@ -19,20 +19,11 @@ function KPI({icon:Icon,label,value,bg}:{icon:any;label:string;value:string|numb
 
 export default function Home() {
   // mocks seguros (substitua depois pelos dados reais)
-  const [revenue, setRevenue] = useState(0);
-  const [appts, setAppts] = useState(0);
-  const [occ, setOcc] = useState(0);
-  const [noshow, setNoshow] = useState(0);
-  const [ticket, setTicket] = useState(0);
-
-  useEffect(() => {
-    // evita qualquer erro de lib: só preenche mocks
-    setRevenue(1980);
-    setAppts(18);
-    setOcc(82);
-    setNoshow(5.6);
-    setTicket(198);
-  }, []);
+  const [revenue] = useState(1980);
+  const [appts] = useState(18);
+  const [occ] = useState(82);
+  const [noshow] = useState(5.6);
+  const [ticket] = useState(198);
 
   return (
     <div className="mx-auto max-w-[1200px] p-4">

@@ -2,11 +2,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
     ChevronLeft, User, Save, Trash2, Camera, Scissors, 
-    Loader2, Shield, Clock, DollarSign, CheckCircle, AlertCircle, Coffee,
-    Phone, Mail, Smartphone, CreditCard, LayoutDashboard, Calendar,
+    Loader2, Shield, Clock, DollarSign, CheckCircle, AlertCircle,
+    Phone, Mail, Smartphone, CreditCard,
     Settings2, Hash, Armchair, ChevronDown
 } from 'lucide-react';
-import { LegacyProfessional, LegacyService, Service } from '../../types';
+import { LegacyProfessional, Service } from '../../types';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import { supabase } from '../../services/supabaseClient';

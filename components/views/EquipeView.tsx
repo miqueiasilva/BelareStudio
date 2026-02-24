@@ -1,9 +1,7 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
-    Plus, Users, Loader2, Search, ArrowRight, User as UserIcon, 
-    Briefcase, RefreshCw, AlertTriangle, LayoutGrid, List,
-    ChevronRight, Settings2, MapPin
+    Users, Loader2, User as UserIcon
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
@@ -19,7 +17,7 @@ const EquipeView: React.FC = () => {
     const [selectedProf, setSelectedProf] = useState<any | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     
-    const fetchProfessionals = async () => {
+    const fetchProfessionals = useCallback(async () => {
         if (!activeStudioId) return;
         setLoading(true);
         try {
@@ -31,14 +29,14 @@ const EquipeView: React.FC = () => {
             
             if (error) throw error;
             setProfessionals(data || []);
-        } catch (error: any) {
+        } catch (error) {
             setToast({ message: "Erro ao carregar equipe.", type: 'error' });
         } finally {
             setLoading(false);
         }
-    };
+    }, [activeStudioId]);
 
-    useEffect(() => { fetchProfessionals(); }, [activeStudioId]);
+    useEffect(() => { fetchProfessionals(); }, [fetchProfessionals]);
 
     const handleCreateNew = async () => {
         if (!activeStudioId) return;

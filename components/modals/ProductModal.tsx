@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 // FIX: Added 'Info' to the imports from lucide-react
 import { X, Package, DollarSign, Tag, BarChart, Save, AlertTriangle, Truck, Hash, Info } from 'lucide-react';
 import { Product, Supplier } from '../../types';
@@ -20,42 +20,50 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
     const { activeStudioId } = useStudio();
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
     const [formData, setFormData] = useState<Partial<Product>>({
-        name: '',
-        sku: '',
-        stock_quantity: 0,
-        min_stock: 5,
-        cost_price: 0,
-        price: 0,
-        active: true,
-        category: 'Geral',
-        supplier_id: null
+        name: product?.name || '',
+        sku: product?.sku || '',
+        stock_quantity: product?.stock_quantity || 0,
+        min_stock: product?.min_stock || 5,
+        cost_price: product?.cost_price || 0,
+        price: product?.price || 0,
+        active: product?.active ?? true,
+        category: product?.category || 'Geral',
+        supplier_id: product?.supplier_id || null,
+        ...product
     });
+    const abortControllerRef = useRef<AbortController | null>(null);
+    const isMounted = useRef(true);
 
     useEffect(() => {
+        isMounted.current = true;
         const loadSuppliers = async () => {
             if (!activeStudioId) return;
-            const { data } = await supabase.from('suppliers').select('*').eq('studio_id', activeStudioId).order('name');
-            if (data) setSuppliers(data);
+            
+            if (abortControllerRef.current) abortControllerRef.current.abort();
+            abortControllerRef.current = new AbortController();
+
+            try {
+                const { data, error } = await supabase
+                    .from('suppliers')
+                    .select('*')
+                    .eq('studio_id', activeStudioId)
+                    .order('name')
+                    .abortSignal(abortControllerRef.current.signal);
+                if (error) throw error;
+                if (isMounted.current && data) setSuppliers(data);
+            } catch (e: any) {
+                const isAbortError = e.name === 'AbortError' || e.message?.includes('aborted');
+                if (isMounted.current && !isAbortError) {
+                    console.error("Erro ao carregar fornecedores:", e);
+                }
+            }
         };
         loadSuppliers();
+        return () => {
+            isMounted.current = false;
+            if (abortControllerRef.current) abortControllerRef.current.abort();
+        };
     }, [activeStudioId]);
-
-    useEffect(() => {
-        if (product) {
-            setFormData({
-                ...product,
-                name: product.name || '',
-                sku: product.sku || '',
-                stock_quantity: product.stock_quantity || 0,
-                min_stock: product.min_stock || 0,
-                cost_price: product.cost_price || 0,
-                price: product.price || 0,
-                active: product.active ?? true,
-                category: product.category || 'Geral',
-                supplier_id: product.supplier_id || null
-            });
-        }
-    }, [product]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();

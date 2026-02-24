@@ -1,27 +1,26 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
-    ArrowUpCircle, ArrowDownCircle, Wallet, TrendingUp, AlertTriangle, 
-    CheckCircle, Plus, Loader2, Calendar, Search, Filter, Download,
-    RefreshCw, ChevronLeft, ChevronRight, FileText, Clock, User,
-    Coins, Banknote, Percent, Trash2, BarChart3, PieChart, ArrowUpRight,
+    ArrowDownCircle, Wallet, TrendingUp, 
+    CheckCircle, Loader2, Search, 
+    RefreshCw, 
+    Banknote, Trash2, PieChart, ArrowUpRight,
     ArrowDownRight, Landmark, History, Smartphone, CreditCard,
-    ChevronDown, FileDown, Target, LineChart, FileSpreadsheet
+    FileDown, LineChart, FileSpreadsheet
 } from 'lucide-react';
 import { 
     ResponsiveContainer, AreaChart, Area, XAxis, YAxis, 
-    CartesianGrid, Tooltip, Legend, PieChart as RechartsPieChart, Pie, Cell
+    CartesianGrid, Tooltip, PieChart as RechartsPieChart, Pie, Cell
 } from 'recharts';
 import Card from '../shared/Card';
 import NewTransactionModal from '../modals/NewTransactionModal';
-import { FinancialTransaction, TransactionType } from '../../types';
+import { TransactionType } from '../../types';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import { 
-    format, isSameDay, isAfter, 
+    format, 
     endOfDay, endOfMonth,
     eachDayOfInterval, addDays
 } from 'date-fns';
-import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import Toast, { ToastType } from '../shared/Toast';
 
 // Libs para exportação
@@ -40,8 +39,6 @@ const getStartOfDay = (d: Date) => {
 const getStartOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
 
 interface FinanceiroViewProps {
-    transactions: FinancialTransaction[];
-    onAddTransaction: (t: FinancialTransaction) => void;
 }
 
 const formatBRL = (value: number) => 
@@ -66,7 +63,7 @@ const StatCard = ({ title, value, subtext, icon: Icon, colorClass, trend }: any)
     </div>
 );
 
-const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTransactions, onAddTransaction }) => {
+const FinanceiroView: React.FC<FinanceiroViewProps> = () => {
     const { activeStudioId } = useStudio();
     const [dbTransactions, setDbTransactions] = useState<any[]>([]);
     const [summaryCards, setSummaryCards] = useState<any>({
@@ -84,7 +81,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
     const [startDate, setStartDate] = useState(format(getStartOfDay(new Date()), 'yyyy-MM-dd'));
     const [endDate, setEndDate] = useState(format(endOfDay(new Date()), 'yyyy-MM-dd'));
     
-    const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
+    const [selectedCategory] = useState<string>('Todas');
     const [searchTerm, setSearchTerm] = useState('');
     const [showModal, setShowModal] = useState<TransactionType | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);

@@ -14,9 +14,9 @@ const DEFAULT_KEY = "sb_publishable_jpVmCuQ3xmbWWcvgHn_H3g_Vypfyw0x";
 const getEnv = (key: string, fallback: string): string => {
   // 1. Tenta variáveis de ambiente do Vite (import.meta.env) de forma segura
   try {
-    // @ts-ignore
+    // @ts-expect-error - import.meta.env is not defined in all environments
     if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
-      // @ts-ignore
+      // @ts-expect-error - import.meta.env is not defined in all environments
       return import.meta.env[key];
     }
   } catch (e) {
@@ -25,9 +25,9 @@ const getEnv = (key: string, fallback: string): string => {
 
   // 2. Tenta process.env (fallback para outros ambientes)
   try {
-    // @ts-ignore
+    // @ts-expect-error - process.env is not defined in all environments
     if (typeof process !== 'undefined' && process.env && process.env[key]) {
-      // @ts-ignore
+      // @ts-expect-error - process.env is not defined in all environments
       return process.env[key];
     }
   } catch (e) {

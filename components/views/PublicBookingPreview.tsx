@@ -167,7 +167,7 @@ const PublicBookingPreview: React.FC = () => {
 
                 const { data: profsData } = await supabase
                     .from('team_members')
-                    .select('id, name, photo_url, role')
+                    .select('id, name, photo_url, role, services_enabled')
                     .eq('active', true)
                     .eq('online_booking_enabled', true)
                     .order('order_index');
@@ -500,7 +500,16 @@ const PublicBookingPreview: React.FC = () => {
                                 <main className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-slate-50/30 text-left">
                                     {bookingStep === 1 && (
                                         <div className="space-y-4">
-                                            {professionals.map(p => (
+                                            {professionals
+                                                .filter(p => {
+                                                    if (selectedServices.length === 0) return true;
+                                                    const profSkills = p.services_enabled || [];
+                                                    // Se o profissional não tem habilidades definidas, assume que faz tudo (ou nada, dependendo da lógica desejada)
+                                                    // Aqui vamos assumir que se tiver habilidades, deve ter todas as selecionadas.
+                                                    if (profSkills.length === 0) return true; 
+                                                    return selectedServices.every(s => profSkills.includes(s.id));
+                                                })
+                                                .map(p => (
                                                 <button 
                                                     key={p.id} onClick={() => { setSelectedProfessional(p); setBookingStep(2); }}
                                                     className={`w-full p-5 flex items-center gap-4 border-2 rounded-3xl transition-all text-left bg-white ${selectedProfessional?.id === p.id ? 'border-orange-500 bg-orange-50/30' : 'border-slate-100 hover:border-orange-200'}`}
@@ -629,6 +638,15 @@ const PublicBookingPreview: React.FC = () => {
                                                         <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Resumo do Horário</p>
                                                         <p className="text-base font-black text-slate-800">{format(selectedDate, "dd 'de' MMMM", { locale: pt })} às {selectedTime}</p>
                                                     </div>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Serviços Selecionados</p>
+                                                    {selectedServices.map(s => (
+                                                        <div key={s.id} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                                            <span className="text-sm font-bold text-slate-700">{s.nome || s.name}</span>
+                                                            <span className="text-xs font-black text-slate-400">R$ {Number(s.preco).toFixed(2)}</span>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                                 <div className="pt-3 border-t border-slate-50 flex justify-between items-center">
                                                     <span className="text-xs font-black uppercase text-slate-400">Total</span>
