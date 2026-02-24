@@ -15,7 +15,7 @@ import {
     ChevronDown, ChevronUp, Share2, Loader2, MapPin, Phone, 
     User, Mail, ShoppingBag, Clock, Calendar, Scissors, 
     CheckCircle2, ArrowRight, UserCircle2, X, AlertTriangle,
-    ArrowLeft, ChevronRight, Plus
+    ArrowLeft, ChevronRight
 } from 'lucide-react';
 
 const DEFAULT_COVER = "https://images.unsplash.com/photo-1560066984-138dadb4c035?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80";
@@ -323,20 +323,11 @@ const PublicBookingPreview: React.FC = () => {
             if (existingClient) {
                 clientId = existingClient.id;
             } else {
-                const { data: newClient, error: clientErr } = await supabase
+                const { data: newClient } = await supabase
                     .from('clients')
                     .insert([{ nome: clientName, whatsapp: cleanPhone, consent: true, origem: 'Link Público' }])
-                    .select()
-                    .single();
-                
-                if (clientErr || !newClient) {
-                    throw new Error("Não foi possível cadastrar seus dados. Por favor, tente novamente.");
-                }
+                    .select().single();
                 clientId = newClient.id;
-            }
-
-            if (!selectedProfessional) {
-                throw new Error("Profissional não selecionado.");
             }
 
             const [h, m] = selectedTime.split(':').map(Number);
@@ -554,8 +545,8 @@ const PublicBookingPreview: React.FC = () => {
                                                 </div>
 
                                                 <div className="grid grid-cols-7 gap-1">
-                                                    {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((d, i) => (
-                                                        <div key={`${d}-${i}`} className="text-center text-[10px] font-black text-slate-400 py-2 tracking-widest">{d}</div>
+                                                    {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map(d => (
+                                                        <div key={d} className="text-center text-[10px] font-black text-slate-400 py-2 tracking-widest">{d}</div>
                                                     ))}
                                                     {calendarDays.map((day) => {
                                                         const isToday = isSameDay(day, new Date());
