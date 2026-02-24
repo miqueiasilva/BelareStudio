@@ -1,23 +1,36 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
-    BarChart3, TrendingUp, DollarSign, 
-    RefreshCw, 
-    LayoutDashboard,
-    ArrowUp, ArrowDown, Target, Package, Users, Wallet, Loader2, PieChart as PieChartIcon
+    BarChart3, TrendingUp, TrendingDown, DollarSign, Calendar, 
+    ChevronLeft, ChevronRight, FileSpreadsheet, FileText,
+    Users, Scissors, Wallet, ArrowRight, Loader2, 
+    AlertTriangle, FilePieChart, Table, CheckCircle2,
+    BarChart, PieChart as PieChartIcon, Search, Printer, 
+    Download, Filter, CalendarDays, Clock, CreditCard, Banknote, Smartphone,
+    RefreshCw, Info, UserCheck, Zap, RotateCcw, MessageCircle, 
+    Package, AlertOctagon, Layers, Coins, CheckSquare, Square,
+    BarChart4, Tags, ShoppingBag, Sparkles, ArrowUpRight,
+    ArrowUp, ArrowDown, PieChart, Receipt, Target, LayoutDashboard,
+    HardDrive, History, Archive, Cake, Gauge, FileDown, Sheet
 } from 'lucide-react';
 // FIX: Grouping date-fns imports and removing problematic members startOfMonth, subMonths, startOfDay, subDays, startOfYesterday.
 import { 
-    format, 
-    differenceInDays, endOfDay,
-    eachDayOfInterval, addDays
+    format, endOfMonth, 
+    differenceInDays, isSameDay, endOfDay,
+    eachDayOfInterval, isWithinInterval, addDays, addMonths, endOfYesterday
 } from 'date-fns';
+import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { 
-    ResponsiveContainer, Tooltip, Cell, PieChart as RechartsPieChart, Pie
+    ResponsiveContainer, BarChart as RechartsBarChart, Bar, XAxis, YAxis, 
+    CartesianGrid, Tooltip, Cell, PieChart as RechartsPieChart, Pie, AreaChart, Area
 } from 'recharts';
 import Card from '../shared/Card';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
+
+import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const TrendBadge = ({ current, previous, label = "vs ant." }: { current: number, previous: number, label?: string }) => {
     const variation = previous > 0 ? ((current - previous) / previous) * 100 : 0;
@@ -127,27 +140,75 @@ const RelatoriosView: React.FC = () => {
         const evolutionData = days.map(day => {
             const dStr = format(day, 'yyyy-MM-dd');
             const dayTrans = transactions.filter(t => format(new Date(t.date), 'yyyy-MM-dd') === dStr);
+            const dayIncome = dayTrans.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
+            const dayExpense = dayTrans.filter(t => t.type === 'expense' || t.type === 'despesa').reduce((acc, t) => acc + Number(t.amount || 0), 0);
+            const dayProfit = dayIncome - dayExpense;
+            const dayMargin = dayIncome > 0 ? (dayProfit / dayIncome) * 100 : 0;
+
             return {
                 day: format(day, 'dd/MM'),
-                receita: dayTrans.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0),
-                despesa: dayTrans.filter(t => t.type === 'expense' || t.type === 'despesa').reduce((acc, t) => acc + Number(t.amount || 0), 0)
+                receita: dayIncome,
+                despesa: dayExpense,
+                lucro: dayProfit,
+                margem: dayMargin
             };
         });
 
         const categoryMap: Record<string, number> = {};
+        const expenseCategoryMap: Record<string, number> = {};
+        
         transactions.forEach(t => {
             if (t.type === 'income' || t.type === 'receita') {
                 const cat = t.category || 'Geral';
                 categoryMap[cat] = (categoryMap[cat] || 0) + Number(t.amount || 0);
+            } else if (t.type === 'expense' || t.type === 'despesa') {
+                const cat = t.category || 'Geral';
+                expenseCategoryMap[cat] = (expenseCategoryMap[cat] || 0) + Number(t.amount || 0);
             }
         });
         const categoryData = Object.entries(categoryMap).map(([name, value]) => ({ name, value }));
+        const expenseCategoryData = Object.entries(expenseCategoryMap).map(([name, value]) => ({ name, value }));
+
+        const profit = income - expense;
+        const profitMargin = income > 0 ? (profit / income) * 100 : 0;
 
         return {
             income, prevIncome, expense, prevExpense, avgTicket, occupancy,
-            vipClients, criticalStock, evolutionData, categoryData
+            vipClients, criticalStock, evolutionData, categoryData, expenseCategoryData,
+            profit, profitMargin
         };
     }, [transactions, prevTransactions, lifetimeTransactions, appointments, products, clients, startDate, endDate]);
+
+    const generatePDF = (type: 'executivo' | 'financeiro' | 'estoque' | 'clientes') => {
+        const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const nowFormatted = format(new Date(), 'dd/MM/yyyy HH:mm');
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(20);
+        doc.setTextColor(30, 41, 59);
+        doc.text("BelareStudio - Gestão Inteligente", 14, 20);
+        doc.setFontSize(10);
+        doc.setTextColor(100, 116, 139);
+        doc.text("CENTRAL DE INTELIGÊNCIA E NEGÓCIOS", 14, 26);
+        
+        doc.setDrawColor(226, 232, 240);
+        doc.line(14, 32, pageWidth - 14, 32);
+
+        doc.setFontSize(12);
+        doc.setTextColor(30, 41, 59);
+        const titleMap = {
+            executivo: 'Relatório Executivo Geral',
+            financeiro: 'Fluxo de Caixa Consolidado',
+            estoque: 'Inventário e Saúde de Estoque',
+            clientes: 'Ranking VIP (Unidade Ativa)'
+        };
+        doc.text(titleMap[type], 14, 42);
+        doc.setFontSize(9);
+        doc.text(`Período: ${format(new Date(startDate), 'dd/MM/yy')} at ${format(new Date(endDate), 'dd/MM/yy')}`, 14, 48);
+
+        doc.save(`Relatorio_${type}_${activeStudioId?.split('-')[0]}.pdf`);
+    };
 
     if (!isMounted) return null;
 
@@ -188,8 +249,87 @@ const RelatoriosView: React.FC = () => {
                             {activeTab === 'dashboard' && (
                                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-500">
                                     <MetricCard title="Faturamento Unidade" value={`R$ ${bi.income.toLocaleString('pt-BR')}`} subtext="Total bruto recebido" color="bg-emerald-500" icon={DollarSign} trend={isComparing && <TrendBadge current={bi.income} previous={bi.prevIncome} />} />
+                                    <MetricCard title="Lucro Operacional" value={`R$ ${bi.profit.toLocaleString('pt-BR')}`} subtext="Receita - Despesas" color="bg-indigo-500" icon={TrendingUp} trend={isComparing && <TrendBadge current={bi.profit} previous={bi.prevIncome - bi.prevExpense} />} />
+                                    <MetricCard title="Margem de Lucro" value={`${bi.profitMargin.toFixed(1)}%`} subtext="Rentabilidade do Período" color="bg-slate-800" icon={Percent} />
+                                    
                                     <MetricCard title="Ticket Médio" value={`R$ ${bi.avgTicket.toFixed(2)}`} subtext="Média por atendimento" color="bg-orange-500" icon={TrendingUp} />
                                     <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex flex-col items-center"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Ocupação Unidade</p><div className="relative w-32 h-16 overflow-hidden"><div className="absolute top-0 w-32 h-32 rounded-full border-[12px] border-slate-100"></div><div className="absolute top-0 w-32 h-32 rounded-full border-[12px] border-indigo-500 transition-all duration-1000" style={{ clipPath: `polygon(0 0, 100% 0, 100% 50%, 0 50%)`, transform: `rotate(${(bi.occupancy * 1.8) - 180}deg)` }}></div><span className="absolute bottom-0 left-1/2 -translate-x-1/2 font-black text-xl text-slate-800">{bi.occupancy.toFixed(0)}%</span></div></div>
+                                </div>
+                            )}
+
+                            {activeTab === 'financeiro' && (
+                                <div className="space-y-8 animate-in fade-in duration-500">
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                        <Card title="Evolução Financeira" icon={<LineChart size={18} className="text-indigo-500" />}>
+                                            <div className="h-80 mt-4">
+                                                <ResponsiveContainer width="100%" height="100%">
+                                                    <AreaChart data={bi.evolutionData}>
+                                                        <defs>
+                                                            <linearGradient id="colorRec" x1="0" y1="0" x2="0" y2="1">
+                                                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
+                                                                <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                                                            </linearGradient>
+                                                            <linearGradient id="colorDes" x1="0" y1="0" x2="0" y2="1">
+                                                                <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.1}/>
+                                                                <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
+                                                            </linearGradient>
+                                                        </defs>
+                                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                                        <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} />
+                                                        <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} />
+                                                        <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
+                                                        <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{paddingBottom: '20px', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase'}} />
+                                                        <Area type="monotone" dataKey="receita" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorRec)" name="Receita" />
+                                                        <Area type="monotone" dataKey="despesa" stroke="#f43f5e" strokeWidth={3} fillOpacity={1} fill="url(#colorDes)" name="Despesa" />
+                                                    </AreaChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                        </Card>
+
+                                        <Card title="Margem de Lucro Diária" icon={<Percent size={18} className="text-indigo-500" />}>
+                                            <div className="h-80 mt-4">
+                                                <ResponsiveContainer width="100%" height="100%">
+                                                    <AreaChart data={bi.evolutionData}>
+                                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                                        <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} />
+                                                        <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} unit="%" />
+                                                        <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
+                                                        <Area type="monotone" dataKey="margem" stroke="#6366f1" strokeWidth={3} fillOpacity={0.1} fill="#6366f1" name="Margem %" />
+                                                    </AreaChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                        </Card>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                        <Card title="Receitas por Categoria" icon={<PieChart size={18} className="text-emerald-500" />}>
+                                            <div className="h-64">
+                                                <ResponsiveContainer width="100%" height="100%">
+                                                    <RechartsPieChart>
+                                                        <Pie data={bi.categoryData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={80} paddingAngle={5}>
+                                                            {bi.categoryData.map((_, index) => (<Cell key={`cell-${index}`} fill={['#10B981', '#34D399', '#6EE7B7', '#A7F3D0', '#D1FAE5'][index % 5]} />))}
+                                                        </Pie>
+                                                        <Tooltip />
+                                                        <Legend />
+                                                    </RechartsPieChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                        </Card>
+
+                                        <Card title="Despesas por Categoria" icon={<PieChart size={18} className="text-rose-500" />}>
+                                            <div className="h-64">
+                                                <ResponsiveContainer width="100%" height="100%">
+                                                    <RechartsPieChart>
+                                                        <Pie data={bi.expenseCategoryData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={80} paddingAngle={5}>
+                                                            {bi.expenseCategoryData.map((_, index) => (<Cell key={`cell-${index}`} fill={['#F43F5E', '#FB7185', '#FDA4AF', '#FECDD3', '#FFE4E6'][index % 5]} />))}
+                                                        </Pie>
+                                                        <Tooltip />
+                                                        <Legend />
+                                                    </RechartsPieChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                        </Card>
+                                    </div>
                                 </div>
                             )}
 
@@ -199,6 +339,45 @@ const RelatoriosView: React.FC = () => {
                                         {bi.categoryData.length > 0 ? (
                                             <div className="h-64"><ResponsiveContainer width="100%" height="100%"><RechartsPieChart><Pie data={bi.categoryData} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={5}>{bi.categoryData.map((_, index) => (<Cell key={`cell-${index}`} fill={['#6366F1', '#F97316', '#10B981', '#F43F5E', '#8B5CF6'][index % 5]} />))}</Pie><Tooltip /></RechartsPieChart></ResponsiveContainer></div>
                                         ) : (<div className="h-64 flex flex-col items-center justify-center text-slate-300 opacity-60"><PieChartIcon size={48} strokeWidth={1} /><p className="text-[10px] font-black uppercase mt-4">Sem dados para esta unidade</p></div>)}
+                                    </Card>
+                                </div>
+                            )}
+
+                            {activeTab === 'estoque' && (
+                                <div className="space-y-8 animate-in fade-in duration-500">
+                                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                        <MetricCard title="Produtos em Estoque" value={products.length} subtext="Total de SKUs cadastrados" color="bg-blue-500" icon={Package} />
+                                        <MetricCard title="Estoque Crítico" value={bi.criticalStock.length} subtext="Abaixo do nível mínimo" color="bg-rose-500" icon={AlertOctagon} />
+                                        <MetricCard title="Valor em Estoque" value={`R$ ${products.reduce((acc, p) => acc + (p.stock_quantity * (p.cost_price || 0)), 0).toLocaleString('pt-BR')}`} subtext="Custo total imobilizado" color="bg-slate-800" icon={Coins} />
+                                    </div>
+
+                                    <Card title="Produtos com Estoque Baixo" icon={<AlertTriangle size={18} className="text-rose-500" />}>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead>
+                                                    <tr className="border-b border-slate-100">
+                                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Produto</th>
+                                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Atual</th>
+                                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Mínimo</th>
+                                                        <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-50">
+                                                    {bi.criticalStock.length === 0 ? (
+                                                        <tr><td colSpan={4} className="p-10 text-center text-slate-400 font-bold uppercase text-[10px]">Nenhum alerta de estoque.</td></tr>
+                                                    ) : (
+                                                        bi.criticalStock.map(p => (
+                                                            <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                                                                <td className="px-4 py-4"><span className="text-xs font-bold text-slate-700">{p.name}</span></td>
+                                                                <td className="px-4 py-4 text-center"><span className="text-xs font-black text-rose-600">{p.stock_quantity}</span></td>
+                                                                <td className="px-4 py-4 text-center"><span className="text-xs font-bold text-slate-400">{p.min_stock || 5}</span></td>
+                                                                <td className="px-4 py-4 text-right"><span className="px-2 py-1 bg-rose-50 text-rose-600 rounded-lg text-[9px] font-black uppercase">Reposição Urgente</span></td>
+                                                            </tr>
+                                                        ))
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </Card>
                                 </div>
                             )}

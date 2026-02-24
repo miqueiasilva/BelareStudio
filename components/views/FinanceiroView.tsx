@@ -1,26 +1,27 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
-    ArrowDownCircle, Wallet, TrendingUp, 
-    CheckCircle, Loader2, Search, 
-    RefreshCw, 
-    Banknote, Trash2, PieChart, ArrowUpRight,
+    ArrowUpCircle, ArrowDownCircle, Wallet, TrendingUp, AlertTriangle, 
+    CheckCircle, Plus, Loader2, Calendar, Search, Filter, Download,
+    RefreshCw, ChevronLeft, ChevronRight, FileText, Clock, User,
+    Coins, Banknote, Percent, Trash2, BarChart3, PieChart, ArrowUpRight,
     ArrowDownRight, Landmark, History, Smartphone, CreditCard,
-    FileDown, LineChart, FileSpreadsheet
+    ChevronDown, FileDown, Target, LineChart, FileSpreadsheet
 } from 'lucide-react';
 import { 
     ResponsiveContainer, AreaChart, Area, XAxis, YAxis, 
-    CartesianGrid, Tooltip, PieChart as RechartsPieChart, Pie, Cell
+    CartesianGrid, Tooltip, Legend, PieChart as RechartsPieChart, Pie, Cell
 } from 'recharts';
 import Card from '../shared/Card';
 import NewTransactionModal from '../modals/NewTransactionModal';
-import { TransactionType } from '../../types';
+import { FinancialTransaction, TransactionType } from '../../types';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import { 
-    format, 
+    format, isSameDay, isAfter, 
     endOfDay, endOfMonth,
     eachDayOfInterval, addDays
 } from 'date-fns';
+import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import Toast, { ToastType } from '../shared/Toast';
 
 // Libs para exportação
@@ -39,6 +40,8 @@ const getStartOfDay = (d: Date) => {
 const getStartOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
 
 interface FinanceiroViewProps {
+    transactions: FinancialTransaction[];
+    onAddTransaction: (t: FinancialTransaction) => void;
 }
 
 const formatBRL = (value: number) => 
@@ -63,14 +66,15 @@ const StatCard = ({ title, value, subtext, icon: Icon, colorClass, trend }: any)
     </div>
 );
 
-const FinanceiroView: React.FC<FinanceiroViewProps> = () => {
+const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTransactions, onAddTransaction }) => {
     const { activeStudioId } = useStudio();
     const [dbTransactions, setDbTransactions] = useState<any[]>([]);
     const [summaryCards, setSummaryCards] = useState<any>({
         gross_revenue: 0,
         net_revenue: 0,
         total_expenses: 0,
-        balance: 0
+        balance: 0,
+        profit_margin: 0
     });
     const [projections, setProjections] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -81,7 +85,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = () => {
     const [startDate, setStartDate] = useState(format(getStartOfDay(new Date()), 'yyyy-MM-dd'));
     const [endDate, setEndDate] = useState(format(endOfDay(new Date()), 'yyyy-MM-dd'));
     
-    const [selectedCategory] = useState<string>('Todas');
+    const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
     const [searchTerm, setSearchTerm] = useState('');
     const [showModal, setShowModal] = useState<TransactionType | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -134,11 +138,15 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = () => {
                 .filter(t => t.type === 'income' || t.type === 'receita')
                 .reduce((acc, t) => acc + Number(t.net_value || t.amount || 0), 0);
 
+            const profit = net - expenses;
+            const margin = net > 0 ? (profit / net) * 100 : 0;
+
             setSummaryCards({
                 gross_revenue: gross,
                 net_revenue: net,
                 total_expenses: expenses,
-                balance: net - expenses
+                balance: profit,
+                profit_margin: margin
             });
 
             // 3. Buscar Projeções para o Gráfico
@@ -349,13 +357,20 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = () => {
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                     <StatCard 
                         title="Saldo em Conta" 
                         value={formatBRL(summaryCards.balance)} 
                         icon={Wallet} 
                         colorClass="bg-slate-800" 
                         subtext="Faturamento Líquido - Despesas"
+                    />
+                    <StatCard 
+                        title="Margem de Lucro" 
+                        value={`${summaryCards.profit_margin.toFixed(1)}%`} 
+                        icon={Percent} 
+                        colorClass="bg-indigo-600" 
+                        subtext="Rentabilidade sobre o Líquido"
                     />
                     <StatCard 
                         title="Faturamento Bruto" 
