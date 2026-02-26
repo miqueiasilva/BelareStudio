@@ -89,19 +89,32 @@ const VendasView: React.FC<VendasViewProps> = () => {
         setIsLoading(true);
         try {
             const today = new Date();
-            const startOfToday = new Date(today.setHours(0, 0, 0, 0)).toISOString();
-            const endOfToday = new Date(today.setHours(23, 59, 59, 999)).toISOString();
+            const startOfToday = new Date(today.setHours(0, 0, 0, 0));
+            const endOfToday = new Date(today.setHours(23, 59, 59, 999));
+
+            // Usando o mesmo formato de data do AtendimentosView para evitar erros 400
+            const startStr = format(startOfToday, "yyyy-MM-dd'T'HH:mm:ssXXX");
+            const endStr = format(endOfToday, "yyyy-MM-dd'T'HH:mm:ssXXX");
 
             const [servicesRes, productsRes, appointmentsRes] = await Promise.all([
                 supabase.from('services').select('*').eq('studio_id', activeStudioId).eq('ativo', true).order('nome'),
-                supabase.from('products').select('*').eq('studio_id', activeStudioId).eq('ativo', true).order('name'),
-                supabase.from('appointments').select('*').eq('studio_id', activeStudioId).gte('date', startOfToday).lte('date', endOfToday).neq('status', 'cancelado').order('date')
+                // Corrigido: a coluna na tabela products é 'active', não 'ativo'
+                supabase.from('products').select('*').eq('studio_id', activeStudioId).eq('active', true).order('name'),
+                // Corrigido: selecionando colunas específicas e usando formato de data compatível
+                supabase.from('appointments')
+                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origem')
+                    .eq('studio_id', activeStudioId)
+                    .gte('date', startStr)
+                    .lte('date', endStr)
+                    .neq('status', 'cancelado')
+                    .order('date')
             ]);
 
             if (servicesRes.data) setDbServices(servicesRes.data);
             if (productsRes.data) setDbProducts(productsRes.data);
             if (appointmentsRes.data) setDbAppointments(appointmentsRes.data);
         } catch (e) {
+            console.error("Erro ao sincronizar dados do PDV:", e);
             setToast({ message: "Erro ao sincronizar produtos.", type: 'error' });
         } finally {
             setIsLoading(false);
@@ -164,27 +177,42 @@ const VendasView: React.FC<VendasViewProps> = () => {
             const itemsResumo = cart.map(i => `${i.quantity}x ${i.name}`).join(', ');
             const description = selectedClient ? `Venda PDV - ${selectedClient.nome}: ${itemsResumo}` : `Venda PDV: ${itemsResumo}`;
 
-            const transactionData = {
-                studio_id: activeStudioId,
-                description,
-                amount: total,
-                net_value: total, // Para vendas PDV sem integração complexa de taxa JIT
-                type: 'income',
-                category: cart.some(i => i.type === 'produto') ? 'produto' : 'servico',
-                payment_method: paymentMethod,
-                client_id: selectedClient?.id || null,
-                status: 'pago',
-                date: new Date().toISOString()
+            // Mapeamento de métodos de pagamento para o esperado pelo RPC
+            const methodMap: Record<string, string> = {
+                'pix': 'pix',
+                'cartao_credito': 'credit',
+                'cartao_debito': 'debit',
+                'dinheiro': 'money'
             };
 
-            const { data: transaction, error: transError } = await supabase.from('financial_transactions').insert([transactionData]).select().single();
-            if (transError) throw transError;
+            // Usando o RPC register_payment_transaction conforme exigido pelo banco de dados
+            const { data: transaction, error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                p_studio_id: activeStudioId,
+                p_professional_id: null, // Venda direta no PDV sem profissional vinculado
+                p_amount: total,
+                p_method: methodMap[paymentMethod] || 'pix',
+                p_installments: 1,
+                p_appointment_id: null,
+                p_tax_rate: 0,
+                p_net_value: total,
+                p_description: description // Passando descrição se o RPC suportar (opcional)
+            });
 
-            setLastTransaction(transaction);
+            if (rpcError) throw rpcError;
+
+            // Se o RPC não retornar o objeto completo, criamos um mock para o modal de recibo
+            setLastTransaction(transaction || {
+                amount: total,
+                payment_method: paymentMethod,
+                description: description,
+                date: new Date().toISOString()
+            });
+            
             setToast({ message: "Venda registrada!", type: 'success' });
             fetchPOSData(); 
 
         } catch (error: any) {
+            console.error("Erro ao finalizar venda:", error);
             setToast({ message: `Erro ao finalizar: ${error.message}`, type: 'error' });
         } finally {
             setIsFinishing(false);

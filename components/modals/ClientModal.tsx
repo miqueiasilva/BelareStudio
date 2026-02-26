@@ -71,6 +71,25 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
     }
   }, [client]);
 
+  useEffect(() => {
+    const cep = formData.cep.replace(/\D/g, '');
+    if (cep.length === 8) {
+      fetch(`https://viacep.com.br/ws/${cep}/json/`)
+        .then(res => res.json())
+        .then(data => {
+          if (!data.erro) {
+            setFormData((prev: any) => ({
+              ...prev,
+              endereco: data.logradouro || prev.endereco,
+              bairro: data.bairro || prev.bairro,
+              cidade: data.localidade || prev.cidade
+            }));
+          }
+        })
+        .catch(err => console.error("Erro ao buscar CEP:", err));
+    }
+  }, [formData.cep]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData((prev: any) => ({ ...prev, [name]: value }));
