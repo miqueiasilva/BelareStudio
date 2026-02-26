@@ -333,7 +333,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (servicesMatch) {
             try {
                 services = JSON.parse(servicesMatch[1]);
-            } catch (e) {}
+            } catch (e) {
+                console.error("Error parsing services JSON:", e);
+            }
         }
 
         return {
@@ -574,7 +576,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     }, [periodType, currentDate, resources]);
 
     const filteredAppointments = useMemo(() => {
-        let baseList = appointments.filter(a => {
+        const baseList = appointments.filter(a => {
             if (periodType === 'Dia' || periodType === 'Lista') return isSameDay(a.start, currentDate);
             if (periodType === 'Semana') {
                 const day = currentDate.getDay();

@@ -46,6 +46,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const statusRef = useRef<HTMLButtonElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0, opacity: 0 });
   const [isStatusPopoverOpen, setIsStatusPopoverOpen] = useState(false);
+  const [statusTarget, setStatusTarget] = useState<HTMLElement | null>(null);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 
   useEffect(() => {
@@ -97,6 +98,11 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     onUpdateStatus(id, status);
     setIsStatusPopoverOpen(false);
     onClose();
+  };
+
+  const handleOpenStatus = () => {
+    setStatusTarget(statusRef.current);
+    setIsStatusPopoverOpen(true);
   };
 
   const isFinished = ['concluido', 'cancelado', 'bloqueado'].includes(appointment.status);
@@ -182,7 +188,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                     <div className="mb-1">
                         <button
                             ref={statusRef}
-                            onClick={() => setIsStatusPopoverOpen(true)}
+                            onClick={handleOpenStatus}
                             className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-500 bg-slate-50 hover:bg-slate-100 p-4 rounded-2xl transition-all border border-slate-100"
                         >
                             <div className="flex items-center gap-2">
@@ -216,7 +222,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
         {isStatusPopoverOpen && (
             <StatusUpdatePopover
                 appointment={appointment}
-                targetElement={statusRef.current}
+                targetElement={statusTarget}
                 onClose={() => setIsStatusPopoverOpen(false)}
                 onUpdateStatus={handleStatusUpdateWrapper}
             />

@@ -152,8 +152,8 @@ const PublicBookingPreview: React.FC = () => {
 
                 if (studioData) {
                     setStudio(studioData);
-                    let rawNotice = parseFloat(studioData.min_scheduling_notice || '2');
-                    let finalNoticeMinutes = rawNotice < 48 ? rawNotice * 60 : rawNotice;
+                    const rawNotice = parseFloat(studioData.min_scheduling_notice || '2');
+                    const finalNoticeMinutes = rawNotice < 48 ? rawNotice * 60 : rawNotice;
 
                     setRules({
                         windowDays: parseInt(studioData.max_scheduling_window || '30', 10),

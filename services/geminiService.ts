@@ -98,6 +98,30 @@ export const generateMarketingContent = async (service: string, theme: string, t
     }
 };
 
+export const analyzeStaffPerformance = async (staffData: any[]): Promise<string> => {
+    const ai = getAIClient();
+    try {
+        const prompt = `
+            Você é um consultor sênior de gestão para salões de beleza e estúdios.
+            Analise os seguintes dados de performance da equipe e forneça feedback acionável (pontos fortes, pontos a melhorar e uma recomendação prática).
+            
+            Dados da Equipe:
+            ${JSON.stringify(staffData)}
+            
+            Formate a resposta em Markdown, sendo direto e profissional. Foque em taxas de ocupação, ticket médio por profissional e consistência.
+        `;
+
+        const response = await ai.models.generateContent({
+            model: modelId,
+            contents: prompt,
+        });
+        return response.text || "Não foi possível gerar a análise no momento.";
+    } catch (error) {
+        console.error("Staff Analysis AI Error:", error);
+        return "Erro ao processar análise de performance da equipe.";
+    }
+};
+
 export const getInsightByTopic = async (topic: string): Promise<string> => {
     const ai = getAIClient();
     try {

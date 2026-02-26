@@ -22,6 +22,7 @@ interface CartItem {
 }
 
 interface VendasViewProps {
+    [key: string]: any;
 }
 
 const ReceiptModal = ({ transaction, onClose, onNewSale }: { transaction: any, onClose: () => void, onNewSale: () => void }) => (
