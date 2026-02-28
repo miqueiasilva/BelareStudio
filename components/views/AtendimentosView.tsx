@@ -24,6 +24,8 @@ import Toast, { ToastType } from '../shared/Toast';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
 import { useStudio } from '../../contexts/StudioContext';
+import { useConfirm } from '../../utils/useConfirm';
+import toast from 'react-hot-toast';
 
 // FIX: Manual replacement for startOfDay as it's missing from date-fns
 const getStartOfDay = (d: Date) => {
@@ -141,6 +143,7 @@ interface AtendimentosViewProps {
 const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, onNavigateToCommand }) => {
     const { user, loading: authLoading } = useAuth(); 
     const { activeStudioId } = useStudio();
+    const { confirm, ConfirmDialogComponent } = useConfirm();
     const [currentDate, setCurrentDate] = useState(new Date());
     const [appointments, setAppointments] = useState<any[]>([]);
     const [resources, setResources] = useState<LegacyProfessional[]>([]);
@@ -409,15 +412,24 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
     const handleDeleteBlock = async (e: React.MouseEvent, blockId: string | number) => {
         e.stopPropagation();
-        if (!window.confirm("Remover este bloqueio de horário?")) return;
+        
+        const isConfirmed = await confirm({
+            title: 'Remover Bloqueio',
+            message: 'Deseja realmente remover este bloqueio de horário?',
+            confirmText: 'Remover',
+            cancelText: 'Cancelar',
+            type: 'danger'
+        });
+
+        if (!isConfirmed) return;
 
         try {
             const { error } = await supabase.from('schedule_blocks').delete().eq('id', blockId);
             if (error) throw error;
             setAppointments(prev => prev.filter(a => a.id !== blockId));
-            setToast({ message: 'Horário liberado!', type: 'info' });
+            toast.success('Horário liberado!');
         } catch (e: any) {
-            setToast({ message: 'Erro ao remover bloqueio.', type: 'error' });
+            toast.error('Erro ao remover bloqueio.');
         }
     };
 
@@ -432,7 +444,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         }
 
         if (appointment.status === 'concluido' && newStatus !== 'concluido') {
-            if (!window.confirm("Atenção: O lançamento financeiro será ESTORNADO do caixa. Continuar?")) return;
+            const isConfirmed = await confirm({
+                title: 'Estornar Lançamento',
+                message: 'Atenção: O lançamento financeiro será ESTORNADO do caixa. Continuar?',
+                confirmText: 'Sim, Estornar',
+                cancelText: 'Cancelar',
+                type: 'danger'
+            });
+            if (!isConfirmed) return;
             await supabase.from('financial_transactions').delete().eq('appointment_id', id);
         }
         
@@ -519,7 +538,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             ? "⚠️ AÇÃO AUDITADA: Este registro possui financeiro vinculado. A exclusão removerá o recebimento e gerará um Log de Segurança. Prosseguir?"
             : "Deseja realmente apagar este agendamento?";
 
-        if (!window.confirm(confirmMsg)) return;
+        const isConfirmed = await confirm({
+            title: 'Excluir Agendamento',
+            message: confirmMsg,
+            confirmText: 'Sim, Excluir',
+            cancelText: 'Cancelar',
+            type: 'danger'
+        });
+
+        if (!isConfirmed) return;
         
         setIsLoadingData(true);
         try {
@@ -830,6 +857,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             
             <JaciBotPanel isOpen={isJaciBotOpen} onClose={() => setIsJaciBotOpen(false)} />
             <div className="fixed bottom-8 right-8 z-10"><button onClick={() => setIsJaciBotOpen(true)} className="w-16 h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all"><MessageSquare className="w-8 h-8" /></button></div>
+            <ConfirmDialogComponent />
         </div>
     );
 };

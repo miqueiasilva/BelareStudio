@@ -11,6 +11,8 @@ import { useStudio } from '../../contexts/StudioContext';
 import { PaymentMethod, Client } from '../../types';
 import Toast, { ToastType } from '../shared/Toast';
 import { format } from 'date-fns';
+import { useConfirm } from '../../utils/useConfirm';
+import toast from 'react-hot-toast';
 
 interface CartItem {
     uuid: string;
@@ -69,6 +71,7 @@ const ReceiptModal = ({ transaction, onClose, onNewSale }: { transaction: any, o
 
 const VendasView: React.FC<VendasViewProps> = () => {
     const { activeStudioId } = useStudio();
+    const { confirm, ConfirmDialogComponent } = useConfirm();
     const [activeTab, setActiveTab] = useState<'servicos' | 'produtos' | 'agenda'>('servicos');
     const [searchTerm, setSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
@@ -317,13 +320,23 @@ const VendasView: React.FC<VendasViewProps> = () => {
                     </div>
 
                     <div className="flex gap-3 pt-2">
-                        <button onClick={() => { if(window.confirm("Limpar carrinho?")) resetSaleState(); }} className="p-4 bg-white border border-slate-200 text-slate-300 hover:text-rose-500 rounded-2xl transition-all"><Eraser size={24} /></button>
+                        <button onClick={async () => { 
+                            const isConfirmed = await confirm({
+                                title: 'Limpar Carrinho',
+                                message: 'Deseja realmente limpar todos os itens do carrinho?',
+                                confirmText: 'Limpar',
+                                cancelText: 'Cancelar',
+                                type: 'danger'
+                            });
+                            if(isConfirmed) resetSaleState(); 
+                        }} className="p-4 bg-white border border-slate-200 text-slate-300 hover:text-rose-500 rounded-2xl transition-all"><Eraser size={24} /></button>
                         <button onClick={handleFinishSale} disabled={cart.length === 0 || isFinishing} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-black py-4 rounded-2xl shadow-xl flex items-center justify-center gap-3 text-lg uppercase transition-all disabled:opacity-50">
                             {isFinishing ? <Loader2 className="animate-spin" /> : <><CheckCircle size={24} /> Finalizar Venda</>}
                         </button>
                     </div>
                 </div>
             </div>
+            <ConfirmDialogComponent />
         </div>
     );
 };

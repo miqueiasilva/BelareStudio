@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import ToggleSwitch from '../shared/ToggleSwitch';
+import toast from 'react-hot-toast';
+import { useConfirm } from '../../utils/useConfirm';
 import Toast, { ToastType } from '../shared/Toast';
 
 interface PaymentMethod {
@@ -26,6 +28,7 @@ const CARD_BRANDS = ['VISA', 'MASTER', 'ELO', 'HIPER', 'AMEX', 'OUTRAS'];
 const INSTALLMENT_OPTIONS = Array.from({ length: 11 }, (_, i) => i + 2); // 2x até 12x
 
 const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+    const { confirm, ConfirmDialogComponent } = useConfirm();
     const [methods, setMethods] = useState<PaymentMethod[]>([]);
     const [loading, setLoading] = useState(true);
     const [editingMethod, setEditingMethod] = useState<PaymentMethod | null>(null);
@@ -58,7 +61,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         if (!editingMethod) return;
 
         if (!editingMethod.name.trim() || !editingMethod.type) {
-            alert("Preencha o nome e o tipo do método.");
+            toast.error("Preencha o nome e o tipo do método.");
             return;
         }
 
@@ -107,7 +110,15 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     };
 
     const handleDelete = async (id: number) => {
-        if (!confirm("⚠️ EXCLUSÃO PERMANENTE\n\nDeseja realmente remover este método?")) return;
+        const isConfirmed = await confirm({
+            title: 'Excluir Método',
+            message: '⚠️ EXCLUSÃO PERMANENTE\n\nDeseja realmente remover este método?',
+            confirmText: 'Excluir',
+            cancelText: 'Cancelar',
+            type: 'danger'
+        });
+
+        if (!isConfirmed) return;
         
         try {
             const { error } = await supabase
@@ -118,9 +129,9 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             if (error) throw error;
             fetchMethods();
             setEditingMethod(null);
-            setToast({ message: "Método removido.", type: 'info' });
+            toast.success("Método removido.");
         } catch (err: any) {
-            setToast({ message: "Erro ao excluir: " + err.message, type: 'error' });
+            toast.error("Erro ao excluir: " + err.message);
         }
     };
 
@@ -400,6 +411,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     </div>
                 </div>
             )}
+            <ConfirmDialogComponent />
         </div>
     );
 };

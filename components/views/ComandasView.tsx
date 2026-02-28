@@ -8,12 +8,15 @@ import {
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import { Client } from '../../types';
+import { useConfirm } from '../../utils/useConfirm';
+import toast from 'react-hot-toast';
 import Toast, { ToastType } from '../shared/Toast';
 import ClientSearchModal from '../modals/ClientSearchModal';
 import { format } from 'date-fns';
 
 const ComandasView: React.FC<any> = ({ onNavigateToCommand, onOpenPaidSummary }) => {
     const { activeStudioId } = useStudio();
+    const { confirm, ConfirmDialogComponent } = useConfirm();
     const [tabs, setTabs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -101,15 +104,23 @@ const ComandasView: React.FC<any> = ({ onNavigateToCommand, onOpenPaidSummary })
 
     const handleDeleteCommand = async (e: React.MouseEvent, commandId: string) => {
         e.stopPropagation();
-        if (!window.confirm("Excluir esta comanda?")) return;
+        const isConfirmed = await confirm({
+            title: 'Excluir Comanda',
+            message: 'Deseja realmente excluir esta comanda?',
+            confirmText: 'Excluir',
+            cancelText: 'Cancelar',
+            type: 'danger'
+        });
+
+        if (!isConfirmed) return;
         try {
             const { error } = await supabase.from('commands').update({ deleted_at: new Date().toISOString(), status: 'canceled' }).eq('id', commandId);
             if (error) throw error;
             setTabs(prev => prev.filter(t => t.id !== commandId));
-            setToast({ message: "Removida.", type: 'info' });
+            toast.success("Removida.");
         } catch (e) {
             console.error("Erro ao excluir comanda:", e);
-            setToast({ message: "Erro ao remover.", type: 'error' });
+            toast.error("Erro ao remover.");
         }
     };
 
@@ -215,6 +226,7 @@ const ComandasView: React.FC<any> = ({ onNavigateToCommand, onOpenPaidSummary })
                     onNewClient={() => {}} 
                 />
             )}
+            <ConfirmDialogComponent />
         </div>
     );
 };

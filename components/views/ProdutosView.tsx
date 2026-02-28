@@ -12,6 +12,8 @@ import SupplierManagerModal from '../modals/SupplierManagerModal';
 import ProductMovementModal from '../modals/ProductMovementModal';
 import Toast, { ToastType } from '../shared/Toast';
 import { Product } from '../../types';
+import { useConfirm } from '../../utils/useConfirm';
+import toast from 'react-hot-toast';
 
 const formatCurrency = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
@@ -32,6 +34,7 @@ const StatCard = ({ title, value, icon: Icon, color, isDanger }: any) => (
 
 const ProdutosView: React.FC = () => {
     const { activeStudioId } = useStudio();
+    const { confirm, ConfirmDialogComponent } = useConfirm();
     const [activeTab, setActiveTab] = useState<'inventory' | 'movements'>('inventory');
     const [products, setProducts] = useState<Product[]>([]);
     const [movements, setMovements] = useState<any[]>([]);
@@ -139,9 +142,22 @@ const ProdutosView: React.FC = () => {
     };
 
     const handleDelete = async (id: number) => {
-        if (window.confirm("⚠️ EXCLUSÃO PERMANENTE\n\nDeseja realmente excluir este produto?")) {
+        const isConfirmed = await confirm({
+            title: 'Excluir Produto',
+            message: '⚠️ EXCLUSÃO PERMANENTE\n\nDeseja realmente excluir este produto?',
+            confirmText: 'Excluir',
+            cancelText: 'Cancelar',
+            type: 'danger'
+        });
+
+        if (isConfirmed) {
             const { error } = await supabase.from('products').delete().eq('id', id);
-            if (!error) { fetchProducts(); setToast({ message: "Produto removido.", type: 'info' }); }
+            if (!error) { 
+                fetchProducts(); 
+                toast.success("Produto removido."); 
+            } else {
+                toast.error("Erro ao remover produto.");
+            }
         }
     };
 
@@ -412,6 +428,7 @@ const ProdutosView: React.FC = () => {
                     }}
                 />
             )}
+            <ConfirmDialogComponent />
         </div>
     );
 };

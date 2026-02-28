@@ -11,6 +11,8 @@ import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
+import { useConfirm } from '../../utils/useConfirm';
+import toast from 'react-hot-toast';
 
 interface ProfessionalDetailProps {
     professional: LegacyProfessional;
@@ -53,6 +55,7 @@ const EditField = ({ label, name, value, onChange, type = "text", placeholder, s
 
 const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: initialProf, onBack, onSave }) => {
     const { activeStudioId } = useStudio();
+    const { confirm, ConfirmDialogComponent } = useConfirm();
     const [prof, setProf] = useState<any>(null);
     const [allServices, setAllServices] = useState<Service[]>([]);
     const [allRooms, setAllRooms] = useState<any[]>([]);
@@ -111,9 +114,9 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
             const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
             await supabase.from('team_members').update({ photo_url: publicUrl }).eq('id', prof.id);
             setProf(prev => ({ ...prev, photo_url: publicUrl }));
-            alert("Foto de perfil atualizada!");
+            toast.success("Foto de perfil atualizada!");
         } catch (error: any) {
-            alert(`Falha no upload: ${error.message}`);
+            toast.error(`Falha no upload: ${error.message}`);
         } finally {
             setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -148,10 +151,10 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
             };
             const { error } = await supabase.from('team_members').update(payload).eq('id', prof.id).eq('studio_id', activeStudioId);
             if (error) throw error;
-            alert("Dados salvos com sucesso! ✅");
+            toast.success("Dados salvos com sucesso! ✅");
             onSave();
         } catch (error: any) {
-            alert(`Erro ao salvar: ${error.message}`);
+            toast.error(`Erro ao salvar: ${error.message}`);
         } finally {
             setIsLoading(false);
         }
@@ -159,14 +162,25 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
 
     const handleDelete = async () => {
         if (!prof || !activeStudioId) return;
-        if (!window.confirm("Excluir este colaborador permanentemente?")) return;
+        
+        const isConfirmed = await confirm({
+            title: 'Excluir Colaborador',
+            message: `Tem certeza que deseja excluir o colaborador "${prof.name}" permanentemente? Esta ação não pode ser desfeita.`,
+            confirmText: 'Sim, Excluir',
+            cancelText: 'Cancelar',
+            type: 'danger'
+        });
+
+        if (!isConfirmed) return;
+
         setIsLoading(true);
         try {
             const { error } = await supabase.from('team_members').delete().eq('id', prof.id).eq('studio_id', activeStudioId);
             if (error) throw error;
+            toast.success("Colaborador excluído com sucesso.");
             onBack();
         } catch (error: any) {
-            alert(`Erro: ${error.message}`);
+            toast.error(`Erro: ${error.message}`);
         } finally {
             setIsLoading(false);
         }
@@ -372,6 +386,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                     )}
                 </div>
             </main>
+            <ConfirmDialogComponent />
         </div>
     );
 };

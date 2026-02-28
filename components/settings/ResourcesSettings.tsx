@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
+import { useConfirm } from '../../utils/useConfirm';
+import toast from 'react-hot-toast';
 import Card from '../shared/Card';
 import Toast, { ToastType } from '../shared/Toast';
 
@@ -20,6 +22,7 @@ interface Resource {
 
 const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const { activeStudioId } = useStudio();
+    const { confirm, ConfirmDialogComponent } = useConfirm();
     const [resources, setResources] = useState<Resource[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -105,7 +108,15 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     };
 
     const handleDelete = async (id: string | number) => {
-        if (!confirm("Deseja realmente excluir este recurso?") || !activeStudioId) return;
+        const isConfirmed = await confirm({
+            title: 'Excluir Recurso',
+            message: 'Deseja realmente excluir este recurso?',
+            confirmText: 'Excluir',
+            cancelText: 'Cancelar',
+            type: 'danger'
+        });
+
+        if (!isConfirmed || !activeStudioId) return;
 
         try {
             const { error } = await supabase
@@ -116,9 +127,9 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             if (error) throw error;
             setResources(prev => prev.filter(r => r.id !== id));
-            setToast({ message: "Recurso removido.", type: 'info' });
+            toast.success("Recurso removido.");
         } catch (err: any) {
-            setToast({ message: "Erro ao excluir recurso.", type: 'error' });
+            toast.error("Erro ao excluir recurso.");
         }
     };
 
@@ -157,6 +168,7 @@ const ResourcesSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     </div>
                 </div>
             )}
+            <ConfirmDialogComponent />
         </div>
     );
 };

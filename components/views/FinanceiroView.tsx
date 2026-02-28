@@ -16,6 +16,8 @@ import NewTransactionModal from '../modals/NewTransactionModal';
 import { FinancialTransaction, TransactionType } from '../../types';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
+import { useConfirm } from '../../utils/useConfirm';
+import toast from 'react-hot-toast';
 import { 
     format, isSameDay, isAfter, 
     endOfDay, endOfMonth,
@@ -68,6 +70,7 @@ const StatCard = ({ title, value, subtext, icon: Icon, colorClass, trend }: any)
 
 const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTransactions, onAddTransaction }) => {
     const { activeStudioId } = useStudio();
+    const { confirm, ConfirmDialogComponent } = useConfirm();
     const [dbTransactions, setDbTransactions] = useState<any[]>([]);
     const [summaryCards, setSummaryCards] = useState<any>({
         gross_revenue: 0,
@@ -270,14 +273,22 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
     };
 
     const handleDelete = async (id: number) => {
-        if (!confirm("Deseja realmente excluir este lançamento?")) return;
+        const isConfirmed = await confirm({
+            title: 'Excluir Lançamento',
+            message: 'Deseja realmente excluir este lançamento?',
+            confirmText: 'Excluir',
+            cancelText: 'Cancelar',
+            type: 'danger'
+        });
+
+        if (!isConfirmed) return;
         try {
             const { error } = await supabase.from('financial_transactions').delete().eq('id', id);
             if (error) throw error;
-            setToast({ message: "Lançamento removido.", type: 'info' });
+            toast.success("Lançamento removido.");
             fetchData();
         } catch (e) {
-            setToast({ message: "Erro ao excluir.", type: 'error' });
+            toast.error("Erro ao excluir.");
         }
     };
 
@@ -535,6 +546,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                     onSave={handleSaveNewTransaction} 
                 />
             )}
+            <ConfirmDialogComponent />
         </div>
     );
 };

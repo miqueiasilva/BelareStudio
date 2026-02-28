@@ -17,7 +17,8 @@ import { differenceInYears, isValid, format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
-import Toast, { ToastType } from '../shared/Toast';
+import { useConfirm } from '../../utils/useConfirm';
+import toast from 'react-hot-toast';
 import { jsPDF } from 'jspdf';
 
 // --- Funções Auxiliares Obrigatórias ---
@@ -123,7 +124,7 @@ const SignaturePad = ({ onSave, isSaving }: { onSave: (dataUrl: string) => void,
 
     const handleConfirm = () => {
         if (isEmpty || !canvasRef.current) {
-            alert("Por favor, assine antes de confirmar.");
+            toast.error("Por favor, assine antes de confirmar.");
             return;
         }
         const dataUrl = canvasRef.current.toDataURL('image/png');
@@ -184,6 +185,7 @@ const EditField = ({ label, name, value, onChange, type = "text", placeholder, s
 
 const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }) => {
     const { user } = useAuth();
+    const { confirm, ConfirmDialogComponent } = useConfirm();
     const isNew = !client.id;
     const [isEditing, setIsEditing] = useState(isNew);
     const [isSaving, setIsSaving] = useState(false);
@@ -334,17 +336,29 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         if (data) setTemplates(data);
     };
 
-    const handleClearAnamnesisText = () => {
-        if (!window.confirm("Deseja realmente limpar todo o texto da ficha? Esta ação não pode ser desfeita.")) return;
+    const handleClearAnamnesisText = async () => {
+        const isConfirmed = await confirm({
+            title: 'Limpar Ficha',
+            message: 'Deseja realmente limpar todo o texto da ficha? Esta ação não pode ser desfeita.',
+            confirmText: 'Sim, Limpar',
+            cancelText: 'Cancelar',
+            type: 'danger'
+        });
+
+        if (!isConfirmed) return;
+
         setAnamnesis((prev: any) => ({
             ...prev,
             clinical_notes: ""
         }));
-        setToast({ message: "Conteúdo removido!", type: 'info' });
+        toast.success("Conteúdo removido!");
     };
 
     const handleLoadTemplate = async () => {
-        if (!selectedTemplateId) return alert("Selecione um modelo!");
+        if (!selectedTemplateId) {
+            toast.error("Selecione um modelo!");
+            return;
+        }
         
         const template = templates.find(t => String(t.id) === String(selectedTemplateId));
         if (!template) return;
@@ -623,15 +637,25 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
     const handleRemoveAvatar = async () => {
         if (!formData.id || !formData.photo_url) return;
-        if (!confirm("Deseja realmente remover a foto de perfil?")) return;
+        
+        const isConfirmed = await confirm({
+            title: 'Remover Foto',
+            message: 'Deseja realmente remover a foto de perfil?',
+            confirmText: 'Remover',
+            cancelText: 'Cancelar',
+            type: 'danger'
+        });
+
+        if (!isConfirmed) return;
+
         setIsSaving(true);
         try {
             const { error } = await supabase.from('clients').update({ photo_url: null }).eq('id', formData.id);
             if (error) throw error;
             setFormData((prev: any) => ({ ...prev, photo_url: null }));
-            setToast({ message: "Foto removida!", type: 'info' });
+            toast.success("Foto removida!");
         } catch (err: any) {
-            setToast({ message: "Erro ao remover foto.", type: 'error' });
+            toast.error("Erro ao remover foto.");
         } finally {
             setIsSaving(false);
         }
@@ -896,12 +920,49 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                     {activeTab === 'fotos' && (
                         <div className="space-y-6 animate-in fade-in duration-500">
                             <header className="flex justify-between items-center"><h3 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-2">Galeria de Evolução</h3><button onClick={() => photoInputRef.current?.click()} disabled={isUploading} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-orange-600 flex items-center gap-2 shadow-sm hover:bg-orange-50 transition-all disabled:opacity-50">{isUploading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}{isUploading ? 'Enviando...' : 'Adicionar Foto'}</button><input type="file" ref={photoInputRef} className="hidden" accept="image/*" onChange={async (e) => { const file = e.target.files?.[0]; if (!file || !formData.id) return; setIsUploading(true); try { const fileName = `evo_${formData.id}_${Date.now()}.jpg`; await supabase.storage.from('client-evolution').upload(fileName, file); const { data: { publicUrl } } = supabase.storage.from('client-evolution').getPublicUrl(fileName); await supabase.from('client_photos').insert([{ client_id: formData.id, url: publicUrl, type: 'depois' }]); fetchPhotos(); setToast({ message: "Foto adicionada!", type: 'success' }); } finally { setIsUploading(false); } }} /></header>
-                            {photos.length === 0 ? (<div className="bg-white rounded-[32px] p-20 text-center border-2 border-dashed border-slate-100"><ImageIcon size={48} className="mx-auto text-slate-100 mb-4" /><p className="text-slate-400 font-bold text-sm">Sem fotos registradas.</p></div>) : (<div className="grid grid-cols-2 md:grid-cols-3 gap-4">{photos.map(photo => (<div key={photo.id} className="relative aspect-square rounded-3xl overflow-hidden bg-slate-100 border border-slate-200 group shadow-sm"><img src={photo.url} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt="Evolução" /><div className="absolute top-3 left-3 px-2.5 py-1 bg-white/90 backdrop-blur rounded-lg text-[9px] font-black text-slate-800 uppercase shadow-sm">{format(new Date(photo.created_at), 'dd MMM yy')}</div><div className="absolute bottom-3 right-3 flex gap-2 translate-y-10 group-hover:translate-y-0 transition-transform duration-300"><button onClick={() => setZoomImage(photo.url)} className="p-2 bg-white text-slate-600 rounded-xl shadow-lg hover:text-orange-500"><Maximize2 size={14}/></button><button onClick={async () => { if(confirm("Remover foto?")) { await supabase.from('client_photos').delete().eq('id', photo.id); fetchPhotos(); } }} className="p-2 bg-white text-rose-500 rounded-xl shadow-lg hover:bg-rose-50"><Trash2 size={14}/></button></div></div>))}</div>)}
+                            {photos.length === 0 ? (
+                                <div className="bg-white rounded-[32px] p-20 text-center border-2 border-dashed border-slate-100">
+                                    <ImageIcon size={48} className="mx-auto text-slate-100 mb-4" />
+                                    <p className="text-slate-400 font-bold text-sm">Sem fotos registradas.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                    {photos.map(photo => (
+                                        <div key={photo.id} className="relative aspect-square rounded-3xl overflow-hidden bg-slate-100 border border-slate-200 group shadow-sm">
+                                            <img src={photo.url} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt="Evolução" />
+                                            <div className="absolute top-3 left-3 px-2.5 py-1 bg-white/90 backdrop-blur rounded-lg text-[9px] font-black text-slate-800 uppercase shadow-sm">{format(new Date(photo.created_at), 'dd MMM yy')}</div>
+                                            <div className="absolute bottom-3 right-3 flex gap-2 translate-y-10 group-hover:translate-y-0 transition-transform duration-300">
+                                                <button onClick={() => setZoomImage(photo.url)} className="p-2 bg-white text-slate-600 rounded-xl shadow-lg hover:text-orange-500"><Maximize2 size={14}/></button>
+                                                <button 
+                                                    onClick={async () => { 
+                                                        const isConfirmed = await confirm({
+                                                            title: 'Remover Foto',
+                                                            message: 'Deseja realmente remover esta foto da galeria?',
+                                                            confirmText: 'Remover',
+                                                            cancelText: 'Cancelar',
+                                                            type: 'danger'
+                                                        });
+                                                        if(isConfirmed) { 
+                                                            await supabase.from('client_photos').delete().eq('id', photo.id); 
+                                                            fetchPhotos(); 
+                                                            toast.success("Foto removida!");
+                                                        } 
+                                                    }} 
+                                                    className="p-2 bg-white text-rose-500 rounded-xl shadow-lg hover:bg-rose-50"
+                                                >
+                                                    <Trash2 size={14}/>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
             </main>
             {zoomImage && <div className="fixed inset-0 z-[200] bg-slate-900/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300"><button onClick={() => setZoomImage(null)} className="absolute top-6 right-6 p-3 bg-white/10 text-white rounded-full hover:bg-white/20"><X size={32}/></button><img src={zoomImage} className="max-w-full max-h-[90vh] rounded-[40px] shadow-2xl object-contain animate-in zoom-in-95 duration-500" alt="Zoom" /></div>}
+            <ConfirmDialogComponent />
         </div>
     );
 };

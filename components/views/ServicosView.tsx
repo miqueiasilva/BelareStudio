@@ -7,6 +7,8 @@ import {
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import { Service } from '../../types';
+import { useConfirm } from '../../utils/useConfirm';
+import toast from 'react-hot-toast';
 import Toast, { ToastType } from '../shared/Toast';
 import ServiceModal from '../modals/ServiceModal';
 import CategoryManagerModal from '../modals/CategoryManagerModal';
@@ -15,6 +17,7 @@ type ViewMode = 'list' | 'kanban';
 
 const ServicosView: React.FC = () => {
     const { activeStudioId } = useStudio();
+    const { confirm, ConfirmDialogComponent } = useConfirm();
     const [services, setServices] = useState<Service[]>([]);
     const [dbCategories, setDbCategories] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -135,11 +138,21 @@ const ServicosView: React.FC = () => {
     };
 
     const handleDelete = async (id: number) => {
-        if (window.confirm("Deseja realmente excluir este serviço?")) {
+        const isConfirmed = await confirm({
+            title: 'Excluir Serviço',
+            message: 'Deseja realmente excluir este serviço?',
+            confirmText: 'Excluir',
+            cancelText: 'Cancelar',
+            type: 'danger'
+        });
+
+        if (isConfirmed) {
             const { error } = await supabase.from('services').delete().eq('id', id);
             if (!error) { 
                 fetchServices(); 
-                setToast({ message: 'Serviço removido.', type: 'info' }); 
+                toast.success('Serviço removido.'); 
+            } else {
+                toast.error('Erro ao remover serviço.');
             }
         }
     };
@@ -323,6 +336,7 @@ const ServicosView: React.FC = () => {
                     onUpdate={() => { fetchCategories(); fetchServices(); }}
                 />
             )}
+            <ConfirmDialogComponent />
         </div>
     );
 };

@@ -11,11 +11,13 @@ import Toast, { ToastType } from '../shared/Toast';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import ImportClientsModal from '../modals/ImportClientsModal';
+import { useConfirm } from '../../utils/useConfirm';
 
 const ITEMS_PER_PAGE = 50;
 
 const ClientesView: React.FC = () => {
   const { activeStudioId } = useStudio();
+  const { confirm, ConfirmDialogComponent } = useConfirm();
   const [clients, setClients] = useState<Client[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(0);
@@ -113,7 +115,16 @@ const ClientesView: React.FC = () => {
 
   const handleDeleteClient = async (e: React.MouseEvent, client: Client) => {
     e.stopPropagation();
-    if (window.confirm(`Tem certeza que deseja apagar o cliente "${client.nome}"?`) && client.id) {
+    
+    const isConfirmed = await confirm({
+      title: 'Excluir Cliente',
+      message: `Tem certeza que deseja apagar o cliente "${client.nome}"? Esta ação não pode ser desfeita.`,
+      confirmText: 'Sim, Excluir',
+      cancelText: 'Cancelar',
+      type: 'danger'
+    });
+
+    if (isConfirmed && client.id) {
       try {
         const { error } = await supabase.from('clients').delete().eq('id', client.id);
         if (error) throw error;
@@ -216,6 +227,7 @@ const ClientesView: React.FC = () => {
       </div>
       {selectedClient && <ClientProfile client={selectedClient} onClose={() => setSelectedClient(null)} onSave={handleSaveClient} />}
       {isImportModalOpen && <ImportClientsModal onClose={() => setIsImportModalOpen(false)} onSuccess={() => fetchClients(true)} />}
+      <ConfirmDialogComponent />
     </div>
   );
 };

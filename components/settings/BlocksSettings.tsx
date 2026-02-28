@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
+import { useConfirm } from '../../utils/useConfirm';
+import toast from 'react-hot-toast';
 // FIX: Grouping date-fns imports and removing problematic members startOfMonth, startOfWeek, subMonths, startOfDay, set.
 import { 
     format, endOfMonth, 
@@ -20,6 +22,7 @@ import Card from '../shared/Card';
 
 const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const { activeStudioId } = useStudio();
+    const { confirm, ConfirmDialogComponent } = useConfirm();
     const [blocks, setBlocks] = useState<any[]>([]);
     const [professionals, setProfessionals] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -139,14 +142,22 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     };
 
     const handleDelete = async (id: string | number) => {
-        if (!confirm("Remover este bloqueio?")) return;
+        const isConfirmed = await confirm({
+            title: 'Remover Bloqueio',
+            message: 'Deseja realmente remover este bloqueio?',
+            confirmText: 'Remover',
+            cancelText: 'Cancelar',
+            type: 'danger'
+        });
+
+        if (!isConfirmed) return;
         try {
             const { error } = await supabase.from('schedule_blocks').delete().eq('id', id);
             if (error) throw error;
             setBlocks(prev => prev.filter(b => b.id !== id));
-            setToast({ message: "Bloqueio removido.", type: 'info' });
+            toast.success("Bloqueio removido.");
         } catch (err) {
-            setToast({ message: "Erro ao remover.", type: 'error' });
+            toast.error("Erro ao remover.");
         }
     };
 
@@ -290,6 +301,7 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     </div>
                 </div>
             )}
+            <ConfirmDialogComponent />
         </div>
     );
 };
