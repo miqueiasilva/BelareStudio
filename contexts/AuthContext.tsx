@@ -57,6 +57,18 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
     // Check initial session
     const initSession = async () => {
       try {
+        // Detecta callback OAuth (?code= na URL)
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('code')) {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(
+            window.location.href
+          );
+          if (!error && data.session) {
+            // Limpa a URL sem recarregar
+            window.history.replaceState({}, '', '/');
+          }
+        }
+
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           const appUser = await fetchProfile(session.user);
