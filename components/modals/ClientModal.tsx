@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, User, Phone, Mail, Calendar, Tag, Plus, Save, Loader2, Instagram, MapPin, Briefcase, CreditCard, Share2, Home } from 'lucide-react';
 import { Client } from '../../types';
+import toast from 'react-hot-toast';
 
 interface ClientModalProps {
   client?: Client | null;
@@ -97,7 +98,7 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
 
   const handleManualSave = async () => {
     if (!formData.nome) {
-        alert("Por favor, preencha o nome do cliente.");
+        toast.error("Por favor, preencha o nome do cliente.");
         return;
     }
 

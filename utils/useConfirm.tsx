@@ -27,7 +27,7 @@ export const useConfirm = () => {
     setOnConfirmCallback(null);
   }, []);
 
-  const ConfirmComponent = () => (
+  const ConfirmDialogComponent = () => (
     <ConfirmDialog
       isOpen={isOpen}
       title={options?.title || ''}
@@ -43,5 +43,5 @@ export const useConfirm = () => {
     />
   );
 
-  return { confirm, ConfirmComponent };
+  return { confirm, ConfirmDialogComponent };
 };
