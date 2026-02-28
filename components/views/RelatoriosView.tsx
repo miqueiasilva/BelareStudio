@@ -11,7 +11,7 @@ import {
     Package, AlertOctagon, Layers, Coins, CheckSquare, Square,
     BarChart4, Tags, ShoppingBag, Sparkles, ArrowUpRight,
     ArrowUp, ArrowDown, PieChart, Receipt, Target, LayoutDashboard,
-    HardDrive, History, Archive, Cake, Gauge, FileDown, Sheet
+    HardDrive, History, Archive, Cake, Gauge, FileDown, Sheet, Percent
 } from 'lucide-react';
 // FIX: Grouping date-fns imports and removing problematic members startOfMonth, subMonths, startOfDay, subDays, startOfYesterday.
 import { 
