@@ -62,15 +62,14 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
     };
 
     const handleLogout = async () => {
-        if (window.confirm("Deseja realmente sair do sistema?")) {
+        try {
+            await signOut();
+        } catch (e) {
+            console.error("Erro ao sair:", e);
+            // Fallback em caso de erro crítico no Supabase
             localStorage.clear();
             sessionStorage.clear();
-            try {
-                signOut();
-            } catch (e) {
-                console.error("Erro ignorado ao notificar logout:", e);
-            }
-            window.location.href = '/login';
+            window.location.href = '/';
         }
     };
 

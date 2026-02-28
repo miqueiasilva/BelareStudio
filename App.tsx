@@ -159,10 +159,21 @@ const AppContent: React.FC = () => {
   );
 };
 
+import { Toaster } from 'react-hot-toast';
+
 export default function App() {
   return (
     <EnvGate>
       <AuthProvider>
+        <Toaster position="top-right" toastOptions={{
+          style: {
+            borderRadius: '16px',
+            background: '#1e293b',
+            color: '#fff',
+            fontSize: '14px',
+            fontWeight: 'bold',
+          },
+        }} />
         <AppContent />
       </AuthProvider>
     </EnvGate>
