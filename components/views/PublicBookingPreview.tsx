@@ -397,6 +397,7 @@ const PublicBookingPreview: React.FC = () => {
             if (apptErr) throw apptErr;
             setBookingSuccess(true);
         } catch (e: any) {
+            console.error('Erro completo:', JSON.stringify(e));
             alert(`Falha no agendamento: ${e.message}`);
         } finally {
             setIsFinalizing(false);
