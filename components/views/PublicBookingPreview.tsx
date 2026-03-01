@@ -157,7 +157,7 @@ const PublicBookingPreview: React.FC = () => {
                 let query = supabase.from('studio_settings').select('*');
                 
                 if (sid) {
-                    query = query.eq('id', sid);
+                    query = query.eq('studio_id', sid);
                 } else if (slug) {
                     query = query.eq('slug', slug);
                 } else {
@@ -167,24 +167,13 @@ const PublicBookingPreview: React.FC = () => {
                 const { data: studioData } = await query.maybeSingle();
 
                 if (studioData) {
-                    // Verificar se o estúdio existe na tabela 'business_settings'
                     const studioId = sid || studioData.studio_id || studioData.id;
-                    const { data: businessData } = await supabase
-                        .from('business_settings')
-                        .select('*')
-                        .eq('studio_id', studioId)
-                        .maybeSingle();
-
-                    if (!businessData) {
-                        throw new Error('Estúdio não encontrado ou inválido. Verifique o link de agendamento.');
-                    }
-
-                    // Mesclar dados de configurações com dados do perfil do negócio
+                    
+                    // O usuário informou que studio_settings é a tabela correta e contém os dados necessários.
                     setStudio({ 
-                        ...studioData, 
-                        ...businessData,
-                        // Garantir que o nome do estúdio venha do business_settings se disponível
-                        studio_name: businessData.studio_name || businessData.business_name || studioData.studio_name
+                        ...studioData,
+                        // Garantir que o nome do estúdio venha do studio_settings
+                        studio_name: studioData.studio_name || studioData.business_name || "Seu Estúdio de Beleza"
                     });
                     const rawNotice = parseFloat(studioData.min_scheduling_notice || '2');
                     const finalNoticeMinutes = rawNotice < 48 ? rawNotice * 60 : rawNotice;
@@ -376,9 +365,9 @@ const PublicBookingPreview: React.FC = () => {
             const totalValue = selectedServices.reduce((acc, s) => acc + Number(s.preco), 0);
             const serviceNames = selectedServices.map(s => s.nome || s.name).join(' + ');
 
-            // Validação: Verificar se o estúdio existe na tabela 'business_settings' para evitar erro de FK
+            // Validação: Verificar se o estúdio existe na tabela 'studio_settings' para evitar erro de FK
             const { data: studioExists, error: studioCheckErr } = await supabase
-                .from('business_settings')
+                .from('studio_settings')
                 .select('studio_id')
                 .eq('studio_id', studio?.studio_id || studio?.id)
                 .maybeSingle();
