@@ -167,19 +167,25 @@ const PublicBookingPreview: React.FC = () => {
                 const { data: studioData } = await query.maybeSingle();
 
                 if (studioData) {
-                    // Verificar se o estúdio existe na tabela 'studios'
+                    // Verificar se o estúdio existe na tabela 'business_settings'
                     const studioId = sid || studioData.studio_id || studioData.id;
-                    const { data: studioExists } = await supabase
-                        .from('studios')
-                        .select('id')
-                        .eq('id', studioId)
+                    const { data: businessData } = await supabase
+                        .from('business_settings')
+                        .select('*')
+                        .eq('studio_id', studioId)
                         .maybeSingle();
 
-                    if (!studioExists) {
+                    if (!businessData) {
                         throw new Error('Estúdio não encontrado ou inválido. Verifique o link de agendamento.');
                     }
 
-                    setStudio(studioData);
+                    // Mesclar dados de configurações com dados do perfil do negócio
+                    setStudio({ 
+                        ...studioData, 
+                        ...businessData,
+                        // Garantir que o nome do estúdio venha do business_settings se disponível
+                        studio_name: businessData.studio_name || businessData.business_name || studioData.studio_name
+                    });
                     const rawNotice = parseFloat(studioData.min_scheduling_notice || '2');
                     const finalNoticeMinutes = rawNotice < 48 ? rawNotice * 60 : rawNotice;
 
@@ -370,11 +376,11 @@ const PublicBookingPreview: React.FC = () => {
             const totalValue = selectedServices.reduce((acc, s) => acc + Number(s.preco), 0);
             const serviceNames = selectedServices.map(s => s.nome || s.name).join(' + ');
 
-            // Validação: Verificar se o estúdio existe na tabela 'studios' para evitar erro de FK
+            // Validação: Verificar se o estúdio existe na tabela 'business_settings' para evitar erro de FK
             const { data: studioExists, error: studioCheckErr } = await supabase
-                .from('studios')
-                .select('id')
-                .eq('id', studio?.id || studio?.studio_id)
+                .from('business_settings')
+                .select('studio_id')
+                .eq('studio_id', studio?.studio_id || studio?.id)
                 .maybeSingle();
 
             if (studioCheckErr || !studioExists) {
@@ -484,7 +490,7 @@ const PublicBookingPreview: React.FC = () => {
                         <div className="flex items-center gap-1 text-amber-400 font-bold"><Star size={14} fill="currentColor" /> 5.0</div>
                         <div className="flex items-center gap-1 text-xs font-bold text-slate-500 leading-tight">
                             <MapPin size={14} className="text-orange-500" /> 
-                            <span>{studio?.address_street ? `${studio.address_street}, ${studio.address_number || ''}` : "Endereço não informado"}</span>
+                    <span>{studio?.address || studio?.address_street || studio?.street ? `${studio.address || studio.address_street || studio.street}, ${studio.address_number || studio.number || ''}` : "Endereço não informado"}</span>
                         </div>
                     </div>
                 </div>
