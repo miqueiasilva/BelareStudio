@@ -29,7 +29,7 @@ const DEFAULT_DAY = {
 };
 
 const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
-    const { activeStudioId } = useStudio();
+    const { activeStudioId, refreshStudios, setActiveStudioId } = useStudio();
     const [isSaving, setIsSaving] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isUploading, setIsUploading] = useState<'cover' | 'logo' | null>(null);
@@ -107,17 +107,73 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
     };
 
     const handleSave = async () => {
-        if (!activeStudioId) return;
         setIsSaving(true);
         try {
-            const payload = { ...formData, id: activeStudioId, updated_at: new Date() };
-            const { error } = await supabase.from('business_settings').upsert(payload);
+            let studioId = activeStudioId;
+
+            // Se não houver estúdio ativo, tentamos buscar ou criar um para o usuário
+            if (!studioId) {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) throw new Error("Usuário não autenticado.");
+
+                // 1. Tentar buscar estúdio existente (caso o contexto ainda não tenha carregado)
+                const { data: memberships } = await supabase
+                    .from('user_studios')
+                    .select('studio_id')
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+
+                if (memberships?.studio_id) {
+                    studioId = memberships.studio_id;
+                } else {
+                    // 2. Criar novo estúdio se não existir nenhum
+                    const { data: newStudio, error: studioError } = await supabase
+                        .from('studios')
+                        .insert({ name: formData.business_name || 'Meu Estúdio' })
+                        .select()
+                        .single();
+
+                    if (studioError) throw studioError;
+                    studioId = newStudio.id;
+
+                    // 3. Vincular usuário ao novo estúdio como dono
+                    const { error: memberError } = await supabase
+                        .from('user_studios')
+                        .insert({
+                            user_id: user.id,
+                            studio_id: studioId,
+                            role: 'owner'
+                        });
+
+                    if (memberError) throw memberError;
+                }
+
+                // Atualizar contexto
+                await refreshStudios(true);
+                setActiveStudioId(studioId);
+            }
+
+            // Agora salvamos as configurações do negócio
+            const payload = { 
+                ...formData, 
+                id: studioId, // Mantemos id para compatibilidade se for PK
+                studio_id: studioId, // Adicionamos explicitamente para evitar o erro de constraint
+                updated_at: new Date() 
+            };
+
+            const { error } = await supabase
+                .from('business_settings')
+                .upsert(payload, { onConflict: 'studio_id' });
             if (error) throw error;
+
             setToast({ message: "Perfil atualizado!", type: 'success' });
             setTimeout(onBack, 1000);
         } catch (err: any) {
+            console.error("Erro ao salvar perfil:", err);
             setToast({ message: `Erro ao salvar: ${err.message}`, type: 'error' });
-        } finally { setIsSaving(false); }
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const updateDay = (day: string, field: string, value: any) => {

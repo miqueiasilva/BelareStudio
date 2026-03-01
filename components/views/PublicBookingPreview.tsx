@@ -144,11 +144,20 @@ const PublicBookingPreview: React.FC = () => {
         const fetchRulesAndData = async () => {
             setLoading(true);
             try {
-                const { data: studioData } = await supabase
-                    .from('studio_settings')
-                    .select('*')
-                    .limit(1)
-                    .maybeSingle();
+                // Tenta buscar slug da URL (#/public-preview?s=slug)
+                const hashParts = window.location.hash.split('?');
+                const params = new URLSearchParams(hashParts[1] || '');
+                const slug = params.get('s');
+
+                let query = supabase.from('studio_settings').select('*');
+                
+                if (slug) {
+                    query = query.eq('slug', slug);
+                } else {
+                    query = query.limit(1);
+                }
+
+                const { data: studioData } = await query.maybeSingle();
 
                 if (studioData) {
                     setStudio(studioData);
@@ -342,6 +351,7 @@ const PublicBookingPreview: React.FC = () => {
             const { error: apptErr } = await supabase
                 .from('appointments')
                 .insert([{
+                    studio_id: studio?.id || studio?.studio_id,
                     client_id: clientId,
                     client_name: clientName,
                     client_whatsapp: cleanPhone,
@@ -554,8 +564,8 @@ const PublicBookingPreview: React.FC = () => {
                                                 </div>
 
                                                 <div className="grid grid-cols-7 gap-1">
-                                                    {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map(d => (
-                                                        <div key={d} className="text-center text-[10px] font-black text-slate-400 py-2 tracking-widest">{d}</div>
+                                                    {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((d, i) => (
+                                                        <div key={`${d}-${i}`} className="text-center text-[10px] font-black text-slate-400 py-2 tracking-widest">{d}</div>
                                                     ))}
                                                     {calendarDays.map((day) => {
                                                         const isToday = isSameDay(day, new Date());

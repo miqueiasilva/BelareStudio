@@ -59,6 +59,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
       try {
         const params = new URLSearchParams(window.location.search);
         if (params.get('code')) {
+          console.log("[AUTH_DEBUG] Detectado código OAuth, trocando por sessão...");
           await supabase.auth.exchangeCodeForSession(window.location.href);
           window.history.replaceState({}, '', '/');
         }
