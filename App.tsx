@@ -59,8 +59,8 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  if (hash === '#/public-preview') return <Suspense fallback={<ViewLoader />}><PublicBookingPreview /></Suspense>;
-  if (hash === '#/reset-password') return <Suspense fallback={<ViewLoader />}><ResetPasswordView /></Suspense>;
+  if (hash.startsWith('#/public-preview')) return <Suspense fallback={<ViewLoader />}><PublicBookingPreview /></Suspense>;
+  if (hash.startsWith('#/reset-password')) return <Suspense fallback={<ViewLoader />}><ResetPasswordView /></Suspense>;
 
   if (authLoading) {
     return (
