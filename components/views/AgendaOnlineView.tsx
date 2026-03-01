@@ -14,6 +14,7 @@ import {
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import { supabase } from '../../services/supabaseClient';
+import { useStudio } from '../../contexts/StudioContext';
 import Toast, { ToastType } from '../shared/Toast';
 // FIX: Grouping date-fns imports and removing problematic members subDays and startOfDay.
 import { format, addDays, isSameDay } from 'date-fns';
@@ -139,6 +140,7 @@ const TabButton = ({ id, label, active, onClick, icon: Icon }: any) => (
 );
 
 const AgendaOnlineView: React.FC = () => {
+    const { activeStudioId } = useStudio();
     const [activeTab, setActiveTab] = useState<'geral' | 'regras' | 'avaliacoes' | 'analytics'>('geral');
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -171,8 +173,10 @@ const AgendaOnlineView: React.FC = () => {
 
     // Link real de acesso público baseado na rota atual do navegador
     const realLink = useMemo(() => {
-        return `${window.location.origin}/#/public-preview?sid=${config.id || ''}`;
-    }, [config.id]);
+        console.log("[AGENDA_ONLINE_DEBUG] config.id:", config.id, "activeStudioId:", activeStudioId);
+        const sid = activeStudioId || config.id;
+        return `${window.location.origin}/#/public-preview?sid=${sid || ''}`;
+    }, [config.id, activeStudioId]);
 
     const fetchAnalytics = async () => {
         setIsRefreshing(true);
@@ -230,9 +234,14 @@ const AgendaOnlineView: React.FC = () => {
     };
 
     const fetchData = async () => {
+        if (!activeStudioId) return;
         setIsLoading(true);
         try {
-            const { data: settings } = await supabase.from('studio_settings').select('*').maybeSingle();
+            const { data: settings } = await supabase
+                .from('studio_settings')
+                .select('*')
+                .eq('id', activeStudioId)
+                .maybeSingle();
             if (settings) {
                 setConfig({
                     id: settings.id,
@@ -263,7 +272,7 @@ const AgendaOnlineView: React.FC = () => {
         }
     };
 
-    useEffect(() => { fetchData(); }, []);
+    useEffect(() => { fetchData(); }, [activeStudioId]);
 
     const handleSave = async () => {
         setIsSaving(true);

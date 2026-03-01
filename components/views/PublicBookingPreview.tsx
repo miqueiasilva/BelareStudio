@@ -150,6 +150,10 @@ const PublicBookingPreview: React.FC = () => {
                 const sid = params.get('sid');
                 const slug = params.get('s');
 
+                if (!sid && !slug) {
+                    throw new Error('Link de agendamento incompleto. O identificador do estúdio (sid) está ausente.');
+                }
+
                 let query = supabase.from('studio_settings').select('*');
                 
                 if (sid) {
@@ -163,6 +167,18 @@ const PublicBookingPreview: React.FC = () => {
                 const { data: studioData } = await query.maybeSingle();
 
                 if (studioData) {
+                    // Verificar se o estúdio existe na tabela 'studios'
+                    const studioId = sid || studioData.studio_id || studioData.id;
+                    const { data: studioExists } = await supabase
+                        .from('studios')
+                        .select('id')
+                        .eq('id', studioId)
+                        .maybeSingle();
+
+                    if (!studioExists) {
+                        throw new Error('Estúdio não encontrado ou inválido. Verifique o link de agendamento.');
+                    }
+
                     setStudio(studioData);
                     const rawNotice = parseFloat(studioData.min_scheduling_notice || '2');
                     const finalNoticeMinutes = rawNotice < 48 ? rawNotice * 60 : rawNotice;
@@ -172,19 +188,22 @@ const PublicBookingPreview: React.FC = () => {
                         minNoticeMinutes: Math.round(finalNoticeMinutes),
                         cancellationHours: parseInt(studioData.cancellation_notice || '24', 10)
                     });
+
+                    const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true).eq('studio_id', studioId);
+                    if (servicesData) setServices(servicesData);
+
+                    const { data: profsData } = await supabase
+                        .from('team_members')
+                        .select('id, name, photo_url, role, services_enabled')
+                        .eq('active', true)
+                        .eq('online_booking_enabled', true)
+                        .eq('studio_id', studioId)
+                        .order('order_index');
+                    
+                    if (profsData) setProfessionals(profsData);
+                } else {
+                    throw new Error('Estúdio não encontrado ou link inválido.');
                 }
-
-                const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true);
-                if (servicesData) setServices(servicesData);
-
-                const { data: profsData } = await supabase
-                    .from('team_members')
-                    .select('id, name, photo_url, role, services_enabled')
-                    .eq('active', true)
-                    .eq('online_booking_enabled', true)
-                    .order('order_index');
-                
-                if (profsData) setProfessionals(profsData);
 
                 // FIX: Manual subDays replacement using addDays.
                 const sixtyDaysAgo = addDays(new Date(), -60).toISOString();
@@ -207,8 +226,9 @@ const PublicBookingPreview: React.FC = () => {
                     setPopularServiceIds(topIds);
                 }
 
-            } catch (e) {
+            } catch (e: any) {
                 console.error("Erro ao buscar regras:", e);
+                alert(e.message || "Erro ao carregar dados do estúdio.");
             } finally {
                 setLoading(false);
             }
@@ -349,6 +369,17 @@ const PublicBookingPreview: React.FC = () => {
             const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
             const totalValue = selectedServices.reduce((acc, s) => acc + Number(s.preco), 0);
             const serviceNames = selectedServices.map(s => s.nome || s.name).join(' + ');
+
+            // Validação: Verificar se o estúdio existe na tabela 'studios' para evitar erro de FK
+            const { data: studioExists, error: studioCheckErr } = await supabase
+                .from('studios')
+                .select('id')
+                .eq('id', studio?.id || studio?.studio_id)
+                .maybeSingle();
+
+            if (studioCheckErr || !studioExists) {
+                throw new Error('Estúdio não encontrado ou inválido. Verifique o link de agendamento.');
+            }
 
             // Enviar estritamente professional_id. resource_id gerado no DB como espelho.
             const { error: apptErr } = await supabase
