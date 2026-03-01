@@ -171,8 +171,8 @@ const AgendaOnlineView: React.FC = () => {
 
     // Link real de acesso público baseado na rota atual do navegador
     const realLink = useMemo(() => {
-        return `${window.location.origin}/#/public-preview?s=${config.slug || ''}`;
-    }, [config.slug]);
+        return `${window.location.origin}/#/public-preview?sid=${config.id || ''}`;
+    }, [config.id]);
 
     const fetchAnalytics = async () => {
         setIsRefreshing(true);

@@ -144,14 +144,17 @@ const PublicBookingPreview: React.FC = () => {
         const fetchRulesAndData = async () => {
             setLoading(true);
             try {
-                // Tenta buscar slug da URL (#/public-preview?s=slug)
+                // Tenta buscar sid ou slug da URL (#/public-preview?sid=ID ou #/public-preview?s=slug)
                 const hashParts = window.location.hash.split('?');
                 const params = new URLSearchParams(hashParts[1] || '');
+                const sid = params.get('sid');
                 const slug = params.get('s');
 
                 let query = supabase.from('studio_settings').select('*');
                 
-                if (slug) {
+                if (sid) {
+                    query = query.eq('id', sid);
+                } else if (slug) {
                     query = query.eq('slug', slug);
                 } else {
                     query = query.limit(1);
