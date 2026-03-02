@@ -197,11 +197,19 @@ const VendasView: React.FC<VendasViewProps> = () => {
                 p_installments: 1,
                 p_appointment_id: null,
                 p_tax_rate: 0,
-                p_net_value: total,
-                p_description: description // Passando descrição se o RPC suportar (opcional)
+                p_net_value: total
             });
 
             if (rpcError) throw rpcError;
+
+            // Vincular descrição manualmente se o RPC retornar o ID
+            const transactionId = (transaction as any)?.id;
+            if (transactionId) {
+                await supabase
+                    .from('financial_transactions')
+                    .update({ description })
+                    .eq('id', transactionId);
+            }
 
             // Se o RPC não retornar o objeto completo, criamos um mock para o modal de recibo
             setLastTransaction(transaction || {

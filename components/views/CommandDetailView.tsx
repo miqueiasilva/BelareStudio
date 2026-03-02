@@ -117,13 +117,11 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_studio_id: activeStudioId,
                 p_professional_id: command.professional_id,
                 p_appointment_id: null,
-                p_command_id: commandId, // Tentando passar command_id se o RPC suportar
                 p_amount: totals.total,
                 p_method: dbMethod,
                 p_installments: Number(mainPayment.installments || 1),
                 p_tax_rate: Number(mainPayment.rate || 0),
-                p_net_value: Number(mainPayment.netAmount || totals.total),
-                p_description: description
+                p_net_value: Number(mainPayment.netAmount || totals.total)
             });
 
             if (rpcError) {
@@ -139,12 +137,20 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 throw rpcError;
             }
 
-            // 2. VINCULAR TRANSAÇÃO À COMANDA (Caso o RPC não tenha feito)
-            if (transaction?.id) {
-                await supabase
-                    .from('financial_transactions')
-                    .update({ command_id: commandId })
-                    .eq('id', transaction.id);
+            // 2. VINCULAR TRANSAÇÃO À COMANDA E ATUALIZAR DESCRIÇÃO
+            const transactionId = (transaction as any)?.id;
+            if (transactionId) {
+                try {
+                    await supabase
+                        .from('financial_transactions')
+                        .update({ 
+                            command_id: commandId,
+                            description: description 
+                        })
+                        .eq('id', transactionId);
+                } catch (updateErr) {
+                    console.warn('Não foi possível vincular command_id à transação financeira:', updateErr);
+                }
             }
 
             // 3. REGISTRAR EM command_payments PARA HISTÓRICO/RECIBO
