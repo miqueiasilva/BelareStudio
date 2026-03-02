@@ -112,10 +112,12 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             const dbMethod = mainPayment.method === 'money' ? 'dinheiro' : mainPayment.method;
             const description = `Pagamento Comanda #${commandId}`;
 
-            const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
+            // 1. REGISTRO DO PAGAMENTO NO FINANCEIRO
+            const { data: transaction, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: command.professional_id,
                 p_appointment_id: null,
+                p_command_id: commandId, // Tentando passar command_id se o RPC suportar
                 p_amount: totals.total,
                 p_method: dbMethod,
                 p_installments: Number(mainPayment.installments || 1),
@@ -136,6 +138,25 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 }
                 throw rpcError;
             }
+
+            // 2. VINCULAR TRANSAÇÃO À COMANDA (Caso o RPC não tenha feito)
+            if (transaction?.id) {
+                await supabase
+                    .from('financial_transactions')
+                    .update({ command_id: commandId })
+                    .eq('id', transaction.id);
+            }
+
+            // 3. REGISTRAR EM command_payments PARA HISTÓRICO/RECIBO
+            await supabase.from('command_payments').insert([{
+                command_id: commandId,
+                method_id: selectedConfig?.id || null,
+                amount: totals.total,
+                installments: Number(mainPayment.installments || 1),
+                tax_rate: Number(mainPayment.rate || 0),
+                net_value: Number(mainPayment.netAmount || totals.total),
+                method: dbMethod
+            }]);
 
             // FIX: Garantir que a comanda seja marcada como paga e com as datas corretas
             const now = new Date().toISOString();
