@@ -110,29 +110,12 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         try {
             const mainPayment = addedPayments[0];
             const dbMethod = mainPayment.method === 'money' ? 'dinheiro' : mainPayment.method;
-            
-            // Buscar o UUID do appointment pelo appointment_id vinculado à comanda
-            const appointmentNumericId = command.command_items?.find((i: any) => i.appointment_id)?.appointment_id;
-            let appointmentUuid = null;
-
-            if (appointmentNumericId) {
-                const { data: apptData } = await supabase
-                    .from('appointments')
-                    .select('id') // id é UUID no banco
-                    .eq('id', appointmentNumericId)
-                    .single();
-                
-                if (apptData) {
-                    appointmentUuid = apptData.id;
-                }
-            }
-
             const description = `Pagamento Comanda #${commandId}`;
 
             const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: command.professional_id,
-                p_appointment_id: appointmentUuid,
+                p_appointment_id: null,
                 p_amount: totals.total,
                 p_method: dbMethod,
                 p_installments: Number(mainPayment.installments || 1),
