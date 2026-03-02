@@ -111,43 +111,30 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             const mainPayment = addedPayments[0];
             const dbMethod = mainPayment.method === 'money' ? 'dinheiro' : mainPayment.method;
 
-            // 1. Registrar Transação Financeira
-            const { error: transError } = await supabase
-                .from('financial_transactions')
-                .insert([{
-                    studio_id: activeStudioId,
-                    professional_id: command.professional_id,
-                    client_id: command.client_id ? Number(command.client_id) : null,
-                    command_id: commandId,
-                    amount: totals.total,
-                    net_value: Number(mainPayment.netAmount || totals.total),
-                    type: 'income',
-                    category: 'Serviço',
-                    payment_method: dbMethod,
-                    status: 'pago',
-                    date: new Date().toISOString(),
-                    tax_rate: Number(mainPayment.rate || 0),
-                    installments: Number(mainPayment.installments || 1),
-                    description: `Pagamento Comanda #${commandId}`
-                }]);
+            const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                p_studio_id: activeStudioId,
+                p_professional_id: command.professional_id,
+                p_client_id: command.client_id ? Number(command.client_id) : null,
+                p_command_id: commandId,
+                p_amount: totals.total,
+                p_method: dbMethod,
+                p_brand: mainPayment.brand || 'N/A',
+                p_installments: Number(mainPayment.installments || 1),
+                p_tax_rate: Number(mainPayment.rate || 0),
+                p_net_value: Number(mainPayment.netAmount || totals.total)
+            });
 
-            if (transError) throw transError;
-
-            // 2. Atualizar Comanda para Paga
-            const { error: cmdUpdateError } = await supabase
-                .from('commands')
-                .update({ status: 'paid' })
-                .eq('id', commandId);
-
-            if (cmdUpdateError) throw cmdUpdateError;
-
-            // 3. Atualizar Agendamento vinculado (se houver)
-            const appointmentId = command.command_items?.find((i: any) => i.appointment_id)?.appointment_id;
-            if (appointmentId) {
-                await supabase
-                    .from('appointments')
-                    .update({ status: 'concluido' })
-                    .eq('id', appointmentId);
+            if (rpcError) {
+                if (rpcError.status === 409 || rpcError.code === '23505' || rpcError.code === 'P0001') {
+                    const { data: check } = await supabase.from('commands').select('status').eq('id', commandId).single();
+                    if (check?.status === 'paid') {
+                        setToast({ message: 'Venda processada com sucesso!', type: 'success' });
+                        setIsLocked(true);
+                        setTimeout(onBack, 1000);
+                        return;
+                    }
+                }
+                throw rpcError;
             }
 
             setToast({ message: 'Pagamento confirmado! ✅', type: 'success' });
