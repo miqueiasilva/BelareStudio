@@ -10,7 +10,7 @@ import {
     ArrowRight, ChevronLeft, ChevronRight, Printer, CalendarDays,
     Banknote, CreditCard, Smartphone, RefreshCw, Package, AlertOctagon,
     Layers, Coins, CheckSquare, Square, BarChart4, Tags, ShoppingBag,
-    ArrowUp, ArrowDown, Receipt, HardDrive, Archive, Cake, Gauge, FileDown, Sheet, RotateCcw
+    ArrowUp, ArrowDown, Receipt, HardDrive, Archive, Cake, Gauge, FileDown, Sheet, RotateCcw, Globe, User
 } from 'lucide-react';
 import { 
     format, endOfMonth, differenceInDays, isSameDay, endOfDay,
@@ -186,7 +186,10 @@ const RelatoriosView: React.FC = () => {
         const profit = income - expense;
         const margin = income > 0 ? (profit / income) * 100 : 0;
         
-        return { income, expense, totalAppts, completedAppts, ticketMedio, profit, margin, transactions, appointments };
+        const onlineAppts = appointments.filter(a => (a.origem === 'online' || a.origem === 'link' || a.origin === 'online') && a.status !== 'cancelado').length;
+        const onlineRate = totalAppts > 0 ? (onlineAppts / totalAppts) * 100 : 0;
+        
+        return { income, expense, totalAppts, completedAppts, ticketMedio, profit, margin, onlineAppts, onlineRate, transactions, appointments };
       };
 
       setData(process(transRes.data || [], apptsRes.data || []));
@@ -331,10 +334,12 @@ const RelatoriosView: React.FC = () => {
 
   const renderExecutivo = () => (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         <KPICard title="Faturamento Total" value={`R$ ${data?.income.toLocaleString('pt-BR')}`} trend={metrics?.incomeTrend} color="bg-emerald-500" icon={DollarSign} loading={isLoading} />
         <KPICard title="Ticket Médio" value={`R$ ${data?.ticketMedio.toFixed(2)}`} trend={metrics?.ticketTrend} color="bg-indigo-500" icon={TrendingUp} loading={isLoading} />
         <KPICard title="Atendimentos" value={data?.totalAppts} trend={metrics?.apptsTrend} color="bg-orange-500" icon={Calendar} loading={isLoading} />
+        <KPICard title="Agendamentos Online" value={data?.onlineAppts} color="bg-purple-500" icon={Globe} loading={isLoading} />
+        <KPICard title="Taxa Online" value={`${data?.onlineRate.toFixed(1)}%`} color="bg-orange-600" icon={Zap} loading={isLoading} />
         <KPICard title="Taxa Ocupação" value={`${data?.margin.toFixed(1)}%`} color="bg-slate-800" icon={Target} loading={isLoading} />
         <KPICard title="Novos Clientes" value="12" trend={15} color="bg-blue-500" icon={UserPlus} loading={isLoading} />
         <KPICard title="Margem de Lucro" value={`${data?.margin.toFixed(1)}%`} color="bg-rose-500" icon={Percent} loading={isLoading} />
@@ -451,90 +456,158 @@ const RelatoriosView: React.FC = () => {
     </div>
   );
 
-  const renderAgenda = () => (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <KPICard title="Total Atendimentos" value={data?.totalAppts} color="bg-orange-500" icon={Calendar} loading={isLoading} />
-        <KPICard title="Taxa de Ocupação" value={`${data?.margin.toFixed(1)}%`} color="bg-indigo-500" icon={Target} loading={isLoading} />
-        <KPICard title="Cancelamentos" value="4" color="bg-rose-500" icon={XCircle} loading={isLoading} />
-        <KPICard title="Tempo Médio" value="45 min" color="bg-slate-800" icon={Clock} loading={isLoading} />
-      </div>
+  const renderAgenda = () => {
+    // Process Online vs Manual
+    const days = eachDayOfInterval({ start: getDates().start, end: getDates().end });
+    const onlineVsManual = days.map(day => {
+      const dStr = format(day, 'yyyy-MM-dd');
+      const dayAppts = data?.appointments.filter((a: any) => format(parseISO(a.date), 'yyyy-MM-dd') === dStr);
+      const online = dayAppts.filter((a: any) => a.origem === 'online' || a.origem === 'link' || a.origin === 'online').length;
+      const manual = dayAppts.length - online;
+      return { name: format(day, 'dd/MM'), online, manual };
+    }).filter(d => d.online > 0 || d.manual > 0);
 
-      <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
-        <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter mb-8">Ocupação por Dia da Semana</h3>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={[
-              { name: 'Seg', valor: 45 },
-              { name: 'Ter', valor: 65 },
-              { name: 'Qua', valor: 78 },
-              { name: 'Qui', valor: 82 },
-              { name: 'Sex', valor: 95 },
-              { name: 'Sáb', valor: 100 },
-              { name: 'Dom', valor: 10 }
-            ]}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 'bold'}} />
-              <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 'bold'}} unit="%" />
-              <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'}} />
-              <Bar dataKey="valor" fill="#f97316" radius={[10, 10, 0, 0]} barSize={40} />
-            </BarChart>
-          </ResponsiveContainer>
+    return (
+      <div className="space-y-8 animate-in fade-in duration-500">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <KPICard title="Total Atendimentos" value={data?.totalAppts} color="bg-orange-500" icon={Calendar} loading={isLoading} />
+          <KPICard title="Agendamentos Online" value={data?.onlineAppts} color="bg-purple-500" icon={Globe} loading={isLoading} />
+          <KPICard title="Taxa de Ocupação" value={`${data?.margin.toFixed(1)}%`} color="bg-indigo-500" icon={Target} loading={isLoading} />
+          <KPICard title="Tempo Médio" value="45 min" color="bg-slate-800" icon={Clock} loading={isLoading} />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
+            <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter mb-8">Online vs Manual</h3>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={onlineVsManual}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 'bold'}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 'bold'}} />
+                  <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'}} />
+                  <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{paddingBottom: '20px'}} />
+                  <Bar dataKey="online" name="Online" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="manual" name="Manual" fill="#f97316" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
+            <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter mb-8">Ocupação por Dia da Semana</h3>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={[
+                  { name: 'Seg', valor: 45 },
+                  { name: 'Ter', valor: 65 },
+                  { name: 'Qua', valor: 78 },
+                  { name: 'Qui', valor: 82 },
+                  { name: 'Sex', valor: 95 },
+                  { name: 'Sáb', valor: 100 },
+                  { name: 'Dom', valor: 10 }
+                ]}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 'bold'}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 'bold'}} unit="%" />
+                  <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'}} />
+                  <Bar dataKey="valor" fill="#f97316" radius={[10, 10, 0, 0]} barSize={40} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
-  const renderClientes = () => (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <KPICard title="Clientes Ativos" value="450" color="bg-orange-500" icon={Users} loading={isLoading} />
-        <KPICard title="Novos Clientes" value="28" color="bg-emerald-500" icon={UserPlus} loading={isLoading} />
-        <KPICard title="Taxa de Retorno" value="72%" color="bg-indigo-500" icon={RotateCcw} loading={isLoading} />
-      </div>
+  const renderClientes = () => {
+    // Process Clients with origin
+    const clientsWithOrigin = data?.appointments.reduce((acc: any[], app: any) => {
+      if (!app.client_id) return acc;
+      const existing = acc.find(c => c.id === app.client_id);
+      if (existing) {
+        existing.visits += 1;
+        existing.totalSpent += Number(app.value || 0);
+        if (app.origem === 'online' || app.origem === 'link' || app.origin === 'online') {
+          existing.isOnline = true;
+        }
+      } else {
+        acc.push({
+          id: app.client_id,
+          name: app.client_name,
+          visits: 1,
+          totalSpent: Number(app.value || 0),
+          lastVisit: app.date,
+          isOnline: app.origem === 'online' || app.origem === 'link' || app.origin === 'online'
+        });
+      }
+      return acc;
+    }, []).sort((a: any, b: any) => b.totalSpent - a.totalSpent).slice(0, 10);
 
-      <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
-        <div className="p-8 border-b border-slate-50">
-          <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Top 10 Clientes (LTV)</h3>
+    return (
+      <div className="space-y-8 animate-in fade-in duration-500">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <KPICard title="Clientes Ativos" value="450" color="bg-orange-500" icon={Users} loading={isLoading} />
+          <KPICard title="Novos Clientes" value="28" color="bg-emerald-500" icon={UserPlus} loading={isLoading} />
+          <KPICard title="Taxa de Retorno" value="72%" color="bg-indigo-500" icon={RotateCcw} loading={isLoading} />
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-slate-50/50">
-                <TableHeader>Cliente</TableHeader>
-                <TableHeader>Visitas</TableHeader>
-                <TableHeader>Última Visita</TableHeader>
-                <TableHeader>Total Gasto</TableHeader>
-                <TableHeader>Ação</TableHeader>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {[1,2,3,4,5].map(i => (
-                <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 text-[10px] font-black">
-                        M
-                      </div>
-                      <span>Maria Silva {i}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>{12 + i}</TableCell>
-                  <TableCell>15/05/2024</TableCell>
-                  <TableCell className="text-emerald-600">R$ {(1200 * i).toLocaleString('pt-BR')}</TableCell>
-                  <TableCell>
-                    <button className="p-2 text-orange-500 hover:bg-orange-50 rounded-xl transition-all">
-                      <MessageCircle size={18} />
-                    </button>
-                  </TableCell>
+
+        <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
+          <div className="p-8 border-b border-slate-50">
+            <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Top 10 Clientes (LTV)</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-50/50">
+                  <TableHeader>Cliente</TableHeader>
+                  <TableHeader>Visitas</TableHeader>
+                  <TableHeader>Última Visita</TableHeader>
+                  <TableHeader>Total Gasto</TableHeader>
+                  <TableHeader>Canal</TableHeader>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {clientsWithOrigin?.length > 0 ? clientsWithOrigin.map((c: any) => (
+                  <tr key={c.id} className="hover:bg-slate-50/50 transition-colors">
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 text-[10px] font-black">
+                          {c.name?.charAt(0) || 'C'}
+                        </div>
+                        <span>{c.name}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>{c.visits}</TableCell>
+                    <TableCell>{format(parseISO(c.lastVisit), 'dd/MM/yyyy')}</TableCell>
+                    <TableCell className="text-emerald-600">R$ {c.totalSpent.toLocaleString('pt-BR')}</TableCell>
+                    <TableCell>
+                      {c.isOnline ? (
+                        <span className="px-2 py-1 bg-purple-50 text-purple-600 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 w-fit">
+                          <Globe size={10} /> Online
+                        </span>
+                      ) : (
+                        <span className="px-2 py-1 bg-slate-50 text-slate-500 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 w-fit">
+                          <User size={10} /> Manual
+                        </span>
+                      )}
+                    </TableCell>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={5} className="py-20">
+                      <EmptyState />
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderEquipe = () => (
     <div className="space-y-8 animate-in fade-in duration-500">

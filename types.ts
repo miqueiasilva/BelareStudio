@@ -121,6 +121,7 @@ export interface LegacyAppointment {
   status: AppointmentStatus;
   notas?: string;
   origem?: string;
+  origin?: string;
 }
 
 export interface FinancialTransaction {

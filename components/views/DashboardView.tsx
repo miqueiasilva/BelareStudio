@@ -4,7 +4,7 @@ import Card from '../shared/Card';
 import JaciBotAssistant from '../shared/JaciBotAssistant';
 import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import { getDashboardInsight } from '../../services/geminiService';
-import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3 } from 'lucide-react';
+import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3, Zap } from 'lucide-react';
 // FIX: Grouping date-fns imports and removing problematic members startOfDay, subDays, startOfMonth.
 import { 
     format, addDays, endOfDay, endOfMonth
@@ -188,8 +188,15 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         
         const scheduled = appointments.filter(a => a.status !== 'cancelado').length;
         const completed = appointments.filter(a => a.status === 'concluido').length;
+        
+        const onlineCount = appointments.filter(a => 
+            (a.origem === 'online' || a.origem === 'link' || a.origin === 'online') && 
+            a.status !== 'cancelado'
+        ).length;
+        
+        const onlineRate = scheduled > 0 ? (onlineCount / scheduled) * 100 : 0;
 
-        return { revenue, scheduled, completed };
+        return { revenue, scheduled, completed, onlineCount, onlineRate };
     }, [appointments]);
 
     // Lógica de Meta Financeira
@@ -243,10 +250,11 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 </div>
             </header>
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6 sm:mb-8">
-                <StatCard title={`Faturamento (${dateRange.label})`} value={formatCurrency(kpis.revenue)} icon={DollarSign} colorClass="bg-green-500" subtext="Serviços concluídos" />
-                <StatCard title={`Agendados (${dateRange.label})`} value={kpis.scheduled} icon={Calendar} colorClass="bg-blue-500" subtext="Total no período" />
-                <StatCard title={`Concluídos (${dateRange.label})`} value={kpis.completed} icon={Users} colorClass="bg-purple-500" subtext="Finalizados" />
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-6 sm:mb-8">
+                <StatCard title={`Faturamento`} value={formatCurrency(kpis.revenue)} icon={DollarSign} colorClass="bg-green-500" subtext={dateRange.label} />
+                <StatCard title={`Agendados`} value={kpis.scheduled} icon={Calendar} colorClass="bg-blue-500" subtext={dateRange.label} />
+                <StatCard title={`Online`} value={kpis.onlineCount} icon={Globe} colorClass="bg-orange-500" subtext={`${kpis.onlineRate.toFixed(1)}% do total`} />
+                <StatCard title={`Concluídos`} value={kpis.completed} icon={Users} colorClass="bg-purple-500" subtext="Finalizados" />
                 
                 <div className="bg-slate-800 p-4 sm:p-5 rounded-2xl text-white flex flex-col justify-between shadow-lg relative overflow-hidden group h-full">
                     <div className="flex justify-between items-start z-10">

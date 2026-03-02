@@ -758,6 +758,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                 }}
                                             >
                                                 <div className="absolute top-1 right-1 flex gap-0.5 z-10">
+                                                    {(app.origem === 'online' || app.origem === 'link' || app.origin === 'online') && (
+                                                        <Globe size={10} className="text-orange-500 animate-pulse" strokeWidth={3} title="Agendamento Online" />
+                                                    )}
                                                     {app.status === 'concluido' && <DollarSign size={10} className="text-emerald-600 font-bold" strokeWidth={3} />}
                                                     {['confirmado', 'confirmado_whatsapp'].includes(app.status) && <CheckCircle size={10} className="text-blue-600" strokeWidth={3} />}
                                                     {app.type === 'block' && <ShieldAlert size={10} className="text-rose-400" />}
