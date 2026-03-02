@@ -110,18 +110,19 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         try {
             const mainPayment = addedPayments[0];
             const dbMethod = mainPayment.method === 'money' ? 'dinheiro' : mainPayment.method;
+            const appointmentId = command.command_items?.find((i: any) => i.appointment_id)?.appointment_id;
+            const description = `Pagamento Comanda #${commandId}`;
 
             const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: command.professional_id,
-                p_client_id: command.client_id ? Number(command.client_id) : null,
-                p_command_id: commandId,
+                p_appointment_id: appointmentId || null,
                 p_amount: totals.total,
                 p_method: dbMethod,
-                p_brand: mainPayment.brand || 'N/A',
                 p_installments: Number(mainPayment.installments || 1),
                 p_tax_rate: Number(mainPayment.rate || 0),
-                p_net_value: Number(mainPayment.netAmount || totals.total)
+                p_net_value: Number(mainPayment.netAmount || totals.total),
+                p_description: description
             });
 
             if (rpcError) {
