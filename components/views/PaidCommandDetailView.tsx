@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
     Receipt, Clock, User, Landmark, DollarSign,
     X, ShoppingCart, Percent, CheckCircle2, Loader2,
@@ -20,7 +20,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
     const [payments, setPayments] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         if (!commandId) return;
         setLoading(true);
         try {
@@ -53,9 +53,9 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
         } finally {
             setLoading(false);
         }
-    };
+    }, [commandId]);
 
-    useEffect(() => { loadData(); }, [commandId]);
+    useEffect(() => { loadData(); }, [loadData]);
 
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
