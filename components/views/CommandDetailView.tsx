@@ -137,8 +137,35 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 throw rpcError;
             }
 
+            // FIX: Garantir que a comanda seja marcada como paga e com as datas corretas
+            const now = new Date().toISOString();
+            const { error: updateError } = await supabase
+                .from('commands')
+                .update({ 
+                    status: 'paid',
+                    closed_at: now,
+                    paid_at: now
+                })
+                .eq('id', commandId);
+
+            if (updateError) {
+                console.error('[UPDATE_COMMAND_ERROR]', updateError);
+                // Mesmo com erro no update, tentamos seguir pois o RPC pode ter funcionado
+            }
+
+            // FIX: Atualizar Agendamento vinculado (se houver) para 'concluido'
+            const appointmentId = command.command_items?.find((i: any) => i.appointment_id)?.appointment_id;
+            if (appointmentId) {
+                await supabase
+                    .from('appointments')
+                    .update({ status: 'concluido' })
+                    .eq('id', appointmentId);
+            }
+
             setToast({ message: 'Pagamento confirmado! ✅', type: 'success' });
             setIsLocked(true);
+            
+            // Force refresh by going back after a short delay
             setTimeout(onBack, 1500);
 
         } catch (e: any) {

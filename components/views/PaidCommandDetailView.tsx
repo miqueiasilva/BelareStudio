@@ -77,7 +77,9 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                     <div className="text-center pb-6 border-b border-dashed border-slate-200">
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Cliente</p>
                         <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight">{command.clients?.nome || command.client_name || 'Consumidor Final'}</h3>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Finalizado em {format(new Date(command.closed_at), "dd/MM/yyyy 'às' HH:mm")}</p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">
+                            Finalizado em {command.closed_at ? format(new Date(command.closed_at), "dd/MM/yyyy 'às' HH:mm") : 'Data não registrada'}
+                        </p>
                     </div>
 
                     <div className="space-y-4">
