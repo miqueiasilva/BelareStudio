@@ -172,6 +172,7 @@ const PublicBookingPreview: React.FC = () => {
                     // O usuário informou que studio_settings é a tabela correta e contém os dados necessários.
                     setStudio({ 
                         ...studioData,
+                        studio_id: studioId,
                         // Garantir que o nome do estúdio venha do studio_settings
                         studio_name: studioData.studio_name || studioData.business_name || "Seu Estúdio de Beleza"
                     });
@@ -365,34 +366,31 @@ const PublicBookingPreview: React.FC = () => {
             const totalValue = selectedServices.reduce((acc, s) => acc + Number(s.preco), 0);
             const serviceNames = selectedServices.map(s => s.nome || s.name).join(' + ');
 
-            // Validação: Verificar se o estúdio existe na tabela 'studio_settings' para evitar erro de FK
-            const { data: studioExists, error: studioCheckErr } = await supabase
-                .from('studio_settings')
-                .select('studio_id')
-                .eq('studio_id', studio?.studio_id || studio?.id)
-                .maybeSingle();
-
-            if (studioCheckErr || !studioExists) {
-                throw new Error('Estúdio não encontrado ou inválido. Verifique o link de agendamento.');
-            }
+            const endDateTime = addMinutes(appointmentDate, totalDuration);
 
             // Enviar estritamente professional_id. resource_id gerado no DB como espelho.
+            const payload = {
+                studio_id: studio?.studio_id || studio?.id,
+                client_id: clientId,
+                client_name: clientName,
+                client_whatsapp: cleanPhone,
+                professional_id: selectedProfessional.id,
+                professional_name: selectedProfessional.name,
+                service_name: serviceNames,
+                value: totalValue,
+                duration: totalDuration,
+                date: appointmentDate.toISOString(),
+                start_at: appointmentDate.toISOString(),
+                end_at: endDateTime.toISOString(),
+                status: 'pendente',
+                origem: 'online',
+                origin: 'online'
+            };
+            console.log('PAYLOAD DO INSERT:', JSON.stringify(payload));
+
             const { error: apptErr } = await supabase
                 .from('appointments')
-                .insert([{
-                    studio_id: studio?.id || studio?.studio_id,
-                    client_id: clientId,
-                    client_name: clientName,
-                    client_whatsapp: cleanPhone,
-                    professional_id: selectedProfessional.id,
-                    professional_name: selectedProfessional.name,
-                    service_name: serviceNames,
-                    value: totalValue,
-                    duration: totalDuration,
-                    date: appointmentDate.toISOString(),
-                    status: 'agendado',
-                    origem: 'link'
-                }]);
+                .insert([payload]);
 
             if (apptErr) throw apptErr;
             setBookingSuccess(true);
