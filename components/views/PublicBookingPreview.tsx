@@ -419,6 +419,10 @@ const PublicBookingPreview: React.FC = () => {
         return selectedServices.reduce((acc, s) => acc + Number(s.preco), 0);
     }, [selectedServices]);
 
+    const totalDuration = useMemo(() => {
+        return selectedServices.reduce((acc, s) => acc + (Number(s.duracao_min) || 0), 0);
+    }, [selectedServices]);
+
     const toggleService = (service: any) => {
         setSelectedServices(prev => {
             const isAlreadySelected = prev.find(s => s.id === service.id);
@@ -499,7 +503,19 @@ const PublicBookingPreview: React.FC = () => {
                 <div className="fixed bottom-0 left-0 right-0 p-6 z-40 bg-gradient-to-t from-white via-white to-white/80 backdrop-blur-md border-t border-slate-100 animate-in slide-in-from-bottom-full duration-500">
                     <div className="max-w-xl mx-auto flex items-center justify-between gap-6">
                         <div className="flex-1">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{selectedServices.length} selecionados</p>
+                            <div className="flex items-center gap-2 mb-1">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{selectedServices.length} selecionados</p>
+                                <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                                    <Clock size={10} /> {totalDuration} min
+                                </p>
+                                <button 
+                                    onClick={() => setSelectedServices([])}
+                                    className="ml-2 text-[10px] font-black text-orange-500 uppercase tracking-widest hover:text-orange-600 transition-colors"
+                                >
+                                    Limpar
+                                </button>
+                            </div>
                             <p className="text-xl font-black text-slate-800">Total R$ {totalPrice.toFixed(2)}</p>
                         </div>
                         <button onClick={() => { setIsBookingOpen(true); setBookingStep(1); }} className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95">Continuar <ArrowRight size={20} /></button>
@@ -686,9 +702,15 @@ const PublicBookingPreview: React.FC = () => {
                                                         </div>
                                                     ))}
                                                 </div>
-                                                <div className="pt-3 border-t border-slate-50 flex justify-between items-center">
-                                                    <span className="text-xs font-black uppercase text-slate-400">Total</span>
-                                                    <span className="text-xl font-black text-orange-600">R$ {totalPrice.toFixed(2)}</span>
+                                                <div className="pt-3 border-t border-slate-50 flex justify-between items-end">
+                                                    <div className="space-y-1">
+                                                        <span className="text-[10px] font-black uppercase text-slate-400 block tracking-widest">Tempo Total</span>
+                                                        <span className="text-sm font-bold text-slate-600 flex items-center gap-1"><Clock size={14} /> {totalDuration} min</span>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <span className="text-[10px] font-black uppercase text-slate-400 block tracking-widest">Valor Total</span>
+                                                        <span className="text-2xl font-black text-orange-600">R$ {totalPrice.toFixed(2)}</span>
+                                                    </div>
                                                 </div>
                                             </div>
 
