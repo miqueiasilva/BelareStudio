@@ -748,6 +748,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                     e.stopPropagation(); 
                                                     if (app.type === 'appointment') {
                                                         setActiveAppointmentDetail(app); 
+                                                    } else if (app.type === 'block') {
+                                                        setModalState({ type: 'block', data: app });
                                                     }
                                                 }} 
                                                 className="rounded-none shadow-sm border-l-4 p-1.5 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card !m-0 border-r border-b border-slate-200/50"
@@ -847,14 +849,25 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     appointment={activeAppointmentDetail} 
                     targetElement={appointmentRefs.current.get(activeAppointmentDetail.id) || null} 
                     onClose={() => setActiveAppointmentDetail(null)} 
-                    onEdit={(app) => setModalState({ type: 'appointment', data: app })} 
+                    onEdit={(app) => setModalState({ type: app.type === 'block' ? 'block' : 'appointment', data: app })} 
                     onDelete={handleDeleteAppointmentFull} 
                     onUpdateStatus={handleUpdateStatus}
                     onConvertToCommand={handleConvertToCommand}
                 />
             )}
             {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />}
-            {modalState?.type === 'block' && <BlockTimeModal professional={modalState.data.professional} startTime={modalState.data.start} onClose={() => setModalState(null)} onSave={handleSaveAppointment as any} />}
+            {modalState?.type === 'block' && (
+                <BlockTimeModal 
+                    appointment={modalState.data.id ? modalState.data : undefined}
+                    professional={modalState.data.professional} 
+                    startTime={modalState.data.start} 
+                    onClose={() => setModalState(null)} 
+                    onSave={async () => {
+                        await fetchAppointments();
+                        setModalState(null);
+                    }} 
+                />
+            )}
             {modalState?.type === 'sale' && <NewTransactionModal type="receita" onClose={() => setModalState(null)} onSave={(t) => { onAddTransaction(t); setModalState(null); setToast({ message: 'Venda registrada!', type: 'success' }); }} />}
             {pendingConflict && <ConflictAlertModal newApp={pendingConflict.newApp} conflictApp={pendingConflict.conflictWith} onConfirm={() => handleSaveAppointment(pendingConflict.newApp, true)} onCancel={() => setPendingConflict(null)} />}
             
