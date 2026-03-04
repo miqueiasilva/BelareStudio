@@ -132,7 +132,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             const profId = isSafeUUID(selectedProfessionalId) ? selectedProfessionalId : null;
             
             // 1. REGISTRO DO PAGAMENTO (PRIMEIRO)
-            const { error: rpcError } = await supabase.rpc('register_payment_transaction', {
+            const { data: transaction, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: (window as any).activeStudioId || null,
                 p_professional_id: profId,
                 p_amount: appointment.price,
@@ -145,7 +145,55 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
             if (rpcError) throw rpcError;
 
-            // 2. ATUALIZAÇÃO DO AGENDAMENTO (SÓ SE O PASSO 1 FOI OK)
+            // 2. CRIAR COMANDA VINCULADA PARA HISTÓRICO PADRONIZADO
+            const now = new Date().toISOString();
+            const { data: command, error: cmdError } = await supabase
+                .from('commands')
+                .insert([{
+                    studio_id: (window as any).activeStudioId || null,
+                    client_id: appointment.client_id || null,
+                    client_name: appointment.client_name || 'Cliente',
+                    professional_id: profId,
+                    status: 'pago',
+                    total_amount: appointment.price,
+                    closed_at: now,
+                    paid_at: now,
+                    payment_method: selectedCategory,
+                    payment_data: {
+                        method: selectedCategory,
+                        tax_rate: Number(financialMetrics.rate || 0),
+                        gross_value: Number(appointment.price),
+                        net_value: Number(financialMetrics.netValue || appointment.price),
+                        installments: installments,
+                        brand: null
+                    }
+                }])
+                .select('id')
+                .single();
+
+            if (!cmdError && command) {
+                // Vincular itens à comanda
+                await supabase.from('command_items').insert([{
+                    command_id: command.id,
+                    appointment_id: appointment.id,
+                    studio_id: (window as any).activeStudioId || null,
+                    title: appointment.service_name,
+                    price: appointment.price,
+                    quantity: 1,
+                    professional_id: profId
+                }]);
+
+                // Vincular transação financeira à comanda
+                const transactionId = (transaction as any)?.id;
+                if (transactionId) {
+                    await supabase
+                        .from('financial_transactions')
+                        .update({ command_id: command.id })
+                        .eq('id', transactionId);
+                }
+            }
+
+            // 3. ATUALIZAÇÃO DO AGENDAMENTO
             const { error: apptError } = await supabase
                 .from('appointments')
                 .update({ status: 'concluido' })

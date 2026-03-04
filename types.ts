@@ -156,7 +156,7 @@ export interface Command {
     id: string;
     client_id: number;
     studio_id: string;
-    status: 'open' | 'paid' | 'canceled';
+    status: 'open' | 'pago' | 'canceled';
     total_amount: number;
     created_at: string;
     closed_at?: string;

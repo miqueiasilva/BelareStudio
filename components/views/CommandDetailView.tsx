@@ -43,14 +43,14 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             const { data: itemsData } = await supabase.from('command_items').select('*').eq('command_id', commandId);
             const [configsRes, payHistoryRes] = await Promise.all([
                 supabase.from('payment_methods_config').select('*').eq('studio_id', activeStudioId).eq('is_active', true),
-                supabase.from('command_payments').select(`*, method:method_id(name, brand)`).eq('command_id', commandId)
+                supabase.from('financial_transactions').select('*').eq('command_id', commandId)
             ]);
 
             setAvailableConfigs(configsRes.data || []);
             setHistoryPayments(payHistoryRes.data || []);
             setCommand({ ...cmdData, command_items: itemsData || [] });
             
-            if (cmdData.status === 'paid') {
+            if (cmdData.status === 'pago') {
                 setIsLocked(true);
             }
         } catch (_e: any) {
@@ -127,7 +127,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             if (rpcError) {
                 if (rpcError.status === 409 || rpcError.code === '23505' || rpcError.code === 'P0001') {
                     const { data: check } = await supabase.from('commands').select('status').eq('id', commandId).single();
-                    if (check?.status === 'paid') {
+                    if (check?.status === 'pago') {
                         setToast({ message: 'Venda processada com sucesso!', type: 'success' });
                         setIsLocked(true);
                         setTimeout(onBack, 1000);
@@ -153,25 +153,23 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 }
             }
 
-            // 3. REGISTRAR EM command_payments PARA HISTÓRICO/RECIBO
-            await supabase.from('command_payments').insert([{
-                command_id: commandId,
-                method_id: selectedConfig?.id || null,
-                amount: totals.total,
-                installments: Number(mainPayment.installments || 1),
-                tax_rate: Number(mainPayment.rate || 0),
-                net_value: Number(mainPayment.netAmount || totals.total),
-                method: dbMethod
-            }]);
-
-            // FIX: Garantir que a comanda seja marcada como paga e com as datas corretas
+            // 3. ATUALIZAR COMANDA
             const now = new Date().toISOString();
             const { error: updateError } = await supabase
                 .from('commands')
                 .update({ 
-                    status: 'paid',
+                    status: 'pago',
                     closed_at: now,
-                    paid_at: now
+                    paid_at: now,
+                    payment_method: dbMethod,
+                    payment_data: {
+                        method: dbMethod,
+                        tax_rate: Number(mainPayment.rate || 0),
+                        gross_value: Number(totals.total),
+                        net_value: Number(mainPayment.netAmount || totals.total),
+                        installments: Number(mainPayment.installments || 1),
+                        brand: mainPayment.brand || null
+                    }
                 })
                 .eq('id', commandId);
 

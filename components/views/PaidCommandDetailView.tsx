@@ -38,11 +38,20 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                 .select('*')
                 .eq('command_id', commandId);
 
-            // Fallback para command_payments se não houver dados em financial_transactions
             let payData = ftData && ftData.length > 0 ? ftData : [];
-            if (payData.length === 0) {
-                const { data: cpData } = await supabase.from('command_payments').select('*').eq('command_id', commandId);
-                payData = cpData || [];
+
+            // Fallback: Busca por appointment_id se houver itens vinculados
+            if (payData.length === 0 && itemsData && itemsData.length > 0) {
+                const appointmentId = itemsData.find(i => i.appointment_id)?.appointment_id;
+                if (appointmentId) {
+                    const { data: apptFtData } = await supabase
+                        .from('financial_transactions')
+                        .select('*')
+                        .eq('appointment_id', appointmentId);
+                    if (apptFtData && apptFtData.length > 0) {
+                        payData = apptFtData;
+                    }
+                }
             }
 
             setCommand(cmdData);
@@ -58,6 +67,22 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
     useEffect(() => { loadData(); }, [loadData]);
 
     const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+
+    const getMethodLabel = (method: string) => {
+        if (!method) return 'N/A';
+        const labels: Record<string, string> = {
+            'pix': 'PIX',
+            'cartao_credito': 'CRÉDITO',
+            'cartao_debito': 'DÉBITO',
+            'dinheiro': 'DINHEIRO',
+            'transferencia': 'TRANSFERÊNCIA',
+            'boleto': 'BOLETO',
+            'credit': 'CRÉDITO',
+            'debit': 'DÉBITO',
+            'money': 'DINHEIRO'
+        };
+        return labels[method.toLowerCase()] || method.toUpperCase();
+    };
 
     if (loading) return <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center"><Loader2 className="animate-spin text-white" size={40} /></div>;
     if (!command) return null;
@@ -78,7 +103,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Cliente</p>
                         <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight">{command.clients?.nome || command.client_name || 'Consumidor Final'}</h3>
                         <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">
-                            Finalizado em {command.closed_at ? format(new Date(command.closed_at), "dd/MM/yyyy 'às' HH:mm") : 'Data não registrada'}
+                            Finalizado em {command.paid_at ? format(new Date(command.paid_at), "dd/MM/yyyy 'às' HH:mm") : (command.closed_at ? format(new Date(command.closed_at), "dd/MM/yyyy 'às' HH:mm") : 'Data não registrada')}
                         </p>
                     </div>
 
@@ -100,37 +125,71 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                             <span className="text-2xl font-black text-emerald-400">{formatBRL(Number(command.total_amount))}</span>
                         </div>
                         
-                        {payments.map(p => (
-                            <div key={p.id} className="pt-4 border-t border-white/10 space-y-2 relative z-10">
+                        {/* Seção de Pagamento Prioritária: payment_data da comanda */}
+                        {command.payment_data ? (
+                            <div className="pt-4 border-t border-white/10 space-y-2 relative z-10">
                                 <div className="flex justify-between items-center">
                                     <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Forma de Pagamento</p>
                                     <span className="text-[10px] font-black text-emerald-400 uppercase">
-                                        {p.brand || p.payment_method || p.method}
-                                        {p.installments > 1 ? ` — ${p.installments}x` : ''}
+                                        {command.payment_data.brand || getMethodLabel(command.payment_data.method || command.payment_method || '')}
+                                        {Number(command.payment_data.installments) > 1 ? ` — ${command.payment_data.installments}x` : ''}
                                     </span>
                                 </div>
                                 
                                 <div className="flex justify-between items-center">
                                     <span className="text-xs text-slate-400">Valor Bruto</span>
-                                    <span className="text-sm font-bold text-white">{formatBRL(Number(p.amount))}</span>
+                                    <span className="text-sm font-bold text-white">{formatBRL(Number(command.payment_data.gross_value || command.total_amount))}</span>
                                 </div>
 
-                                {Number(p.tax_rate) > 0 && (
+                                {Number(command.payment_data.tax_rate) > 0 && (
                                     <div className="flex justify-between items-center">
-                                        <span className="text-xs text-rose-400">Taxa ({Number(p.tax_rate)}%)</span>
-                                        <span className="text-sm font-bold text-rose-400">- {formatBRL((Number(p.amount) * Number(p.tax_rate)) / 100)}</span>
+                                        <span className="text-xs text-rose-400">Taxa ({Number(command.payment_data.tax_rate)}%)</span>
+                                        <span className="text-sm font-bold text-rose-400">- {formatBRL((Number(command.payment_data.gross_value || command.total_amount) * Number(command.payment_data.tax_rate)) / 100)}</span>
                                     </div>
                                 )}
 
                                 <div className="flex justify-between items-center pt-2 border-t border-white/5">
                                     <span className="text-xs font-black text-slate-300 uppercase">Valor Líquido</span>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-lg font-black text-white">{formatBRL(Number(p.net_value || p.amount))}</span>
+                                        <span className="text-lg font-black text-white">{formatBRL(Number(command.payment_data.net_value || command.total_amount))}</span>
                                         <CheckCircle2 className="text-emerald-500" size={16} />
                                     </div>
                                 </div>
                             </div>
-                        ))}
+                        ) : (
+                            /* Fallback para comandas antigas: busca em financial_transactions */
+                            payments.map(p => (
+                                <div key={p.id} className="pt-4 border-t border-white/10 space-y-2 relative z-10">
+                                    <div className="flex justify-between items-center">
+                                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Forma de Pagamento</p>
+                                        <span className="text-[10px] font-black text-emerald-400 uppercase">
+                                            {p.brand || getMethodLabel(p.payment_method || p.method || '')}
+                                            {Number(p.installments) > 1 ? ` — ${p.installments}x` : ''}
+                                        </span>
+                                    </div>
+                                    
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-xs text-slate-400">Valor Bruto</span>
+                                        <span className="text-sm font-bold text-white">{formatBRL(Number(p.amount))}</span>
+                                    </div>
+
+                                    {Number(p.tax_rate) > 0 && (
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs text-rose-400">Taxa ({Number(p.tax_rate)}%)</span>
+                                            <span className="text-sm font-bold text-rose-400">- {formatBRL((Number(p.amount) * Number(p.tax_rate)) / 100)}</span>
+                                        </div>
+                                    )}
+
+                                    <div className="flex justify-between items-center pt-2 border-t border-white/5">
+                                        <span className="text-xs font-black text-slate-300 uppercase">Valor Líquido</span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-lg font-black text-white">{formatBRL(Number(p.net_value || p.amount))}</span>
+                                            <CheckCircle2 className="text-emerald-500" size={16} />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
                     </div>
                 </div>
 

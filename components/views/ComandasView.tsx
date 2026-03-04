@@ -20,7 +20,7 @@ const ComandasView: React.FC<any> = ({ onNavigateToCommand, onOpenPaidSummary })
     const [tabs, setTabs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [currentTab, setCurrentTab] = useState<'open' | 'paid'>('open');
+    const [currentTab, setCurrentTab] = useState<'open' | 'pago'>('open');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
     const [isClientSearchOpen, setIsClientSearchOpen] = useState(false);
@@ -134,7 +134,7 @@ const ComandasView: React.FC<any> = ({ onNavigateToCommand, onOpenPaidSummary })
     });
 
     const handleCommandClick = (id: string) => {
-        if (currentTab === 'paid') {
+        if (currentTab === 'pago') {
             onOpenPaidSummary(id);
         } else {
             onNavigateToCommand?.(id);
@@ -150,7 +150,7 @@ const ComandasView: React.FC<any> = ({ onNavigateToCommand, onOpenPaidSummary })
                     <h1 className="text-xl font-black text-slate-800 flex items-center gap-2 leading-none uppercase tracking-tighter"><FileText className="text-orange-500" size={24} /> Balcão / Comandas</h1>
                     <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 mt-2">
                         <button onClick={() => setCurrentTab('open')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'open' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500'}`}>Em Atendimento</button>
-                        <button onClick={() => setCurrentTab('paid')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'paid' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500'}`}>Pagos / Arquivo</button>
+                        <button onClick={() => setCurrentTab('pago')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${currentTab === 'pago' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500'}`}>Pagos / Arquivo</button>
                     </div>
                 </div>
                 <button onClick={() => setIsClientSearchOpen(true)} className="bg-orange-500 text-white px-6 py-2.5 rounded-xl font-black text-xs shadow-lg shadow-orange-100 active:scale-95 uppercase tracking-widest flex items-center gap-2">

@@ -49,7 +49,7 @@ const RemuneracoesView: React.FC = () => {
             supabase.from('command_items')
                 .select('*, commands!inner(id, closed_at, status, payment_method)')
                 .eq('studio_id', activeStudioId)
-                .eq('commands.status', 'paid')
+                .eq('commands.status', 'pago')
                 .gte('commands.closed_at', start)
                 .lte('commands.closed_at', end)
                 .abortSignal(abortControllerRef.current.signal),

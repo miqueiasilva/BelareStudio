@@ -202,13 +202,54 @@ const VendasView: React.FC<VendasViewProps> = () => {
 
             if (rpcError) throw rpcError;
 
-            // Vincular descrição manualmente se o RPC retornar o ID
-            const transactionId = (transaction as any)?.id;
-            if (transactionId) {
-                await supabase
-                    .from('financial_transactions')
-                    .update({ description })
-                    .eq('id', transactionId);
+            // CRIAR COMANDA VINCULADA PARA HISTÓRICO PADRONIZADO
+            const now = new Date().toISOString();
+            const { data: command, error: cmdError } = await supabase
+                .from('commands')
+                .insert([{
+                    studio_id: activeStudioId,
+                    client_id: selectedClient?.id || null,
+                    client_name: selectedClient?.nome || 'Consumidor Final',
+                    status: 'pago',
+                    total_amount: total,
+                    closed_at: now,
+                    paid_at: now,
+                    payment_method: methodMap[paymentMethod] || 'pix',
+                    payment_data: {
+                        method: methodMap[paymentMethod] || 'pix',
+                        tax_rate: 0,
+                        gross_value: total,
+                        net_value: total,
+                        installments: 1,
+                        brand: null
+                    }
+                }])
+                .select('id')
+                .single();
+
+            if (!cmdError && command) {
+                // Vincular itens à comanda
+                const commandItems = cart.map(item => ({
+                    command_id: command.id,
+                    studio_id: activeStudioId,
+                    title: item.name,
+                    price: item.price,
+                    quantity: item.quantity,
+                    type: item.type
+                }));
+                await supabase.from('command_items').insert(commandItems);
+
+                // Vincular transação financeira à comanda e atualizar descrição
+                const transactionId = (transaction as any)?.id;
+                if (transactionId) {
+                    await supabase
+                        .from('financial_transactions')
+                        .update({ 
+                            command_id: command.id,
+                            description: description 
+                        })
+                        .eq('id', transactionId);
+                }
             }
 
             // Se o RPC não retornar o objeto completo, criamos um mock para o modal de recibo
