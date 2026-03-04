@@ -25,7 +25,7 @@ const RemuneracoesView = lazy(() => import('./components/views/RemuneracoesView'
 const VendasView = lazy(() => import('./components/views/VendasView'));
 const ComandasView = lazy(() => import('./components/views/ComandasView'));
 const CommandDetailView = lazy(() => import('./components/views/CommandDetailView'));
-const CaixaView = lazy(() => import('./components/views/CaixaView'));
+const CaixaView = lazy(() => import('./components/views/ControledeCaixaView'));
 const ProdutosView = lazy(() => import('./components/views/ProdutosView'));
 const ServicosView = lazy(() => import('./components/views/ServicosView'));
 const EquipeView = lazy(() => import('./components/views/EquipeView'));
