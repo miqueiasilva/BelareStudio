@@ -194,9 +194,10 @@ export interface Product {
   stock_quantity: number;
   min_stock?: number;
   active: boolean;
-  category?: string;
-  supplier_id?: string | null;
+  ativo?: boolean;
+  image_url?: string | null;
   studio_id?: string;
+  created_at?: string;
 }
 
 export interface Supplier {

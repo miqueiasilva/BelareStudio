@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 // FIX: Added 'Info' to the imports from lucide-react
-import { X, Package, DollarSign, Tag, BarChart, Save, AlertTriangle, Truck, Hash, Info } from 'lucide-react';
-import { Product, Supplier } from '../../types';
+import { X, Package, DollarSign, BarChart, Save, AlertTriangle, Hash, Info } from 'lucide-react';
+import { Product } from '../../types';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
@@ -18,7 +18,6 @@ interface ProductModalProps {
 
 const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave }) => {
     const { activeStudioId } = useStudio();
-    const [suppliers, setSuppliers] = useState<Supplier[]>([]);
     const [formData, setFormData] = useState<Partial<Product>>({
         name: product?.name || '',
         sku: product?.sku || '',
@@ -27,8 +26,6 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
         cost_price: product?.cost_price || 0,
         price: product?.price || 0,
         active: product?.active ?? true,
-        category: product?.category || 'Geral',
-        supplier_id: product?.supplier_id || null,
         ...product
     });
     const abortControllerRef = useRef<AbortController | null>(null);
@@ -36,34 +33,11 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
 
     useEffect(() => {
         isMounted.current = true;
-        const loadSuppliers = async () => {
-            if (!activeStudioId) return;
-            
-            if (abortControllerRef.current) abortControllerRef.current.abort();
-            abortControllerRef.current = new AbortController();
-
-            try {
-                const { data, error } = await supabase
-                    .from('suppliers')
-                    .select('*')
-                    .eq('studio_id', activeStudioId)
-                    .order('name')
-                    .abortSignal(abortControllerRef.current.signal);
-                if (error) throw error;
-                if (isMounted.current && data) setSuppliers(data);
-            } catch (e: any) {
-                const isAbortError = e.name === 'AbortError' || e.message?.includes('aborted');
-                if (isMounted.current && !isAbortError) {
-                    console.error("Erro ao carregar fornecedores:", e);
-                }
-            }
-        };
-        loadSuppliers();
         return () => {
             isMounted.current = false;
             if (abortControllerRef.current) abortControllerRef.current.abort();
         };
-    }, [activeStudioId]);
+    }, []);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -108,37 +82,9 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
                                 <input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border-2 border-slate-100 bg-slate-50 rounded-2xl px-5 py-4 outline-none focus:ring-4 focus:ring-purple-50 focus:border-purple-400 outline-none font-black text-slate-700 transition-all" placeholder="Ex: Shampoo Pos-Quimica 300ml" />
                             </div>
                             
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Categoria</label>
-                                <select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full border-2 border-slate-100 bg-slate-50 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none">
-                                    <option value="Cabelo">Cabelo</option>
-                                    <option value="Unhas">Unhas</option>
-                                    <option value="Estética">Estética</option>
-                                    <option value="Maquiagem">Maquiagem</option>
-                                    <option value="Geral">Geral / Revenda</option>
-                                </select>
-                            </div>
-
-                            <div className="space-y-1.5">
+                            <div className="space-y-1.5 md:col-span-2">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">SKU / Cód. Barras</label>
                                 <input value={formData.sku} onChange={e => setFormData({...formData, sku: e.target.value})} className="w-full border-2 border-slate-100 bg-slate-50 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none transition-all uppercase" placeholder="REF-001" />
-                            </div>
-                        </div>
-
-                        <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fornecedor Preferencial</label>
-                            <div className="relative">
-                                <Truck size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
-                                <select 
-                                    value={formData.supplier_id || ''} 
-                                    onChange={e => setFormData({...formData, supplier_id: e.target.value || null})} 
-                                    className="w-full border-2 border-slate-100 bg-slate-50 rounded-2xl pl-11 pr-4 py-3.5 font-bold text-slate-700 outline-none appearance-none"
-                                >
-                                    <option value="">Nenhum fornecedor selecionado</option>
-                                    {suppliers.map(s => (
-                                        <option key={s.id} value={s.id}>{s.name}</option>
-                                    ))}
-                                </select>
                             </div>
                         </div>
 

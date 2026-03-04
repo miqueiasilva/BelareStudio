@@ -51,12 +51,12 @@ const ControledeCaixaView: React.FC = () => {
     const [modalDesc, setModalDesc] = useState('');
 
     const fetchSession = async () => {
-        if (!activeStudioId) return;
+        if (!user) return;
         try {
             const { data, error } = await supabase
                 .from('cash_sessions')
                 .select('*')
-                .eq('studio_id', activeStudioId)
+                .eq('responsavel_id', user.id)
                 .eq('status', 'aberto')
                 .maybeSingle();
             
@@ -152,7 +152,7 @@ const ControledeCaixaView: React.FC = () => {
     }, [activeStudioId, filterType, activeSession, sessionStatus]);
 
     const handleOpenCash = async () => {
-        if (!activeStudioId || !user) return;
+        if (!user) return;
         const valor = parseFloat(modalValue.replace(',', '.'));
         if (isNaN(valor)) return setToast({ message: "Valor inválido", type: 'error' });
 
@@ -161,7 +161,6 @@ const ControledeCaixaView: React.FC = () => {
             const { data, error } = await supabase
                 .from('cash_sessions')
                 .insert([{
-                    studio_id: activeStudioId,
                     responsavel_id: user.id,
                     data_abertura: new Date().toISOString(),
                     saldo_inicial: valor,
@@ -231,8 +230,7 @@ const ControledeCaixaView: React.FC = () => {
                     session_id: activeSession.id,
                     tipo: showMovementModal?.type,
                     valor: valor,
-                    descricao: modalDesc,
-                    studio_id: activeStudioId // assumindo que tem studio_id
+                    descricao: modalDesc
                 }]);
 
             if (error) throw error;
