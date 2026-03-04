@@ -203,7 +203,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments')
-                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origem')
+                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origem, type')
                     .eq('studio_id', activeStudioId)
                     .gte('date', startStr)
                     .lte('date', endStr)
@@ -224,7 +224,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             if (isMounted.current && requestId === lastRequestId.current) {
                 const mappedAppts = (apptRes.data || []).map(row => ({
                     ...mapRowToAppointment(row, resources),
-                    type: 'appointment'
+                    type: row.type || 'appointment'
                 }));
 
                 const mappedBlocks = (blocksRes.data || []).map(row => ({
@@ -344,6 +344,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         return {
             id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
             notas: row.notes || '', origem: row.origem || 'interno',
+            type: row.type || 'appointment',
             services: services.length > 0 ? services : undefined,
             client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
             professional: prof || professionalsList[0] || { id: 0, name: row.professional_name, avatarUrl: '' },

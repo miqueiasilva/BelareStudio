@@ -122,6 +122,7 @@ export interface LegacyAppointment {
   notas?: string;
   origem?: string;
   origin?: string;
+  type?: 'appointment' | 'block';
 }
 
 export interface FinancialTransaction {
