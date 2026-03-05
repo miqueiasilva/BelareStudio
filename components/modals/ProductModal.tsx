@@ -93,14 +93,30 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Preço Custo</label>
                                 <div className="relative">
                                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 font-bold text-xs">R$</span>
-                                    <input type="number" step="0.01" required value={formData.cost_price} onChange={e => setFormData({...formData, cost_price: Number(e.target.value)})} className="w-full border-2 border-slate-100 bg-slate-50 rounded-2xl pl-11 pr-4 py-3.5 focus:border-purple-400 outline-none font-bold text-slate-700" />
+                                    <input 
+                                        type="number" 
+                                        step="0.01" 
+                                        required 
+                                        value={formData.cost_price ?? ''} 
+                                        onFocus={(e) => e.target.select()}
+                                        onChange={e => setFormData({...formData, cost_price: e.target.value === '' ? undefined : Number(e.target.value)})} 
+                                        className="w-full border-2 border-slate-100 bg-slate-50 rounded-2xl pl-11 pr-4 py-3.5 focus:border-purple-400 outline-none font-bold text-slate-700" 
+                                    />
                                 </div>
                             </div>
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Preço Venda</label>
                                 <div className="relative">
                                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 font-bold text-xs">R$</span>
-                                    <input type="number" step="0.01" required value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} className="w-full border-2 border-slate-100 bg-slate-50 rounded-2xl pl-11 pr-4 py-3.5 focus:border-purple-400 outline-none font-black text-slate-800" />
+                                    <input 
+                                        type="number" 
+                                        step="0.01" 
+                                        required 
+                                        value={formData.price ?? ''} 
+                                        onFocus={(e) => e.target.select()}
+                                        onChange={e => setFormData({...formData, price: e.target.value === '' ? undefined : Number(e.target.value)})} 
+                                        className="w-full border-2 border-slate-100 bg-slate-50 rounded-2xl pl-11 pr-4 py-3.5 focus:border-purple-400 outline-none font-black text-slate-800" 
+                                    />
                                 </div>
                             </div>
                             <div className="bg-emerald-50 rounded-2xl p-2 flex flex-col justify-center items-center border-2 border-emerald-100 shadow-inner">
@@ -118,14 +134,28 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
                                         <AlertTriangle size={12} className="text-orange-500" />
                                         Alerta de Estoque Mínimo
                                     </label>
-                                    <input type="number" required value={formData.min_stock} onChange={e => setFormData({...formData, min_stock: Number(e.target.value)})} className="w-full border-2 border-orange-100 bg-white rounded-xl px-4 py-2.5 font-black text-orange-600 outline-none focus:border-orange-400" />
+                                    <input 
+                                        type="number" 
+                                        required 
+                                        value={formData.min_stock ?? ''} 
+                                        onFocus={(e) => e.target.select()}
+                                        onChange={e => setFormData({...formData, min_stock: e.target.value === '' ? undefined : Number(e.target.value)})} 
+                                        className="w-full border-2 border-orange-100 bg-white rounded-xl px-4 py-2.5 font-black text-orange-600 outline-none focus:border-orange-400" 
+                                    />
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Saldo Atual</label>
                                     <div className="flex items-center bg-white border-2 border-slate-200 rounded-2xl overflow-hidden focus-within:border-purple-400 transition-all">
-                                        <button type="button" onClick={() => setFormData(p => ({...p, stock_quantity: Math.max(0, (p.stock_quantity || 0) - 1)}))} className="w-12 h-12 flex items-center justify-center bg-slate-50 hover:bg-slate-100 text-slate-600 font-black transition-all border-r border-slate-200">-</button>
-                                        <input type="number" required value={formData.stock_quantity} onChange={e => setFormData({...formData, stock_quantity: Number(e.target.value)})} className="flex-1 bg-transparent px-4 py-3 text-center font-black text-slate-800 outline-none" />
-                                        <button type="button" onClick={() => setFormData(p => ({...p, stock_quantity: (p.stock_quantity || 0) + 1}))} className="w-12 h-12 flex items-center justify-center bg-slate-50 hover:bg-slate-100 text-slate-600 font-black transition-all border-l border-slate-200">+</button>
+                                        <button type="button" onClick={() => setFormData(p => ({...p, stock_quantity: Math.max(0, (Number(p.stock_quantity) || 0) - 1)}))} className="w-12 h-12 flex items-center justify-center bg-slate-50 hover:bg-slate-100 text-slate-600 font-black transition-all border-r border-slate-200">-</button>
+                                        <input 
+                                            type="number" 
+                                            required 
+                                            value={formData.stock_quantity ?? ''} 
+                                            onFocus={(e) => e.target.select()}
+                                            onChange={e => setFormData({...formData, stock_quantity: e.target.value === '' ? undefined : Number(e.target.value)})} 
+                                            className="flex-1 bg-transparent px-4 py-3 text-center font-black text-slate-800 outline-none" 
+                                        />
+                                        <button type="button" onClick={() => setFormData(p => ({...p, stock_quantity: (Number(p.stock_quantity) || 0) + 1}))} className="w-12 h-12 flex items-center justify-center bg-slate-50 hover:bg-slate-100 text-slate-600 font-black transition-all border-l border-slate-200">+</button>
                                     </div>
                                 </div>
                             </div>
