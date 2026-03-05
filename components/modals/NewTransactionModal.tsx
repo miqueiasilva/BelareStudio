@@ -18,21 +18,9 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
   });
 
   const [isCustomCategory, setIsCustomCategory] = useState(false);
-  const [isInstallment, setIsInstallment] = useState(false);
-  const [installmentCount, setInstallmentCount] = useState(2);
-  const [isRecurring, setIsRecurring] = useState(false);
-  const [recurringFrequency, setRecurringFrequency] = useState<'semanal' | 'quinzenal' | 'mensal'>('mensal');
-  const [recurringCount, setRecurringCount] = useState(2);
-
-  const handleToggleInstallment = () => {
-    setIsInstallment(!isInstallment);
-    if (!isInstallment) setIsRecurring(false);
-  };
-
-  const handleToggleRecurring = () => {
-    setIsRecurring(!isRecurring);
-    if (!isRecurring) setIsInstallment(false);
-  };
+  const [launchType, setLaunchType] = useState<'unico' | 'parcelado' | 'recorrente'>('unico');
+  const [interval, setInterval] = useState<'semanal' | 'quinzenal' | 'mensal' | 'anual'>('mensal');
+  const [quantity, setQuantity] = useState(2);
 
   const receitaCategories = ['Venda de Serviços', 'Venda de Produtos', 'Aporte / Investimento', 'Outros'];
   const despesaCategories = [
@@ -69,42 +57,29 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
           status: 'pago' as const
       };
 
-      if (isInstallment) {
-          const transactions: any[] = [];
-          const amountPerInstallment = Number(formData.amount) / installmentCount;
-          const startDate = new Date(formData.date || new Date().toISOString().split('T')[0]);
-          
-          for (let i = 1; i <= installmentCount; i++) {
-              const installmentDate = new Date(startDate);
-              // Incrementa 1 mês por parcela
-              installmentDate.setMonth(startDate.getMonth() + (i - 1));
-              
-              transactions.push({
-                  ...baseTransaction,
-                  amount: amountPerInstallment,
-                  description: `${baseTransaction.description} (Parcela ${i}/${installmentCount})`,
-                  date: installmentDate,
-                  installments: installmentCount
-              });
-          }
-          onSave(transactions);
-      } else if (isRecurring) {
+      if (launchType !== 'unico') {
           const transactions: any[] = [];
           const startDate = new Date(formData.date || new Date().toISOString().split('T')[0]);
           
-          for (let i = 1; i <= recurringCount; i++) {
-              const recurringDate = new Date(startDate);
-              if (recurringFrequency === 'semanal') {
-                  recurringDate.setDate(startDate.getDate() + (i - 1) * 7);
-              } else if (recurringFrequency === 'quinzenal') {
-                  recurringDate.setDate(startDate.getDate() + (i - 1) * 15);
-              } else if (recurringFrequency === 'mensal') {
-                  recurringDate.setMonth(startDate.getMonth() + (i - 1));
-              }
+          for (let i = 1; i <= quantity; i++) {
+              const nextDate = new Date(startDate);
+              let daysToAdd = 0;
+              if (interval === 'semanal') daysToAdd = 7 * (i - 1);
+              else if (interval === 'quinzenal') daysToAdd = 15 * (i - 1);
+              else if (interval === 'mensal') daysToAdd = 30 * (i - 1);
+              else if (interval === 'anual') daysToAdd = 365 * (i - 1);
+              
+              nextDate.setDate(startDate.getDate() + daysToAdd);
+              
+              const isParcelado = launchType === 'parcelado';
+              const suffix = isParcelado ? `(Parcela ${i}/${quantity})` : `(Recorrência ${i}/${quantity})`;
               
               transactions.push({
                   ...baseTransaction,
-                  date: recurringDate
+                  amount: isParcelado ? Number(formData.amount) / quantity : Number(formData.amount),
+                  description: `${baseTransaction.description} ${suffix}`,
+                  date: nextDate,
+                  installments: isParcelado ? quantity : undefined
               });
           }
           onSave(transactions);
@@ -231,69 +206,54 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
                     </select>
                 </div>
 
-                {/* Parcelamento e Recorrência */}
-                <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <input 
-                                type="checkbox" 
-                                id="parcelar"
-                                checked={isInstallment}
-                                onChange={handleToggleInstallment}
-                                className="w-4 h-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
-                            />
-                            <label htmlFor="parcelar" className="text-[10px] font-black text-slate-700 uppercase tracking-widest cursor-pointer">Parcelar</label>
-                        </div>
-                        {isInstallment && (
-                            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-200">
-                                <span className="text-[9px] font-bold text-slate-400 uppercase">Vezes:</span>
-                                <input 
-                                    type="number" 
-                                    min="2" 
-                                    max="12" 
-                                    value={installmentCount}
-                                    onChange={(e) => setInstallmentCount(Number(e.target.value))}
-                                    className="w-16 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-black text-slate-700 outline-none focus:border-orange-400"
-                                />
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="flex items-center justify-between border-t border-slate-200 pt-3">
-                        <div className="flex items-center gap-2">
-                            <input 
-                                type="checkbox" 
-                                id="repetir"
-                                checked={isRecurring}
-                                onChange={handleToggleRecurring}
-                                className="w-4 h-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
-                            />
-                            <label htmlFor="repetir" className="text-[10px] font-black text-slate-700 uppercase tracking-widest cursor-pointer">Repetir</label>
-                        </div>
-                        {isRecurring && (
-                            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-200">
-                                <select 
-                                    value={recurringFrequency}
-                                    onChange={(e) => setRecurringFrequency(e.target.value as any)}
-                                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-[9px] font-black uppercase text-slate-700 outline-none focus:border-orange-400"
-                                >
-                                    <option value="semanal">Semanal</option>
-                                    <option value="quinzenal">Quinzenal</option>
-                                    <option value="mensal">Mensal</option>
-                                </select>
-                                <input 
-                                    type="number" 
-                                    min="2" 
-                                    max="52" 
-                                    value={recurringCount}
-                                    onChange={(e) => setRecurringCount(Number(e.target.value))}
-                                    className="w-14 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-black text-slate-700 outline-none focus:border-orange-400"
-                                />
-                                <span className="text-[9px] font-bold text-slate-400 uppercase">x</span>
-                            </div>
-                        )}
+                <div className="space-y-1">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo de Lançamento</label>
+                    <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+                        {(['unico', 'parcelado', 'recorrente'] as const).map((lType) => (
+                            <button
+                                key={lType}
+                                type="button"
+                                onClick={() => setLaunchType(lType)}
+                                className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
+                                    launchType === lType 
+                                    ? 'bg-white text-slate-800 shadow-sm' 
+                                    : 'text-slate-400 hover:text-slate-600'
+                                }`}
+                            >
+                                {lType === 'unico' ? 'Único' : lType === 'parcelado' ? 'Parcelado' : 'Recorrente'}
+                            </button>
+                        ))}
                     </div>
                 </div>
+
+                {launchType !== 'unico' && (
+                    <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="space-y-1">
+                            <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Intervalo</label>
+                            <select 
+                                value={interval}
+                                onChange={(e) => setInterval(e.target.value as any)}
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-orange-400"
+                            >
+                                <option value="semanal">Semanal (7 dias)</option>
+                                <option value="quinzenal">Quinzenal (15 dias)</option>
+                                <option value="mensal">Mensal (30 dias)</option>
+                                <option value="anual">Anual (365 dias)</option>
+                            </select>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Quantidade</label>
+                            <input 
+                                type="number" 
+                                min="2" 
+                                max="52" 
+                                value={quantity}
+                                onChange={(e) => setQuantity(Number(e.target.value))}
+                                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-black text-slate-700 outline-none focus:border-orange-400"
+                            />
+                        </div>
+                    </div>
+                )}
 
                 <div className="pt-4">
                     <button 
