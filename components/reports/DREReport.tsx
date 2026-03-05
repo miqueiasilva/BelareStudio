@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
     FileDown, Calendar, TrendingUp, TrendingDown, 
     DollarSign, Percent, Loader2, ChevronLeft, ChevronRight,
