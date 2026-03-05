@@ -75,6 +75,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
     const [summaryCards, setSummaryCards] = useState<any>({
         gross_revenue: 0,
         net_revenue: 0,
+        taxes: 0,
         total_expenses: 0,
         balance: 0,
         profit_margin: 0
@@ -117,7 +118,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             // IMPORTANTE: payment_method em snake_case
             const { data: trans, error: transError } = await supabase
                 .from('financial_transactions')
-                .select('id,description,amount,net_value,type,category,date,payment_method,status,studio_id')
+                .select('id,description,amount,net_value,type,category,date,payment_method,status,studio_id,source')
                 .eq('studio_id', activeStudioId)
                 .gte('date', start.toISOString())
                 .lte('date', end.toISOString())
@@ -133,22 +134,28 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                 .filter(t => t.type === 'income' || t.type === 'receita')
                 .reduce((acc, t) => acc + Number(t.amount || 0), 0);
                 
+            const net = currentTrans
+                .filter(t => t.type === 'income' || t.type === 'receita')
+                .reduce((acc, t) => acc + Number(t.net_value !== null && t.net_value !== undefined ? t.net_value : (t.amount || 0)), 0);
+
+            const taxes = currentTrans
+                .filter(t => t.type === 'income' || t.type === 'receita')
+                .filter(t => t.net_value !== null && t.net_value !== undefined)
+                .reduce((acc, t) => acc + (Number(t.amount || 0) - Number(t.net_value || 0)), 0);
+
             const expenses = currentTrans
                 .filter(t => t.type === 'expense' || t.type === 'despesa')
                 .reduce((acc, t) => acc + Number(t.amount || 0), 0);
-                
-            const net = currentTrans
-                .filter(t => t.type === 'income' || t.type === 'receita')
-                .reduce((acc, t) => acc + Number(t.net_value || t.amount || 0), 0);
 
-            const profit = net - expenses;
-            const margin = net > 0 ? (profit / net) * 100 : 0;
+            const balance = net - expenses;
+            const margin = gross > 0 ? (balance / gross) * 100 : 0;
 
             setSummaryCards({
                 gross_revenue: gross,
                 net_revenue: net,
+                taxes: taxes,
                 total_expenses: expenses,
-                balance: profit,
+                balance: balance,
                 profit_margin: margin
             });
 
@@ -375,27 +382,20 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                    <StatCard 
-                        title="Saldo em Conta" 
-                        value={formatBRL(summaryCards.balance)} 
-                        icon={Wallet} 
-                        colorClass="bg-slate-800" 
-                        subtext="Faturamento Líquido - Despesas"
-                    />
-                    <StatCard 
-                        title="Margem de Lucro" 
-                        value={`${summaryCards.profit_margin.toFixed(1)}%`} 
-                        icon={Percent} 
-                        colorClass="bg-indigo-600" 
-                        subtext="Rentabilidade sobre o Líquido"
-                    />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
                     <StatCard 
                         title="Faturamento Bruto" 
                         value={formatBRL(summaryCards.gross_revenue)} 
                         icon={TrendingUp} 
                         colorClass="bg-blue-600" 
                         subtext="Entrada Total no Período"
+                    />
+                    <StatCard 
+                        title="Taxas Deduzidas" 
+                        value={formatBRL(summaryCards.taxes)} 
+                        icon={Percent} 
+                        colorClass="bg-orange-600" 
+                        subtext="Diferença Bruto vs Líquido"
                     />
                     <StatCard 
                         title="Faturamento Líquido" 
@@ -410,6 +410,20 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                         icon={ArrowDownCircle} 
                         colorClass="bg-rose-600" 
                         subtext="Saídas e Custos Operacionais"
+                    />
+                    <StatCard 
+                        title="Saldo em Conta" 
+                        value={formatBRL(summaryCards.balance)} 
+                        icon={Wallet} 
+                        colorClass="bg-slate-800" 
+                        subtext="Líquido - Despesas"
+                    />
+                    <StatCard 
+                        title="Margem de Lucro" 
+                        value={`${summaryCards.profit_margin.toFixed(1)}%`} 
+                        icon={Target} 
+                        colorClass="bg-indigo-600" 
+                        subtext="Rentabilidade sobre Bruto"
                     />
                 </div>
 
@@ -531,6 +545,16 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                                                 <p className={`text-sm font-black ${t.type === 'income' || t.type === 'receita' ? 'text-emerald-600' : 'text-rose-600'}`}>
                                                     {t.type === 'income' || t.type === 'receita' ? '+' : '-'} {formatBRL(t.amount)}
                                                 </p>
+                                                {(t.type === 'income' || t.type === 'receita') && t.net_value && t.net_value !== t.amount && (
+                                                    <div className="flex flex-col items-end mt-1">
+                                                        <p className="text-[10px] font-bold text-orange-500">
+                                                            Líquido: {formatBRL(t.net_value)}
+                                                        </p>
+                                                        <p className="text-[9px] text-slate-400">
+                                                            Taxa: -{formatBRL(t.amount - t.net_value)}
+                                                        </p>
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="px-8 py-5 text-right">
                                                 <button onClick={() => handleDelete(t.id)} className="p-2 text-slate-300 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100">
