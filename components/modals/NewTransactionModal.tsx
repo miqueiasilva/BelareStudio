@@ -4,7 +4,7 @@ import { FinancialTransaction, TransactionType, TransactionCategory, PaymentMeth
 
 interface NewTransactionModalProps {
   onClose: () => void;
-  onSave: (transaction: FinancialTransaction) => void;
+  onSave: (transaction: FinancialTransaction | any[]) => void;
   type: TransactionType;
 }
 
@@ -18,6 +18,21 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
   });
 
   const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [isInstallment, setIsInstallment] = useState(false);
+  const [installmentCount, setInstallmentCount] = useState(2);
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurringFrequency, setRecurringFrequency] = useState<'semanal' | 'quinzenal' | 'mensal'>('mensal');
+  const [recurringCount, setRecurringCount] = useState(2);
+
+  const handleToggleInstallment = () => {
+    setIsInstallment(!isInstallment);
+    if (!isInstallment) setIsRecurring(false);
+  };
+
+  const handleToggleRecurring = () => {
+    setIsRecurring(!isRecurring);
+    if (!isRecurring) setIsInstallment(false);
+  };
 
   const receitaCategories = ['Venda de Serviços', 'Venda de Produtos', 'Aporte / Investimento', 'Outros'];
   const despesaCategories = [
@@ -45,18 +60,60 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
           return;
       }
       
-      const newTransaction: FinancialTransaction = {
-          id: Date.now(),
+      const baseTransaction = {
           description: formData.description!,
           amount: Number(formData.amount),
           type: formData.type!,
           category: formData.category!,
-          date: new Date(formData.date || new Date().toISOString().split('T')[0]),
           payment_method: formData.payment_method as PaymentMethod,
-          status: 'pago'
+          status: 'pago' as const
       };
-      
-      onSave(newTransaction);
+
+      if (isInstallment) {
+          const transactions: any[] = [];
+          const amountPerInstallment = Number(formData.amount) / installmentCount;
+          const startDate = new Date(formData.date || new Date().toISOString().split('T')[0]);
+          
+          for (let i = 1; i <= installmentCount; i++) {
+              const installmentDate = new Date(startDate);
+              // Incrementa 1 mês por parcela
+              installmentDate.setMonth(startDate.getMonth() + (i - 1));
+              
+              transactions.push({
+                  ...baseTransaction,
+                  amount: amountPerInstallment,
+                  description: `${baseTransaction.description} (Parcela ${i}/${installmentCount})`,
+                  date: installmentDate,
+                  installments: installmentCount
+              });
+          }
+          onSave(transactions);
+      } else if (isRecurring) {
+          const transactions: any[] = [];
+          const startDate = new Date(formData.date || new Date().toISOString().split('T')[0]);
+          
+          for (let i = 1; i <= recurringCount; i++) {
+              const recurringDate = new Date(startDate);
+              if (recurringFrequency === 'semanal') {
+                  recurringDate.setDate(startDate.getDate() + (i - 1) * 7);
+              } else if (recurringFrequency === 'quinzenal') {
+                  recurringDate.setDate(startDate.getDate() + (i - 1) * 15);
+              } else if (recurringFrequency === 'mensal') {
+                  recurringDate.setMonth(startDate.getMonth() + (i - 1));
+              }
+              
+              transactions.push({
+                  ...baseTransaction,
+                  date: recurringDate
+              });
+          }
+          onSave(transactions);
+      } else {
+          onSave({
+              ...baseTransaction,
+              date: new Date(formData.date || new Date().toISOString().split('T')[0]),
+          } as FinancialTransaction);
+      }
   };
 
   return (
@@ -172,6 +229,70 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
                         <option value="transferencia">Transferência Bancária</option>
                         <option value="boleto">Boleto</option>
                     </select>
+                </div>
+
+                {/* Parcelamento e Recorrência */}
+                <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <input 
+                                type="checkbox" 
+                                id="parcelar"
+                                checked={isInstallment}
+                                onChange={handleToggleInstallment}
+                                className="w-4 h-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+                            />
+                            <label htmlFor="parcelar" className="text-[10px] font-black text-slate-700 uppercase tracking-widest cursor-pointer">Parcelar</label>
+                        </div>
+                        {isInstallment && (
+                            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-200">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase">Vezes:</span>
+                                <input 
+                                    type="number" 
+                                    min="2" 
+                                    max="12" 
+                                    value={installmentCount}
+                                    onChange={(e) => setInstallmentCount(Number(e.target.value))}
+                                    className="w-16 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-black text-slate-700 outline-none focus:border-orange-400"
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="flex items-center justify-between border-t border-slate-200 pt-3">
+                        <div className="flex items-center gap-2">
+                            <input 
+                                type="checkbox" 
+                                id="repetir"
+                                checked={isRecurring}
+                                onChange={handleToggleRecurring}
+                                className="w-4 h-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+                            />
+                            <label htmlFor="repetir" className="text-[10px] font-black text-slate-700 uppercase tracking-widest cursor-pointer">Repetir</label>
+                        </div>
+                        {isRecurring && (
+                            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-200">
+                                <select 
+                                    value={recurringFrequency}
+                                    onChange={(e) => setRecurringFrequency(e.target.value as any)}
+                                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-[9px] font-black uppercase text-slate-700 outline-none focus:border-orange-400"
+                                >
+                                    <option value="semanal">Semanal</option>
+                                    <option value="quinzenal">Quinzenal</option>
+                                    <option value="mensal">Mensal</option>
+                                </select>
+                                <input 
+                                    type="number" 
+                                    min="2" 
+                                    max="52" 
+                                    value={recurringCount}
+                                    onChange={(e) => setRecurringCount(Number(e.target.value))}
+                                    className="w-14 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-black text-slate-700 outline-none focus:border-orange-400"
+                                />
+                                <span className="text-[9px] font-bold text-slate-400 uppercase">x</span>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 <div className="pt-4">

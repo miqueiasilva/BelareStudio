@@ -137,6 +137,7 @@ export interface FinancialTransaction {
   professionalId?: number;
   appointment_id?: number;
   client_id?: number;
+  installments?: number;
 }
 
 export interface CommandItem {

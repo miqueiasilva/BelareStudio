@@ -292,23 +292,30 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
         }
     };
 
-    const handleSaveNewTransaction = async (t: any) => {
+    const handleSaveNewTransaction = async (t: any | any[]) => {
         try {
-            const payload = {
+            const transactions = Array.isArray(t) ? t : [t];
+            const payloads = transactions.map(item => ({
                 studio_id: activeStudioId,
-                description: t.description,
-                amount: Number(t.amount),
-                type: t.type === 'receita' ? 'income' : 'expense',
-                category: t.category,
-                payment_method: t.payment_method,
-                date: t.date instanceof Date ? t.date.toISOString() : new Date(t.date).toISOString(),
-                status: 'confirmado'
-            };
+                description: item.description,
+                amount: Number(item.amount),
+                type: item.type === 'receita' ? 'income' : 'expense',
+                category: item.category,
+                payment_method: item.payment_method,
+                date: item.date instanceof Date ? item.date.toISOString() : new Date(item.date).toISOString(),
+                status: 'confirmado',
+                installments: item.installments || null
+            }));
 
-            const { error } = await supabase.from('financial_transactions').insert([payload]);
+            const { error } = await supabase.from('financial_transactions').insert(payloads);
             if (error) throw error;
 
-            setToast({ message: "Lançamento registrado!", type: 'success' });
+            setToast({ 
+                message: transactions.length > 1 
+                    ? `${transactions.length} lançamentos registrados!` 
+                    : "Lançamento registrado!", 
+                type: 'success' 
+            });
             fetchData();
             setShowModal(null);
         } catch (e: any) {
