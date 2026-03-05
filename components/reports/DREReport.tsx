@@ -24,6 +24,7 @@ const DREReport: React.FC = () => {
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [loading, setLoading] = useState(true);
     const [transactions, setTransactions] = useState<any[]>([]);
+    const [categories, setCategories] = useState<any[]>([]);
 
     const fetchData = useCallback(async () => {
         if (!activeStudioId) return;
@@ -31,17 +32,28 @@ const DREReport: React.FC = () => {
         try {
             const start = startOfMonth(selectedDate);
             const end = endOfMonth(selectedDate);
+            const startStr = format(start, 'yyyy-MM-dd');
+            const endStr = format(end, 'yyyy-MM-dd');
 
-            const { data, error } = await supabase
-                .from('financial_transactions')
-                .select('*')
-                .eq('studio_id', activeStudioId)
-                .gte('date', start.toISOString())
-                .lte('date', end.toISOString())
-                .neq('status', 'cancelado');
+            const [transRes, catRes] = await Promise.all([
+                supabase
+                    .from('financial_transactions')
+                    .select('*')
+                    .eq('studio_id', activeStudioId)
+                    .gte('date', startStr)
+                    .lte('date', endStr)
+                    .neq('status', 'cancelado'),
+                supabase
+                    .from('financial_categories')
+                    .select('*')
+                    .eq('studio_id', activeStudioId)
+            ]);
 
-            if (error) throw error;
-            setTransactions(data || []);
+            if (transRes.error) throw transRes.error;
+            if (catRes.error) throw catRes.error;
+
+            setTransactions(transRes.data || []);
+            setCategories(catRes.data || []);
         } catch (error) {
             console.error("Erro ao buscar dados da DRE:", error);
             toast.error("Erro ao carregar DRE.");
@@ -55,7 +67,12 @@ const DREReport: React.FC = () => {
     }, [fetchData]);
 
     const dreData = useMemo(() => {
-        const incomeTrans = transactions.filter(t => t.type === 'income' || t.type === 'receita');
+        const incomeTrans = transactions.filter(t => 
+            t.type === 'income' || 
+            t.type === 'receita' || 
+            t.source === 'command' || 
+            t.source === 'pdv'
+        );
         const expenseTrans = transactions.filter(t => t.type === 'expense' || t.type === 'despesa');
 
         const grossRevenue = incomeTrans.reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -70,10 +87,24 @@ const DREReport: React.FC = () => {
             return acc + Number(t.net_value !== null && t.net_value !== undefined ? t.net_value : (t.amount || 0));
         }, 0);
 
-        const expensesByCategory: { [key: string]: number } = {};
+        // Grouping expenses by DRE Line
+        const expensesByDreLine: { [key: string]: { total: number, categories: { [key: string]: number } } } = {
+            'Custo Direto': { total: 0, categories: {} },
+            'Despesa Operacional': { total: 0, categories: {} },
+            'Outras': { total: 0, categories: {} }
+        };
+
         expenseTrans.forEach(t => {
-            const cat = t.category || 'Outras';
-            expensesByCategory[cat] = (expensesByCategory[cat] || 0) + Number(t.amount || 0);
+            const catName = t.category || 'Outras';
+            const categoryInfo = categories.find(c => c.name === catName);
+            const dreLine = categoryInfo?.dre_line || 'Outras';
+
+            if (!expensesByDreLine[dreLine]) {
+                expensesByDreLine[dreLine] = { total: 0, categories: {} };
+            }
+
+            expensesByDreLine[dreLine].total += Number(t.amount || 0);
+            expensesByDreLine[dreLine].categories[catName] = (expensesByDreLine[dreLine].categories[catName] || 0) + Number(t.amount || 0);
         });
 
         const totalExpenses = expenseTrans.reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -84,52 +115,79 @@ const DREReport: React.FC = () => {
             grossRevenue,
             taxes,
             netRevenue,
-            expensesByCategory,
+            expensesByDreLine,
             totalExpenses,
             result,
             margin
         };
-    }, [transactions]);
+    }, [transactions, categories]);
 
     const handleExportPDF = () => {
         const doc = new jsPDF();
         const monthYear = format(selectedDate, 'MMMM / yyyy', { locale: pt });
         
-        doc.setFontSize(18);
-        doc.text("DRE Gerencial", 14, 22);
-        doc.setFontSize(12);
-        doc.text(`Período: ${monthYear}`, 14, 30);
+        // Header
+        doc.setFontSize(22);
+        doc.setTextColor(30, 41, 59);
+        doc.text("BelareStudio", 14, 22);
+        
+        doc.setFontSize(16);
+        doc.text("DRE Gerencial Estruturada", 14, 32);
+        
+        doc.setFontSize(10);
+        doc.setTextColor(100, 116, 139);
+        doc.text(`Período: ${monthYear}`, 14, 40);
+        doc.text(`Gerado em: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 45);
 
-        const tableData = [
-            ['(+) RECEITA BRUTA DE SERVIÇOS E PRODUTOS', formatBRL(dreData.grossRevenue)],
-            ['(-) TAXAS DE CARTÃO/MAQUININHA', formatBRL(dreData.taxes)],
+        const tableData: any[] = [
+            ['(+) RECEITA BRUTA', formatBRL(dreData.grossRevenue)],
+            ['(-) TAXAS DE CARTÃO', formatBRL(dreData.taxes)],
             ['(=) RECEITA LÍQUIDA', formatBRL(dreData.netRevenue)],
             ['', ''],
-            ['(-) DESPESAS OPERACIONAIS', ''],
-            ...Object.entries(dreData.expensesByCategory).map(([cat, val]) => [`    ${cat}`, formatBRL(val)]),
-            ['(=) TOTAL DESPESAS', formatBRL(dreData.totalExpenses)],
-            ['', ''],
-            ['(=) RESULTADO OPERACIONAL (EBITDA)', formatBRL(dreData.result)],
-            ['(%) MARGEM LÍQUIDA', `${dreData.margin.toFixed(2)}%`]
+            ['(-) DESPESAS POR CATEGORIA', '']
         ];
 
+        // Add grouped expenses
+        Object.entries(dreData.expensesByDreLine).forEach(([line, data]) => {
+            if (data.total > 0) {
+                tableData.push([line, formatBRL(data.total)]);
+                Object.entries(data.categories).forEach(([cat, val]) => {
+                    tableData.push([`    ${cat}`, formatBRL(val)]);
+                });
+            }
+        });
+
+        tableData.push(['', '']);
+        tableData.push(['(=) RESULTADO OPERACIONAL (EBITDA)', formatBRL(dreData.result)]);
+        tableData.push(['(%) MARGEM LÍQUIDA', `${dreData.margin.toFixed(2)}%`]);
+
         autoTable(doc, {
-            startY: 40,
+            startY: 55,
             head: [['Descrição', 'Valor']],
             body: tableData,
-            theme: 'grid',
-            headStyles: { fill: [30, 41, 59] },
+            theme: 'plain',
+            styles: { fontSize: 9, cellPadding: 3 },
+            headStyles: { 
+                fillColor: [30, 41, 59], 
+                textColor: [255, 255, 255],
+                fontStyle: 'bold'
+            },
             didParseCell: (data) => {
-                if (data.row.index === 0 || data.row.index === 2 || data.row.index === 8) {
+                const label = data.cell.text[0];
+                if (label.includes('(=)') || label.includes('(+)') || label.includes('(-)') || label === 'Custo Direto' || label === 'Despesa Operacional' || label === 'Outras') {
                     data.cell.styles.fontStyle = 'bold';
-                    if (data.row.index === 8) {
-                        data.cell.styles.fontSize = 14;
+                    if (label.includes('(=)')) {
+                        data.cell.styles.fillColor = [248, 250, 252];
                     }
+                }
+                if (label.startsWith('    ')) {
+                    data.cell.styles.textColor = [100, 116, 139];
+                    data.cell.styles.fontSize = 8;
                 }
             }
         });
 
-        doc.save(`DRE_${format(selectedDate, 'MM_yyyy')}.pdf`);
+        doc.save(`DRE_BelareStudio_${format(selectedDate, 'MM_yyyy')}.pdf`);
     };
 
     const DRERow = ({ label, value, isSubtotal = false, isNegative = false, isPercentage = false }: any) => (
@@ -199,26 +257,34 @@ const DREReport: React.FC = () => {
                     </div>
 
                     <div className="p-4">
-                        <DRERow label="(+) RECEITA BRUTA DE SERVIÇOS E PRODUTOS" value={dreData.grossRevenue} />
-                        <DRERow label="(-) TAXAS DE CARTÃO/MAQUININHA" value={dreData.taxes} isNegative />
+                        <DRERow label="(+) RECEITA BRUTA" value={dreData.grossRevenue} />
+                        <DRERow label="(-) TAXAS DE CARTÃO" value={dreData.taxes} isNegative />
                         <DRERow label="(=) RECEITA LÍQUIDA" value={dreData.netRevenue} isSubtotal />
 
                         <div className="mt-6 mb-2 px-6">
                             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                                 <TrendingDown size={14} className="text-rose-500" />
-                                (-) DESPESAS OPERACIONAIS
+                                (-) DESPESAS POR CATEGORIA
                             </h4>
                         </div>
 
-                        {Object.entries(dreData.expensesByCategory).length > 0 ? (
-                            Object.entries(dreData.expensesByCategory).map(([cat, val]) => (
-                                <DRERow key={cat} label={cat} value={val} isNegative />
+                        {Object.entries(dreData.expensesByDreLine).some(([_, data]) => data.total > 0) ? (
+                            Object.entries(dreData.expensesByDreLine).map(([line, data]) => (
+                                data.total > 0 && (
+                                    <div key={line} className="mb-4">
+                                        <div className="flex justify-between items-center py-2 px-6 bg-slate-50 border-y border-slate-100">
+                                            <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{line}</span>
+                                            <span className="text-xs font-black text-slate-700">{formatBRL(data.total)}</span>
+                                        </div>
+                                        {Object.entries(data.categories).map(([cat, val]) => (
+                                            <DRERow key={cat} label={cat} value={val} isNegative />
+                                        ))}
+                                    </div>
+                                )
                             ))
                         ) : (
                             <div className="px-6 py-4 text-xs font-bold text-slate-400 italic">Nenhuma despesa registrada.</div>
                         )}
-
-                        <DRERow label="(=) TOTAL DESPESAS" value={dreData.totalExpenses} isNegative />
                         
                         <div className="mt-4">
                             <DRERow label="(=) RESULTADO OPERACIONAL (EBITDA)" value={dreData.result} isSubtotal />

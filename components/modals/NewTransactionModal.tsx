@@ -51,16 +51,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
     fetchCategories();
   }, [fetchCategories]);
 
-  const staticReceitaCategories = ['Venda de Serviços', 'Venda de Produtos', 'Aporte / Investimento', 'Outros'];
-  const staticDespesaCategories = [
-    'Aluguel', 'Energia / Luz', 'Água', 'Internet / Telefone', 
-    'Produtos / Estoque', 'Comissão Profissional', 'Marketing', 
-    'Manutenção', 'Impostos', 'Salários / Pró-labore', 'Outros'
-  ];
-
-  const activeCategories = dbCategories.length > 0 
-    ? dbCategories.map(c => c.name)
-    : (type === 'receita' ? staticReceitaCategories : staticDespesaCategories);
+  const activeCategories = dbCategories.map(c => c.name);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
       const { name, value } = e.target;
