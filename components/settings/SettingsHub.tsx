@@ -41,6 +41,15 @@ const SettingsHub: React.FC<SettingsHubProps> = ({ onNavigate, onTopLevelNavigat
             action: () => onNavigate('payments')
         },
         { 
+            id: 'financial_categories', 
+            icon: Tag, 
+            label: 'Categorias Financeiras', 
+            description: 'Gerenciar categorias de receitas e despesas para o fluxo de caixa e DRE', 
+            iconColor: 'text-orange-600',
+            iconBg: 'bg-orange-50',
+            action: () => onNavigate('financial_categories')
+        },
+        { 
             id: 'theme', 
             icon: Palette, 
             label: 'Tema do Sistema', 

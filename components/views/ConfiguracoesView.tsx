@@ -8,8 +8,10 @@ import BlocksSettings from '../settings/BlocksSettings';
 import ResourcesSettings from '../settings/ResourcesSettings';
 import UnderConstruction from '../settings/UnderConstruction';
 
+import FinancialCategoriesSettings from '../settings/FinancialCategoriesSettings';
+
 const ConfiguracoesView: React.FC = () => {
-    const [subView, setSubView] = useState<'hub' | 'profile' | 'payments' | 'theme' | 'resources' | 'discounts' | 'blocks'>('hub');
+    const [subView, setSubView] = useState<'hub' | 'profile' | 'payments' | 'theme' | 'resources' | 'discounts' | 'blocks' | 'financial_categories'>('hub');
     
     // Função para renderizar o conteúdo dinâmico
     const renderSubView = () => {
@@ -31,6 +33,8 @@ const ConfiguracoesView: React.FC = () => {
                 return <BlocksSettings onBack={() => setSubView('hub')} />;
             case 'resources':
                 return <ResourcesSettings onBack={() => setSubView('hub')} />;
+            case 'financial_categories':
+                return <FinancialCategoriesSettings onBack={() => setSubView('hub')} />;
             case 'theme':
                 return <UnderConstruction title="Tema do Sistema" onBack={() => setSubView('hub')} />;
             case 'discounts':

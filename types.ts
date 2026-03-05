@@ -267,3 +267,12 @@ export interface FinancialTransactionDetail {
   type: 'income' | 'expense';
   created_at: string;
 }
+
+export interface FinancialCategory {
+    id: string;
+    name: string;
+    type: 'income' | 'expense';
+    dre_line: 'Receita Bruta' | 'Custo Direto' | 'Despesa Operacional' | 'Não Contabilizar';
+    active: boolean;
+    studio_id: string;
+}

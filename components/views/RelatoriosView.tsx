@@ -31,6 +31,8 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+import DREReport from '../reports/DREReport';
+
 // --- Types ---
 type Period = 'today' | '7d' | '15d' | '30d' | '3m' | '6m' | '12m' | 'custom';
 
@@ -698,7 +700,8 @@ const RelatoriosView: React.FC = () => {
             { id: 'agenda', label: 'Operação', icon: Calendar },
             { id: 'clientes', label: 'Clientes', icon: Users },
             { id: 'equipe', label: 'Equipe', icon: Briefcase },
-            { id: 'marketing', label: 'Marketing', icon: Sparkles }
+            { id: 'marketing', label: 'Marketing', icon: Sparkles },
+            { id: 'dre', label: 'DRE Gerencial', icon: FileText }
           ].map(tab => (
             <button
               key={tab.id}
@@ -734,6 +737,7 @@ const RelatoriosView: React.FC = () => {
               {activeTab === 'clientes' && renderClientes()}
               {activeTab === 'equipe' && renderEquipe()}
               {activeTab === 'marketing' && renderMarketing()}
+              {activeTab === 'dre' && <DREReport />}
             </>
           )}
         </div>
