@@ -295,14 +295,14 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
     const handleSaveNewTransaction = async (t: any) => {
         try {
             const payload = {
+                studio_id: activeStudioId,
                 description: t.description,
                 amount: Number(t.amount),
-                type: t.type,
+                type: t.type === 'receita' ? 'income' : 'expense',
                 category: t.category,
+                payment_method: t.payment_method,
                 date: t.date instanceof Date ? t.date.toISOString() : new Date(t.date).toISOString(),
-                payment_method: t.payment_method, // CORREÇÃO: payment_method em vez de paymentMethod
-                status: t.status || 'pago',
-                studio_id: activeStudioId
+                status: 'confirmado'
             };
 
             const { error } = await supabase.from('financial_transactions').insert([payload]);

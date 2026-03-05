@@ -133,7 +133,7 @@ export interface FinancialTransaction {
   category: TransactionCategory;
   date: Date | string;
   payment_method: PaymentMethod;
-  status: 'pago' | 'pendente';
+  status: 'pago' | 'pendente' | 'confirmado';
   professionalId?: number;
   appointment_id?: number;
   client_id?: number;
