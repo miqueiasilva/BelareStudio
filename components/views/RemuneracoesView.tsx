@@ -1,11 +1,11 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { format, addMonths, endOfMonth } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { 
     Wallet, ChevronDown, ChevronUp, Download, CheckCircle, 
-    Loader2, User, TrendingUp, Scissors,
+    Loader2, User, TrendingUp,
     DollarSign, Info, Calculator, Percent, Layers, ShieldCheck,
-    AlertCircle, FileText
+    FileText
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
@@ -19,7 +19,6 @@ const RemuneracoesView: React.FC = () => {
   const [expandedId, setExpandedId] = useState<string | number | null>(null);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [commandItems, setCommandItems] = useState<any[]>([]);
-  const [paymentConfigs, setPaymentConfigs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [calculationBase, setCalculationBase] = useState<'bruto' | 'liquido'>('bruto');
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -27,7 +26,7 @@ const RemuneracoesView: React.FC = () => {
   const isMounted = useRef(true);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!isMounted.current || !activeStudioId) return;
     
     if (abortControllerRef.current) abortControllerRef.current.abort();
@@ -39,37 +38,49 @@ const RemuneracoesView: React.FC = () => {
         const start = format(getStartOfMonth(currentDate), "yyyy-MM-dd'T'00:00:00");
         const end = format(endOfMonth(currentDate), "yyyy-MM-dd'T'23:59:59");
 
-        // Buscamos membros, itens de comandas e CONFIGURAÇÕES DE TAXAS
-        const [teamRes, itemsRes, configRes] = await Promise.all([
+        const [teamRes, itemsRes] = await Promise.all([
+            // FIX 1: Filtra apenas membros ATIVOS — remove "Geral/Studio" e inativos
             supabase.from('team_members')
                 .select('id, name, photo_url, commission_rate, commission_percent')
                 .eq('studio_id', activeStudioId)
+                .eq('active', true)
                 .order('name')
                 .abortSignal(abortControllerRef.current.signal),
+
+            // FIX 2: Aceita status 'pago' E 'paid' (banco tem os dois)
+            // FIX 3: Puxa payment_data (JSONB) que já contém tax_rate e net_value
             supabase.from('command_items')
-                .select('*, commands!inner(id, closed_at, status, payment_method)')
+                .select(`
+                    id, title, price, quantity, professional_id,
+                    commands!inner(
+                        id, closed_at, status, payment_method, payment_data
+                    )
+                `)
                 .eq('studio_id', activeStudioId)
-                .eq('commands.status', 'pago')
+                .in('commands.status', ['pago', 'paid'])
+                .not('commands.closed_at', 'is', null)
                 .gte('commands.closed_at', start)
                 .lte('commands.closed_at', end)
                 .abortSignal(abortControllerRef.current.signal),
-            supabase.from('payment_methods_config')
-                .select('*')
-                .eq('studio_id', activeStudioId)
-                .eq('is_active', true)
-                .abortSignal(abortControllerRef.current.signal)
         ]);
 
         if (teamRes.error) throw teamRes.error;
         if (itemsRes.error) throw itemsRes.error;
-        if (configRes.error) throw configRes.error;
 
         if (isMounted.current) {
-            setTeamMembers(teamRes.data || []);
+            // FIX 4: Exclui o gestor (commission_rate = 0 E commission_percent = 0)
+            // da lista de remunerações (sem serviços vinculados eles ficam zerados de qualquer forma,
+            // mas filtramos membros que nunca terão comissão = gestor sem taxa definida)
+            const activeProfessionals = (teamRes.data || []).filter(m => {
+                const rate = Number(m.commission_rate ?? m.commission_percent ?? 0);
+                // Mantém na lista mesmo com rate=0 se for profissional (pode ter sido zerado por engano)
+                // O gestor (Miqueias) tem role gestor mas não temos role aqui — filtramos por ter serviços
+                return true; // Mantém todos os ativos; o gestor vai aparecer com R$0 mas sem serviços
+            });
+            setTeamMembers(activeProfessionals);
             setCommandItems(itemsRes.data || []);
-            setPaymentConfigs(configRes.data || []);
         }
-        } catch (e: any) {
+    } catch (e: any) {
         const isAbortError = e.name === 'AbortError' || e.message?.includes('aborted');
         if (isMounted.current && !isAbortError) {
             console.error("[REMUNERATIONS] Erro ao buscar dados:", e);
@@ -77,7 +88,7 @@ const RemuneracoesView: React.FC = () => {
     } finally {
         if (isMounted.current) setIsLoading(false);
     }
-  };
+  }, [activeStudioId, currentDate]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -86,7 +97,7 @@ const RemuneracoesView: React.FC = () => {
         isMounted.current = false;
         if (abortControllerRef.current) abortControllerRef.current.abort();
     };
-  }, [currentDate, activeStudioId]);
+  }, [fetchData]);
 
   const payroll = useMemo(() => {
     return teamMembers.map(member => {
@@ -100,27 +111,23 @@ const RemuneracoesView: React.FC = () => {
           const rawPrice = Number(item.price || 0) * Number(item.quantity || 1);
           
           if (calculationBase === 'liquido') {
-              // Lógica de correção do cálculo de taxa real
-              const method = item.commands?.payment_method;
-              
-              // Mapeamento do método da comanda para o tipo da config
-              const config = paymentConfigs.find(c => {
-                  if (method === 'pix') return c.type === 'pix';
-                  if (method === 'dinheiro' || method === 'money' || method === 'cash') return c.type === 'money';
-                  if (method === 'cartao_credito' || method === 'credit') return c.type === 'credit';
-                  if (method === 'cartao_debito' || method === 'debit') return c.type === 'debit';
-                  return false;
-              });
+              // FIX 5: Usa payment_data.tax_rate que já está salvo na comanda
+              // Isso é muito mais preciso do que tentar mapear payment_methods_config
+              const paymentData = item.commands?.payment_data;
+              let taxRate = 0;
 
-              // Se encontrar a config, usa a taxa (rate_cash). Se não, usa 0 (bruto = líquido)
-              const rate = config ? Number(config.rate_cash || 0) : 0;
-              const discountMultiplier = 1 - (rate / 100);
-              
+              if (paymentData) {
+                  // payment_data é JSONB: {"tax_rate": 1.37, "net_value": 98.63, "gross_value": 100}
+                  taxRate = Number(paymentData.tax_rate ?? 0);
+              }
+
+              const discountMultiplier = 1 - (taxRate / 100);
               return acc + (rawPrice * discountMultiplier);
           }
           return acc + rawPrice;
       }, 0);
 
+      // FIX 6: commission_rate é o campo correto no banco — commission_percent é legado/zerado
       const rate = Number(member.commission_rate ?? member.commission_percent ?? 0);
       const commissionValue = totalBase * (rate / 100);
       
@@ -132,8 +139,11 @@ const RemuneracoesView: React.FC = () => {
           count: myItems.length, 
           rate 
       };
-    }).sort((a, b) => b.totalBase - a.totalBase);
-  }, [teamMembers, commandItems, paymentConfigs, calculationBase]);
+    })
+    // FIX 7: Oculta membros sem nenhum serviço E sem comissão definida (ex: gestor)
+    .filter(item => item.count > 0 || item.rate > 0)
+    .sort((a, b) => b.totalBase - a.totalBase);
+  }, [teamMembers, commandItems, calculationBase]);
 
   const totals = useMemo(() => {
     return payroll.reduce((acc, curr) => ({
@@ -143,6 +153,13 @@ const RemuneracoesView: React.FC = () => {
   }, [payroll]);
 
   const formatBRL = (val: number) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  // Retorna a taxa aplicada para exibição no detalhamento
+  const getTaxRate = (item: any): number => {
+      const paymentData = item.commands?.payment_data;
+      if (!paymentData) return 0;
+      return Number(paymentData.tax_rate ?? 0);
+  };
 
   if (isLoading) return (
     <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50">
@@ -284,30 +301,24 @@ const RemuneracoesView: React.FC = () => {
                                     <tbody className="divide-y divide-slate-100">
                                         {item.items.map((it: any) => {
                                             const rawVal = Number(it.price || 0) * Number(it.quantity || 1);
-                                            
-                                            // Lógica idêntica ao resumo para garantir consistência
-                                            const method = it.commands?.payment_method;
-                                            const config = paymentConfigs.find(c => {
-                                                if (method === 'pix') return c.type === 'pix';
-                                                if (method === 'dinheiro' || method === 'money' || method === 'cash') return c.type === 'money';
-                                                if (method === 'cartao_credito' || method === 'credit') return c.type === 'credit';
-                                                if (method === 'cartao_debito' || method === 'debit') return c.type === 'debit';
-                                                return false;
-                                            });
-
-                                            const rateUsed = config ? Number(config.rate_cash || 0) : 0;
-                                            const base = calculationBase === 'liquido' ? rawVal * (1 - (rateUsed / 100)) : rawVal;
+                                            const taxRate = getTaxRate(it);
+                                            const base = calculationBase === 'liquido'
+                                                ? rawVal * (1 - (taxRate / 100))
+                                                : rawVal;
                                             const comm = base * (item.rate / 100);
+                                            const method = it.commands?.payment_method 
+                                                ?? it.commands?.payment_data?.method 
+                                                ?? 'misto';
                                                 
                                             return (
                                                 <tr key={it.id} className="hover:bg-slate-50 transition-colors group">
                                                     <td className="px-8 py-4">
                                                         <p className="font-bold text-slate-700 group-hover:text-orange-600 transition-colors">{it.title}</p>
                                                         <div className="flex items-center gap-2 mt-0.5">
-                                                            <p className="text-[9px] text-slate-400 font-black uppercase">CMD #{it.commands?.id.substring(0, 8).toUpperCase()}</p>
-                                                            <span className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded font-black uppercase">{method || 'misto'}</span>
-                                                            {calculationBase === 'liquido' && rateUsed > 0 && (
-                                                                <span className="text-[9px] text-rose-400 font-bold uppercase">(-{rateUsed}%)</span>
+                                                            <p className="text-[9px] text-slate-400 font-black uppercase">CMD #{String(it.commands?.id).substring(0, 8).toUpperCase()}</p>
+                                                            <span className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded font-black uppercase">{method}</span>
+                                                            {calculationBase === 'liquido' && taxRate > 0 && (
+                                                                <span className="text-[9px] text-rose-400 font-bold uppercase">(-{taxRate}%)</span>
                                                             )}
                                                         </div>
                                                     </td>
