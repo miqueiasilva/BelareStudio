@@ -122,15 +122,15 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Saldo Atual</label>
-                                    <div className="flex items-center gap-2">
-                                        <button type="button" onClick={() => setFormData(p => ({...p, stock_quantity: Math.max(0, (p.stock_quantity || 0) - 1)}))} className="w-10 h-10 rounded-xl bg-white border border-slate-200 text-slate-600 font-black hover:bg-slate-100 transition-all">-</button>
-                                        <input type="number" required value={formData.stock_quantity} onChange={e => setFormData({...formData, stock_quantity: Number(e.target.value)})} className="flex-1 bg-white border border-slate-200 rounded-xl px-2 py-2 text-center font-black text-slate-800" />
-                                        <button type="button" onClick={() => setFormData(p => ({...p, stock_quantity: (p.stock_quantity || 0) + 1}))} className="w-10 h-10 rounded-xl bg-white border border-slate-200 text-slate-600 font-black hover:bg-slate-100 transition-all">+</button>
+                                    <div className="flex items-center bg-white border-2 border-slate-200 rounded-2xl overflow-hidden focus-within:border-purple-400 transition-all">
+                                        <button type="button" onClick={() => setFormData(p => ({...p, stock_quantity: Math.max(0, (p.stock_quantity || 0) - 1)}))} className="w-12 h-12 flex items-center justify-center bg-slate-50 hover:bg-slate-100 text-slate-600 font-black transition-all border-r border-slate-200">-</button>
+                                        <input type="number" required value={formData.stock_quantity} onChange={e => setFormData({...formData, stock_quantity: Number(e.target.value)})} className="flex-1 bg-transparent px-4 py-3 text-center font-black text-slate-800 outline-none" />
+                                        <button type="button" onClick={() => setFormData(p => ({...p, stock_quantity: (p.stock_quantity || 0) + 1}))} className="w-12 h-12 flex items-center justify-center bg-slate-50 hover:bg-slate-100 text-slate-600 font-black transition-all border-l border-slate-200">+</button>
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="flex flex-col justify-center gap-4">
+                            <div className="flex flex-col justify-start gap-4">
                                 <div className="flex items-center justify-between p-5 bg-white border-2 border-slate-100 rounded-[28px] transition-all hover:border-purple-200">
                                     <div>
                                         <p className="font-black text-slate-800 text-xs">Ativo p/ Venda?</p>
@@ -138,9 +138,8 @@ const ProductModal: React.FC<ProductModalProps> = ({ product, onClose, onSave })
                                     </div>
                                     <ToggleSwitch on={!!formData.active} onClick={() => setFormData({...formData, active: !formData.active})} />
                                 </div>
-                                <div className="p-4 bg-blue-50 text-blue-700 rounded-2xl flex items-start gap-3 border border-blue-100">
-                                    {/* FIX: Info icon and formatCurrency were missing */}
-                                    <Info size={16} className="mt-0.5" />
+                                <div className="p-4 bg-blue-50 text-blue-700 rounded-2xl flex items-start gap-3 border border-blue-100 mt-auto">
+                                    <Info size={16} className="mt-0.5 shrink-0" />
                                     <p className="text-[9px] font-bold uppercase leading-tight">O custo total deste item hoje é de {formatCurrency(Number(formData.cost_price || 0) * Number(formData.stock_quantity || 0))}</p>
                                 </div>
                             </div>
