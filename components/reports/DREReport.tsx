@@ -25,6 +25,7 @@ const DREReport: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [transactions, setTransactions] = useState<any[]>([]);
     const [categories, setCategories] = useState<any[]>([]);
+    const [commands, setCommands] = useState<any[]>([]);
 
     const fetchData = useCallback(async () => {
         if (!activeStudioId) return;
@@ -35,7 +36,7 @@ const DREReport: React.FC = () => {
             const startStr = format(start, 'yyyy-MM-dd');
             const endStr = format(end, 'yyyy-MM-dd');
 
-            const [transRes, catRes] = await Promise.all([
+            const [transRes, catRes, cmdRes] = await Promise.all([
                 supabase
                     .from('financial_transactions')
                     .select('*')
@@ -46,14 +47,23 @@ const DREReport: React.FC = () => {
                 supabase
                     .from('financial_categories')
                     .select('*')
+                    .eq('studio_id', activeStudioId),
+                supabase
+                    .from('commands')
+                    .select('*')
                     .eq('studio_id', activeStudioId)
+                    .in('status', ['pago', 'paid'])
+                    .gte('paid_at', startStr)
+                    .lte('paid_at', endStr)
             ]);
 
             if (transRes.error) throw transRes.error;
             if (catRes.error) throw catRes.error;
+            if (cmdRes.error) throw cmdRes.error;
 
             setTransactions(transRes.data || []);
             setCategories(catRes.data || []);
+            setCommands(cmdRes.data || []);
         } catch (error) {
             console.error("Erro ao buscar dados da DRE:", error);
             toast.error("Erro ao carregar DRE.");
@@ -67,26 +77,46 @@ const DREReport: React.FC = () => {
     }, [fetchData]);
 
     const dreData = useMemo(() => {
+        // 1. Receitas do Financeiro
         const incomeTrans = transactions.filter(t => 
             t.type === 'income' || 
             t.type === 'receita' || 
             t.source === 'command' || 
             t.source === 'pdv'
         );
-        const expenseTrans = transactions.filter(t => t.type === 'expense' || t.type === 'despesa');
 
-        const grossRevenue = incomeTrans.reduce((acc, t) => acc + Number(t.amount || 0), 0);
-        const taxes = incomeTrans.reduce((acc, t) => {
+        // 2. Comandas pagas que NÃO estão no financeiro (para evitar duplicidade)
+        const launchedCommandIds = new Set(transactions.map(t => t.command_id).filter(Boolean));
+        const missingCommands = commands.filter(c => !launchedCommandIds.has(c.id));
+
+        // 3. Receita Bruta Total
+        const grossFromTrans = incomeTrans.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        const grossFromCommands = missingCommands.reduce((acc, c) => acc + Number(c.total_amount || 0), 0);
+        const grossRevenue = grossFromTrans + grossFromCommands;
+
+        // 4. Taxas
+        const taxesFromTrans = incomeTrans.reduce((acc, t) => {
             if (t.net_value !== null && t.net_value !== undefined) {
                 return acc + (Number(t.amount || 0) - Number(t.net_value || 0));
             }
             return acc;
         }, 0);
         
-        const netRevenue = incomeTrans.reduce((acc, t) => {
-            return acc + Number(t.net_value !== null && t.net_value !== undefined ? t.net_value : (t.amount || 0));
+        // Estimativa de taxas para comandas não lançadas (usando dados da comanda se houver)
+        const taxesFromCommands = missingCommands.reduce((acc, c) => {
+            const payData = c.payment_data || {};
+            if (payData.tax_rate) {
+                return acc + (Number(c.total_amount || 0) * Number(payData.tax_rate) / 100);
+            }
+            return acc;
         }, 0);
 
+        const taxes = taxesFromTrans + taxesFromCommands;
+        const netRevenue = grossRevenue - taxes;
+
+        // 5. Despesas
+        const expenseTrans = transactions.filter(t => t.type === 'expense' || t.type === 'despesa');
+        
         // Grouping expenses by DRE Line
         const expensesByDreLine: { [key: string]: { total: number, categories: { [key: string]: number } } } = {
             'Custo Direto': { total: 0, categories: {} },
@@ -120,7 +150,7 @@ const DREReport: React.FC = () => {
             result,
             margin
         };
-    }, [transactions, categories]);
+    }, [transactions, categories, commands]);
 
     const handleExportPDF = () => {
         const doc = new jsPDF();

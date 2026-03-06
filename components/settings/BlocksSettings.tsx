@@ -24,7 +24,7 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const { activeStudioId } = useStudio();
     const { confirm, ConfirmDialogComponent } = useConfirm();
     const [blocks, setBlocks] = useState<any[]>([]);
-    const [professionals, setProfessionals] = useState<any[]>([]);
+    const [team_members, setTeamMembers] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -61,7 +61,7 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             }));
 
             setBlocks(formattedData);
-            setProfessionals(profsRes.data || []);
+            setTeamMembers(profsRes.data || []);
         } catch (err: any) {
             setToast({ message: "Erro ao sincronizar dados.", type: 'error' });
         } finally {
@@ -93,8 +93,8 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     };
 
     const toggleAllProfs = () => {
-        if (selectedProfIds.length === professionals.length) setSelectedProfIds([]);
-        else setSelectedProfIds(professionals.map(p => p.id));
+        if (selectedProfIds.length === team_members.length) setSelectedProfIds([]);
+        else setSelectedProfIds(team_members.map(p => p.id));
     };
 
     const handleSaveBatch = async (e: React.FormEvent) => {
@@ -228,11 +228,11 @@ const BlocksSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                     <button 
                                         type="button"
                                         onClick={toggleAllProfs}
-                                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-tighter border-2 transition-all ${selectedProfIds.length === professionals.length ? 'bg-slate-800 border-slate-800 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'}`}
+                                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-tighter border-2 transition-all ${selectedProfIds.length === team_members.length ? 'bg-slate-800 border-slate-800 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'}`}
                                     >
                                         Todos (Estúdio)
                                     </button>
-                                    {professionals.map(p => (
+                                    {team_members.map(p => (
                                         <button 
                                             key={p.id}
                                             type="button"

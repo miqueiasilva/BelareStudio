@@ -102,7 +102,7 @@ const PublicBookingPreview: React.FC = () => {
     const [studio, setStudio] = useState<any>(null);
     const [services, setServices] = useState<any[]>([]);
     const [popularServiceIds, setPopularServiceIds] = useState<number[]>([]);
-    const [professionals, setProfessionals] = useState<any[]>([]);
+    const [team_members, setTeamMembers] = useState<any[]>([]);
     
     // UI State
     const [selectedServices, setSelectedServices] = useState<any[]>([]);
@@ -196,7 +196,7 @@ const PublicBookingPreview: React.FC = () => {
                         .eq('studio_id', studioId)
                         .order('order_index');
                     
-                    if (profsData) setProfessionals(profsData);
+                    if (profsData) setTeamMembers(profsData);
                 } else {
                     throw new Error('Estúdio não encontrado ou link inválido.');
                 }
@@ -554,7 +554,7 @@ const PublicBookingPreview: React.FC = () => {
                                 <main className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-slate-50/30 text-left">
                                     {bookingStep === 1 && (
                                         <div className="space-y-4">
-                                            {professionals
+                                            {team_members
                                                 .filter(p => {
                                                     if (selectedServices.length === 0) return true;
                                                     const profSkills = p.services_enabled || [];

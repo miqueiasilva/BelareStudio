@@ -11,13 +11,13 @@ import Toast, { ToastType } from '../shared/Toast';
 
 const EquipeView: React.FC = () => {
     const { activeStudioId } = useStudio();
-    const [professionals, setProfessionals] = useState<any[]>([]);
+    const [team_members, setTeamMembers] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedProf, setSelectedProf] = useState<any | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     
-    const fetchProfessionals = useCallback(async () => {
+    const fetchTeamMembers = useCallback(async () => {
         if (!activeStudioId) return;
         setLoading(true);
         try {
@@ -28,7 +28,7 @@ const EquipeView: React.FC = () => {
                 .order('name', { ascending: true });
             
             if (error) throw error;
-            setProfessionals(data || []);
+            setTeamMembers(data || []);
         } catch (error) {
             setToast({ message: "Erro ao carregar equipe.", type: 'error' });
         } finally {
@@ -36,7 +36,7 @@ const EquipeView: React.FC = () => {
         }
     }, [activeStudioId]);
 
-    useEffect(() => { fetchProfessionals(); }, [fetchProfessionals]);
+    useEffect(() => { fetchTeamMembers(); }, [fetchTeamMembers]);
 
     const handleCreateNew = async () => {
         if (!activeStudioId) return;
@@ -47,7 +47,7 @@ const EquipeView: React.FC = () => {
                 .select().single();
             if (error) throw error;
             setSelectedProf(data);
-            fetchProfessionals();
+            fetchTeamMembers();
         } catch (e: any) { setToast({ message: e.message, type: 'error' }); }
     };
 
@@ -55,13 +55,13 @@ const EquipeView: React.FC = () => {
         e.stopPropagation();
         const { error } = await supabase.from('team_members').update({ active: !current }).eq('id', id);
         if (!error) {
-            setProfessionals(prev => prev.map(p => p.id === id ? { ...p, active: !current } : p));
+            setTeamMembers(prev => prev.map(p => p.id === id ? { ...p, active: !current } : p));
         }
     };
 
-    const filtered = professionals.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    const filtered = team_members.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
-    if (selectedProf) return <ProfessionalDetail professional={selectedProf} onBack={() => setSelectedProf(null)} onSave={() => { setSelectedProf(null); fetchProfessionals(); }} />;
+    if (selectedProf) return <ProfessionalDetail professional={selectedProf} onBack={() => setSelectedProf(null)} onSave={() => { setSelectedProf(null); fetchTeamMembers(); }} />;
 
     return (
         <div className="h-full flex flex-col bg-slate-50 font-sans overflow-hidden text-left">

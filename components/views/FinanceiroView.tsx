@@ -72,6 +72,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
     const { activeStudioId } = useStudio();
     const { confirm, ConfirmDialogComponent } = useConfirm();
     const [dbTransactions, setDbTransactions] = useState<any[]>([]);
+    const [dbCategories, setDbCategories] = useState<any[]>([]);
     const [summaryCards, setSummaryCards] = useState<any>({
         gross_revenue: 0,
         net_revenue: 0,
@@ -116,20 +117,39 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
 
             // 1. Buscar Lançamentos Reais da Tabela Base
             // IMPORTANTE: payment_method em snake_case
-            const { data: trans, error: transError } = await supabase
-                .from('financial_transactions')
-                .select('id,description,amount,net_value,type,category,date,payment_method,status,studio_id,source')
-                .eq('studio_id', activeStudioId)
-                .gte('date', start.toISOString())
-                .lte('date', end.toISOString())
-                .neq('status', 'cancelado')
-                .order('date', { ascending: false });
+            const [transRes, catRes, appsRes] = await Promise.all([
+                supabase
+                    .from('financial_transactions')
+                    .select('id,description,amount,net_value,type,category,date,payment_method,status,studio_id,source')
+                    .eq('studio_id', activeStudioId)
+                    .gte('date', start.toISOString())
+                    .lte('date', end.toISOString())
+                    .neq('status', 'cancelado')
+                    .order('date', { ascending: false }),
+                supabase
+                    .from('financial_categories')
+                    .select('name')
+                    .eq('studio_id', activeStudioId)
+                    .eq('active', true),
+                supabase
+                    .from('appointments')
+                    .select('date,value')
+                    .eq('studio_id', activeStudioId)
+                    .in('status', ['agendado', 'confirmado', 'confirmado_whatsapp'])
+                    .gte('date', getStartOfDay(new Date()).toISOString())
+                    .lte('date', endOfDay(addDays(new Date(), 7)).toISOString())
+            ]);
             
-            if (transError) throw transError;
-            const currentTrans = trans || [];
-            setDbTransactions(currentTrans);
+            if (transRes.error) throw transRes.error;
+            if (catRes.error) throw catRes.error;
+            if (appsRes.error) throw appsRes.error;
+
+            setDbTransactions(transRes.data || []);
+            setDbCategories(catRes.data || []);
+            setProjections(appsRes.data || []);
 
             // 2. Cálculo Manual dos Indicadores
+            const currentTrans = transRes.data || [];
             const gross = currentTrans
                 .filter(t => t.type === 'income' || t.type === 'receita')
                 .reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -159,22 +179,6 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                 profit_margin: margin
             });
 
-            // 3. Buscar Projeções para o Gráfico
-            // FIX: Used getStartOfDay helper
-            const projStart = getStartOfDay(new Date());
-            const projEnd = endOfDay(addDays(new Date(), 7));
-            
-            const { data: apps, error: appsError } = await supabase
-                .from('appointments')
-                .select('date,value')
-                .eq('studio_id', activeStudioId)
-                .in('status', ['agendado', 'confirmado', 'confirmado_whatsapp'])
-                .gte('date', projStart.toISOString())
-                .lte('date', projEnd.toISOString());
-
-            if (appsError) throw appsError;
-            setProjections(apps || []);
-
         } catch (error: any) {
             console.error("Erro Financeiro:", error);
             setToast({ message: "Erro ao sincronizar financeiro.", type: 'error' });
@@ -193,8 +197,9 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             return matchSearch && matchCat;
         });
 
-        const categoriesSet = new Set(dbTransactions.map(t => t.category).filter(Boolean));
-        const categories = Array.from(categoriesSet);
+        const categories = dbCategories.length > 0 
+            ? dbCategories.map(c => c.name) 
+            : Array.from(new Set(dbTransactions.map(t => t.category).filter(Boolean)));
 
         const categoryMix = categories.map(cat => {
             const total = dbTransactions
@@ -234,7 +239,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             categoryMix,
             chartData
         };
-    }, [dbTransactions, projections, searchTerm, selectedCategory, startDate, endDate, filterPeriod]);
+    }, [dbTransactions, dbCategories, projections, searchTerm, selectedCategory, startDate, endDate, filterPeriod]);
 
     const handleExportExcel = () => {
         const dataToExport = bi.filtered.map(t => ({
@@ -491,6 +496,16 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                             <h2 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Extrato Analítico</h2>
                         </div>
                         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                            <select 
+                                value={selectedCategory}
+                                onChange={(e) => setSelectedCategory(e.target.value)}
+                                className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-4 focus:ring-orange-100 outline-none transition-all"
+                            >
+                                <option value="Todas">Todas Categorias</option>
+                                {bi.categories.map(cat => (
+                                    <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                            </select>
                             <button onClick={handleExportExcel} className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 shadow-sm" title="Excel"><FileSpreadsheet size={20}/></button>
                             <button onClick={handleExportPDF} className="p-2.5 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 shadow-sm" title="PDF"><FileDown size={20}/></button>
                             <div className="relative flex-1 md:w-64">

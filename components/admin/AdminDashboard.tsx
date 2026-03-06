@@ -2,58 +2,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 // FIX: Use legacy types with aliases to match mock data structure and resolve type errors.
 import { LegacyAppointment as Appointment, LegacyProfessional as Professional, Client, LegacyService as Service, AppointmentStatus } from '../../types';
-import { format } from 'date-fns';
-import { ChevronLeft, ChevronRight, Calendar, Bell, MessageSquare, Search, UserCheck, UserX } from 'lucide-react';
-
-// --- MOCK DATA ---
-const today = new Date();
-const professionals: Professional[] = [
-    { id: 1, name: 'Jaciene Félix', avatarUrl: 'https://i.pravatar.cc/150?img=1' },
-    { id: 2, name: 'Graziela Oliveira', avatarUrl: 'https://i.pravatar.cc/150?img=2' },
-    { id: 3, name: 'Jéssica Félix', avatarUrl: 'https://i.pravatar.cc/150?img=3' },
-    { id: 4, name: 'Glezia', avatarUrl: 'https://i.pravatar.cc/150?img=4' },
-    { id: 5, name: 'Elá Priscila', avatarUrl: 'https://i.pravatar.cc/150?img=5' },
-    { id: 6, name: 'Herlon', avatarUrl: 'https://i.pravatar.cc/150?img=6' },
-];
-
-// FIX: Update mock client data to use 'nome' instead of 'name' and add 'consent' property to match the Client type.
-const clients: Client[] = [
-    { id: 1, nome: 'Alemão', consent: true }, { id: 2, nome: 'Juanita Estefano', consent: true }, { id: 3, nome: 'Clara Coelho', consent: true },
-    { id: 4, nome: 'Eliude Alves', consent: true }, { id: 5, nome: 'Janniles', consent: true }, { id: 6, nome: 'Bárbara Salles', consent: true }, { id: 7, nome: 'Naná', consent: true }
-];
-
-// FIX: Use LegacyService type which matches the mock data structure (name, duration, price, color).
-const services: { [key: string]: Service } = {
-    designSimples: { id: 1, name: 'Design Simples', duration: 30, price: 50, color: 'blue' },
-    designComTintura: { id: 2, name: 'Design Com Tintura', duration: 40, price: 70, color: 'blue' },
-    limpezaMicro: { id: 3, name: 'Limpeza Micro', duration: 30, price: 60, color: 'blue' },
-    designComHenna: { id: 4, name: 'Design Com Henna', duration: 40, price: 75, color: 'blue' },
-    volumeEgipcio: { id: 5, name: 'Volume EGÍPCIO', duration: 110, price: 250, color: 'blue' },
-    manutencaoVolume: { id: 6, name: 'Manutenção Volume Brasileiro 21 Dias', duration: 150, price: 180, color: 'blue' },
-    limpezaPele: { id: 7, name: 'Limpeza de Pele Premium', duration: 50, price: 120, color: 'blue' },
-    bloqueio: { id: 8, name: 'Horário Bloqueado', duration: 300, price: 0, color: 'gray' },
-};
-
-const createTime = (hour: number, minute: number) => {
-    const d = new Date(today);
-    d.setHours(hour, minute, 0, 0);
-    return d;
-};
-
-// FIX: Use LegacyAppointment type which matches the mock data structure (client, professional, service, start, end).
-const appointments: Appointment[] = [
-    { id: 1, client: clients[0], professional: professionals[0], service: services.designSimples, start: createTime(9, 30), end: createTime(10, 0), status: 'confirmado' },
-    { id: 2, client: clients[1], professional: professionals[0], service: services.designComTintura, start: createTime(10, 30), end: createTime(11, 10), status: 'confirmado' },
-    { id: 3, client: clients[2], professional: professionals[0], service: services.limpezaMicro, start: createTime(11, 10), end: createTime(11, 40), status: 'agendado' },
-    { id: 4, client: clients[0], professional: professionals[0], service: services.designSimples, start: createTime(11, 40), end: createTime(12, 10), status: 'agendado' },
-    { id: 5, client: clients[3], professional: professionals[0], service: services.designComHenna, start: createTime(14, 0), end: createTime(14, 40), status: 'concluido' },
-    { id: 6, client: clients[4], professional: professionals[2], service: services.volumeEgipcio, start: createTime(9, 30), end: createTime(11, 20), status: 'confirmado' },
-    { id: 7, client: clients[5], professional: professionals[2], service: services.manutencaoVolume, start: createTime(13, 30), end: createTime(16, 0), status: 'agendado' },
-    { id: 8, client: clients[6], professional: professionals[4], service: services.limpezaPele, start: createTime(9, 30), end: createTime(10, 20), status: 'confirmado' },
-    { id: 9, professional: professionals[3], service: services.bloqueio, start: createTime(13, 0), end: createTime(18, 0), status: 'bloqueado' },
-    { id: 10, client: clients[1], professional: professionals[1], service: services.designComTintura, start: createTime(16, 30), end: createTime(17, 10), status: 'cancelado' },
-];
-// --- END MOCK DATA ---
+import { format, startOfDay, endOfDay } from 'date-fns';
+import { ChevronLeft, ChevronRight, Calendar, Bell, MessageSquare, Search, UserCheck, UserX, Loader2 } from 'lucide-react';
+import { supabase } from '../../services/supabaseClient';
+import { useStudio } from '../../contexts/StudioContext';
 
 const statusClasses: { [key in AppointmentStatus]: string } = {
     confirmado: 'bg-cyan-100 border-cyan-300 text-cyan-800',
@@ -141,12 +93,78 @@ const TimelineIndicator = () => {
 
 
 const AdminDashboard: React.FC = () => {
-    const [visibleProfessionals, setVisibleProfessionals] = useState<number[]>(professionals.map(p => p.id));
+    const { activeStudioId } = useStudio();
+    const [currentDate, setCurrentDate] = useState(new Date());
     const [profSearch, setProfSearch] = useState('');
+    const [appointments, setAppointments] = useState<Appointment[]>([]);
+    const [team_members, setTeamMembers] = useState<Professional[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [visibleProfessionals, setVisibleProfessionals] = useState<number[]>([]);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            if (!activeStudioId) return;
+            setLoading(true);
+            try {
+                // Fetch Professionals
+                const { data: profsData, error: profsError } = await supabase
+                    .from('team_members')
+                    .select('*')
+                    .eq('studio_id', activeStudioId)
+                    .eq('active', true);
+                
+                if (profsError) throw profsError;
+                
+                const mappedProfs = (profsData || []).map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`
+                }));
+                setProfessionals(mappedProfs);
+                setVisibleProfessionals(mappedProfs.map(p => p.id));
+
+                // Fetch Appointments for the day
+                const start = startOfDay(currentDate);
+                const end = endOfDay(currentDate);
+
+                const { data: apptsData, error: apptsError } = await supabase
+                    .from('appointments')
+                    .select('*')
+                    .eq('studio_id', activeStudioId)
+                    .gte('date', start.toISOString())
+                    .lte('date', end.toISOString());
+
+                if (apptsError) throw apptsError;
+
+                const mappedAppts = (apptsData || []).map(row => {
+                    const s = new Date(row.date);
+                    const d = row.duration || 30;
+                    const e = new Date(s.getTime() + d * 60000);
+                    return {
+                        id: row.id,
+                        start: s,
+                        end: e,
+                        status: row.status as AppointmentStatus,
+                        client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
+                        professional: mappedProfs.find(p => p.id === row.professional_id) || { id: row.professional_id, name: row.professional_name, avatarUrl: '' },
+                        service: { id: 0, name: row.service_name, price: row.value, duration: d, color: row.service_color || 'blue' }
+                    } as Appointment;
+                });
+                setAppointments(mappedAppts);
+
+            } catch (error) {
+                console.error("Error fetching dashboard data:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+    }, [activeStudioId, currentDate]);
 
     const filteredProfList = useMemo(() => 
-        professionals.filter(p => p.name.toLowerCase().includes(profSearch.toLowerCase())),
-        [profSearch]
+        team_members.filter(p => p.name.toLowerCase().includes(profSearch.toLowerCase())),
+        [team_members, profSearch]
     );
 
     const handleProfessionalToggle = (id: number) => {
@@ -155,13 +173,13 @@ const AdminDashboard: React.FC = () => {
         );
     };
 
-    const selectAllProfs = () => setVisibleProfessionals(professionals.map(p => p.id));
+    const selectAllProfs = () => setVisibleProfessionals(team_members.map(p => p.id));
     const clearProfs = () => setVisibleProfessionals([]);
     const focusProf = (id: number) => setVisibleProfessionals([id]);
 
     const filteredProfessionals = useMemo(
-        () => professionals.filter(p => visibleProfessionals.includes(p.id)),
-        [visibleProfessionals]
+        () => team_members.filter(p => visibleProfessionals.includes(p.id)),
+        [team_members, visibleProfessionals]
     );
 
     const timeSlots = Array.from({ length: 20 }, (_, i) => {
@@ -194,7 +212,16 @@ const AdminDashboard: React.FC = () => {
             </header>
 
             <div className="flex-1 flex overflow-hidden">
-                <aside className="w-64 border-r border-slate-200 p-4 space-y-6 overflow-y-auto bg-slate-50/50">
+                {loading ? (
+                    <div className="flex-1 flex items-center justify-center bg-slate-50">
+                        <div className="flex flex-col items-center gap-4">
+                            <Loader2 className="w-10 h-10 text-orange-500 animate-spin" />
+                            <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Carregando Dashboard...</p>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <aside className="w-64 border-r border-slate-200 p-4 space-y-6 overflow-y-auto bg-slate-50/50">
                     <div>
                         <div className="flex items-center justify-between mb-2">
                             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Profissionais</h3>
@@ -322,6 +349,8 @@ const AdminDashboard: React.FC = () => {
                         </div>
                     </div>
                 </div>
+                    </>
+                )}
             </div>
             <div className="absolute bottom-6 right-6 z-20">
               <button className="w-14 h-14 bg-[#705336] rounded-full shadow-lg flex items-center justify-center text-white hover:bg-[#5a442a] transition ring-2 ring-white">

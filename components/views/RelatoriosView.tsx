@@ -160,12 +160,13 @@ const RelatoriosView: React.FC = () => {
       const { start, end, prevStart, prevEnd } = getDates();
       
       // Fetch current period
-      const [transRes, apptsRes, clientsRes, teamRes, servicesRes] = await Promise.all([
+      const [transRes, apptsRes, clientsRes, teamRes, servicesRes, categoriesRes] = await Promise.all([
         supabase.from('financial_transactions').select('*').eq('studio_id', activeStudioId).gte('date', start.toISOString()).lte('date', end.toISOString()),
         supabase.from('appointments').select('*').eq('studio_id', activeStudioId).gte('date', start.toISOString()).lte('date', end.toISOString()),
         supabase.from('clients').select('*').eq('studio_id', activeStudioId),
         supabase.from('team_members').select('*').eq('studio_id', activeStudioId),
-        supabase.from('services').select('*').eq('studio_id', activeStudioId)
+        supabase.from('services').select('*').eq('studio_id', activeStudioId),
+        supabase.from('financial_categories').select('name').eq('studio_id', activeStudioId).eq('active', true)
       ]);
 
       // Fetch previous period for comparison
@@ -175,7 +176,7 @@ const RelatoriosView: React.FC = () => {
       ]);
 
       setAvailableProfessionals(teamRes.data || []);
-      const cats = Array.from(new Set((servicesRes.data || []).map(s => s.category).filter(Boolean)));
+      const cats = Array.from(new Set((categoriesRes.data || []).map(c => c.name).filter(Boolean)));
       setAvailableCategories(cats as string[]);
 
       // Process Data

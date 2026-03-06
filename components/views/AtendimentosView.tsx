@@ -321,13 +321,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         }
     }, [resources]);
 
-    const mapRowToAppointment = (row: any, professionalsList: LegacyProfessional[]): LegacyAppointment => {
+    const mapRowToAppointment = (row: any, teamMembersList: LegacyProfessional[]): LegacyAppointment => {
         const start = new Date(row.date);
         const dur = row.duration || 30;
         
-        let prof = professionalsList.find(p => String(p.id) === String(row.professional_id));
+        let prof = teamMembersList.find(p => String(p.id) === String(row.professional_id));
         if (!prof && row.professional_name) {
-            prof = professionalsList.find(p => p.name.toLowerCase() === row.professional_name.toLowerCase());
+            prof = teamMembersList.find(p => p.name.toLowerCase() === row.professional_name.toLowerCase());
         }
 
         const notes = row.notes || '';
@@ -347,7 +347,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             type: row.type || 'appointment',
             services: services.length > 0 ? services : undefined,
             client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
-            professional: prof || professionalsList[0] || { id: 0, name: row.professional_name, avatarUrl: '' },
+            professional: prof || teamMembersList[0] || { id: 0, name: row.professional_name, avatarUrl: '' },
             service: { id: 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : (row.service_color || '#3b82f6') }
         } as LegacyAppointment;
     };
@@ -358,8 +358,43 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         
         try {
             const duration = Number(app.service.duration) || 30;
+            const start = new Date(app.start);
+            const end = addMinutes(start, duration);
+
+            // 1. Conflict Detection
+            if (!force && app.status !== 'cancelado') {
+                const conflict = appointments.find(existing => {
+                    // Skip self if editing
+                    if (existing.id === app.id) return false;
+                    
+                    // Same professional
+                    const existingProfId = existing.professional?.id;
+                    const newProfId = app.professional?.id;
+                    if (String(existingProfId) !== String(newProfId)) return false;
+
+                    // Overlap check
+                    const exStart = existing.start;
+                    const exEnd = existing.end;
+
+                    // Check for overlap: (StartA < EndB) and (EndA > StartB)
+                    return (start < exEnd && end > exStart);
+                });
+
+                if (conflict) {
+                    setPendingConflict({ 
+                        newApp: { ...app, end }, 
+                        conflictWith: {
+                            client_name: conflict.client?.nome || 'Bloqueio',
+                            service_name: conflict.service?.name || 'Indisponível'
+                        }
+                    });
+                    setIsLoadingData(false);
+                    return;
+                }
+            }
+
             const startStr = format(app.start, "yyyy-MM-dd'T'HH:mm:ssXXX");
-            const endStr = format(addMinutes(app.start, duration), "yyyy-MM-dd'T'HH:mm:ssXXX");
+            const endStr = format(end, "yyyy-MM-dd'T'HH:mm:ssXXX");
 
             const servicesMetadata = app.services && app.services.length > 0 
                 ? `\n---SERVICES_JSON---\n${JSON.stringify(app.services)}\n---END_SERVICES_JSON---` 
@@ -469,36 +504,39 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
+            // 1. Criar a comanda
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
                     studio_id: activeStudioId,
-                    client_id: appointment.client?.id ? appointment.client.id : null,
-                    client_name: appointment.client?.nome || null, // FIX: Envia null para disparar default do DB se não houver cliente
-                    professional_id: appointment.professional.id ? appointment.professional.id : null,
+                    client_id: appointment.client?.id || null,
+                    client_name: appointment.client?.nome || 'Cliente',
+                    professional_id: appointment.professional?.id || null,
                     status: 'open',
-                    total_amount: appointment.service.price
+                    total_amount: appointment.service?.price || 0
                 }])
-                .select('id, studio_id, client_id, client_name, professional_id, status, total_amount')
+                .select()
                 .single();
 
-            if (cmdError) throw cmdError;
+            if (cmdError || !command) throw cmdError || new Error("Falha ao criar comanda");
 
+            // 2. Criar o item da comanda
             const { error: itemError } = await supabase
                 .from('command_items')
                 .insert([{
                     command_id: command.id,
                     appointment_id: appointment.id,
-                    service_id: appointment.service.id ? String(appointment.service.id) : null,
+                    service_id: appointment.service?.id || null,
                     studio_id: activeStudioId, 
-                    title: appointment.service.name,
-                    price: appointment.service.price,
+                    title: appointment.service?.name || 'Serviço',
+                    price: appointment.service?.price || 0,
                     quantity: 1,
-                    professional_id: appointment.professional.id ? appointment.professional.id : null
+                    professional_id: appointment.professional?.id || null
                 }]);
 
             if (itemError) throw itemError;
 
+            // 3. Atualizar status do agendamento
             const { error: apptUpdateError } = await supabase
                 .from('appointments')
                 .update({ status: 'concluido' })
@@ -514,7 +552,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             }
         } catch (e: any) {
             console.error("Falha ao gerar comanda:", e);
-            setToast({ message: "Erro ao converter agendamento em comanda.", type: 'error' });
+            setToast({ message: `Erro ao converter: ${e.message || 'Erro desconhecido'}`, type: 'error' });
         } finally {
             setIsLoadingData(false);
         }

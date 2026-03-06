@@ -9,7 +9,7 @@ const createTime = (hour: number, minute: number) => {
     return d;
 };
 
-export const professionals: LegacyProfessional[] = [
+export const team_members: LegacyProfessional[] = [
     { id: 1, name: 'Jacilene Félix', avatarUrl: 'https://i.pravatar.cc/150?img=1' },
     { id: 2, name: 'Graziela Oliveira', avatarUrl: 'https://i.pravatar.cc/150?img=2' },
     { id: 3, name: 'Jéssica Félix', avatarUrl: 'https://i.pravatar.cc/150?img=3' },
@@ -89,21 +89,21 @@ export const services: { [key: string]: LegacyService } = {
 
 export const initialAppointments: LegacyAppointment[] = [
     // Jacilene Félix
-    { id: 1, client: clients[0], professional: professionals[0], service: services.designSimples, start: createTime(9, 30), end: createTime(10, 0), status: 'confirmado', notas: 'Cliente pediu para não usar o produto X.' },
-    { id: 2, client: clients[1], professional: professionals[0], service: services.designComTintura, start: createTime(10, 30), end: createTime(11, 10), status: 'confirmado' },
-    { id: 3, client: clients[2], professional: professionals[0], service: services.designSimples, start: createTime(11, 10), end: createTime(11, 40), status: 'agendado' },
-    { id: 4, client: clients[0], professional: professionals[0], service: services.designSimples, start: createTime(11, 40), end: createTime(12, 10), status: 'agendado' },
-    { id: 5, client: clients[3], professional: professionals[0], service: services.designComHenna, start: createTime(14, 0), end: createTime(14, 40), status: 'concluido' },
+    { id: 1, client: clients[0], professional: team_members[0], service: services.designSimples, start: createTime(9, 30), end: createTime(10, 0), status: 'confirmado', notas: 'Cliente pediu para não usar o produto X.' },
+    { id: 2, client: clients[1], professional: team_members[0], service: services.designComTintura, start: createTime(10, 30), end: createTime(11, 10), status: 'confirmado' },
+    { id: 3, client: clients[2], professional: team_members[0], service: services.designSimples, start: createTime(11, 10), end: createTime(11, 40), status: 'agendado' },
+    { id: 4, client: clients[0], professional: team_members[0], service: services.designSimples, start: createTime(11, 40), end: createTime(12, 10), status: 'agendado' },
+    { id: 5, client: clients[3], professional: team_members[0], service: services.designComHenna, start: createTime(14, 0), end: createTime(14, 40), status: 'concluido' },
     
     // Jéssica Félix
-    { id: 6, client: clients[4], professional: professionals[2], service: services.volumeEgipcio, start: createTime(9, 30), end: createTime(11, 20), status: 'confirmado' },
-    { id: 7, client: clients[5], professional: professionals[2], service: services.manutencaoVolume, start: createTime(13, 30), end: createTime(16, 0), status: 'agendado' },
+    { id: 6, client: clients[4], professional: team_members[2], service: services.volumeEgipcio, start: createTime(9, 30), end: createTime(11, 20), status: 'confirmado' },
+    { id: 7, client: clients[5], professional: team_members[2], service: services.manutencaoVolume, start: createTime(13, 30), end: createTime(16, 0), status: 'agendado' },
     
     // Glezia
-    { id: 9, professional: professionals[3], service: services.bloqueio, start: createTime(13, 0), end: createTime(18, 0), status: 'bloqueado' },
+    { id: 9, professional: team_members[3], service: services.bloqueio, start: createTime(13, 0), end: createTime(18, 0), status: 'bloqueado' },
 
     // Elda Priscila
-    { id: 8, client: clients[6], professional: professionals[4], service: services.limpezaPele, start: createTime(9, 30), end: createTime(10, 20), status: 'confirmado' },
+    { id: 8, client: clients[6], professional: team_members[4], service: services.limpezaPele, start: createTime(9, 30), end: createTime(10, 20), status: 'confirmado' },
 ];
 
 // --- Online Booking Mock Data ---

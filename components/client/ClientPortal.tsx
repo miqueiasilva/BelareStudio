@@ -25,7 +25,7 @@ const clientData = {
 };
 
 const services = ["Corte Feminino", "Coloração", "Manicure", "Pedicure", "Escova Progressiva", "Barba Terapia"];
-const professionals = ["Maria Silva", "João Pereira", "Ana Costa"];
+const team_members = ["Maria Silva", "João Pereira", "Ana Costa"];
 const times = ["09:00", "10:00", "11:00", "14:00", "15:00", "16:00", "17:00"];
 
 
@@ -58,7 +58,7 @@ const BookingWizard: React.FC<{onClose: () => void}> = ({ onClose }) => {
                 </div>
 
                 {step === 1 && <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{services.map(s => <button key={s} onClick={() => handleSelect('service', s)} className="p-4 bg-slate-100 hover:bg-cyan-100 rounded-lg text-center font-medium transition">{s}</button>)}</div>}
-                {step === 2 && <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{professionals.map(p => <button key={p} onClick={() => handleSelect('professional', p)} className="p-4 bg-slate-100 hover:bg-cyan-100 rounded-lg text-center font-medium transition">{p}</button>)}</div>}
+                {step === 2 && <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{team_members.map(p => <button key={p} onClick={() => handleSelect('professional', p)} className="p-4 bg-slate-100 hover:bg-cyan-100 rounded-lg text-center font-medium transition">{p}</button>)}</div>}
                 {step === 3 && <div className="grid grid-cols-3 md:grid-cols-4 gap-3">{times.map(t => <button key={t} onClick={() => handleSelect('time', t)} className="p-4 bg-slate-100 hover:bg-cyan-100 rounded-lg text-center font-medium transition">{t}</button>)}</div>}
                 
                 {step === 4 && (

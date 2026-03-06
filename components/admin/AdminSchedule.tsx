@@ -1,50 +1,15 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Card from '../shared/Card';
 // FIX: Use legacy types with aliases to match mock data structure and resolve type errors.
 import { LegacyAppointment as Appointment, LegacyService as Service, LegacyProfessional as Professional, Client, AppointmentStatus } from '../../types';
-import { Calendar, Clock, User, Scissors, DollarSign, Tag, Info, X } from 'lucide-react';
-import { format } from 'date-fns';
+import { Calendar, Clock, User, Scissors, DollarSign, Tag, Info, X, Loader2 } from 'lucide-react';
+import { format, startOfDay, endOfDay } from 'date-fns';
 // FIX: Corrected locale import path to 'date-fns/locale/pt-BR' to resolve "no exported member 'ptBR'" error.
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
+import { supabase } from '../../services/supabaseClient';
+import { useStudio } from '../../contexts/StudioContext';
 
-// Mock Data
-// FIX: Update mock client data to use 'nome' instead of 'name' and add 'consent' property to match the Client type.
-const clients: Client[] = [
-    { id: 1, nome: 'Juliana Paes', consent: true },
-    { id: 2, nome: 'Bruno Gagliasso', consent: true },
-    { id: 3, nome: 'Marina Ruy Barbosa', consent: true },
-    { id: 4, nome: 'Cauã Reymond', consent: true }
-];
-
-const professionals: Professional[] = [
-    // FIX: Removed 'specialty' property as it does not exist in the 'Professional' type.
-    { id: 1, name: 'Maria Silva', avatarUrl: 'https://i.pravatar.cc/150?img=1' },
-    // FIX: Removed 'specialty' property as it does not exist in the 'Professional' type.
-    { id: 2, name: 'João Pereira', avatarUrl: 'https://i.pravatar.cc/150?img=2' },
-];
-
-const services: Service[] = [
-    // FIX: Added required 'color' property.
-    { id: 1, name: 'Corte Feminino', duration: 60, price: 90, color: 'blue' },
-    // FIX: Added required 'color' property.
-    { id: 2, name: 'Corte Masculino & Barba', duration: 45, price: 75, color: 'blue' },
-    // FIX: Added required 'color' property.
-    { id: 3, name: 'Manicure', duration: 30, price: 30, color: 'blue' },
-];
-
-const today = new Date();
-const appointments: Appointment[] = [
-    { id: 1, client: clients[0], professional: professionals[0], service: services[0], start: new Date(today.setHours(9, 0, 0)), end: new Date(today.setHours(10, 0, 0)), status: 'concluido' },
-    { id: 2, client: clients[1], professional: professionals[1], service: services[1], start: new Date(today.setHours(10, 0, 0)), end: new Date(today.setHours(10, 45, 0)), status: 'concluido' },
-    { id: 3, client: clients[2], professional: professionals[0], service: services[0], start: new Date(today.setHours(11, 0, 0)), end: new Date(today.setHours(12, 0, 0)), status: 'confirmado' },
-    { id: 4, client: clients[3], professional: professionals[1], service: services[1], start: new Date(today.setHours(14, 0, 0)), end: new Date(today.setHours(14, 45, 0)), status: 'agendado' },
-    { id: 5, client: clients[0], professional: professionals[0], service: services[2], start: new Date(today.setHours(15, 0, 0)), end: new Date(today.setHours(15, 30, 0)), status: 'agendado' },
-];
-
-// FIX: Added missing 'faltou' and 'em_atendimento' properties to satisfy the AppointmentStatus type.
-// FIX: Added missing 'chegou' property and aligned colors for consistency.
-// FIX: Added missing 'confirmado_whatsapp' property to satisfy the AppointmentStatus type.
 const statusStyles: { [key in AppointmentStatus]: { bg: string, text: string, border: string } } = {
     agendado: { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-500' },
     confirmado: { bg: 'bg-cyan-100', text: 'text-cyan-800', border: 'border-cyan-500' },
@@ -121,14 +86,71 @@ const AppointmentModal = ({ appointment, onClose }: { appointment: Appointment; 
 
 
 const AdminSchedule: React.FC = () => {
+    const { activeStudioId } = useStudio();
     const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+    const [appointments, setAppointments] = useState<Appointment[]>([]);
+    const [loading, setLoading] = useState(true);
+    const today = new Date();
+
+    useEffect(() => {
+        const fetchAppointments = async () => {
+            if (!activeStudioId) return;
+            setLoading(true);
+            try {
+                const start = startOfDay(today);
+                const end = endOfDay(today);
+
+                const { data, error } = await supabase
+                    .from('appointments')
+                    .select('*')
+                    .eq('studio_id', activeStudioId)
+                    .gte('date', start.toISOString())
+                    .lte('date', end.toISOString())
+                    .order('date', { ascending: true });
+
+                if (error) throw error;
+
+                const mapped = (data || []).map(row => {
+                    const s = new Date(row.date);
+                    const d = row.duration || 30;
+                    const e = new Date(s.getTime() + d * 60000);
+                    return {
+                        id: row.id,
+                        start: s,
+                        end: e,
+                        status: row.status as AppointmentStatus,
+                        client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
+                        professional: { id: row.professional_id, name: row.professional_name, avatarUrl: '' },
+                        service: { id: 0, name: row.service_name, price: row.value, duration: d, color: row.service_color || 'blue' }
+                    } as Appointment;
+                });
+                setAppointments(mapped);
+            } catch (error) {
+                console.error("Error fetching schedule:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchAppointments();
+    }, [activeStudioId]);
     const todayStr = format(today, "EEEE, dd 'de' MMMM", { locale: pt });
 
     return (
         <Card title="Agenda Inteligente do Dia" icon={<Calendar className="w-5 h-5" />}>
             <p className="text-sm text-slate-500 mb-4 capitalize">{todayStr}</p>
             <div className="space-y-3">
-                {appointments.map(app => (
+                {loading ? (
+                    <div className="flex flex-col items-center justify-center py-10 gap-3">
+                        <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Carregando...</p>
+                    </div>
+                ) : appointments.length === 0 ? (
+                    <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                        <p className="text-slate-400 text-sm font-medium">Nenhum agendamento hoje</p>
+                    </div>
+                ) : (
+                    appointments.map(app => (
                     <button key={app.id} onClick={() => setSelectedAppointment(app)} className="w-full text-left">
                         <div className={`p-3 rounded-lg flex items-center gap-4 transition-all hover:shadow-md ${statusStyles[app.status].bg} border-l-4 ${statusStyles[app.status].border}`}>
                             <div className="font-bold text-sm min-w-[90px] text-center">
@@ -146,7 +168,7 @@ const AdminSchedule: React.FC = () => {
                             </span>
                         </div>
                     </button>
-                ))}
+                )))}
             </div>
             {selectedAppointment && <AppointmentModal appointment={selectedAppointment} onClose={() => setSelectedAppointment(null)} />}
         </Card>

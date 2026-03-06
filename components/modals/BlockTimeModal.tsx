@@ -41,7 +41,7 @@ const BlockTimeModal: React.FC<BlockTimeModalProps> = ({
     repeat: false
   });
 
-  const [professionals, setProfessionals] = useState<LegacyProfessional[]>([]);
+  const [team_members, setTeamMembers] = useState<LegacyProfessional[]>([]);
   const [loadingProfessionals, setLoadingProfessionals] = useState(false);
 
   useEffect(() => {
@@ -58,7 +58,7 @@ const BlockTimeModal: React.FC<BlockTimeModalProps> = ({
 
         if (sbError) throw sbError;
         if (data) {
-          setProfessionals(data.map((p: any) => ({
+          setTeamMembers(data.map((p: any) => ({
             id: p.id,
             name: p.name,
             avatarUrl: p.photo_url
@@ -196,7 +196,7 @@ const BlockTimeModal: React.FC<BlockTimeModalProps> = ({
             <select 
               value={formData.professional_id}
               onChange={(e) => {
-                const prof = professionals.find(p => String(p.id) === e.target.value);
+                const prof = team_members.find(p => String(p.id) === e.target.value);
                 setFormData(prev => ({ 
                   ...prev, 
                   professional_id: e.target.value,
@@ -206,7 +206,7 @@ const BlockTimeModal: React.FC<BlockTimeModalProps> = ({
               className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 focus:bg-white focus:ring-4 focus:ring-rose-100 focus:border-rose-400 outline-none transition-all appearance-none"
             >
               <option value="">Selecione um colaborador</option>
-              {professionals.map(p => (
+              {team_members.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
