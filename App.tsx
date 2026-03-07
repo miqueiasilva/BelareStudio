@@ -160,6 +160,7 @@ const AppContent: React.FC = () => {
 };
 
 import { Toaster } from 'react-hot-toast';
+import { Toaster as SonnerToaster } from 'sonner';
 
 export default function App() {
   return (
@@ -174,6 +175,7 @@ export default function App() {
             fontWeight: 'bold',
           },
         }} />
+        <SonnerToaster position="top-right" richColors closeButton />
         <AppContent />
       </AuthProvider>
     </EnvGate>

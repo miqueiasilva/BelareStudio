@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { 
   UserPlus, Search, Phone, Trash2, Users, Loader2, 
@@ -7,11 +6,11 @@ import {
 } from 'lucide-react';
 import { Client } from '../../types';
 import ClientProfile from './ClientProfile'; 
-import Toast, { ToastType } from '../shared/Toast';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import ImportClientsModal from '../modals/ImportClientsModal';
 import { useConfirm } from '../../utils/useConfirm';
+import { toast } from 'sonner'; // ← CORREÇÃO: import do Sonner
 
 const ITEMS_PER_PAGE = 50;
 
@@ -27,7 +26,6 @@ const ClientesView: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const isMounted = useRef(true);
@@ -90,7 +88,7 @@ const ClientesView: React.FC = () => {
         const isAbortError = e.name === 'AbortError' || e.message?.includes('aborted');
         if (isMounted.current && !isAbortError) {
             console.error("Erro ao carregar clientes:", e);
-            setToast({ message: "Erro ao sincronizar com o banco.", type: 'error' });
+            toast.error("Erro ao sincronizar com o banco."); // ← CORREÇÃO
         }
     } finally {
         if (isMounted.current) {
@@ -111,8 +109,6 @@ const ClientesView: React.FC = () => {
     if (clients.length < totalCount) fetchClients(false);
   };
 
-  const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
-
   const handleDeleteClient = async (e: React.MouseEvent, client: Client) => {
     e.stopPropagation();
     
@@ -130,9 +126,9 @@ const ClientesView: React.FC = () => {
         if (error) throw error;
         setClients(prev => prev.filter(c => c.id !== client.id));
         setTotalCount(prev => prev - 1);
-        showToast('Cliente excluído.', 'info');
+        toast.info('Cliente excluído.'); // ← CORREÇÃO
       } catch (err: any) {
-        showToast('Falha ao excluir.', 'error');
+        toast.error('Falha ao excluir.'); // ← CORREÇÃO
       }
     }
   };
@@ -145,17 +141,17 @@ const ClientesView: React.FC = () => {
             const { data, error } = await supabase.from('clients').update(clientData).eq('id', clientData.id).select().single();
             if (error) throw error;
             setClients(prev => prev.map(c => c.id === data.id ? data : c));
-            showToast('Perfil atualizado!');
+            toast.success('Perfil atualizado!'); // ← CORREÇÃO
         } else {
             const { data, error } = await supabase.from('clients').insert([{ ...clientData, studio_id: activeStudioId }]).select().single();
             if (error) throw error;
             setClients(prev => [data, ...prev]);
             setTotalCount(prev => prev + 1);
-            showToast('Cliente cadastrado!');
+            toast.success('Cliente cadastrado!'); // ← CORREÇÃO
         }
         setSelectedClient(null);
     } catch (e: any) {
-        showToast("Erro ao processar dados.", 'error');
+        toast.error("Erro ao processar dados."); // ← CORREÇÃO
     }
   };
 
@@ -166,7 +162,6 @@ const ClientesView: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col bg-slate-50 font-sans overflow-hidden">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm z-20 flex-shrink-0">
         <div>
           <h1 className="text-xl md:text-2xl font-black text-slate-800 flex items-center gap-2">
