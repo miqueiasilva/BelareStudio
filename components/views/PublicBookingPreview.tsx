@@ -388,11 +388,40 @@ const PublicBookingPreview: React.FC = () => {
             };
             console.log('PAYLOAD DO INSERT:', JSON.stringify(payload));
 
-            const { error: apptErr } = await supabase
+            const { data: newAppointment, error: apptErr } = await supabase
                 .from('appointments')
-                .insert([payload]);
+                .insert([payload])
+                .select()
+                .single();
 
             if (apptErr) throw apptErr;
+
+            if (newAppointment) {
+                try {
+                    await fetch('https://xatwmwrgcimsltdqfe.supabase.co/functions/v1/send-appointment-notification', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhhdHdtd3JnY2ltc2x0ZHFmZSIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzMzNjc2MzU4LCJleHAiOjIwNDkyNTIzNTh9.q-2t1hqhXBLqGaWBZ-Rf10BbPWQBTLV3K_b3W-pVT5U'
+                        },
+                        body: JSON.stringify({
+                            appointment_id: newAppointment.id,
+                            client_name: newAppointment.client_name,
+                            client_email: null,
+                            client_whatsapp: newAppointment.client_whatsapp,
+                            professional_name: newAppointment.professional_name,
+                            service_name: newAppointment.service_name,
+                            start_at: newAppointment.start_at,
+                            date: newAppointment.date,
+                            start_time: format(new Date(newAppointment.start_at), 'HH:mm'),
+                            value: newAppointment.value
+                        })
+                    });
+                } catch (emailError) {
+                    console.error('Erro ao enviar notificação:', emailError);
+                }
+            }
+
             setBookingSuccess(true);
         } catch (e: any) {
             console.error('Erro completo:', JSON.stringify(e));

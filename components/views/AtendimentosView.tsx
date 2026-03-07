@@ -447,15 +447,44 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 service_color: app.service.color || '#3b82f6'
             };
             
+            let newAppointment = null;
             if (app.id && typeof app.id === 'number' && app.id > 1000000000) { 
                 const { data, error } = await supabase.from('appointments').insert([payload]).select('*').single();
                 if (error) throw error;
+                newAppointment = data;
             } else if (app.id) {
                 const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
                 if (error) throw error;
             } else {
                 const { data, error } = await supabase.from('appointments').insert([payload]).select('*').single();
                 if (error) throw error;
+                newAppointment = data;
+            }
+
+            if (newAppointment) {
+                try {
+                    await fetch('https://xatwmwrgcimsltdqfe.supabase.co/functions/v1/send-appointment-notification', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhhdHdtd3JnY2ltc2x0ZHFmZSIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzMzNjc2MzU4LCJleHAiOjIwNDkyNTIzNTh9.q-2t1hqhXBLqGaWBZ-Rf10BbPWQBTLV3K_b3W-pVT5U'
+                        },
+                        body: JSON.stringify({
+                            appointment_id: newAppointment.id,
+                            client_name: newAppointment.client_name,
+                            client_email: newAppointment.client_email || app.client?.email,
+                            client_whatsapp: newAppointment.client_whatsapp || app.client?.telefone || app.client?.whatsapp,
+                            professional_name: newAppointment.professional_name,
+                            service_name: newAppointment.service_name,
+                            start_at: newAppointment.start_at,
+                            date: newAppointment.date,
+                            start_time: newAppointment.start_time || format(new Date(newAppointment.start_at), 'HH:mm'),
+                            value: newAppointment.value
+                        })
+                    });
+                } catch (emailError) {
+                    console.error('Erro ao enviar notificação:', emailError);
+                }
             }
 
             setToast({ message: '✅ Agendamento salvo com sucesso!', type: 'success' });
