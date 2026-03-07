@@ -32,15 +32,16 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
     try {
       const { data: profData } = await supabase
         .from('team_members')
-        .select('role, photo_url, name')
+        .select('access_level, role, photo_url, name, permissions')
         .eq('email', authUser.email)
         .maybeSingle();
 
       return {
         ...authUser,
-        papel: profData?.role?.toLowerCase() || 'profissional',
+        papel: profData?.access_level || 'profissional',
         nome: profData?.name || authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
-        avatar_url: profData?.photo_url || authUser.user_metadata?.avatar_url
+        avatar_url: profData?.photo_url || authUser.user_metadata?.avatar_url,
+        permissions: profData?.permissions || {}
       };
     } catch (e) {
       return { 

@@ -50,7 +50,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
         { id: 'produtos', icon: Package, label: 'Produtos' },
     ];
 
-    const filter = (items: MenuItem[]) => items.filter(item => hasAccess(userRole, item.id));
+    const filter = (items: MenuItem[]) => items.filter(item => hasAccess(userRole, item.id, user?.permissions));
 
     const filteredPrincipal = filter(principalItems);
     const filteredGestao = filter(gestaoItems);

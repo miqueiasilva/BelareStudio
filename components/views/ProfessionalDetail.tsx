@@ -85,6 +85,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 phone: (initialProf as any).phone || '',
                 birth_date: (initialProf as any).birth_date || '',
                 order_index: (initialProf as any).order_index ?? 0,
+                access_level: (initialProf as any).access_level || (initialProf as any).role?.toLowerCase() || 'profissional',
                 // Tenta commission_rate depois commission_percent
                 commission_rate: (initialProf as any).commission_rate ?? (initialProf as any).commission_percent ?? 30,
                 permissions: (initialProf as any).permissions || { view_calendar: true, edit_calendar: true },
@@ -140,6 +141,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 order_index: parseInt(String(prof.order_index)) || 0,
                 // Salva como commission_rate conforme schema real
                 commission_rate: isNaN(parseFloat(String(prof.commission_rate))) ? 0 : parseFloat(String(prof.commission_rate)),
+                access_level: prof.access_level || 'profissional',
                 permissions: prof.permissions,
                 services_enabled: prof.services_enabled,
                 work_schedule: prof.work_schedule,
@@ -371,18 +373,60 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                     )}
 
                     {activeTab === 'permissoes' && (
-                        <Card title="Acessos ao Sistema" className="animate-in fade-in max-w-2xl mx-auto">
-                             <div className="space-y-4">
-                                {[
-                                    { key: 'view_calendar', label: 'Ver agenda de terceiros' },
-                                    { key: 'edit_calendar', label: 'Gerenciar própria agenda' },
-                                    { key: 'view_finance', label: 'Acesso ao Financeiro / PDV' },
-                                    { key: 'edit_stock', label: 'Controle de Estoque' }
-                                ].map(item => (
-                                    <div key={item.key} className="flex items-center justify-between p-5 hover:bg-slate-50 rounded-3xl transition-colors border border-transparent hover:border-slate-100"><p className="font-bold text-slate-800 text-sm">{item.label}</p><ToggleSwitch on={!!prof.permissions?.[item.key]} onClick={() => updatePermission(item.key, !prof.permissions?.[item.key])} /></div>
-                                ))}
-                            </div>
-                        </Card>
+                        <div className="animate-in fade-in max-w-2xl mx-auto space-y-6">
+                            
+                            {/* Nível de Acesso */}
+                            <Card title="Nível de Acesso" icon={<Shield size={18} className="text-orange-500" />}>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {[
+                                        { value: 'admin', label: '👑 Admin', desc: 'Acesso total ao sistema' },
+                                        { value: 'gestor', label: '💼 Gestor', desc: 'Acesso total ao sistema' },
+                                        { value: 'recepcao', label: '🖥️ Recepção', desc: 'Operacional + estoque' },
+                                        { value: 'profissional', label: '✂️ Profissional', desc: 'Agenda e atendimentos' }
+                                    ].map(opt => (
+                                        <button
+                                            key={opt.value}
+                                            onClick={() => setProf({ ...prof, access_level: opt.value })}
+                                            className={`p-4 rounded-2xl border-2 text-left transition-all ${
+                                                (prof.access_level || 'profissional') === opt.value
+                                                    ? 'border-orange-500 bg-orange-50'
+                                                    : 'border-slate-100 hover:border-slate-200 bg-white'
+                                            }`}
+                                        >
+                                            <p className="font-black text-sm text-slate-800">{opt.label}</p>
+                                            <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">{opt.desc}</p>
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase mt-4 text-center">
+                                    Admin e Gestor têm acesso irrestrito. As permissões abaixo se aplicam apenas a Recepção e Profissional.
+                                </p>
+                            </Card>
+
+                            {/* Permissões granulares */}
+                            <Card title="Permissões Detalhadas" icon={<Shield size={18} className="text-slate-400" />}>
+                                <div className="space-y-2">
+                                    {[
+                                        { key: 'view_calendar', label: 'Ver agenda de terceiros', desc: 'Visualizar horários de outros profissionais' },
+                                        { key: 'edit_calendar', label: 'Gerenciar própria agenda', desc: 'Criar e editar seus próprios agendamentos' },
+                                        { key: 'view_finance', label: 'Acesso ao Financeiro / PDV', desc: 'Fluxo de Caixa e Controle de Caixa' },
+                                        { key: 'edit_stock', label: 'Controle de Estoque', desc: 'Ver e movimentar produtos' },
+                                        { key: 'view_reports', label: 'Relatórios Gerenciais', desc: 'BI e relatórios de desempenho' },
+                                        { key: 'view_remunerations', label: 'Remunerações', desc: 'Ver ganhos da equipe' },
+                                        { key: 'view_clients', label: 'Gestão de Clientes', desc: 'Criar, editar e excluir clientes' },
+                                        { key: 'view_settings', label: 'Configurações do Sistema', desc: 'Alterar configurações do studio' },
+                                    ].map(item => (
+                                        <div key={item.key} className="flex items-center justify-between p-4 hover:bg-slate-50 rounded-2xl transition-colors border border-transparent hover:border-slate-100">
+                                            <div>
+                                                <p className="font-bold text-slate-800 text-sm">{item.label}</p>
+                                                <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">{item.desc}</p>
+                                            </div>
+                                            <ToggleSwitch on={!!prof.permissions?.[item.key]} onClick={() => updatePermission(item.key, !prof.permissions?.[item.key])} />
+                                        </div>
+                                    ))}
+                                </div>
+                            </Card>
+                        </div>
                     )}
                 </div>
             </main>

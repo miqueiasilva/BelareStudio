@@ -35,8 +35,33 @@ const ROLE_PERMISSIONS: Record<UserRole, (ViewState | '*')[]> = {
     ]
 };
 
-export const hasAccess = (role: UserRole | string | undefined, view: ViewState): boolean => {
+export const hasAccess = (role: UserRole | string | undefined, view: ViewState, granularPermissions?: Record<string, boolean>): boolean => {
     if (!role) return false;
+    
+    // Admins e Gestores sempre têm acesso total
+    if (role === 'admin' || role === 'gestor') return true;
+
+    // Se houver permissões granulares, elas podem sobrescrever as travas do papel
+    if (granularPermissions) {
+        // Mapeamento de ViewState para chaves de permissão
+        const permissionMap: Record<string, string> = {
+            'financeiro': 'view_finance',
+            'caixa': 'view_finance',
+            'vendas': 'view_finance',
+            'relatorios': 'view_reports',
+            'remuneracoes': 'view_remunerations',
+            'clientes': 'view_clients',
+            'configuracoes': 'view_settings',
+            'produtos': 'edit_stock',
+            'equipe': 'view_remunerations', // Geralmente quem vê remuneração vê equipe
+        };
+
+        const requiredPermission = permissionMap[view];
+        if (requiredPermission && granularPermissions[requiredPermission]) {
+            return true;
+        }
+    }
+
     const permissions = ROLE_PERMISSIONS[role as UserRole] || ROLE_PERMISSIONS['profissional'];
     if (permissions.includes('*')) return true;
     return permissions.includes(view);

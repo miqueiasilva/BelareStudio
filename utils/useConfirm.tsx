@@ -5,8 +5,6 @@ import ConfirmDialog from '../components/shared/ConfirmDialog';
 interface ConfirmOptions {
   title: string;
   message: string;
-  confirmText?: string;
-  cancelText?: string;
   confirmLabel?: string;
   cancelLabel?: string;
   type?: 'danger' | 'warning' | 'info';
@@ -15,40 +13,33 @@ interface ConfirmOptions {
 export const useConfirm = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [options, setOptions] = useState<ConfirmOptions | null>(null);
-  const [resolver, setResolver] = useState<((value: boolean) => void) | null>(null);
+  const [onConfirmCallback, setOnConfirmCallback] = useState<(() => void) | null>(null);
 
-  const confirm = useCallback((opts: ConfirmOptions): Promise<boolean> => {
+  const confirm = useCallback((opts: ConfirmOptions, onConfirm: () => void) => {
     setOptions(opts);
+    setOnConfirmCallback(() => onConfirm);
     setIsOpen(true);
-    return new Promise<boolean>((resolve) => {
-      setResolver(() => resolve);
-    });
   }, []);
 
-  const handleConfirm = useCallback(() => {
-    if (resolver) resolver(true);
+  const close = useCallback(() => {
     setIsOpen(false);
     setOptions(null);
-    setResolver(null);
-  }, [resolver]);
-
-  const handleCancel = useCallback(() => {
-    if (resolver) resolver(false);
-    setIsOpen(false);
-    setOptions(null);
-    setResolver(null);
-  }, [resolver]);
+    setOnConfirmCallback(null);
+  }, []);
 
   const ConfirmDialogComponent = () => (
     <ConfirmDialog
       isOpen={isOpen}
       title={options?.title || ''}
       message={options?.message || ''}
-      confirmLabel={options?.confirmText || options?.confirmLabel}
-      cancelLabel={options?.cancelText || options?.cancelLabel}
+      confirmLabel={options?.confirmLabel}
+      cancelLabel={options?.cancelLabel}
       type={options?.type}
-      onConfirm={handleConfirm}
-      onCancel={handleCancel}
+      onConfirm={() => {
+        if (onConfirmCallback) onConfirmCallback();
+        close();
+      }}
+      onCancel={close}
     />
   );
 
