@@ -340,54 +340,70 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
         <div className="h-full flex flex-col bg-slate-50 font-sans text-left overflow-hidden">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
-            <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4 shadow-sm z-20">
-                <div className="flex items-center gap-4">
-                    <div className="p-2.5 bg-orange-50 text-orange-600 rounded-xl">
-                        <Landmark size={24} />
+            <header className="bg-white border-b border-slate-200 px-4 py-3 shadow-sm z-20 flex-shrink-0">
+                {/* Linha 1: Título + Botões de lançamento */}
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-orange-50 text-orange-600 rounded-xl">
+                            <Landmark size={20} />
+                        </div>
+                        <div>
+                            <h1 className="text-base font-black text-slate-800 tracking-tight">Fluxo de Caixa</h1>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Rentabilidade Real</p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-xl font-black text-slate-800 tracking-tight">Fluxo de Caixa</h1>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Gestão de Rentabilidade Real</p>
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={() => setShowModal('receita')} 
+                            className="bg-emerald-500 text-white px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-wider shadow-lg shadow-emerald-100 active:scale-95 transition-all flex items-center gap-1"
+                        >
+                            <ArrowUpCircle size={12} /> Entrada
+                        </button>
+                        <button 
+                            onClick={() => setShowModal('despesa')} 
+                            className="bg-rose-500 text-white px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-wider shadow-lg shadow-rose-100 active:scale-95 transition-all flex items-center gap-1"
+                        >
+                            <ArrowDownCircle size={12} /> Saída
+                        </button>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                    <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shadow-inner">
-                        <button 
-                            onClick={() => setFilterPeriod('hoje')}
-                            className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${filterPeriod === 'hoje' ? 'bg-orange-500 text-white shadow-lg border-orange-600' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
-                        >Hoje</button>
-                        <button 
-                            onClick={() => setFilterPeriod('mes')}
-                            className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${filterPeriod === 'mes' ? 'bg-orange-500 text-white shadow-lg border-orange-600' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
-                        >Mês</button>
-                        <button 
-                            onClick={() => setFilterPeriod('custom')}
-                            className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${filterPeriod === 'custom' ? 'bg-slate-800 text-white shadow-lg border-slate-900' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
-                        >Período</button>
-                    </div>
-                    <button onClick={() => setShowModal('receita')} className="bg-emerald-500 text-white px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-100 active:scale-95 transition-all">Lançar Entrada</button>
-                    <button onClick={() => setShowModal('despesa')} className="bg-rose-500 text-white px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-rose-100 active:scale-95 transition-all">Lançar Saída</button>
+                {/* Linha 2: Filtros de período */}
+                <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-inner gap-1">
+                    <button 
+                        onClick={() => setFilterPeriod('hoje')}
+                        className={`flex-1 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all ${filterPeriod === 'hoje' ? 'bg-orange-500 text-white shadow-lg' : 'text-slate-500 hover:text-slate-700'}`}
+                    >Hoje</button>
+                    <button 
+                        onClick={() => setFilterPeriod('mes')}
+                        className={`flex-1 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all ${filterPeriod === 'mes' ? 'bg-orange-500 text-white shadow-lg' : 'text-slate-500 hover:text-slate-700'}`}
+                    >Mês</button>
+                    <button 
+                        onClick={() => setFilterPeriod('custom')}
+                        className={`flex-1 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all ${filterPeriod === 'custom' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-500 hover:text-slate-700'}`}
+                    >Período</button>
                 </div>
             </header>
 
             <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 custom-scrollbar">
                 
                 {filterPeriod === 'custom' && (
-                    <div className="bg-white p-6 rounded-[32px] border border-orange-100 shadow-xl flex flex-wrap items-center gap-6 animate-in slide-in-from-top-2 duration-300">
-                        <div className="flex items-center gap-3">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Inicial:</span>
-                            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-200" />
+                    <div className="bg-white p-4 rounded-[32px] border border-orange-100 shadow-xl flex flex-col sm:flex-row items-stretch sm:items-center gap-3 animate-in slide-in-from-top-2 duration-300">
+                        <div className="flex items-center gap-2 flex-1">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">De:</span>
+                            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="flex-1 bg-slate-50 border-2 border-slate-100 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-200" />
                         </div>
-                        <div className="flex items-center gap-3">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Final:</span>
-                            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-200" />
+                        <div className="flex items-center gap-2 flex-1">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Até:</span>
+                            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="flex-1 bg-slate-50 border-2 border-slate-100 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-200" />
                         </div>
-                        <button onClick={fetchData} className="p-3 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-all shadow-lg shadow-orange-100"><RefreshCw size={20} className={loading ? 'animate-spin' : ''}/></button>
+                        <button onClick={fetchData} className="p-3 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-all shadow-lg shadow-orange-100 flex items-center justify-center">
+                            <RefreshCw size={18} className={loading ? 'animate-spin' : ''}/>
+                        </button>
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                     <StatCard 
                         title="Faturamento Bruto" 
                         value={formatBRL(summaryCards.gross_revenue)} 
@@ -490,97 +506,140 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                 </div>
 
                 <Card className="rounded-[40px] border-slate-200 shadow-xl overflow-hidden">
-                    <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-                        <div className="flex items-center gap-3">
-                            <History className="text-orange-500" size={24} />
-                            <h2 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Extrato Analítico</h2>
+                    <header className="flex flex-col gap-3 mb-6">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <History className="text-orange-500" size={20} />
+                                <h2 className="text-base font-black text-slate-800 uppercase tracking-tighter">Extrato Analítico</h2>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button onClick={handleExportExcel} className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 shadow-sm" title="Excel"><FileSpreadsheet size={16}/></button>
+                                <button onClick={handleExportPDF} className="p-2 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 shadow-sm" title="PDF"><FileDown size={16}/></button>
+                            </div>
                         </div>
-                        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                        <div className="flex flex-col sm:flex-row gap-2">
                             <select 
                                 value={selectedCategory}
                                 onChange={(e) => setSelectedCategory(e.target.value)}
-                                className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-4 focus:ring-orange-100 outline-none transition-all"
+                                className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-4 focus:ring-orange-100 outline-none transition-all"
                             >
                                 <option value="Todas">Todas Categorias</option>
                                 {bi.categories.map(cat => (
                                     <option key={cat} value={cat}>{cat}</option>
                                 ))}
                             </select>
-                            <button onClick={handleExportExcel} className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 shadow-sm" title="Excel"><FileSpreadsheet size={20}/></button>
-                            <button onClick={handleExportPDF} className="p-2.5 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 shadow-sm" title="PDF"><FileDown size={20}/></button>
-                            <div className="relative flex-1 md:w-64">
+                            <div className="relative flex-1">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
                                 <input 
                                     type="text" 
                                     placeholder="Pesquisar extrato..." 
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-4 focus:ring-orange-100 outline-none transition-all"
+                                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-4 focus:ring-orange-100 outline-none transition-all"
                                 />
                             </div>
                         </div>
                     </header>
 
-                    <div className="overflow-x-auto -mx-6">
-                        <table className="w-full text-left">
-                            <thead className="bg-slate-50/50 border-y border-slate-100">
-                                <tr>
-                                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Data</th>
-                                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Descrição</th>
-                                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Pagamento</th>
-                                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor</th>
-                                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Ação</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                                {loading ? (
-                                    <tr><td colSpan={5} className="p-20 text-center"><Loader2 className="animate-spin text-orange-500 mx-auto" /></td></tr>
-                                ) : bi.filtered.length === 0 ? (
-                                    <tr><td colSpan={5} className="p-20 text-center text-slate-400 font-bold uppercase text-xs italic">Nenhum registro no período.</td></tr>
-                                ) : (
-                                    bi.filtered.map(t => (
-                                        <tr key={t.id} className="hover:bg-orange-50/20 transition-colors group">
-                                            <td className="px-8 py-5">
-                                                <p className="text-xs font-bold text-slate-700">{format(new Date(t.date), 'dd/MM/yy')}</p>
-                                                <p className="text-[10px] text-slate-400 font-medium">{format(new Date(t.date), 'HH:mm')}</p>
-                                            </td>
-                                            <td className="px-8 py-5">
-                                                <p className="text-sm font-black text-slate-700 truncate max-w-xs">{t.description}</p>
-                                                <span className="inline-block px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-black uppercase tracking-wider mt-1">{t.category || 'Geral'}</span>
-                                            </td>
-                                            <td className="px-8 py-5">
-                                                <div className="flex items-center gap-2">
-                                                    {(t.payment_method === 'pix') && <Smartphone size={14} className="text-teal-500" />}
-                                                    {(t.payment_method === 'cash' || t.payment_method === 'dinheiro' || t.payment_method === 'money') && <Banknote size={14} className="text-green-500" />}
-                                                    {(t.payment_method?.includes('cartao') || t.payment_method?.includes('credit') || t.payment_method?.includes('debit')) && <CreditCard size={14} className="text-blue-500" />}
-                                                    <span className="text-[10px] font-black text-slate-500 uppercase">{t.payment_method?.replace('_', ' ') || 'Processamento'}</span>
-                                                </div>
-                                            </td>
-                                            <td className="px-8 py-5 text-right">
-                                                <p className={`text-sm font-black ${t.type === 'income' || t.type === 'receita' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                    {t.type === 'income' || t.type === 'receita' ? '+' : '-'} {formatBRL(t.amount)}
-                                                </p>
-                                                {(t.type === 'income' || t.type === 'receita') && t.net_value && t.net_value !== t.amount && (
-                                                    <div className="flex flex-col items-end mt-1">
-                                                        <p className="text-[10px] font-bold text-orange-500">
-                                                            Líquido: {formatBRL(t.net_value)}
-                                                        </p>
-                                                        <p className="text-[9px] text-slate-400">
-                                                            Taxa: -{formatBRL(t.amount - t.net_value)}
-                                                        </p>
+                    <div>
+                        {/* Mobile: cards */}
+                        <div className="md:hidden divide-y divide-slate-50">
+                            {loading ? (
+                                <div className="p-16 flex justify-center"><Loader2 className="animate-spin text-orange-500" /></div>
+                            ) : bi.filtered.length === 0 ? (
+                                <div className="p-16 text-center text-slate-400 font-bold uppercase text-xs italic">Nenhum registro no período.</div>
+                            ) : bi.filtered.map(t => (
+                                <div key={t.id} className="px-2 py-3 hover:bg-orange-50/20 transition-colors group">
+                                    <div className="flex items-start justify-between mb-1">
+                                        <div className="flex-1 min-w-0 mr-2">
+                                            <p className="text-sm font-black text-slate-700 truncate">{t.description}</p>
+                                            <span className="inline-block px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-black uppercase mt-0.5">{t.category || 'Geral'}</span>
+                                        </div>
+                                        <div className="text-right flex-shrink-0">
+                                            <p className={`text-sm font-black ${t.type === 'income' || t.type === 'receita' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                {t.type === 'income' || t.type === 'receita' ? '+' : '-'} {formatBRL(t.amount)}
+                                            </p>
+                                            {(t.type === 'income' || t.type === 'receita') && t.net_value && t.net_value !== t.amount && (
+                                                <p className="text-[10px] font-bold text-orange-500">Líq: {formatBRL(t.net_value)}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-1.5">
+                                            {t.payment_method === 'pix' && <Smartphone size={12} className="text-teal-500" />}
+                                            {(t.payment_method === 'cash' || t.payment_method === 'dinheiro') && <Banknote size={12} className="text-green-500" />}
+                                            {t.payment_method?.includes('cartao') || t.payment_method?.includes('credit') || t.payment_method?.includes('debit') ? <CreditCard size={12} className="text-blue-500" /> : null}
+                                            <span className="text-[10px] font-black text-slate-400 uppercase">{t.payment_method?.replace('_', ' ') || 'Processamento'}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] text-slate-400">{format(new Date(t.date), 'dd/MM/yy HH:mm')}</span>
+                                            <button onClick={() => handleDelete(t.id)} className="p-1.5 text-slate-300 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100">
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Desktop: tabela */}
+                        <div className="hidden md:block overflow-x-auto -mx-6">
+                            <table className="w-full text-left">
+                                <thead className="bg-slate-50/50 border-y border-slate-100">
+                                    <tr>
+                                        <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Data</th>
+                                        <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Descrição</th>
+                                        <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Pagamento</th>
+                                        <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor</th>
+                                        <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Ação</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50">
+                                    {loading ? (
+                                        <tr><td colSpan={5} className="p-20 text-center"><Loader2 className="animate-spin text-orange-500 mx-auto" /></td></tr>
+                                    ) : bi.filtered.length === 0 ? (
+                                        <tr><td colSpan={5} className="p-20 text-center text-slate-400 font-bold uppercase text-xs italic">Nenhum registro no período.</td></tr>
+                                    ) : (
+                                        bi.filtered.map(t => (
+                                            <tr key={t.id} className="hover:bg-orange-50/20 transition-colors group">
+                                                <td className="px-8 py-5">
+                                                    <p className="text-xs font-bold text-slate-700">{format(new Date(t.date), 'dd/MM/yy')}</p>
+                                                    <p className="text-[10px] text-slate-400 font-medium">{format(new Date(t.date), 'HH:mm')}</p>
+                                                </td>
+                                                <td className="px-8 py-5">
+                                                    <p className="text-sm font-black text-slate-700 truncate max-w-xs">{t.description}</p>
+                                                    <span className="inline-block px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-black uppercase tracking-wider mt-1">{t.category || 'Geral'}</span>
+                                                </td>
+                                                <td className="px-8 py-5">
+                                                    <div className="flex items-center gap-2">
+                                                        {t.payment_method === 'pix' && <Smartphone size={14} className="text-teal-500" />}
+                                                        {(t.payment_method === 'cash' || t.payment_method === 'dinheiro' || t.payment_method === 'money') && <Banknote size={14} className="text-green-500" />}
+                                                        {(t.payment_method?.includes('cartao') || t.payment_method?.includes('credit') || t.payment_method?.includes('debit')) && <CreditCard size={14} className="text-blue-500" />}
+                                                        <span className="text-[10px] font-black text-slate-500 uppercase">{t.payment_method?.replace('_', ' ') || 'Processamento'}</span>
                                                     </div>
-                                                )}
-                                            </td>
-                                            <td className="px-8 py-5 text-right">
-                                                <button onClick={() => handleDelete(t.id)} className="p-2 text-slate-300 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100">
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
+                                                </td>
+                                                <td className="px-8 py-5 text-right">
+                                                    <p className={`text-sm font-black ${t.type === 'income' || t.type === 'receita' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                        {t.type === 'income' || t.type === 'receita' ? '+' : '-'} {formatBRL(t.amount)}
+                                                    </p>
+                                                    {(t.type === 'income' || t.type === 'receita') && t.net_value && t.net_value !== t.amount && (
+                                                        <div className="flex flex-col items-end mt-1">
+                                                            <p className="text-[10px] font-bold text-orange-500">Líquido: {formatBRL(t.net_value)}</p>
+                                                            <p className="text-[9px] text-slate-400">Taxa: -{formatBRL(t.amount - t.net_value)}</p>
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="px-8 py-5 text-right">
+                                                    <button onClick={() => handleDelete(t.id)} className="p-2 text-slate-300 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100">
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </Card>
             </div>

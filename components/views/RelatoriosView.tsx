@@ -285,59 +285,66 @@ const RelatoriosView: React.FC = () => {
   // --- Render Helpers ---
 
   const renderFilters = () => (
-    <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm mb-8 flex flex-wrap items-center justify-between gap-6">
-      <div className="flex flex-wrap items-center gap-4">
-        <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200">
-          {[
-            { id: 'today', label: 'Hoje' },
-            { id: '7d', label: '7 dias' },
-            { id: '30d', label: '30 dias' },
-            { id: '3m', label: '3 meses' },
-            { id: 'custom', label: 'Personalizado' }
-          ].map(p => (
-            <button
-              key={p.id}
-              onClick={() => setPeriod(p.id as Period)}
-              className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${period === p.id ? 'bg-white shadow-md text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}
-            >
-              {p.label}
-            </button>
-          ))}
+    <div className="bg-white p-4 md:p-6 rounded-[32px] border border-slate-100 shadow-sm mb-8 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 md:gap-6">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+        <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 overflow-x-auto scrollbar-hide">
+          <div className="flex gap-1">
+            {[
+              { id: 'today', label: 'Hoje' },
+              { id: '7d', label: '7d' },
+              { id: '30d', label: '30d' },
+              { id: '3m', label: '3m' },
+              { id: 'custom', label: 'Personalizado' }
+            ].map(p => (
+              <button
+                key={p.id}
+                onClick={() => setPeriod(p.id as Period)}
+                className={`px-3 md:px-4 py-2 text-[9px] md:text-[10px] font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${period === p.id ? 'bg-white shadow-md text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {period === 'custom' && (
           <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
-            <input type="date" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} className="bg-transparent border-none text-[10px] font-bold text-slate-600 outline-none px-2" />
-            <span className="text-slate-300 text-xs font-bold">até</span>
-            <input type="date" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} className="bg-transparent border-none text-[10px] font-bold text-slate-600 outline-none px-2" />
+            <input type="date" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} className="bg-transparent border-none text-[10px] font-bold text-slate-600 outline-none px-2 flex-1" />
+            <span className="text-slate-300 text-[10px] font-bold">até</span>
+            <input type="date" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} className="bg-transparent border-none text-[10px] font-bold text-slate-600 outline-none px-2 flex-1" />
           </div>
         )}
 
-        <label className="flex items-center gap-3 cursor-pointer group">
-          <div className={`w-10 h-5 rounded-full relative transition-colors ${compareWithPrevious ? 'bg-orange-500' : 'bg-slate-200'}`} onClick={() => setCompareWithPrevious(!compareWithPrevious)}>
-            <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${compareWithPrevious ? 'left-6' : 'left-1'}`} />
-          </div>
-          <span className="text-[10px] font-black text-slate-400 uppercase group-hover:text-slate-600 transition-colors">Comparar Período</span>
-        </label>
+        <div className="flex items-center justify-between sm:justify-start gap-3">
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <div className={`w-10 h-5 rounded-full relative transition-colors ${compareWithPrevious ? 'bg-orange-500' : 'bg-slate-200'}`} onClick={() => setCompareWithPrevious(!compareWithPrevious)}>
+              <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${compareWithPrevious ? 'left-6' : 'left-1'}`} />
+            </div>
+            <span className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase group-hover:text-slate-600 transition-colors">Comparar</span>
+          </label>
+        </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <button onClick={() => exportToPDF(activeTab)} className="p-3 bg-slate-50 text-slate-600 rounded-2xl hover:bg-slate-100 transition-all" title="Exportar PDF">
-          <FileText size={20} />
+      <div className="flex items-center justify-end gap-2 md:gap-3">
+        <button onClick={() => exportToPDF(activeTab)} className="flex-1 sm:flex-none p-2.5 md:p-3 bg-slate-50 text-slate-600 rounded-2xl hover:bg-slate-100 transition-all flex items-center justify-center gap-2" title="Exportar PDF">
+          <FileText size={18} className="md:w-5 md:h-5" />
+          <span className="text-[9px] font-black uppercase sm:hidden">PDF</span>
         </button>
-        <button onClick={() => exportToCSV(activeTab)} className="p-3 bg-slate-50 text-slate-600 rounded-2xl hover:bg-slate-100 transition-all" title="Exportar Excel">
-          <FileSpreadsheet size={20} />
+        <button onClick={() => exportToCSV(activeTab)} className="flex-1 sm:flex-none p-2.5 md:p-3 bg-slate-50 text-slate-600 rounded-2xl hover:bg-slate-100 transition-all flex items-center justify-center gap-2" title="Exportar Excel">
+          <FileSpreadsheet size={18} className="md:w-5 md:h-5" />
+          <span className="text-[9px] font-black uppercase sm:hidden">Excel</span>
         </button>
-        <button onClick={fetchData} className="p-3 bg-orange-500 text-white rounded-2xl shadow-lg shadow-orange-100 hover:bg-orange-600 active:scale-95 transition-all">
-          <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
+        <button onClick={fetchData} className="flex-1 sm:flex-none p-2.5 md:p-3 bg-orange-500 text-white rounded-2xl shadow-lg shadow-orange-100 hover:bg-orange-600 active:scale-95 transition-all flex items-center justify-center gap-2">
+          <RefreshCw size={18} className={`${isLoading ? 'animate-spin' : ''} md:w-5 md:h-5`} />
+          <span className="text-[9px] font-black uppercase sm:hidden">Atualizar</span>
         </button>
       </div>
     </div>
   );
 
   const renderExecutivo = () => (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
         <KPICard title="Faturamento Total" value={`R$ ${data?.income.toLocaleString('pt-BR')}`} trend={metrics?.incomeTrend} color="bg-emerald-500" icon={DollarSign} loading={isLoading} />
         <KPICard title="Ticket Médio" value={`R$ ${data?.ticketMedio.toFixed(2)}`} trend={metrics?.ticketTrend} color="bg-indigo-500" icon={TrendingUp} loading={isLoading} />
         <KPICard title="Atendimentos" value={data?.totalAppts} trend={metrics?.apptsTrend} color="bg-orange-500" icon={Calendar} loading={isLoading} />
@@ -348,13 +355,13 @@ const RelatoriosView: React.FC = () => {
         <KPICard title="Margem de Lucro" value={`${data?.margin.toFixed(1)}%`} color="bg-rose-500" icon={Percent} loading={isLoading} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
-          <div className="flex justify-between items-center mb-8">
-            <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Evolução do Faturamento</h3>
-            <TrendingUp className="text-emerald-500" size={24} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
+        <div className="bg-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm">
+          <div className="flex justify-between items-center mb-6 md:mb-8">
+            <h3 className="text-base md:text-lg font-black text-slate-800 uppercase tracking-tighter">Evolução do Faturamento</h3>
+            <TrendingUp className="text-emerald-500" size={20} />
           </div>
-          <div className="h-80">
+          <div className="h-64 md:h-80">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={metrics?.evolution}>
                 <defs>
@@ -373,12 +380,12 @@ const RelatoriosView: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
-          <div className="flex justify-between items-center mb-8">
-            <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Receita por Categoria</h3>
-            <PieChartIcon className="text-indigo-500" size={24} />
+        <div className="bg-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm">
+          <div className="flex justify-between items-center mb-6 md:mb-8">
+            <h3 className="text-base md:text-lg font-black text-slate-800 uppercase tracking-tighter">Receita por Categoria</h3>
+            <PieChartIcon className="text-indigo-500" size={20} />
           </div>
-          <div className="h-80">
+          <div className="h-64 md:h-80">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={metrics?.categoryData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={8}>
@@ -397,22 +404,54 @@ const RelatoriosView: React.FC = () => {
   );
 
   const renderFinanceiro = () => (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
         <KPICard title="Faturamento Bruto" value={`R$ ${data?.income.toLocaleString('pt-BR')}`} color="bg-emerald-500" icon={DollarSign} loading={isLoading} />
         <KPICard title="Custos Totais" value={`R$ ${data?.expense.toLocaleString('pt-BR')}`} color="bg-rose-500" icon={TrendingDown} loading={isLoading} />
         <KPICard title="Lucro Líquido" value={`R$ ${data?.profit.toLocaleString('pt-BR')}`} color="bg-indigo-500" icon={TrendingUp} loading={isLoading} />
       </div>
 
-      <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
-        <div className="p-8 border-b border-slate-50 flex justify-between items-center">
-          <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Fluxo de Caixa Detalhado</h3>
+      <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
+        <div className="p-6 md:p-8 border-b border-slate-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <h3 className="text-base md:text-lg font-black text-slate-800 uppercase tracking-tighter">Fluxo de Caixa Detalhado</h3>
           <div className="flex gap-2">
-            <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase">Receitas</span>
-            <span className="px-3 py-1 bg-rose-50 text-rose-600 rounded-full text-[10px] font-black uppercase">Despesas</span>
+            <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[9px] md:text-[10px] font-black uppercase">Receitas</span>
+            <span className="px-3 py-1 bg-rose-50 text-rose-600 rounded-full text-[9px] md:text-[10px] font-black uppercase">Despesas</span>
           </div>
         </div>
-        <div className="overflow-x-auto">
+
+        {/* Mobile: cards */}
+        <div className="md:hidden divide-y divide-slate-50">
+          {data?.transactions.length > 0 ? data.transactions.map((t: any) => (
+            <div key={t.id} className="p-4 hover:bg-slate-50/50 transition-colors">
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <p className="text-sm font-black text-slate-800">{t.description || 'Sem descrição'}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase">{format(parseISO(t.date), 'dd/MM/yyyy')}</p>
+                </div>
+                <p className={`text-sm font-black ${t.type === 'income' || t.type === 'receita' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {t.type === 'income' || t.type === 'receita' ? '+' : '-'} R$ {Number(t.amount).toLocaleString('pt-BR')}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 bg-slate-100 rounded-lg text-[9px] font-black text-slate-500 uppercase">
+                  {t.category || 'Geral'}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <div className={`w-1.5 h-1.5 rounded-full ${t.type === 'income' || t.type === 'receita' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                  <span className={`text-[9px] font-black uppercase ${t.type === 'income' || t.type === 'receita' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {t.type === 'income' || t.type === 'receita' ? 'Receita' : 'Despesa'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )) : (
+            <div className="py-12"><EmptyState /></div>
+          )}
+        </div>
+
+        {/* Desktop: table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50/50">
@@ -471,18 +510,18 @@ const RelatoriosView: React.FC = () => {
     }).filter(d => d.online > 0 || d.manual > 0);
 
     return (
-      <div className="space-y-8 animate-in fade-in duration-500">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
           <KPICard title="Total Atendimentos" value={data?.totalAppts} color="bg-orange-500" icon={Calendar} loading={isLoading} />
           <KPICard title="Agendamentos Online" value={data?.onlineAppts} color="bg-purple-500" icon={Globe} loading={isLoading} />
           <KPICard title="Taxa de Ocupação" value={`${data?.margin.toFixed(1)}%`} color="bg-indigo-500" icon={Target} loading={isLoading} />
           <KPICard title="Tempo Médio" value="45 min" color="bg-slate-800" icon={Clock} loading={isLoading} />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
-            <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter mb-8">Online vs Manual</h3>
-            <div className="h-80">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
+          <div className="bg-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm">
+            <h3 className="text-base md:text-lg font-black text-slate-800 uppercase tracking-tighter mb-6 md:mb-8">Online vs Manual</h3>
+            <div className="h-64 md:h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={onlineVsManual}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -497,9 +536,9 @@ const RelatoriosView: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
-            <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter mb-8">Ocupação por Dia da Semana</h3>
-            <div className="h-80">
+          <div className="bg-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm">
+            <h3 className="text-base md:text-lg font-black text-slate-800 uppercase tracking-tighter mb-6 md:mb-8">Ocupação por Dia da Semana</h3>
+            <div className="h-64 md:h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={[
                   { name: 'Seg', valor: 45 },
@@ -549,18 +588,53 @@ const RelatoriosView: React.FC = () => {
     }, []).sort((a: any, b: any) => b.totalSpent - a.totalSpent).slice(0, 10);
 
     return (
-      <div className="space-y-8 animate-in fade-in duration-500">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
           <KPICard title="Clientes Ativos" value="450" color="bg-orange-500" icon={Users} loading={isLoading} />
           <KPICard title="Novos Clientes" value="28" color="bg-emerald-500" icon={UserPlus} loading={isLoading} />
           <KPICard title="Taxa de Retorno" value="72%" color="bg-indigo-500" icon={RotateCcw} loading={isLoading} />
         </div>
 
-        <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
-          <div className="p-8 border-b border-slate-50">
-            <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Top 10 Clientes (LTV)</h3>
+        <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
+          <div className="p-6 md:p-8 border-b border-slate-50">
+            <h3 className="text-base md:text-lg font-black text-slate-800 uppercase tracking-tighter">Top 10 Clientes (LTV)</h3>
           </div>
-          <div className="overflow-x-auto">
+
+          {/* Mobile: cards */}
+          <div className="md:hidden divide-y divide-slate-50">
+            {clientsWithOrigin?.length > 0 ? clientsWithOrigin.map((c: any) => (
+              <div key={c.id} className="p-4 hover:bg-slate-50/50 transition-colors">
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 text-[10px] font-black">
+                      {c.name?.charAt(0) || 'C'}
+                    </div>
+                    <div>
+                      <p className="text-sm font-black text-slate-800">{c.name}</p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase">{c.visits} visitas • {format(parseISO(c.lastVisit), 'dd/MM/yy')}</p>
+                    </div>
+                  </div>
+                  <p className="text-sm font-black text-emerald-600">R$ {c.totalSpent.toLocaleString('pt-BR')}</p>
+                </div>
+                <div>
+                  {c.isOnline ? (
+                    <span className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded-lg text-[9px] font-black uppercase flex items-center gap-1 w-fit">
+                      <Globe size={10} /> Online
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 bg-slate-50 text-slate-500 rounded-lg text-[9px] font-black uppercase flex items-center gap-1 w-fit">
+                      <User size={10} /> Manual
+                    </span>
+                  )}
+                </div>
+              </div>
+            )) : (
+              <div className="py-12"><EmptyState /></div>
+            )}
+          </div>
+
+          {/* Desktop: table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50/50">
@@ -613,18 +687,51 @@ const RelatoriosView: React.FC = () => {
   };
 
   const renderEquipe = () => (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
         <KPICard title="Faturamento Equipe" value={`R$ ${data?.income.toLocaleString('pt-BR')}`} color="bg-emerald-500" icon={DollarSign} loading={isLoading} />
         <KPICard title="Comissões a Pagar" value="R$ 4.500,00" color="bg-rose-500" icon={Wallet} loading={isLoading} />
         <KPICard title="Avaliação Média" value="4.9 / 5" color="bg-orange-500" icon={Star} loading={isLoading} />
       </div>
 
-      <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
-        <div className="p-8 border-b border-slate-50">
-          <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Performance por Profissional</h3>
+      <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
+        <div className="p-6 md:p-8 border-b border-slate-50">
+          <h3 className="text-base md:text-lg font-black text-slate-800 uppercase tracking-tighter">Performance por Profissional</h3>
         </div>
-        <div className="overflow-x-auto">
+
+        {/* Mobile: cards */}
+        <div className="md:hidden divide-y divide-slate-50">
+          {availableProfessionals.map(p => (
+            <div key={p.id} className="p-4 hover:bg-slate-50/50 transition-colors">
+              <div className="flex justify-between items-start mb-3">
+                <div className="flex items-center gap-3">
+                  <img src={p.photo_url || `https://ui-avatars.com/api/?name=${p.name}`} className="w-10 h-10 rounded-full object-cover shadow-sm" alt="" />
+                  <div>
+                    <p className="text-sm font-black text-slate-800">{p.name}</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">45 atendimentos</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-black text-slate-800">R$ 5.200,00</p>
+                  <p className="text-[10px] text-rose-600 font-black uppercase">Comissão: R$ 1.560,00</p>
+                </div>
+              </div>
+              <div className="flex justify-between items-center bg-slate-50 p-2 rounded-xl">
+                <div className="text-center flex-1 border-r border-slate-200">
+                  <p className="text-[9px] text-slate-400 font-bold uppercase">Ticket Médio</p>
+                  <p className="text-[11px] font-black text-slate-700">R$ 115,00</p>
+                </div>
+                <div className="text-center flex-1">
+                  <p className="text-[9px] text-slate-400 font-bold uppercase">Avaliação</p>
+                  <p className="text-[11px] font-black text-emerald-600">4.9 ★</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop: table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50/50">
@@ -683,36 +790,38 @@ const RelatoriosView: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans text-left">
-      <header className="bg-white border-b border-slate-200 px-8 py-6 flex flex-col md:flex-row justify-between items-center gap-6 z-30 shadow-sm">
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-orange-500 text-white rounded-2xl shadow-lg shadow-orange-100">
-            <BarChart3 size={24} />
+      <header className="bg-white border-b border-slate-200 px-4 py-4 md:px-8 md:py-6 flex flex-col lg:flex-row justify-between items-center gap-4 md:gap-6 z-30 shadow-sm">
+        <div className="flex items-center gap-3 md:gap-4 w-full lg:w-auto">
+          <div className="p-2 md:p-3 bg-orange-500 text-white rounded-2xl shadow-lg shadow-orange-100">
+            <BarChart3 size={20} className="md:w-6 md:h-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-800 tracking-tighter uppercase">BI Inteligente</h1>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Gestão de Alta Performance</p>
+            <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tighter uppercase leading-none">BI Inteligente</h1>
+            <p className="text-[9px] md:text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Gestão de Alta Performance</p>
           </div>
         </div>
 
-        <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 overflow-x-auto scrollbar-hide max-w-full">
-          {[
-            { id: 'executivo', label: 'Executivo', icon: LayoutDashboard },
-            { id: 'financeiro', label: 'Financeiro', icon: Wallet },
-            { id: 'agenda', label: 'Operação', icon: Calendar },
-            { id: 'clientes', label: 'Clientes', icon: Users },
-            { id: 'equipe', label: 'Equipe', icon: Briefcase },
-            { id: 'marketing', label: 'Marketing', icon: Sparkles },
-            { id: 'dre', label: 'DRE Gerencial', icon: FileText }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-6 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white shadow-md text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}
-            >
-              <tab.icon size={14} />
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 overflow-x-auto scrollbar-hide w-full lg:w-auto">
+          <div className="flex gap-1">
+            {[
+              { id: 'executivo', label: 'Executivo', icon: LayoutDashboard },
+              { id: 'financeiro', label: 'Financeiro', icon: Wallet },
+              { id: 'agenda', label: 'Operação', icon: Calendar },
+              { id: 'clientes', label: 'Clientes', icon: Users },
+              { id: 'equipe', label: 'Equipe', icon: Briefcase },
+              { id: 'marketing', label: 'Marketing', icon: Sparkles },
+              { id: 'dre', label: 'DRE Gerencial', icon: FileText }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 md:px-6 py-2 md:py-3 text-[9px] md:text-[10px] font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white shadow-md text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                <tab.icon size={12} className="md:w-3.5 md:h-3.5" />
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 
