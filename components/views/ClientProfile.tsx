@@ -665,37 +665,54 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             toast.error("Nome é obrigatório.");
             return;
         }
+        
         setIsSaving(true);
+        
         try {
+            // Função auxiliar para limpar valores inválidos
+            const cleanValue = (value: any) => {
+                if (value === null || value === undefined || value === '' || value === 'null') {
+                    return null;
+                }
+                return value;
+            };
+            
             const payload = {
                 nome: formData.nome,
-                apelido: formData.apelido || null,
-                telefone: formData.telefone || null,
-                whatsapp: formData.telefone || null,
-                email: formData.email || null,
-                instagram: formData.instagram || null,
-                gender: formData.sexo || null,
+                apelido: cleanValue(formData.apelido),
+                telefone: cleanValue(formData.telefone),
+                whatsapp: cleanValue(formData.telefone),
+                email: cleanValue(formData.email),
+                instagram: cleanValue(formData.instagram),
+                gender: cleanValue(formData.sexo),
                 referral_source: formData.origem || 'Outros',
-                occupation: formData.profissao || null,
-                birth_date: (formData.nascimento && formData.nascimento !== "") ? formData.nascimento : null,
-                notes: formData.observacoes || null,
-                cep: formData.cep || null,
-                endereco: formData.endereco || null,
-                numero: formData.numero || null,
-                complemento: formData.complemento || null,
-                bairro: formData.bairro || null,
-                cidade: formData.cidade || null,
-                estado: formData.estado || null,
-                cpf: formData.cpf || null,
-                rg: formData.rg || null,
+                occupation: cleanValue(formData.profissao),
+                birth_date: cleanValue(formData.nascimento),
+                notes: cleanValue(formData.observacoes),
+                cep: cleanValue(formData.cep),
+                endereco: cleanValue(formData.endereco),
+                numero: cleanValue(formData.numero),
+                complemento: cleanValue(formData.complemento),
+                bairro: cleanValue(formData.bairro),
+                cidade: cleanValue(formData.cidade),
+                estado: cleanValue(formData.estado),
+                cpf: cleanValue(formData.cpf),
+                rg: cleanValue(formData.rg),
                 online_booking_enabled: !!formData.online_booking_enabled,
                 photo_url: formData.photo_url
             };
-            const { error } = await supabase.from('clients').update(payload).eq('id', formData.id);
-            if (error) throw error;
-            toast.success("Perfil atualizado! ✅");
-            setIsEditing(false);
-            await refreshClientData();
+            
+            if (formData.id) {
+                // Atualização
+                const { error } = await supabase.from('clients').update(payload).eq('id', formData.id);
+                if (error) throw error;
+                toast.success("Perfil atualizado! ✅");
+                setIsEditing(false);
+                await refreshClientData();
+            } else {
+                // Criação nova
+                await onSave(payload);
+            }
         } catch (err: any) {
             toast.error(`Erro ao salvar: ${err.message}`);
         } finally {
