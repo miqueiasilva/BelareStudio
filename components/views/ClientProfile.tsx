@@ -18,7 +18,7 @@ import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
 import { useConfirm } from '../../utils/useConfirm';
-import toast from 'react-hot-toast';
+import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 
 // --- Funções Auxiliares Obrigatórias ---
@@ -193,7 +193,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const [isLoading, setIsLoading] = useState(false);
     const [activeTab, setActiveTab] = useState<'geral' | 'anamnese' | 'fotos' | 'historico'>('geral');
     const [zoomImage, setZoomImage] = useState<string | null>(null);
-    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     
     const photoInputRef = useRef<HTMLInputElement>(null);
     const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -418,7 +417,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             };
         });
         setSelectedTemplateId('');
-        setToast({ message: "Contrato preenchido automaticamente!", type: 'success' });
+        toast.success("Contrato preenchido automaticamente!");
     };
 
     const handleGeneratePDF = async () => {
@@ -532,9 +531,9 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             } else {
                 doc.save(fileName);
             }
-            setToast({ message: "PDF gerado com sucesso!", type: 'success' });
+            toast.success("PDF gerado com sucesso!");
         } catch (e: any) {
-            setToast({ message: "Erro ao gerar PDF.", type: 'error' });
+            toast.error("Erro ao gerar PDF.");
         } finally {
             setIsLoading(false);
         }
@@ -586,8 +585,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         };
         const { error } = await supabase.from('client_anamnesis').upsert(payload, { onConflict: 'client_id' });
         setIsSaving(false);
-        if (!error) setToast({ message: "Anamnese salva!", type: 'success' });
-        else setToast({ message: "Erro na anamnese: " + error.message, type: 'error' });
+        if (!error) toast.success("Anamnese salva!");
+        else toast.error("Erro na anamnese: " + error.message);
     };
 
     const handleSaveSignature = async (dataUrl: string) => {
@@ -604,9 +603,9 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             const { error: dbError } = await supabase.from('client_anamnesis').upsert({ client_id: client.id, signature_url: publicUrl, signed_at: timestamp }, { onConflict: 'client_id' });
             if (dbError) throw dbError;
             setAnamnesis(prev => ({ ...prev, signature_url: publicUrl, signed_at: timestamp }));
-            setToast({ message: "Assinatura vinculada com sucesso!", type: 'success' });
+            toast.success("Assinatura vinculada com sucesso!");
         } catch (e: any) {
-            setToast({ message: `Erro ao salvar assinatura: ${e.message}`, type: 'error' });
+            toast.error(`Erro ao salvar assinatura: ${e.message}`);
         } finally { 
             setIsSaving(false); 
         }
@@ -626,9 +625,9 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             const { error: dbError } = await supabase.from('clients').update({ photo_url: publicUrl }).eq('id', formData.id);
             if (dbError) throw dbError;
             setFormData((prev: any) => ({ ...prev, photo_url: publicUrl }));
-            setToast({ message: "Foto de perfil atualizada!", type: 'success' });
+            toast.success("Foto de perfil atualizada!");
         } catch (err: any) {
-            setToast({ message: `Erro no upload: ${err.message}`, type: 'error' });
+            toast.error(`Erro no upload: ${err.message}`);
         } finally {
             setIsUploading(false);
             if (avatarInputRef.current) avatarInputRef.current.value = '';
@@ -663,7 +662,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
     const handleSave = async () => {
         if (!formData.nome) {
-            setToast({ message: "Nome é obrigatório.", type: 'error' });
+            toast.error("Nome é obrigatório.");
             return;
         }
         setIsSaving(true);
@@ -694,11 +693,11 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
             };
             const { error } = await supabase.from('clients').update(payload).eq('id', formData.id);
             if (error) throw error;
-            setToast({ message: "Perfil atualizado! ✅", type: 'success' });
+            toast.success("Perfil atualizado! ✅");
             setIsEditing(false);
             await refreshClientData();
         } catch (err: any) {
-            setToast({ message: `Erro ao salvar: ${err.message}`, type: 'error' });
+            toast.error(`Erro ao salvar: ${err.message}`);
         } finally {
             setIsSaving(false);
         }
@@ -706,7 +705,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
     return (
         <div className="fixed inset-0 bg-slate-100 z-[100] flex flex-col font-sans animate-in slide-in-from-right duration-300 text-left">
-            {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             <input type="file" ref={avatarInputRef} onChange={handlePhotoUpload} className="hidden" accept="image/*" />
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col gap-6 shadow-sm z-10">
                 <div className="flex items-center justify-between">
@@ -919,7 +917,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                     )}
                     {activeTab === 'fotos' && (
                         <div className="space-y-6 animate-in fade-in duration-500">
-                            <header className="flex justify-between items-center"><h3 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-2">Galeria de Evolução</h3><button onClick={() => photoInputRef.current?.click()} disabled={isUploading} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-orange-600 flex items-center gap-2 shadow-sm hover:bg-orange-50 transition-all disabled:opacity-50">{isUploading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}{isUploading ? 'Enviando...' : 'Adicionar Foto'}</button><input type="file" ref={photoInputRef} className="hidden" accept="image/*" onChange={async (e) => { const file = e.target.files?.[0]; if (!file || !formData.id) return; setIsUploading(true); try { const fileName = `evo_${formData.id}_${Date.now()}.jpg`; await supabase.storage.from('client-evolution').upload(fileName, file); const { data: { publicUrl } } = supabase.storage.from('client-evolution').getPublicUrl(fileName); await supabase.from('client_photos').insert([{ client_id: formData.id, url: publicUrl, type: 'depois' }]); fetchPhotos(); setToast({ message: "Foto adicionada!", type: 'success' }); } finally { setIsUploading(false); } }} /></header>
+                            <header className="flex justify-between items-center"><h3 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-2">Galeria de Evolução</h3><button onClick={() => photoInputRef.current?.click()} disabled={isUploading} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-orange-600 flex items-center gap-2 shadow-sm hover:bg-orange-50 transition-all disabled:opacity-50">{isUploading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}{isUploading ? 'Enviando...' : 'Adicionar Foto'}</button><input type="file" ref={photoInputRef} className="hidden" accept="image/*" onChange={async (e) => { const file = e.target.files?.[0]; if (!file || !formData.id) return; setIsUploading(true); try { const fileName = `evo_${formData.id}_${Date.now()}.jpg`; await supabase.storage.from('client-evolution').upload(fileName, file); const { data: { publicUrl } } = supabase.storage.from('client-evolution').getPublicUrl(fileName); await supabase.from('client_photos').insert([{ client_id: formData.id, url: publicUrl, type: 'depois' }]); fetchPhotos(); toast.success("Foto adicionada!"); } finally { setIsUploading(false); } }} /></header>
                             {photos.length === 0 ? (
                                 <div className="bg-white rounded-[32px] p-20 text-center border-2 border-dashed border-slate-100">
                                     <ImageIcon size={48} className="mx-auto text-slate-100 mb-4" />
