@@ -9,12 +9,15 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
+import { useAuth } from '../../contexts/AuthContext';
 import Toast, { ToastType } from '../shared/Toast';
 
 const getStartOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
 
 const RemuneracoesView: React.FC = () => {
   const { activeStudioId } = useStudio();
+  const { user } = useAuth();
+  const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
   const [currentDate, setCurrentDate] = useState(new Date());
   const [expandedId, setExpandedId] = useState<string | number | null>(null);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
@@ -41,7 +44,7 @@ const RemuneracoesView: React.FC = () => {
         const [teamRes, itemsRes] = await Promise.all([
             // FIX 1: Filtra apenas membros ATIVOS — remove "Geral/Studio" e inativos
             supabase.from('team_members')
-                .select('id, name, photo_url, commission_rate, commission_percent')
+                .select('id, name, photo_url, commission_rate, commission_percent, email')
                 .eq('studio_id', activeStudioId)
                 .eq('active', true)
                 .order('name')
@@ -77,7 +80,14 @@ const RemuneracoesView: React.FC = () => {
                 // O gestor (Miqueias) tem role gestor mas não temos role aqui — filtramos por ter serviços
                 return true; // Mantém todos os ativos; o gestor vai aparecer com R$0 mas sem serviços
             });
-            setTeamMembers(activeProfessionals);
+            
+            // Se não for admin/gestor, filtra apenas o próprio membro
+            const filtered = isAdmin 
+                ? activeProfessionals 
+                : activeProfessionals.filter(m => 
+                    m.email?.toLowerCase().trim() === user?.email?.toLowerCase().trim()
+                );
+            setTeamMembers(filtered);
             setCommandItems(itemsRes.data || []);
         }
     } catch (e: any) {
@@ -209,31 +219,33 @@ const RemuneracoesView: React.FC = () => {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm relative overflow-hidden group">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                {calculationBase === 'liquido' ? <ShieldCheck size={12} className="text-emerald-500"/> : <Layers size={12} className="text-blue-500"/>}
-                Produção Registrada ({calculationBase})
-            </p>
-            <div className="flex items-center justify-between relative z-10">
-                <h3 className="text-3xl font-black text-slate-800">{formatBRL(totals.base)}</h3>
-                <TrendingUp size={24} className="text-emerald-500" />
-            </div>
-            <div className="absolute -right-2 -bottom-2 opacity-5 group-hover:scale-110 transition-transform">
-                <Calculator size={100} />
-            </div>
+      {isAdmin && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm relative overflow-hidden group">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                  {calculationBase === 'liquido' ? <ShieldCheck size={12} className="text-emerald-500"/> : <Layers size={12} className="text-blue-500"/>}
+                  Produção Registrada ({calculationBase})
+              </p>
+              <div className="flex items-center justify-between relative z-10">
+                  <h3 className="text-3xl font-black text-slate-800">{formatBRL(totals.base)}</h3>
+                  <TrendingUp size={24} className="text-emerald-500" />
+              </div>
+              <div className="absolute -right-2 -bottom-2 opacity-5 group-hover:scale-110 transition-transform">
+                  <Calculator size={100} />
+              </div>
+          </div>
+          <div className="bg-slate-900 p-6 rounded-[32px] text-white shadow-xl shadow-slate-200 relative overflow-hidden">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Total a Repassar em Comissões</p>
+              <div className="flex items-center justify-between relative z-10">
+                  <h3 className="text-3xl font-black text-orange-400">{formatBRL(totals.payout)}</h3>
+                  <Wallet size={24} className="text-orange-500" />
+              </div>
+              <div className="absolute -right-4 -bottom-4 opacity-10">
+                  <Percent size={120} strokeWidth={3} />
+              </div>
+          </div>
         </div>
-        <div className="bg-slate-900 p-6 rounded-[32px] text-white shadow-xl shadow-slate-200 relative overflow-hidden">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Total a Repassar em Comissões</p>
-            <div className="flex items-center justify-between relative z-10">
-                <h3 className="text-3xl font-black text-orange-400">{formatBRL(totals.payout)}</h3>
-                <Wallet size={24} className="text-orange-500" />
-            </div>
-            <div className="absolute -right-4 -bottom-4 opacity-10">
-                <Percent size={120} strokeWidth={3} />
-            </div>
-        </div>
-      </div>
+      )}
 
       <div className="space-y-4">
         {payroll.map((item) => (
