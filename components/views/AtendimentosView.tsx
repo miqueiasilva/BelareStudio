@@ -5,7 +5,8 @@ import {
     ShoppingBag, Ban, Settings as SettingsIcon, Maximize2, 
     LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock,
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
-    CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle
+    CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle,
+    Share2, Bell
 } from 'lucide-react';
 import { 
     format, addDays, addWeeks, addMonths, eachDayOfInterval, 
@@ -162,6 +163,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [colWidth, setColWidth] = useState(220);
     const [isAutoWidth, setIsAutoWidth] = useState(false);
     const [timeSlot, setTimeSlot] = useState(30);
+    const [notificationCount, setNotificationCount] = useState(3);
+    const [isNotifOpen, setIsNotifOpen] = useState(false);
 
     const isMounted = useRef(true);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
@@ -682,7 +685,25 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-30 shadow-sm">
                 <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4">
                     <div className="flex items-center gap-4">
-                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">Agenda {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}</h2>
+                        <div className="flex items-center gap-3">
+                            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                Atendimentos {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}
+                            </h2>
+                            <button onClick={() => {}} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Compartilhar">
+                                <Share2 size={18} />
+                            </button>
+                            <button onClick={() => setIsNotifOpen(true)} className="relative p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Notificações">
+                                <Bell size={18} />
+                                {notificationCount > 0 && (
+                                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center">
+                                        {notificationCount}
+                                    </span>
+                                )}
+                            </button>
+                            <button onClick={fetchAppointments} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Atualizar">
+                                <RefreshCw size={18} className={isLoadingData ? 'animate-spin' : ''} />
+                            </button>
+                        </div>
                         <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
                             <button onClick={() => setViewMode('profissional')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'profissional' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-700'}`}><LayoutGrid size={14} /> Equipe</button>
                             <button onClick={() => setViewMode('andamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'andamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-700'}`}><PlayCircle size={14} /> Andamento</button>
