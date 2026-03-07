@@ -136,22 +136,38 @@ const ClientesView: React.FC = () => {
   const handleSaveClient = async (clientData: Client) => {
     if (!activeStudioId) return;
     const isEditing = !!clientData.id;
+    
     try {
-        if (isEditing) {
-            const { data, error } = await supabase.from('clients').update(clientData).eq('id', clientData.id).select().single();
-            if (error) throw error;
-            setClients(prev => prev.map(c => c.id === data.id ? data : c));
-            toast.success('Perfil atualizado!'); // ← CORREÇÃO
-        } else {
-            const { data, error } = await supabase.from('clients').insert([{ ...clientData, studio_id: activeStudioId }]).select().single();
-            if (error) throw error;
-            setClients(prev => [data, ...prev]);
-            setTotalCount(prev => prev + 1);
-            toast.success('Cliente cadastrado!'); // ← CORREÇÃO
-        }
-        setSelectedClient(null);
+      if (isEditing) {
+        // Atualização: envia todos os dados
+        const { data, error } = await supabase
+          .from('clients')
+          .update(clientData)
+          .eq('id', clientData.id)
+          .select()
+          .single();
+        
+        if (error) throw error;
+        setClients(prev => prev.map(c => c.id === data.id ? data : c));
+        toast.success('Perfil atualizado!');
+      } else {
+        // Inserção: remove o campo 'id' e adiciona studio_id
+        const { id, ...clientDataWithoutId } = clientData;
+        const { data, error } = await supabase
+          .from('clients')
+          .insert([{ ...clientDataWithoutId, studio_id: activeStudioId }])
+          .select()
+          .single();
+        
+        if (error) throw error;
+        setClients(prev => [data, ...prev]);
+        setTotalCount(prev => prev + 1);
+        toast.success('Cliente cadastrado!');
+      }
+      setSelectedClient(null);
     } catch (e: any) {
-        toast.error("Erro ao processar dados."); // ← CORREÇÃO
+      console.error('Erro ao salvar cliente:', e);
+      toast.error(`Erro ao processar dados: ${e.message}`);
     }
   };
 
@@ -173,7 +189,7 @@ const ClientesView: React.FC = () => {
         </div>
         <div className="flex gap-2">
             <button onClick={() => setIsImportModalOpen(true)} className="p-3 bg-white border border-slate-200 text-slate-600 rounded-2xl hover:bg-slate-50 shadow-sm"><FileSpreadsheet size={20} /></button>
-            <button onClick={() => setSelectedClient({ nome: '', consent: true } as any)} className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-2xl font-black flex items-center gap-2 shadow-lg">
+            <button onClick={() => setSelectedClient({ nome: '', consent: true, studio_id: activeStudioId } as any)} className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-2xl font-black flex items-center gap-2 shadow-lg">
               <UserPlus size={20} /> <span className="hidden sm:inline">Novo</span>
             </button>
         </div>
