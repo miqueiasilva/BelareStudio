@@ -149,7 +149,9 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
     return supabase.auth.signInWithOAuth({ 
       provider: 'google', 
       options: { 
-        redirectTo: callbackUrl
+        redirectTo: callbackUrl,
+        skipBrowserRedirect: false,
+        flowType: 'implicit'
       } 
     });
   }, []);
