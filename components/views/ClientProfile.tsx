@@ -234,7 +234,6 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const [photos, setPhotos] = useState<any[]>([]);
 
     const [formData, setFormData] = useState<any>({
-        id: null,
         nome: '',
         apelido: '',
         telefone: '',
@@ -260,8 +259,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
     useEffect(() => {
         if (client) {
-            setFormData({
-                id: client.id || null,
+            const newFormData: any = {
                 nome: client.nome || '',
                 apelido: (client as any).apelido || '',
                 telefone: client.telefone || client.whatsapp || '',
@@ -283,7 +281,14 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 online_booking_enabled: (client as any).online_booking_enabled ?? true,
                 origem: (client as any).referral_source || (client as any).origem || 'Instagram',
                 observacoes: (client as any).notes || (client as any).observacoes || ''
-            });
+            };
+            
+            // Só adiciona 'id' se existir
+            if (client.id) {
+                newFormData.id = client.id;
+            }
+            
+            setFormData(newFormData);
 
             if (client.id) {
                 fetchAnamnesis();
