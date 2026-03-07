@@ -125,17 +125,21 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
     });
   };
   
-  const signInWithGoogle = async () => {
-    const callbackUrl = window.location.origin;
+  const signInWithGoogle = React.useCallback(async () => {
+    const callbackUrl = `${window.location.origin}/`;
     console.log(`[AUTH_DEBUG] Iniciando Google OAuth com redirect para: ${callbackUrl}`);
     
     return supabase.auth.signInWithOAuth({ 
       provider: 'google', 
       options: { 
-        redirectTo: callbackUrl
+        redirectTo: callbackUrl,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        }
       } 
     });
-  };
+  }, []);
 
   const resetPassword = async (email: string) => {
     return supabase.auth.resetPasswordForEmail(email, { 
@@ -162,7 +166,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
 
   const value = useMemo(() => ({ 
     user, loading, signIn, signUp, signInWithGoogle, resetPassword, updatePassword, signOut 
-  }), [user, loading]);
+  }), [user, loading, signInWithGoogle]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
