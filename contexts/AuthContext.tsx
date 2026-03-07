@@ -58,10 +58,27 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
     const initSession = async () => {
       try {
         const params = new URLSearchParams(window.location.search);
-        if (params.get('code')) {
+        const code = params.get('code');
+        
+        if (code) {
           console.log("[AUTH_DEBUG] Detectado código OAuth, trocando por sessão...");
-          await supabase.auth.exchangeCodeForSession(window.location.href);
+          const { data, error } = await supabase.auth.exchangeCodeForSession(window.location.href);
           window.history.replaceState({}, '', '/');
+          
+          if (error) {
+            console.error("[AUTH_DEBUG] Erro ao trocar código:", error);
+            if (isMounted.current) setLoading(false);
+            return;
+          }
+          
+          if (data?.session?.user) {
+            const appUser = await fetchProfile(data.session.user);
+            if (isMounted.current) {
+              setUser(appUser);
+              setLoading(false);
+              return;
+            }
+          }
         }
 
         const { data: { session } } = await supabase.auth.getSession();
