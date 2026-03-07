@@ -165,6 +165,32 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [timeSlot, setTimeSlot] = useState(30);
     const [notificationCount, setNotificationCount] = useState(3);
     const [isNotifOpen, setIsNotifOpen] = useState(false);
+    const [notifications, setNotifications] = useState<any[]>([]);
+
+    const fetchNotifications = useCallback(async () => {
+        if (!activeStudioId) return;
+        const since = new Date();
+        since.setDate(since.getDate() - 7);
+        const { data } = await supabase
+            .from('appointments')
+            .select('id, date, status, client_name, service_name, professional_name, origem, created_at')
+            .eq('studio_id', activeStudioId)
+            .eq('origem', 'online')
+            .gte('created_at', since.toISOString())
+            .order('created_at', { ascending: false })
+            .limit(20);
+        if (data) {
+            setNotifications(data);
+            setNotificationCount(data.filter(n => n.status === 'agendado').length);
+        }
+    }, [activeStudioId]);
+
+    const handleCopyBookingLink = () => {
+        const link = `${window.location.origin}/booking/${activeStudioId}`;
+        navigator.clipboard.writeText(link).then(() => {
+            setToast({ message: '🔗 Link da agenda copiado!', type: 'success' });
+        });
+    };
 
     const isMounted = useRef(true);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
@@ -279,6 +305,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     useEffect(() => {
         isMounted.current = true;
         fetchResources();
+        fetchNotifications();
         
         const channel = supabase.channel('agenda-live')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => { if (isMounted.current) fetchAppointments(); })
@@ -689,7 +716,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                                 Atendimentos {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}
                             </h2>
-                            <button onClick={() => {}} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Compartilhar">
+                            <button onClick={handleCopyBookingLink} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Compartilhar">
                                 <Share2 size={18} />
                             </button>
                             <button onClick={() => setIsNotifOpen(true)} className="relative p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Notificações">
@@ -930,6 +957,62 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             )}
             {modalState?.type === 'sale' && <NewTransactionModal type="receita" onClose={() => setModalState(null)} onSave={(t) => { onAddTransaction(t); setModalState(null); setToast({ message: 'Venda registrada!', type: 'success' }); }} />}
             {pendingConflict && <ConflictAlertModal newApp={pendingConflict.newApp} conflictApp={pendingConflict.conflictWith} onConfirm={() => handleSaveAppointment(pendingConflict.newApp, true)} onCancel={() => setPendingConflict(null)} />}
+            
+            {isNotifOpen && (
+                <>
+                    <div className="fixed inset-0 z-[90]" onClick={() => setIsNotifOpen(false)} />
+                    <div className="fixed top-20 left-4 right-4 md:left-auto md:right-8 md:w-96 z-[100] bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="flex items-center justify-between p-6 border-b border-slate-100">
+                            <div>
+                                <h3 className="font-black text-slate-800 text-lg">Notificações</h3>
+                                <p className="text-xs text-slate-400 font-medium">Agendamentos Online</p>
+                            </div>
+                            <button onClick={() => setIsNotifOpen(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+                                <X size={18} className="text-slate-400" />
+                            </button>
+                        </div>
+                        <div className="overflow-y-auto max-h-[70vh]">
+                            {notifications.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-16 text-slate-300">
+                                    <Bell size={40} className="mb-3" />
+                                    <p className="font-bold text-sm">Nenhuma notificação</p>
+                                </div>
+                            ) : (
+                                notifications.map(n => (
+                                    <div key={n.id} className="flex gap-4 p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                                        <div className="flex-shrink-0 w-10 h-10 rounded-2xl bg-orange-50 flex items-center justify-center">
+                                            <CalendarDays size={18} className="text-orange-500" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <p className="text-xs font-black text-slate-800">
+                                                    {format(new Date(n.date), "dd/MMM/yy", { locale: pt })}
+                                                    <span className="ml-2 text-slate-400 font-bold">
+                                                        {format(new Date(n.date), "HH:mm")}
+                                                    </span>
+                                                </p>
+                                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                                    n.status === 'cancelado' 
+                                                        ? 'bg-red-50 text-red-500' 
+                                                        : 'bg-green-50 text-green-600'
+                                                }`}>
+                                                    {n.status === 'cancelado' ? 'Cancelamento' : 'Agendamento'}
+                                                </span>
+                                            </div>
+                                            <p className="text-sm font-black text-slate-800 truncate">{n.service_name}</p>
+                                            <p className="text-xs text-slate-500 truncate">Cliente: {n.client_name}</p>
+                                            <p className="text-xs text-slate-400 truncate">Profissional: {n.professional_name}</p>
+                                            <p className="text-[10px] text-slate-300 mt-1">
+                                                Agendado em {format(new Date(n.created_at), "dd/MM/yyyy 'às' HH:mm:ss")}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </>
+            )}
             
             <JaciBotPanel isOpen={isJaciBotOpen} onClose={() => setIsJaciBotOpen(false)} />
             <div className="fixed bottom-8 right-8 z-10"><button onClick={() => setIsJaciBotOpen(true)} className="w-16 h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all"><MessageSquare className="w-8 h-8" /></button></div>
