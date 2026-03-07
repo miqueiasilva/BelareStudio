@@ -135,15 +135,23 @@ const ClientesView: React.FC = () => {
 
   const handleSaveClient = async (clientData: Client) => {
     if (!activeStudioId) return;
-    const isEditing = !!clientData.id;
+    
+    // Remove campos com valor null, undefined ou string 'null'
+    const cleanData = Object.entries(clientData).reduce((acc, [key, value]) => {
+      if (value !== null && value !== undefined && value !== 'null' && value !== '') {
+        acc[key] = value;
+      }
+      return acc;
+    }, {} as any);
+    
+    const isEditing = !!cleanData.id;
     
     try {
       if (isEditing) {
-        // Atualização: envia todos os dados
         const { data, error } = await supabase
           .from('clients')
-          .update(clientData)
-          .eq('id', clientData.id)
+          .update(cleanData)
+          .eq('id', cleanData.id)
           .select()
           .single();
         
@@ -151,11 +159,10 @@ const ClientesView: React.FC = () => {
         setClients(prev => prev.map(c => c.id === data.id ? data : c));
         toast.success('Perfil atualizado!');
       } else {
-        // Inserção: remove o campo 'id' e adiciona studio_id
-        const { id, ...clientDataWithoutId } = clientData;
+        const { id, ...dataWithoutId } = cleanData;
         const { data, error } = await supabase
           .from('clients')
-          .insert([{ ...clientDataWithoutId, studio_id: activeStudioId }])
+          .insert([{ ...dataWithoutId, studio_id: activeStudioId }])
           .select()
           .single();
         
@@ -167,7 +174,7 @@ const ClientesView: React.FC = () => {
       setSelectedClient(null);
     } catch (e: any) {
       console.error('Erro ao salvar cliente:', e);
-      toast.error(`Erro ao processar dados: ${e.message}`);
+      toast.error(`Erro: ${e.message || 'Falha ao processar'}`);
     }
   };
 
