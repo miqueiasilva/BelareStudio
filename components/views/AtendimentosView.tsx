@@ -619,92 +619,138 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     };
 
     const handleDeleteAppointmentFull = async (id: number) => {
-        console.log("handleDeleteAppointmentFull chamado com ID:", id, "Tipo:", typeof id);
+        console.log("🚀 INICIANDO FLUXO DE EXCLUSÃO COMPLETA");
+        console.log("ID do Agendamento:", id);
+        
         const appointment = appointments.find(a => a.id === id);
         if (!appointment) {
-            console.error("Agendamento não encontrado no estado local. IDs disponíveis:", appointments.map(a => a.id));
+            console.error("❌ Agendamento não encontrado no estado local.");
             setToast({ message: "Erro: Agendamento não encontrado.", type: 'error' });
             return;
         }
 
-        console.log("Agendamento encontrado:", appointment);
         const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
         const isFinished = appointment.status === 'concluido';
-        console.log("Status:", appointment.status, "isFinished:", isFinished, "isAdmin:", isAdmin);
 
         if (!isAdmin && isFinished) {
             setToast({ 
-                message: "Permissão Negada: Apenas o Gestor pode excluir registros com financeiro lançado.", 
+                message: "Permissão Negada: Apenas o Gestor pode excluir registros concluídos.", 
                 type: 'error' 
             });
             return;
         }
 
-        const confirmMsg = isFinished 
-            ? "⚠️ AÇÃO AUDITADA: Este registro possui financeiro vinculado. A exclusão removerá o recebimento e gerará um Log de Segurança. Prosseguir?"
-            : "Deseja realmente apagar este agendamento?";
-
         const isConfirmed = await confirm({
             title: 'Excluir Agendamento',
-            message: confirmMsg,
-            confirmText: 'Sim, Excluir',
+            message: isFinished 
+                ? "⚠️ ATENÇÃO: Este agendamento está CONCLUÍDO. A exclusão removerá permanentemente o registro, a comanda vinculada e as transações financeiras. Deseja continuar?"
+                : "Deseja realmente apagar este agendamento?",
+            confirmText: 'Sim, Excluir Tudo',
             cancelText: 'Cancelar',
             type: 'danger'
         });
 
-        if (!isConfirmed) {
-            console.log("Exclusão cancelada pelo usuário.");
-            return;
-        }
+        if (!isConfirmed) return;
         
         setIsLoadingData(true);
         try {
-            console.log("Iniciando processo de exclusão no Supabase para ID:", id);
+            // 1. Buscar comandas vinculadas via itens
+            console.log("🔍 Passo 1: Buscando comandas vinculadas...");
+            const { data: items, error: fetchItemsError } = await supabase
+                .from('command_items')
+                .select('command_id')
+                .eq('appointment_id', id);
             
-            if (isFinished) {
-                console.log("1. Gerando log de auditoria...");
-                const { error: auditError } = await supabase.from('audit_logs').insert([{
-                    actor_id: user?.id,
-                    actor_name: user?.nome,
-                    action_type: 'DELETE',
-                    entity: 'appointments',
-                    entity_id: String(id),
-                    old_value: {
-                        client: appointment.client?.nome,
-                        service: appointment.service.name,
-                        value: appointment.service.price,
-                        date: appointment.start.toISOString(),
-                        professional: appointment.professional.name,
-                        status: appointment.status
-                    }
-                }]);
-                if (auditError) console.warn("⚠️ Erro ao gerar log de auditoria (não fatal):", auditError);
+            if (fetchItemsError) console.warn("Aviso ao buscar itens de comanda:", fetchItemsError);
+            const commandIds = Array.from(new Set(items?.map(i => i.command_id).filter(Boolean) || []));
+            console.log("Comandas encontradas:", commandIds);
+
+            // 2. Deletar Transações Financeiras (Cascade Step 1)
+            console.log("🗑️ Passo 2: Removendo transações financeiras...");
+            // Deletamos por appointment_id E por command_id para garantir limpeza total
+            const { error: finError } = await supabase
+                .from('financial_transactions')
+                .delete()
+                .or(`appointment_id.eq.${id}${commandIds.length > 0 ? `,command_id.in.(${commandIds.join(',')})` : ''}`);
+            
+            if (finError) {
+                console.error("Erro ao deletar transações:", finError);
+                // Não paramos aqui, tentamos continuar
             }
 
-            console.log("2. Removendo transações financeiras vinculadas...");
-            const { error: finError } = await supabase.from('financial_transactions').delete().eq('appointment_id', id);
-            if (finError) console.warn("⚠️ Erro ao remover transações financeiras:", finError);
-
-            console.log("3. Removendo itens de comanda vinculados...");
-            const { error: itemError } = await supabase.from('command_items').delete().eq('appointment_id', id);
-            if (itemError) console.warn("⚠️ Erro ao remover itens de comanda:", itemError);
-
-            console.log("4. Removendo agendamento principal...");
-            const { error: apptError } = await supabase.from('appointments').delete().eq('id', id);
+            // 3. Deletar Itens de Comanda (Cascade Step 2)
+            console.log("🗑️ Passo 3: Removendo itens de comanda...");
+            const { error: itemError } = await supabase
+                .from('command_items')
+                .delete()
+                .eq('appointment_id', id);
             
+            if (itemError) console.error("Erro ao deletar itens:", itemError);
+
+            // 4. Deletar Comandas (Cascade Step 3)
+            if (commandIds.length > 0) {
+                console.log("🗑️ Passo 4: Removendo comandas vazias...");
+                const { error: cmdError } = await supabase
+                    .from('commands')
+                    .delete()
+                    .in('id', commandIds);
+                if (cmdError) console.error("Erro ao deletar comandas:", cmdError);
+            }
+
+            // 5. Deletar Agendamento (Final Step)
+            console.log(`🗑️ Passo 5: Removendo agendamento principal (ID: ${id})...`);
+            const { error: apptError } = await supabase
+                .from('appointments')
+                .delete()
+                .eq('id', id);
+
             if (apptError) {
-                console.error("❌ Erro fatal ao remover agendamento:", apptError);
-                throw apptError;
+                console.error("❌ ERRO NO SUPABASE AO DELETAR AGENDAMENTO:", apptError);
+                
+                if (apptError.code === '42501') {
+                    console.warn("⚠️ Política RLS detectada: Exclusão física não permitida para este usuário.");
+                }
+
+                // TENTATIVA DE SOFT DELETE SE O DELETE FÍSICO FALHAR (RLS ou FK)
+                console.log("🔄 Iniciando Fallback (Soft Delete)...");
+                const { error: softError } = await supabase
+                    .from('appointments')
+                    .update({ 
+                        status: 'cancelado',
+                        notes: (appointment.notas || '') + `\n[SISTEMA: Tentativa de exclusão física falhou em ${new Date().toLocaleString()}. Motivo: ${apptError.message}]`
+                    })
+                    .eq('id', id);
+
+                if (softError) {
+                    throw new Error(`Erro Supabase: ${apptError.message}. Fallback também falhou: ${softError.message}`);
+                } else {
+                    setToast({ message: 'Registro cancelado (exclusão física não permitida).', type: 'warning' });
+                }
+            } else {
+                // Log de Auditoria apenas se a exclusão física funcionou
+                if (isFinished) {
+                    await supabase.from('audit_logs').insert([{
+                        actor_id: user?.id,
+                        actor_name: user?.nome,
+                        action_type: 'DELETE_FULL',
+                        entity: 'appointments',
+                        entity_id: String(id),
+                        old_value: { client: appointment.client?.nome, service: appointment.service.name }
+                    }]);
+                }
+                setToast({ message: 'Registro e vínculos removidos com sucesso.', type: 'info' });
             }
 
-            console.log("✅ Exclusão concluída com sucesso no banco de dados.");
+            // Atualizar UI
             setAppointments(prev => prev.filter(p => p.id !== id));
-            setToast({ message: 'Registro removido.', type: 'info' });
             setActiveAppointmentDetail(null);
+            
         } catch (e: any) {
-            console.error("💥 Falha na exclusão:", e);
-            const errorMsg = e.message || (typeof e === 'object' ? JSON.stringify(e) : String(e));
-            setToast({ message: `Falha ao excluir registro: ${errorMsg}`, type: 'error' });
+            console.error("💥 FALHA CATASTRÓFICA:", e);
+            setToast({ 
+                message: `Erro: ${e.message || 'Falha na comunicação com o banco'}`, 
+                type: 'error' 
+            });
         } finally {
             setIsLoadingData(false);
         }

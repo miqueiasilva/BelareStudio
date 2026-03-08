@@ -7,39 +7,44 @@ interface ConfirmOptions {
   message: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  confirmText?: string;
+  cancelText?: string;
   type?: 'danger' | 'warning' | 'info';
 }
 
 export const useConfirm = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [options, setOptions] = useState<ConfirmOptions | null>(null);
-  const [onConfirmCallback, setOnConfirmCallback] = useState<(() => void) | null>(null);
+  const [resolver, setResolver] = useState<((value: boolean) => void) | null>(null);
 
-  const confirm = useCallback((opts: ConfirmOptions, onConfirm: () => void) => {
+  const confirm = useCallback((opts: ConfirmOptions): Promise<boolean> => {
     setOptions(opts);
-    setOnConfirmCallback(() => onConfirm);
     setIsOpen(true);
+    return new Promise((resolve) => {
+      setResolver(() => resolve);
+    });
   }, []);
 
-  const close = useCallback(() => {
+  const handleConfirm = useCallback(() => {
+    if (resolver) resolver(true);
     setIsOpen(false);
-    setOptions(null);
-    setOnConfirmCallback(null);
-  }, []);
+  }, [resolver]);
+
+  const handleCancel = useCallback(() => {
+    if (resolver) resolver(false);
+    setIsOpen(false);
+  }, [resolver]);
 
   const ConfirmDialogComponent = () => (
     <ConfirmDialog
       isOpen={isOpen}
       title={options?.title || ''}
       message={options?.message || ''}
-      confirmLabel={options?.confirmLabel}
-      cancelLabel={options?.cancelLabel}
+      confirmLabel={options?.confirmLabel || options?.confirmText}
+      cancelLabel={options?.cancelLabel || options?.cancelText}
       type={options?.type}
-      onConfirm={() => {
-        if (onConfirmCallback) onConfirmCallback();
-        close();
-      }}
-      onCancel={close}
+      onConfirm={handleConfirm}
+      onCancel={handleCancel}
     />
   );
 
