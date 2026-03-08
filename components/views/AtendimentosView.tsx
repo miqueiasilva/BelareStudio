@@ -204,8 +204,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         }
         
         const requestId = ++lastRequestId.current;
-        if (abortControllerRef.current) abortControllerRef.current.abort();
-        abortControllerRef.current = new AbortController();
         setIsLoadingData(true);
 
         try {
@@ -232,19 +230,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments')
-                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origem, type')
+                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origem')
                     .eq('studio_id', activeStudioId)
                     .gte('date', startStr)
                     .lte('date', endStr)
-                    .neq('status', 'cancelado')
-                    .abortSignal(abortControllerRef.current.signal),
+                    .neq('status', 'cancelado'),
                 supabase
                     .from('schedule_blocks')
                     .select('*')
                     .eq('studio_id', activeStudioId)
                     .gte('start_time', startStr)
                     .lte('start_time', endStr)
-                    .abortSignal(abortControllerRef.current.signal)
             ]);
 
             if (apptRes.error) throw apptRes.error;
@@ -269,7 +265,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 setAppointments([...mappedAppts, ...mappedBlocks]);
             }
         } catch (e: any) {
-            if (e.name !== 'AbortError') console.error("💥 Fetch Agenda Error:", e);
+            if (e.name !== 'AbortError') {
+                console.error("💥 Fetch Agenda Error:", e);
+                if (e.message) console.error("Error Message:", e.message);
+                if (e.details) console.error("Error Details:", e.details);
+                if (e.hint) console.error("Error Hint:", e.hint);
+            }
         } finally {
             if (isMounted.current) setIsLoadingData(false);
         }
@@ -618,11 +619,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     };
 
     const handleDeleteAppointmentFull = async (id: number) => {
+        console.log("handleDeleteAppointmentFull chamado com ID:", id, "Tipo:", typeof id);
         const appointment = appointments.find(a => a.id === id);
-        if (!appointment) return;
+        if (!appointment) {
+            console.error("Agendamento não encontrado no estado local. IDs disponíveis:", appointments.map(a => a.id));
+            setToast({ message: "Erro: Agendamento não encontrado.", type: 'error' });
+            return;
+        }
 
+        console.log("Agendamento encontrado:", appointment);
         const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
         const isFinished = appointment.status === 'concluido';
+        console.log("Status:", appointment.status, "isFinished:", isFinished, "isAdmin:", isAdmin);
 
         if (!isAdmin && isFinished) {
             setToast({ 
@@ -644,12 +652,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             type: 'danger'
         });
 
-        if (!isConfirmed) return;
+        if (!isConfirmed) {
+            console.log("Exclusão cancelada pelo usuário.");
+            return;
+        }
         
         setIsLoadingData(true);
         try {
+            console.log("Iniciando processo de exclusão no Supabase para ID:", id);
+            
             if (isFinished) {
-                await supabase.from('audit_logs').insert([{
+                console.log("1. Gerando log de auditoria...");
+                const { error: auditError } = await supabase.from('audit_logs').insert([{
                     actor_id: user?.id,
                     actor_name: user?.nome,
                     action_type: 'DELETE',
@@ -664,19 +678,33 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         status: appointment.status
                     }
                 }]);
+                if (auditError) console.warn("⚠️ Erro ao gerar log de auditoria (não fatal):", auditError);
             }
 
-            await supabase.from('financial_transactions').delete().eq('appointment_id', id);
-            await supabase.from('command_items').delete().eq('appointment_id', id);
-            const { error: apptError } = await supabase.from('appointments').delete().eq('id', id);
-            if (apptError) throw apptError;
+            console.log("2. Removendo transações financeiras vinculadas...");
+            const { error: finError } = await supabase.from('financial_transactions').delete().eq('appointment_id', id);
+            if (finError) console.warn("⚠️ Erro ao remover transações financeiras:", finError);
 
+            console.log("3. Removendo itens de comanda vinculados...");
+            const { error: itemError } = await supabase.from('command_items').delete().eq('appointment_id', id);
+            if (itemError) console.warn("⚠️ Erro ao remover itens de comanda:", itemError);
+
+            console.log("4. Removendo agendamento principal...");
+            const { error: apptError } = await supabase.from('appointments').delete().eq('id', id);
+            
+            if (apptError) {
+                console.error("❌ Erro fatal ao remover agendamento:", apptError);
+                throw apptError;
+            }
+
+            console.log("✅ Exclusão concluída com sucesso no banco de dados.");
             setAppointments(prev => prev.filter(p => p.id !== id));
             setToast({ message: 'Registro removido.', type: 'info' });
             setActiveAppointmentDetail(null);
         } catch (e: any) {
-            console.error("Falha na exclusão:", e);
-            setToast({ message: "Falha ao excluir registro.", type: 'error' });
+            console.error("💥 Falha na exclusão:", e);
+            const errorMsg = e.message || (typeof e === 'object' ? JSON.stringify(e) : String(e));
+            setToast({ message: `Falha ao excluir registro: ${errorMsg}`, type: 'error' });
         } finally {
             setIsLoadingData(false);
         }
