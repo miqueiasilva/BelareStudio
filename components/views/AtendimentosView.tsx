@@ -667,6 +667,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             }
 
             await supabase.from('financial_transactions').delete().eq('appointment_id', id);
+            await supabase.from('command_items').delete().eq('appointment_id', id);
             const { error: apptError } = await supabase.from('appointments').delete().eq('id', id);
             if (apptError) throw apptError;
 

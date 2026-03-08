@@ -3,7 +3,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { LegacyAppointment, AppointmentStatus } from '../../types';
 import { 
     Calendar, Tag, DollarSign, Send, Edit, Trash2, 
-    User, MoreVertical, X, CheckCircle2, Receipt, Lock
+    User, MoreVertical, X, CheckCircle2, Receipt
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -108,8 +108,6 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const isFinished = ['concluido', 'cancelado', 'bloqueado'].includes(appointment.status);
   const canCheckout = !isFinished;
   
-  const isLockedForDelete = ['concluido', 'bloqueado'].includes(appointment.status?.toLowerCase());
-
   // --- NOVO HANDLER DE FINALIZAÇÃO ---
   const handleFinalize = () => {
       if (onConvertToCommand) {
@@ -139,12 +137,11 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                     </button>
                     
                     <button 
-                        onClick={() => { if (!isLockedForDelete) onDelete(appointment.id); }} 
-                        disabled={isLockedForDelete}
-                        className={`p-2 rounded-xl transition-all ${isLockedForDelete ? 'text-slate-300 cursor-not-allowed opacity-50' : 'text-rose-500 hover:bg-rose-50'}`} 
-                        title={isLockedForDelete ? "Pagamento baixado: Exclusão bloqueada" : "Excluir Agendamento"}
+                        onClick={() => onDelete(appointment.id)} 
+                        className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" 
+                        title="Excluir Agendamento"
                     >
-                        {isLockedForDelete ? <Lock size={18} /> : <Trash2 size={18} />}
+                        <Trash2 size={18} />
                     </button>
 
                     <button className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors" title="Ver Perfil"><User size={18} /></button>
