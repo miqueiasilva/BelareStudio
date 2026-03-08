@@ -22,7 +22,7 @@ import NewTransactionModal from '../modals/NewTransactionModal';
 import JaciBotPanel from '../JaciBotPanel';
 import AppointmentDetailPopover from '../shared/AppointmentDetailPopover';
 import Toast, { ToastType } from '../shared/Toast';
-import { supabase } from '../../services/supabaseClient';
+import { supabase, supabaseUrl, supabaseAnonKey } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
 import { useStudio } from '../../contexts/StudioContext';
 import { useConfirm } from '../../utils/useConfirm';
@@ -478,11 +478,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             if (newAppointment) {
                 console.log('📧 Iniciando tentativa de notificação por e-mail...');
                 try {
-                    const response = await fetch('https://rxtwmwrgcilmsldtqdfe.supabase.co/functions/v1/send-appointment-notification', {
+                    const response = await fetch(`${supabaseUrl}/functions/v1/send-appointment-notification`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhhdHdtd3JnY2ltc2x0ZHFmZSIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzMzNjc2MzU4LCJleHAiOjIwNDkyNTIzNTh9.q-2t1hqhXBLqGaWBZ-Rf10BbPWQBTLV3K_b3W-pVT5U'
+                            'apikey': supabaseAnonKey
                         },
                         body: JSON.stringify({
                             appointment_id: newAppointment.id,

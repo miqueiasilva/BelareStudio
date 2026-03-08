@@ -47,8 +47,8 @@ const getEnv = (key: string, fallback: string): string => {
   return fallback;
 };
 
-const supabaseUrl = getEnv('VITE_SUPABASE_URL', DEFAULT_URL);
-const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY', DEFAULT_KEY);
+export const supabaseUrl = getEnv('VITE_SUPABASE_URL', DEFAULT_URL);
+export const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY', DEFAULT_KEY);
 
 console.log(`[AUTH_DEBUG] VITE_SUPABASE_URL: ${supabaseUrl === DEFAULT_URL ? 'utilizando fallback' : 'presente'}`);
 console.log(`[AUTH_DEBUG] VITE_SUPABASE_ANON_KEY: ${supabaseAnonKey === DEFAULT_KEY ? 'utilizando fallback' : 'presente'}`);
