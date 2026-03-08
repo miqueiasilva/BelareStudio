@@ -388,17 +388,26 @@ const PublicBookingPreview: React.FC = () => {
             };
             console.log('PAYLOAD DO INSERT:', JSON.stringify(payload));
 
-            const { data: newAppointment, error: apptErr } = await supabase
-                .from('appointments')
-                .insert([payload])
-                .select()
-                .single();
+            let newAppointment = null;
+            try {
+                const { data, error: apptErr } = await supabase
+                    .from('appointments')
+                    .insert([payload])
+                    .select()
+                    .single();
 
-            if (apptErr) throw apptErr;
+                if (apptErr) throw apptErr;
+                newAppointment = data;
+                console.log('✅ Agendamento público salvo com sucesso:', newAppointment?.id);
+            } catch (dbError: any) {
+                console.error('❌ ERRO AO SALVAR AGENDAMENTO PÚBLICO:', dbError);
+                throw dbError;
+            }
 
             if (newAppointment) {
+                console.log('📧 Iniciando tentativa de notificação por e-mail (Público)...');
                 try {
-                    await fetch('https://rxtwmwrgcilmsldtqdfe.supabase.co/functions/v1/send-appointment-notification', {
+                    const response = await fetch('https://rxtwmwrgcilmsldtqdfe.supabase.co/functions/v1/send-appointment-notification', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -417,8 +426,16 @@ const PublicBookingPreview: React.FC = () => {
                             value: newAppointment.value
                         })
                     });
-                } catch (emailError) {
-                    console.error('Erro ao enviar notificação:', emailError);
+
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                    }
+                    console.log('✅ Notificação enviada com sucesso (Público)!');
+                } catch (emailError: any) {
+                    console.error('⚠️ ERRO NA EDGE FUNCTION DE NOTIFICAÇÃO (Público):', emailError);
+                    // No link público, talvez não queiramos mostrar um erro de e-mail para o cliente final
+                    // mas vamos logar para o admin ver no console se necessário.
                 }
             }
 

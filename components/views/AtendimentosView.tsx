@@ -449,22 +449,36 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             };
             
             let newAppointment = null;
-            if (app.id && typeof app.id === 'number' && app.id > 1000000000) { 
-                const { data, error } = await supabase.from('appointments').insert([payload]).select('*').single();
-                if (error) throw error;
-                newAppointment = data;
-            } else if (app.id) {
-                const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
-                if (error) throw error;
-            } else {
-                const { data, error } = await supabase.from('appointments').insert([payload]).select('*').single();
-                if (error) throw error;
-                newAppointment = data;
+            try {
+                if (app.id && typeof app.id === 'number' && app.id > 1000000000) { 
+                    const { data, error } = await supabase.from('appointments').insert([payload]).select('*').single();
+                    if (error) throw error;
+                    newAppointment = data;
+                } else if (app.id) {
+                    const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
+                    if (error) throw error;
+                    // For updates, we might want to fetch the updated data if we need it for notifications
+                    const { data: updatedData } = await supabase.from('appointments').select('*').eq('id', app.id).single();
+                    newAppointment = updatedData;
+                } else {
+                    const { data, error } = await supabase.from('appointments').insert([payload]).select('*').single();
+                    if (error) throw error;
+                    newAppointment = data;
+                }
+                console.log('✅ Agendamento salvo com sucesso no banco de dados:', newAppointment?.id);
+            } catch (dbError: any) {
+                console.error('❌ ERRO AO SALVAR NO BANCO DE DADOS:', dbError);
+                if (dbError.message?.includes('Refresh Token')) {
+                    console.error('⚠️ Erro de Autenticação detectado (Refresh Token). O usuário pode precisar fazer login novamente.');
+                }
+                throw dbError; // Re-throw to be caught by the outer catch
             }
 
+            // 2. Notificação (Isolada)
             if (newAppointment) {
+                console.log('📧 Iniciando tentativa de notificação por e-mail...');
                 try {
-                    await fetch('https://rxtwmwrgcilmsldtqdfe.supabase.co/functions/v1/send-appointment-notification', {
+                    const response = await fetch('https://rxtwmwrgcilmsldtqdfe.supabase.co/functions/v1/send-appointment-notification', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -483,12 +497,26 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                             value: newAppointment.value
                         })
                     });
-                } catch (emailError) {
-                    console.error('Erro ao enviar notificação:', emailError);
+
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                    }
+                    
+                    console.log('✅ Notificação enviada com sucesso!');
+                } catch (emailError: any) {
+                    console.error('⚠️ ERRO NA EDGE FUNCTION DE NOTIFICAÇÃO:', emailError);
+                    setToast({ 
+                        message: 'Agendamento salvo, mas houve falha ao enviar a notificação por e-mail.', 
+                        type: 'warning' 
+                    });
+                    // Não lançamos o erro para não interromper o fluxo de sucesso do agendamento
                 }
             }
 
-            setToast({ message: '✅ Agendamento salvo com sucesso!', type: 'success' });
+            if (!toast.hasOwnProperty('message') || (toast as any).type !== 'warning') {
+                setToast({ message: '✅ Agendamento salvo com sucesso!', type: 'success' });
+            }
             setModalState(null); 
             setPendingConflict(null);
             
