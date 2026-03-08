@@ -398,7 +398,7 @@ const PublicBookingPreview: React.FC = () => {
 
             if (newAppointment) {
                 try {
-                    await fetch('https://xatwmwrgcimsltdqfe.supabase.co/functions/v1/send-appointment-notification', {
+                    await fetch('https://rxtwmwrgcilmsldtqdfe.supabase.co/functions/v1/send-appointment-notification', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
