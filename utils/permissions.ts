@@ -38,8 +38,10 @@ const ROLE_PERMISSIONS: Record<UserRole, (ViewState | '*')[]> = {
 export const hasAccess = (role: UserRole | string | undefined, view: ViewState, granularPermissions?: Record<string, boolean>): boolean => {
     if (!role) return false;
     
+    const normalizedRole = role.toLowerCase();
+    
     // Admins e Gestores sempre têm acesso total
-    if (role === 'admin' || role === 'gestor') return true;
+    if (normalizedRole === 'admin' || normalizedRole === 'gestor') return true;
 
     // Se houver permissões granulares, elas podem sobrescrever as travas do papel
     if (granularPermissions) {
@@ -62,14 +64,15 @@ export const hasAccess = (role: UserRole | string | undefined, view: ViewState, 
         }
     }
 
-    const permissions = ROLE_PERMISSIONS[role as UserRole] || ROLE_PERMISSIONS['profissional'];
+    const permissions = ROLE_PERMISSIONS[normalizedRole as UserRole] || ROLE_PERMISSIONS['profissional'];
     if (permissions.includes('*')) return true;
     return permissions.includes(view);
 };
 
 export const getFirstAllowedView = (role: UserRole | string | undefined): ViewState => {
     if (!role) return 'dashboard';
-    const permissions = ROLE_PERMISSIONS[role as UserRole] || ROLE_PERMISSIONS['profissional'];
+    const normalizedRole = role.toLowerCase();
+    const permissions = ROLE_PERMISSIONS[normalizedRole as UserRole] || ROLE_PERMISSIONS['profissional'];
     if (permissions.includes('*')) return 'dashboard';
     return (permissions[0] as ViewState) || 'dashboard';
 };

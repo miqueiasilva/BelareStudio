@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
 
       return {
         ...authUser,
-        papel: profData?.access_level || 'profissional',
+        papel: (profData?.access_level || (authUser.email === 'mykeias@gmail.com' ? 'admin' : 'profissional')).toLowerCase(),
         nome: profData?.name || authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
         avatar_url: profData?.photo_url || authUser.user_metadata?.avatar_url,
         permissions: profData?.permissions || {}
