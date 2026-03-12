@@ -22,7 +22,7 @@ import NewTransactionModal from '../modals/NewTransactionModal';
 import JaciBotPanel from '../JaciBotPanel';
 import AppointmentDetailPopover from '../shared/AppointmentDetailPopover';
 import Toast, { ToastType } from '../shared/Toast';
-import { supabase, supabaseUrl, supabaseAnonKey } from '../../services/supabaseClient';
+import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
 import { useStudio } from '../../contexts/StudioContext';
 import { useConfirm } from '../../utils/useConfirm';
@@ -478,13 +478,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             if (newAppointment) {
                 console.log('📧 Iniciando tentativa de notificação por e-mail...');
                 try {
-                    const response = await fetch(`${supabaseUrl}/functions/v1/send-appointment-notification`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'apikey': supabaseAnonKey
-                        },
-                        body: JSON.stringify({
+                    const { data, error: funcError } = await supabase.functions.invoke('send-appointment-notification', {
+                        body: {
                             appointment_id: newAppointment.id,
                             client_name: newAppointment.client_name,
                             client_email: newAppointment.client_email || app.client?.email,
@@ -495,21 +490,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                             date: newAppointment.date,
                             start_time: newAppointment.start_time || format(new Date(newAppointment.start_at), 'HH:mm'),
                             value: newAppointment.value
-                        })
+                        }
                     });
 
-                    if (!response.ok) {
-                        let errorMsg = `HTTP error! status: ${response.status}`;
-                        try {
-                            const errorData = await response.json();
-                            errorMsg = errorData?.error || errorMsg;
-                        } catch (e) {
-                            // Ignore json parse error
-                        }
-                        throw new Error(errorMsg);
-                    }
+                    if (funcError) throw funcError;
                     
-                    console.log('✅ Notificação enviada com sucesso!');
+                    console.log('✅ Notificação enviada com sucesso!', data);
                 } catch (emailError: any) {
                     console.error('⚠️ ERRO NA EDGE FUNCTION DE NOTIFICAÇÃO:', emailError);
                     setToast({ 

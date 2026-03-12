@@ -5,7 +5,7 @@ import {
     eachDayOfInterval, addMonths, isSameMonth
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
-import { supabase, supabaseUrl, supabaseAnonKey } from '../../services/supabaseClient';
+import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import ClientAppointmentsModal from '../modals/ClientAppointmentsModal';
@@ -407,13 +407,8 @@ const PublicBookingPreview: React.FC = () => {
             if (newAppointment) {
                 console.log('📧 Iniciando tentativa de notificação por e-mail (Público)...');
                 try {
-                    const response = await fetch(`${supabaseUrl}/functions/v1/send-appointment-notification`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'apikey': supabaseAnonKey
-                        },
-                        body: JSON.stringify({
+                    const { data, error: funcError } = await supabase.functions.invoke('send-appointment-notification', {
+                        body: {
                             appointment_id: newAppointment.id,
                             client_name: newAppointment.client_name,
                             client_email: null,
@@ -424,20 +419,11 @@ const PublicBookingPreview: React.FC = () => {
                             date: newAppointment.date,
                             start_time: format(new Date(newAppointment.start_at), 'HH:mm'),
                             value: newAppointment.value
-                        })
+                        }
                     });
 
-                    if (!response.ok) {
-                        let errorMsg = `HTTP error! status: ${response.status}`;
-                        try {
-                            const errorData = await response.json();
-                            errorMsg = errorData?.error || errorMsg;
-                        } catch (e) {
-                            // Ignore json parse error
-                        }
-                        throw new Error(errorMsg);
-                    }
-                    console.log('✅ Notificação enviada com sucesso (Público)!');
+                    if (funcError) throw funcError;
+                    console.log('✅ Notificação enviada com sucesso (Público)!', data);
                 } catch (emailError: any) {
                     console.error('⚠️ ERRO NA EDGE FUNCTION DE NOTIFICAÇÃO (Público):', emailError);
                     // No link público, talvez não queiramos mostrar um erro de e-mail para o cliente final
