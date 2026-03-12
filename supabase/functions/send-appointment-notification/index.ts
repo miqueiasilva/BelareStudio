@@ -14,12 +14,15 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json()
-    console.log('Recebido pedido de notificação:', body)
+    const resendApiKey = Deno.env.get('RESEND_API_KEY')
+
+    if (!resendApiKey) {
+      console.warn('⚠️ RESEND_API_KEY não configurada. Operando em modo simulação.')
+    }
 
     const { 
       client_name, 
       client_email, 
-      client_whatsapp, 
       professional_name, 
       service_name, 
       date, 
@@ -27,30 +30,49 @@ Deno.serve(async (req) => {
       value 
     } = body
 
-    // Aqui você integraria com Resend, SendGrid, Twilio ou Evolution API
-    // Exemplo com Resend (comentado):
-    /*
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${Deno.env.get('RESEND_API_KEY')}`,
-      },
-      body: JSON.stringify({
-        from: 'BelaFlow <notificacoes@belaflow.com.br>',
-        to: [client_email],
-        subject: 'Confirmação de Agendamento - BelareStudio',
-        html: `<h1>Olá, ${client_name}!</h1><p>Seu agendamento para <strong>${service_name}</strong> com <strong>${professional_name}</strong> foi confirmado para o dia <strong>${date}</strong> às <strong>${start_time}</strong>.</p>`,
-      }),
-    })
-    */
+    if (resendApiKey && client_email) {
+      console.log(`📧 Enviando e-mail para ${client_email} via Resend...`)
+      
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${resendApiKey}`,
+        },
+        body: JSON.stringify({
+          from: 'BelaFlow <notificacoes@belaflow.com.br>',
+          to: [client_email],
+          subject: 'Confirmação de Agendamento - BelareStudio',
+          html: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+              <h2 style="color: #f97316;">Olá, ${client_name}!</h2>
+              <p>Seu agendamento foi confirmado com sucesso.</p>
+              <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+              <p><strong>Serviço:</strong> ${service_name}</p>
+              <p><strong>Profissional:</strong> ${professional_name}</p>
+              <p><strong>Data:</strong> ${date}</p>
+              <p><strong>Horário:</strong> ${start_time}</p>
+              ${value ? `<p><strong>Valor:</strong> R$ ${value.toFixed(2)}</p>` : ''}
+              <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+              <p style="font-size: 12px; color: #666;">Este é um e-mail automático enviado por BelareStudio. Por favor, não responda.</p>
+            </div>
+          `,
+        }),
+      })
 
-    console.log(`✅ Simulação: Notificação enviada para ${client_name} (${client_email || 'sem email'})`)
+      const resData = await res.json()
+      if (!res.ok) {
+        throw new Error(`Erro no Resend: ${JSON.stringify(resData)}`)
+      }
+      console.log('✅ E-mail enviado com sucesso via Resend:', resData.id)
+    } else {
+      console.log(`✅ Simulação: Notificação processada para ${client_name} (${client_email || 'sem email'})`)
+    }
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: 'Notificação processada com sucesso (Simulação).',
+        message: resendApiKey ? 'Notificação enviada com sucesso.' : 'Notificação processada em modo simulação.',
         data: { client_name, service_name, date, start_time }
       }),
       {
