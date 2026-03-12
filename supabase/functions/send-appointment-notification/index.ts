@@ -13,7 +13,15 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const body = await req.json()
+    const body = await req.json().catch(() => null)
+    
+    if (!body) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Corpo da requisição inválido ou vazio' }),
+        { status: 400, headers: { ...localCorsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     const resendApiKey = Deno.env.get('RESEND_API_KEY')
 
     if (!resendApiKey) {
@@ -30,6 +38,9 @@ Deno.serve(async (req) => {
       value 
     } = body
 
+    // Ensure value is a number
+    const numericValue = (value !== undefined && value !== null) ? Number(value) : null
+
     if (resendApiKey && client_email) {
       console.log(`📧 Enviando e-mail para ${client_email} via Resend...`)
       
@@ -45,14 +56,14 @@ Deno.serve(async (req) => {
           subject: 'Confirmação de Agendamento - BelareStudio',
           html: `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-              <h2 style="color: #f97316;">Olá, ${client_name}!</h2>
+              <h2 style="color: #f97316;">Olá, ${client_name || 'Cliente'}!</h2>
               <p>Seu agendamento foi confirmado com sucesso.</p>
               <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-              <p><strong>Serviço:</strong> ${service_name}</p>
-              <p><strong>Profissional:</strong> ${professional_name}</p>
-              <p><strong>Data:</strong> ${date}</p>
-              <p><strong>Horário:</strong> ${start_time}</p>
-              ${value ? `<p><strong>Valor:</strong> R$ ${value.toFixed(2)}</p>` : ''}
+              <p><strong>Serviço:</strong> ${service_name || 'Não informado'}</p>
+              <p><strong>Profissional:</strong> ${professional_name || 'Não informado'}</p>
+              <p><strong>Data:</strong> ${date || 'Não informada'}</p>
+              <p><strong>Horário:</strong> ${start_time || 'Não informado'}</p>
+              ${(numericValue !== null && !isNaN(numericValue)) ? `<p><strong>Valor:</strong> R$ ${numericValue.toFixed(2)}</p>` : ''}
               <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
               <p style="font-size: 12px; color: #666;">Este é um e-mail automático enviado por BelareStudio. Por favor, não responda.</p>
             </div>
@@ -60,10 +71,20 @@ Deno.serve(async (req) => {
         }),
       })
 
-      const resData = await res.json()
       if (!res.ok) {
-        throw new Error(`Erro no Resend: ${JSON.stringify(resData)}`)
+        const errorText = await res.text()
+        let errorDetail = errorText
+        try {
+          const errorJson = JSON.parse(errorText)
+          errorDetail = errorJson.message || errorJson.error || errorText
+        } catch (e) {
+          // keep original text
+        }
+        console.error('Erro na API do Resend:', errorText)
+        throw new Error(`Resend API Error: ${res.status} - ${errorDetail}`)
       }
+
+      const resData = await res.json()
       console.log('✅ E-mail enviado com sucesso via Resend:', resData.id)
     } else {
       console.log(`✅ Simulação: Notificação processada para ${client_name} (${client_email || 'sem email'})`)

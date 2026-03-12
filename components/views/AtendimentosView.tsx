@@ -498,8 +498,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     console.log('✅ Notificação enviada com sucesso!', data);
                 } catch (emailError: any) {
                     console.error('⚠️ ERRO NA EDGE FUNCTION DE NOTIFICAÇÃO:', emailError);
+                    
+                    // Tenta extrair uma mensagem de erro mais amigável
+                    let errorMessage = 'Agendamento salvo, mas a notificação não pôde ser enviada.';
+                    if (emailError.message) {
+                        errorMessage += ` (${emailError.message})`;
+                    }
+
                     setToast({ 
-                        message: 'Agendamento salvo, mas a notificação não pôde ser enviada neste ambiente de teste.', 
+                        message: errorMessage, 
                         type: 'warning' 
                     });
                     // Não lançamos o erro para não interromper o fluxo de sucesso do agendamento

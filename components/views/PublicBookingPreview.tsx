@@ -425,7 +425,7 @@ const PublicBookingPreview: React.FC = () => {
                     if (funcError) throw funcError;
                     console.log('✅ Notificação enviada com sucesso (Público)!', data);
                 } catch (emailError: any) {
-                    console.error('⚠️ ERRO NA EDGE FUNCTION DE NOTIFICAÇÃO (Público):', emailError);
+                    console.error('⚠️ ERRO NA EDGE FUNCTION DE NOTIFICAÇÃO (Público):', emailError.message || emailError);
                     // No link público, talvez não queiramos mostrar um erro de e-mail para o cliente final
                     // mas vamos logar para o admin ver no console se necessário.
                 }
