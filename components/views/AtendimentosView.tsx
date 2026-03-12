@@ -457,7 +457,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 } else if (app.id) {
                     const { error } = await supabase.from('appointments').update(payload).eq('id', app.id);
                     if (error) throw error;
-                    // For updates, we might want to fetch the updated data if we need it for notifications
                     const { data: updatedData } = await supabase.from('appointments').select('*').eq('id', app.id).single();
                     newAppointment = updatedData;
                 } else {
@@ -466,60 +465,69 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     newAppointment = data;
                 }
                 console.log('✅ Agendamento salvo com sucesso no banco de dados:', newAppointment?.id);
+                
+                // Exibe sucesso do agendamento IMEDIATAMENTE após salvar no banco
+                setToast({ message: '✅ Agendamento salvo com sucesso!', type: 'success' });
+                setModalState(null); 
+                setPendingConflict(null);
+                await fetchAppointments();
+
             } catch (dbError: any) {
                 console.error('❌ ERRO AO SALVAR NO BANCO DE DADOS:', dbError);
-                if (dbError.message?.includes('Refresh Token')) {
-                    console.error('⚠️ Erro de Autenticação detectado (Refresh Token). O usuário pode precisar fazer login novamente.');
-                }
-                throw dbError; // Re-throw to be caught by the outer catch
+                throw dbError; 
             }
 
-            // 2. Notificação (Isolada)
+            // 2. Notificação (Etapa Separada e Não Bloqueante)
             if (newAppointment) {
-                console.log('📧 Iniciando tentativa de notificação por e-mail...');
-                try {
-                    const { data, error: funcError } = await supabase.functions.invoke('send-appointment-notification', {
-                        body: {
-                            appointment_id: newAppointment.id,
-                            client_name: newAppointment.client_name,
-                            client_email: newAppointment.client_email || app.client?.email,
-                            client_whatsapp: newAppointment.client_whatsapp || app.client?.telefone || app.client?.whatsapp,
-                            professional_name: newAppointment.professional_name,
-                            service_name: newAppointment.service_name,
-                            start_at: newAppointment.start_at,
-                            date: newAppointment.date,
-                            start_time: newAppointment.start_time || format(new Date(newAppointment.start_at), 'HH:mm'),
-                            value: newAppointment.value
+                // Dispara a notificação sem dar await no fluxo principal se quisermos que seja ultra-rápido,
+                // mas aqui vamos manter o await dentro de um try/catch isolado para poder mostrar o toast de aviso se falhar.
+                (async () => {
+                    console.log('📧 Iniciando tentativa de notificação por e-mail...');
+                    
+                    const notificationPayload = {
+                        appointment_id: newAppointment.id,
+                        studio_id: newAppointment.studio_id || activeStudioId,
+                        client_name: newAppointment.client_name || app.client?.nome,
+                        client_email: newAppointment.client_email || app.client?.email,
+                        client_phone: newAppointment.client_whatsapp || app.client?.telefone || app.client?.whatsapp,
+                        client_whatsapp: newAppointment.client_whatsapp || app.client?.whatsapp || app.client?.telefone,
+                        professional_id: newAppointment.professional_id || app.professional?.id,
+                        professional_name: newAppointment.professional_name || app.professional?.name,
+                        service_name: newAppointment.service_name || app.service?.name,
+                        start_at: newAppointment.start_at || app.start,
+                        duration: newAppointment.duration || app.service?.duration,
+                        total_amount: newAppointment.value || app.service?.price,
+                        notes: newAppointment.notes || app.notas,
+                        // Campos legados para compatibilidade
+                        date: newAppointment.date,
+                        start_time: newAppointment.start_time || format(new Date(newAppointment.start_at || app.start), 'HH:mm'),
+                        value: newAppointment.value || app.service?.price
+                    };
+
+                    console.log('📦 Payload enviado para Edge Function:', notificationPayload);
+
+                    try {
+                        const { data, error: funcError } = await supabase.functions.invoke('send-appointment-notification', {
+                            body: notificationPayload
+                        });
+
+                        if (funcError) throw funcError;
+                        console.log('✅ Notificação enviada com sucesso!', data);
+                    } catch (emailError: any) {
+                        console.error('❌ ERRO DETALHADO NA EDGE FUNCTION DE NOTIFICAÇÃO:', emailError);
+                        
+                        let errorMessage = 'Agendamento salvo, mas a notificação não pôde ser enviada.';
+                        if (emailError.message) {
+                            errorMessage += ` (${emailError.message})`;
                         }
-                    });
 
-                    if (funcError) throw funcError;
-                    
-                    console.log('✅ Notificação enviada com sucesso!', data);
-                } catch (emailError: any) {
-                    console.error('⚠️ ERRO NA EDGE FUNCTION DE NOTIFICAÇÃO:', emailError);
-                    
-                    // Tenta extrair uma mensagem de erro mais amigável
-                    let errorMessage = 'Agendamento salvo, mas a notificação não pôde ser enviada.';
-                    if (emailError.message) {
-                        errorMessage += ` (${emailError.message})`;
+                        setToast({ 
+                            message: errorMessage, 
+                            type: 'warning' 
+                        });
                     }
-
-                    setToast({ 
-                        message: errorMessage, 
-                        type: 'warning' 
-                    });
-                    // Não lançamos o erro para não interromper o fluxo de sucesso do agendamento
-                }
+                })();
             }
-
-            if (!toast || toast.type !== 'warning') {
-                setToast({ message: '✅ Agendamento salvo com sucesso!', type: 'success' });
-            }
-            setModalState(null); 
-            setPendingConflict(null);
-            
-            await fetchAppointments();
             
         } catch (e: any) { 
             console.error('ERRO AO SALVAR AGENDAMENTO:', e);

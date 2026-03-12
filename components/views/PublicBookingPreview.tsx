@@ -406,28 +406,39 @@ const PublicBookingPreview: React.FC = () => {
 
             if (newAppointment) {
                 console.log('📧 Iniciando tentativa de notificação por e-mail (Público)...');
+                
+                const notificationPayload = {
+                    appointment_id: newAppointment.id,
+                    studio_id: newAppointment.studio_id,
+                    client_name: newAppointment.client_name,
+                    client_email: null, // No preview público geralmente não temos o email a menos que peçamos
+                    client_phone: newAppointment.client_whatsapp,
+                    client_whatsapp: newAppointment.client_whatsapp,
+                    professional_id: newAppointment.professional_id,
+                    professional_name: newAppointment.professional_name,
+                    service_name: newAppointment.service_name,
+                    start_at: newAppointment.start_at,
+                    duration: newAppointment.duration,
+                    total_amount: newAppointment.value,
+                    notes: newAppointment.notes,
+                    // Campos legados
+                    date: newAppointment.date,
+                    start_time: format(new Date(newAppointment.start_at), 'HH:mm'),
+                    value: newAppointment.value
+                };
+
+                console.log('📦 Payload enviado para Edge Function (Público):', notificationPayload);
+
                 try {
                     const { data, error: funcError } = await supabase.functions.invoke('send-appointment-notification', {
-                        body: {
-                            appointment_id: newAppointment.id,
-                            client_name: newAppointment.client_name,
-                            client_email: null,
-                            client_whatsapp: newAppointment.client_whatsapp,
-                            professional_name: newAppointment.professional_name,
-                            service_name: newAppointment.service_name,
-                            start_at: newAppointment.start_at,
-                            date: newAppointment.date,
-                            start_time: format(new Date(newAppointment.start_at), 'HH:mm'),
-                            value: newAppointment.value
-                        }
+                        body: notificationPayload
                     });
 
                     if (funcError) throw funcError;
                     console.log('✅ Notificação enviada com sucesso (Público)!', data);
                 } catch (emailError: any) {
-                    console.error('⚠️ ERRO NA EDGE FUNCTION DE NOTIFICAÇÃO (Público):', emailError.message || emailError);
-                    // No link público, talvez não queiramos mostrar um erro de e-mail para o cliente final
-                    // mas vamos logar para o admin ver no console se necessário.
+                    console.error('❌ ERRO DETALHADO NA EDGE FUNCTION DE NOTIFICAÇÃO (Público):', emailError.message || emailError);
+                    // No link público, logamos mas não bloqueamos o sucesso visual do cliente
                 }
             }
 

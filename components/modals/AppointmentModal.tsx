@@ -221,10 +221,11 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
                 : formData.notas
         } as LegacyAppointment;
 
-        onSave(finalAppointment);
+        await onSave(finalAppointment);
     } catch (err) {
         console.error("Error saving appointment:", err);
         setError("Ocorreu um erro ao salvar o agendamento.");
+    } finally {
         setIsSaving(false);
     }
   };
