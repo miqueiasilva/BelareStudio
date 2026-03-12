@@ -499,22 +499,28 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     });
 
                     if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({}));
-                        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                        let errorMsg = `HTTP error! status: ${response.status}`;
+                        try {
+                            const errorData = await response.json();
+                            errorMsg = errorData?.error || errorMsg;
+                        } catch (e) {
+                            // Ignore json parse error
+                        }
+                        throw new Error(errorMsg);
                     }
                     
                     console.log('✅ Notificação enviada com sucesso!');
                 } catch (emailError: any) {
                     console.error('⚠️ ERRO NA EDGE FUNCTION DE NOTIFICAÇÃO:', emailError);
                     setToast({ 
-                        message: 'Agendamento salvo, mas houve falha ao enviar a notificação por e-mail.', 
+                        message: 'Agendamento salvo, mas a notificação não pôde ser enviada neste ambiente de teste.', 
                         type: 'warning' 
                     });
                     // Não lançamos o erro para não interromper o fluxo de sucesso do agendamento
                 }
             }
 
-            if (!toast.hasOwnProperty('message') || (toast as any).type !== 'warning') {
+            if (!toast || toast.type !== 'warning') {
                 setToast({ message: '✅ Agendamento salvo com sucesso!', type: 'success' });
             }
             setModalState(null); 

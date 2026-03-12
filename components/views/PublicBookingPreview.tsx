@@ -428,8 +428,14 @@ const PublicBookingPreview: React.FC = () => {
                     });
 
                     if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({}));
-                        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                        let errorMsg = `HTTP error! status: ${response.status}`;
+                        try {
+                            const errorData = await response.json();
+                            errorMsg = errorData?.error || errorMsg;
+                        } catch (e) {
+                            // Ignore json parse error
+                        }
+                        throw new Error(errorMsg);
                     }
                     console.log('✅ Notificação enviada com sucesso (Público)!');
                 } catch (emailError: any) {
