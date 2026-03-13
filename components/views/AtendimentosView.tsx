@@ -512,7 +512,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         });
 
                         if (funcError) throw funcError;
-                        console.log('✅ Notificação enviada com sucesso!', data);
+
+                        if (data?.warning && !data?.notification_sent) {
+                            console.warn('⚠️ [PARTIAL_SUCCESS] Agendamento salvo, mas notificação falhou:', data.warning);
+                            setToast({ 
+                                message: data.warning, 
+                                type: 'warning' 
+                            });
+                        } else {
+                            console.log('✅ Notificação enviada com sucesso!', data);
+                        }
                     } catch (emailError: any) {
                         console.error('❌ ERRO DETALHADO NA EDGE FUNCTION DE NOTIFICAÇÃO:', emailError);
                         
