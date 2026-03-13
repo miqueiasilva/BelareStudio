@@ -430,41 +430,55 @@ const PublicBookingPreview: React.FC = () => {
                 console.log('📦 Payload enviado para Edge Function (Público):', notificationPayload);
 
                 try {
-                    // Função auxiliar para chamada robusta
+                    // Função auxiliar para chamada robusta com logs de debug
                     const invokeFunction = async () => {
                         try {
+                            console.log('📡 [DEBUG] Chamando Edge Function via SDK (Público)...');
                             const { data, error: funcError } = await supabase.functions.invoke('send-appointment-notification', {
                                 body: notificationPayload
                             });
-                            if (funcError) return { error: funcError };
+                            if (funcError) {
+                                console.error('❌ [DEBUG] Erro retornado pelo SDK (Público):', funcError);
+                                return { error: funcError };
+                            }
                             return { data };
                         } catch (err: any) {
-                            // Fallback para fetch direto se o SDK falhar na rede
-                            if (err.message?.includes('Failed to send a request') || err.name === 'TypeError') {
-                                console.warn('⚠️ SDK falhou ao alcançar a Edge Function (Público). Tentando fetch direto como fallback...');
-                                const projectRef = supabaseUrl.split('//')[1].split('.')[0];
-                                const directUrl = `https://${projectRef}.functions.supabase.co/send-appointment-notification`;
-                                
-                                try {
-                                    const response = await fetch(directUrl, {
-                                        method: 'POST',
-                                        headers: {
-                                            'Content-Type': 'application/json',
-                                            'Authorization': `Bearer ${supabaseAnonKey}`
-                                        },
-                                        body: JSON.stringify(notificationPayload)
-                                    });
-                                    
-                                    if (!response.ok) {
-                                        return { error: new Error(response.status === 404 ? 'Edge Function não encontrada (404)' : `Erro HTTP ${response.status}`) };
-                                    }
-                                    const data = await response.json();
-                                    return { data };
-                                } catch (fetchErr: any) {
-                                    return { error: fetchErr };
+                            console.warn('⚠️ [DEBUG] Exceção capturada no SDK (Público):', err.message);
+                            
+                            // Fallback para fetch direto se o SDK falhar na rede ou por configuração
+                            try {
+                                let directUrl = '';
+                                if (supabaseUrl.includes('localhost') || supabaseUrl.includes('127.0.0.1')) {
+                                    directUrl = `${supabaseUrl}/functions/v1/send-appointment-notification`;
+                                } else {
+                                    // Converte https://project.supabase.co para https://project.functions.supabase.co
+                                    directUrl = `${supabaseUrl.replace('.supabase.co', '.functions.supabase.co')}/send-appointment-notification`;
                                 }
+                                
+                                console.log(`🔗 [DEBUG] Tentando fetch direto como fallback (Público): ${directUrl}`);
+                                
+                                const response = await fetch(directUrl, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'Authorization': `Bearer ${supabaseAnonKey}`,
+                                        'apikey': supabaseAnonKey
+                                    },
+                                    mode: 'cors',
+                                    body: JSON.stringify(notificationPayload)
+                                });
+                                
+                                if (!response.ok) {
+                                    const errorText = await response.text();
+                                    console.error(`❌ [DEBUG] Fetch direto falhou (Público) (Status: ${response.status}):`, errorText);
+                                    return { error: new Error(response.status === 404 ? 'Edge Function não encontrada (404)' : `Erro HTTP ${response.status}: ${errorText}`) };
+                                }
+                                const data = await response.json();
+                                return { data };
+                            } catch (fetchErr: any) {
+                                console.error('❌ [DEBUG] Exceção no fetch direto (Público):', fetchErr.message);
+                                return { error: fetchErr };
                             }
-                            return { error: err };
                         }
                     };
 
@@ -475,10 +489,10 @@ const PublicBookingPreview: React.FC = () => {
                     if (data?.warning && !data?.notification_sent) {
                         console.warn('⚠️ [PARTIAL_SUCCESS] Agendamento salvo, mas notificação falhou (Público):', data.warning);
                     } else {
-                        console.log('✅ Notificação enviada com sucesso (Público)!', data);
+                        console.log('✅ [DEBUG] Notificação processada com sucesso (Público)!', data);
                     }
                 } catch (emailError: any) {
-                    console.error('❌ ERRO NA NOTIFICAÇÃO (Público):', emailError.message || emailError);
+                    console.error('❌ [DEBUG] ERRO FINAL NA NOTIFICAÇÃO (Público):', emailError.message || emailError);
                     // No link público, logamos mas não bloqueamos o sucesso visual do cliente
                 }
             }

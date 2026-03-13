@@ -1,49 +1,46 @@
 import { corsHeaders } from '../_shared/cors.ts'
 
-// Mock de corsHeaders caso o import acima falhe no ambiente local
-const localCorsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+console.log('✨ [INIT] send-appointment-notification function loaded')
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
+  // 1. Handle CORS preflight requests immediately
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: localCorsHeaders })
+    return new Response('ok', { 
+      status: 200, 
+      headers: corsHeaders 
+    })
   }
 
-  console.log('🚀 [START] send-appointment-notification function triggered')
+  console.log(`🚀 [START] ${req.method} request received`)
 
   try {
+    // 2. Parse request body
     const body = await req.json().catch(() => null)
     
     if (!body) {
       console.error('❌ [ERROR] Corpo da requisição inválido ou vazio')
       return new Response(
         JSON.stringify({ success: false, error: 'Corpo da requisição inválido ou vazio' }),
-        { status: 400, headers: { ...localCorsHeaders, 'Content-Type': 'application/json' } }
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
       )
     }
 
-    // Log do payload recebido conforme solicitado
+    // Log do payload recebido
     console.log('📦 [PAYLOAD] Recebido:', JSON.stringify(body, null, 2))
 
     const resendApiKey = Deno.env.get('RESEND_API_KEY')
 
     const { 
-      studio_id,
       client_name, 
       client_email, 
-      client_phone,
-      client_whatsapp,
-      professional_id,
       professional_name, 
       service_name, 
       start_at,
-      duration,
       total_amount,
       notes,
-      // Fallbacks para compatibilidade com versões anteriores se necessário
       date, 
       start_time, 
       value 
@@ -109,11 +106,7 @@ Deno.serve(async (req) => {
           resData = { raw: resText }
         }
 
-        // Log detalhado da resposta da Resend conforme solicitado
         console.log(`📡 [RESEND_RESPONSE] Status: ${resStatus}`)
-        console.log(`📡 [RESEND_RESPONSE] Body:`, JSON.stringify(resData, null, 2))
-        console.log(`👥 [RECIPIENTS] Destinatários:`, [client_email])
-
         notificationStatus.resend_response = { status: resStatus, data: resData }
 
         if (res.ok) {
@@ -131,7 +124,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Sempre retorna 200 se chegou aqui, conforme solicitado para não quebrar o fluxo do frontend
+    // 3. Sucesso (ou falha parcial tratada)
     return new Response(
       JSON.stringify({ 
         success: true, 
@@ -145,16 +138,11 @@ Deno.serve(async (req) => {
       }),
       {
         status: 200,
-        headers: {
-          ...localCorsHeaders,
-          'Content-Type': 'application/json',
-        },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     )
   } catch (error) {
     console.error('❌ [CRITICAL_ERROR] Erro inesperado na Edge Function:', error)
-    // Mesmo em erro crítico da função, tentamos retornar algo que o frontend entenda como "não bloqueante"
-    // mas se for um erro de parsing de JSON ou algo assim, retornamos 400/500 conforme apropriado.
     return new Response(
       JSON.stringify({
         success: false,
@@ -162,11 +150,8 @@ Deno.serve(async (req) => {
         warning: 'Ocorreu um erro inesperado ao processar a notificação.'
       }),
       {
-        status: 500,
-        headers: {
-          ...localCorsHeaders,
-          'Content-Type': 'application/json',
-        },
+        status: 200, // Retornamos 200 com success: false para não quebrar o fluxo do frontend
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     )
   }

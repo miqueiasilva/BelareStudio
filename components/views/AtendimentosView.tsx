@@ -507,41 +507,55 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     console.log('📦 Payload enviado para Edge Function:', notificationPayload);
 
                     try {
-                        // Função auxiliar para chamada robusta
+                        // Função auxiliar para chamada robusta com logs de debug
                         const invokeFunction = async () => {
                             try {
+                                console.log('📡 [DEBUG] Chamando Edge Function via SDK (send-appointment-notification)...');
                                 const { data, error: funcError } = await supabase.functions.invoke('send-appointment-notification', {
                                     body: notificationPayload
                                 });
-                                if (funcError) return { error: funcError };
+                                if (funcError) {
+                                    console.error('❌ [DEBUG] Erro retornado pelo SDK:', funcError);
+                                    return { error: funcError };
+                                }
                                 return { data };
                             } catch (err: any) {
-                                // Fallback para fetch direto se o SDK falhar na rede
-                                if (err.message?.includes('Failed to send a request') || err.name === 'TypeError') {
-                                    console.warn('⚠️ SDK falhou ao alcançar a Edge Function. Tentando fetch direto como fallback...');
-                                    const projectRef = supabaseUrl.split('//')[1].split('.')[0];
-                                    const directUrl = `https://${projectRef}.functions.supabase.co/send-appointment-notification`;
-                                    
-                                    try {
-                                        const response = await fetch(directUrl, {
-                                            method: 'POST',
-                                            headers: {
-                                                'Content-Type': 'application/json',
-                                                'Authorization': `Bearer ${supabaseAnonKey}`
-                                            },
-                                            body: JSON.stringify(notificationPayload)
-                                        });
-                                        
-                                        if (!response.ok) {
-                                            return { error: new Error(response.status === 404 ? 'Edge Function não encontrada (404)' : `Erro HTTP ${response.status}`) };
-                                        }
-                                        const data = await response.json();
-                                        return { data };
-                                    } catch (fetchErr: any) {
-                                        return { error: fetchErr };
+                                console.warn('⚠️ [DEBUG] Exceção capturada no SDK:', err.message);
+                                
+                                // Fallback para fetch direto se o SDK falhar na rede ou por configuração
+                                try {
+                                    let directUrl = '';
+                                    if (supabaseUrl.includes('localhost') || supabaseUrl.includes('127.0.0.1')) {
+                                        directUrl = `${supabaseUrl}/functions/v1/send-appointment-notification`;
+                                    } else {
+                                        // Converte https://project.supabase.co para https://project.functions.supabase.co
+                                        directUrl = `${supabaseUrl.replace('.supabase.co', '.functions.supabase.co')}/send-appointment-notification`;
                                     }
+                                    
+                                    console.log(`🔗 [DEBUG] Tentando fetch direto como fallback: ${directUrl}`);
+                                    
+                                    const response = await fetch(directUrl, {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                            'Authorization': `Bearer ${supabaseAnonKey}`,
+                                            'apikey': supabaseAnonKey
+                                        },
+                                        mode: 'cors',
+                                        body: JSON.stringify(notificationPayload)
+                                    });
+                                    
+                                    if (!response.ok) {
+                                        const errorText = await response.text();
+                                        console.error(`❌ [DEBUG] Fetch direto falhou (Status: ${response.status}):`, errorText);
+                                        return { error: new Error(response.status === 404 ? 'Edge Function não encontrada (404). Verifique se foi implantada.' : `Erro HTTP ${response.status}: ${errorText}`) };
+                                    }
+                                    const data = await response.json();
+                                    return { data };
+                                } catch (fetchErr: any) {
+                                    console.error('❌ [DEBUG] Exceção no fetch direto:', fetchErr.message);
+                                    return { error: fetchErr };
                                 }
-                                return { error: err };
                             }
                         };
 
@@ -556,15 +570,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                 type: 'warning' 
                             });
                         } else {
-                            console.log('✅ Notificação enviada com sucesso!', data);
+                            console.log('✅ [DEBUG] Notificação processada com sucesso!', data);
                         }
                     } catch (emailError: any) {
-                        console.error('❌ ERRO NA NOTIFICAÇÃO:', emailError);
+                        console.error('❌ [DEBUG] ERRO FINAL NA NOTIFICAÇÃO:', emailError);
                         
                         let errorMessage = 'Agendamento salvo, mas a notificação não pôde ser enviada.';
                         if (emailError.message) {
                             if (emailError.message.includes('Failed to send a request') || emailError.message.includes('404')) {
-                                errorMessage = 'Agendamento salvo. Notificação pendente (Edge Function não implantada ou inacessível).';
+                                errorMessage = 'Agendamento salvo. Notificação pendente (Edge Function inacessível ou não implantada).';
                             } else {
                                 errorMessage += ` (${emailError.message})`;
                             }
