@@ -3,14 +3,15 @@ import {
     ChevronLeft, CreditCard, Smartphone, Banknote, 
     Loader2, CheckCircle,
     ShoppingCart, X,
-    CreditCard as CardIcon
+    CreditCard as CardIcon,
+    Tag, Percent
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import Toast, { ToastType } from '../shared/Toast';
 
 const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = ({ commandId, onBack }) => {
-    const { activeStudioId } = useStudio();
+    const { activeStudioId, studios } = useStudio();
     const [command, setCommand] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [isFinishing, setIsFinishing] = useState(false);
@@ -27,6 +28,10 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
     const [amountToPay, setAmountToPay] = useState<string>('0');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [availableConfigs, setAvailableConfigs] = useState<any[]>([]);
+    const [selectedDiscount, setSelectedDiscount] = useState<any | null>(null);
+
+    const activeStudio = studios.find(s => s.id === activeStudioId);
+    const activeDiscounts = (activeStudio?.discount_rules || []).filter((d: any) => d.active);
 
     const fetchContext = useCallback(async () => {
         if (!activeStudioId || !commandId) return;
@@ -66,11 +71,30 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
     }, [fetchContext]);
 
     const totals = useMemo(() => {
-        if (!command) return { total: 0, paid: 0, remaining: 0 };
-        const total = command.command_items?.reduce((acc: number, i: any) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || 0;
+        if (!command) return { subtotal: 0, discount: 0, total: 0, paid: 0, remaining: 0 };
+        
+        const subtotal = command.command_items?.reduce((acc: number, i: any) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || 0;
+        
+        let discount = 0;
+        if (selectedDiscount) {
+            if (selectedDiscount.type === 'percentage') {
+                discount = (subtotal * Number(selectedDiscount.value)) / 100;
+            } else {
+                discount = Number(selectedDiscount.value);
+            }
+        }
+
+        const total = Math.max(0, subtotal - discount);
         const currentPaid = addedPayments.reduce((acc, p) => acc + p.amount, 0);
-        return { total, paid: currentPaid, remaining: Math.max(0, total - currentPaid) };
-    }, [command, addedPayments]);
+        
+        return { 
+            subtotal, 
+            discount, 
+            total, 
+            paid: currentPaid, 
+            remaining: Math.max(0, total - currentPaid) 
+        };
+    }, [command, addedPayments, selectedDiscount]);
 
     // ─── CÁLCULO DE TAXA ──────────────────────────────────────────────────────
     const feeInfo = useMemo(() => {
@@ -162,13 +186,17 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                     closed_at: now,
                     paid_at: now,
                     payment_method: dbMethod,
+                    discount_amount: totals.discount,
+                    discount_info: selectedDiscount || {},
                     payment_data: {
                         method: dbMethod,
                         tax_rate: Number(mainPayment.rate || 0),
                         gross_value: Number(totals.total),
                         net_value: Number(mainPayment.netAmount || totals.total),
                         installments: Number(mainPayment.installments || 1),
-                        brand: mainPayment.brand || null
+                        brand: mainPayment.brand || null,
+                        subtotal: totals.subtotal,
+                        discount: totals.discount
                     }
                 })
                 .eq('id', commandId);
@@ -329,12 +357,54 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                         <div className="bg-slate-900 rounded-[40px] p-8 text-white shadow-2xl relative overflow-hidden">
                             <p className="text-[10px] font-black uppercase text-slate-400 mb-2 tracking-widest">Total a Receber</p>
                             <h2 className="text-5xl font-black text-emerald-400 tracking-tighter">R$ {totals.total.toFixed(2)}</h2>
+                            
+                            {totals.discount > 0 && (
+                                <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between items-center">
+                                    <span className="text-[10px] font-black uppercase text-slate-500">Subtotal: R$ {totals.subtotal.toFixed(2)}</span>
+                                    <span className="text-[10px] font-black uppercase text-rose-400">Desconto: - R$ {totals.discount.toFixed(2)}</span>
+                                </div>
+                            )}
+
                             {totals.remaining > 0 && addedPayments.length > 0 && (
                                 <p className="text-[10px] font-black uppercase text-amber-400 mt-3 tracking-widest">
                                     Restante: R$ {totals.remaining.toFixed(2)}
                                 </p>
                             )}
                         </div>
+
+                        {!isLocked && activeDiscounts.length > 0 && (
+                            <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
+                                <header className="px-6 py-4 border-b border-slate-50 bg-slate-50/50">
+                                    <h3 className="font-black text-slate-800 text-[10px] uppercase tracking-widest flex items-center gap-2"><Tag size={16} /> Descontos Disponíveis</h3>
+                                </header>
+                                <div className="p-4 grid grid-cols-1 gap-2">
+                                    {activeDiscounts.map((d: any) => (
+                                        <button 
+                                            key={d.id}
+                                            onClick={() => setSelectedDiscount(selectedDiscount?.id === d.id ? null : d)}
+                                            className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
+                                                selectedDiscount?.id === d.id 
+                                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700' 
+                                                : 'bg-white border-slate-100 text-slate-600 hover:border-slate-200'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={`p-2 rounded-lg ${selectedDiscount?.id === d.id ? 'bg-emerald-100' : 'bg-slate-50'}`}>
+                                                    {d.type === 'percentage' ? <Percent size={14} /> : <Banknote size={14} />}
+                                                </div>
+                                                <div className="text-left">
+                                                    <p className="text-xs font-bold">{d.name}</p>
+                                                    <p className="text-[10px] font-medium opacity-70">
+                                                        {d.type === 'percentage' ? `${d.value}% de desconto` : `R$ ${d.value} de desconto`}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            {selectedDiscount?.id === d.id && <CheckCircle size={16} className="text-emerald-500" />}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         {!isLocked && (
                             <div className="bg-white rounded-[40px] p-6 border border-slate-100 shadow-sm space-y-6">

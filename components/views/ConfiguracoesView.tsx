@@ -9,6 +9,8 @@ import ResourcesSettings from '../settings/ResourcesSettings';
 import UnderConstruction from '../settings/UnderConstruction';
 
 import FinancialCategoriesSettings from '../settings/FinancialCategoriesSettings';
+import ThemeSettings from '../settings/ThemeSettings';
+import DiscountSettings from '../settings/DiscountSettings';
 
 const ConfiguracoesView: React.FC = () => {
     const [subView, setSubView] = useState<'hub' | 'profile' | 'payments' | 'theme' | 'resources' | 'discounts' | 'blocks' | 'financial_categories'>('hub');
@@ -36,9 +38,9 @@ const ConfiguracoesView: React.FC = () => {
             case 'financial_categories':
                 return <FinancialCategoriesSettings onBack={() => setSubView('hub')} />;
             case 'theme':
-                return <UnderConstruction title="Tema do Sistema" onBack={() => setSubView('hub')} />;
+                return <ThemeSettings onBack={() => setSubView('hub')} />;
             case 'discounts':
-                return <UnderConstruction title="Cupons e Descontos" onBack={() => setSubView('hub')} />;
+                return <DiscountSettings onBack={() => setSubView('hub')} />;
             default:
                 return <SettingsHub onNavigate={(v: any) => setSubView(v)} onTopLevelNavigate={() => {}} />;
         }

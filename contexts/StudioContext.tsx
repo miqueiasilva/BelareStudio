@@ -5,6 +5,8 @@ type Studio = {
   id: string;
   name?: string | null;
   role?: string | null;
+  theme_color?: string | null;
+  discount_rules?: any[] | null;
 };
 
 type StudioContextValue = {
@@ -63,18 +65,40 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
 
       if (isAdmin) {
         const { data: allStudios } = await supabase.from("studios").select("id, name");
-        mappedStudios = (allStudios || []).map(s => ({ id: s.id, name: s.name, role: 'admin' }));
+        const { data: allSettings } = await supabase.from("studio_settings").select("id, theme_color, discount_rules");
+        
+        mappedStudios = (allStudios || []).map(s => {
+          const settings = allSettings?.find(st => st.id === s.id);
+          return { 
+            id: s.id, 
+            name: s.name, 
+            role: 'admin',
+            theme_color: settings?.theme_color,
+            discount_rules: settings?.discount_rules
+          };
+        });
       } else {
         const { data: memberships } = await supabase
           .from("user_studios")
           .select("studio_id, role, studios(name)")
           .eq("user_id", user.id);
         
-        mappedStudios = (memberships || []).map(m => ({
-          id: m.studio_id,
-          name: (m.studios as any)?.name || "Unidade",
-          role: m.role
-        }));
+        const studioIds = (memberships || []).map(m => m.studio_id);
+        const { data: allSettings } = await supabase
+          .from("studio_settings")
+          .select("id, theme_color, discount_rules")
+          .in("id", studioIds);
+        
+        mappedStudios = (memberships || []).map(m => {
+          const settings = allSettings?.find(st => st.id === m.studio_id);
+          return {
+            id: m.studio_id,
+            name: (m.studios as any)?.name || "Unidade",
+            role: m.role,
+            theme_color: settings?.theme_color,
+            discount_rules: settings?.discount_rules
+          };
+        });
       }
 
       setStudios(mappedStudios);
@@ -122,6 +146,15 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
       sub.subscription.unsubscribe();
     };
   }, [refreshStudios]);
+
+  useEffect(() => {
+    const activeStudio = studios.find(s => s.id === activeStudioId);
+    if (activeStudio?.theme_color) {
+      document.documentElement.style.setProperty('--primary-color', activeStudio.theme_color);
+    } else {
+      document.documentElement.style.setProperty('--primary-color', '#f97316'); // Default orange
+    }
+  }, [studios, activeStudioId]);
 
   const value = useMemo(
     () => ({ loading, isSyncing, studios, activeStudioId, setActiveStudioId, refreshStudios }),

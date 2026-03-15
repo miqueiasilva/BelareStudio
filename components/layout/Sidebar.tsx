@@ -83,7 +83,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                     onClick={(e) => handleNavigation(e, item.id)}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${
                     isActive 
-                    ? 'bg-orange-100 text-orange-600 shadow-sm border border-orange-200' 
+                    ? 'sidebar-active shadow-sm border' 
                     : 'text-slate-500 hover:bg-slate-100'
                 }`}>
                     <Icon className="w-5 h-5" />
@@ -96,7 +96,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
     return (
         <aside className={`bg-white border-r border-slate-200 flex flex-col h-full max-h-screen ${className}`}>
             <div className="h-16 flex items-center px-6 gap-3 border-b border-slate-100 flex-shrink-0 mb-4">
-                <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center font-black text-white text-xl shadow-lg shadow-orange-100">
+                <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center font-black text-white text-xl shadow-lg shadow-slate-200">
                     B
                 </div>
                 <div>
