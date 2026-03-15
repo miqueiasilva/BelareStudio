@@ -2,13 +2,14 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { LegacyAppointment, AppointmentStatus } from '../../types';
 import { 
-    Calendar, Tag, DollarSign, Send, Edit, Trash2, 
-    User, MoreVertical, X, CheckCircle2, Receipt
+    Calendar, DollarSign, Edit, Trash2, 
+    User, MoreVertical, X, CheckCircle2, Receipt, MessageCircle
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import StatusUpdatePopover from './StatusUpdatePopover';
 import CheckoutModal from '../modals/CheckoutModal';
+import { supabase } from '../../services/supabaseClient';
 
 interface AppointmentDetailPopoverProps {
   appointment: LegacyAppointment;
@@ -48,6 +49,49 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const [isStatusPopoverOpen, setIsStatusPopoverOpen] = useState(false);
   const [statusTarget, setStatusTarget] = useState<HTMLElement | null>(null);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [clientPhone, setClientPhone] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchClientPhone = async () => {
+      if (!appointment.client?.id) return;
+      try {
+        const { data } = await supabase
+          .from('clients')
+          .select('whatsapp, telefone')
+          .eq('id', appointment.client.id)
+          .maybeSingle();
+        if (data) {
+          setClientPhone(data.whatsapp || data.telefone || null);
+        }
+      } catch (e) {
+        // silencioso
+      }
+    };
+    fetchClientPhone();
+  }, [appointment.client?.id]);
+
+  const handleSendWhatsAppReminder = () => {
+    if (!clientPhone) return;
+    const cleanPhone = clientPhone.replace(/\D/g, '');
+    const clientName = appointment.client?.nome || 'Cliente';
+    const serviceName = appointment.services && appointment.services.length > 0
+      ? appointment.services.map(s => s.name).join(' + ')
+      : appointment.service.name;
+    const dateStr = format(appointment.start, "dd/MM/yyyy", { locale: pt });
+    const timeStr = format(appointment.start, "HH:mm");
+    const profName = appointment.professional?.name || '';
+
+    const message =
+      `Olá ${clientName}! 😊\n` +
+      `Lembrando do seu agendamento no Studio Jacilene Félix:\n\n` +
+      `📅 Data: ${dateStr}\n` +
+      `⏰ Horário: ${timeStr}\n` +
+      `💆 Serviço: ${serviceName}\n` +
+      (profName ? `💅 Profissional: ${profName}\n` : '') +
+      `\nQualquer dúvida, estamos à disposição! 💜`;
+
+    window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -57,35 +101,21 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     };
 
     const handlePositioning = () => {
-        if (!targetElement || !popoverRef.current) return;
-
-        const targetRect = targetElement.getBoundingClientRect();
-        const popoverRect = popoverRef.current.getBoundingClientRect();
-        const viewportWidth = window.innerWidth;
-        const viewportHeight = window.innerHeight;
-        
-        const SAFE_ZONE_TOP = 112; 
-        
-        let top = targetRect.top + (targetRect.height / 2) - (popoverRect.height / 2);
-        let left = targetRect.right + 12;
-
-        if (left + popoverRect.width > viewportWidth) {
-            left = targetRect.left - popoverRect.width - 12;
-        }
-        
-        if (top < SAFE_ZONE_TOP) {
-            top = SAFE_ZONE_TOP;
-        }
-
-        if (top + popoverRect.height > viewportHeight - 16) {
-            top = viewportHeight - popoverRect.height - 16;
-        }
-
-        if (left < 16) left = 16;
-
-        setPosition({ top, left, opacity: 1 });
+      if (!targetElement || !popoverRef.current) return;
+      const targetRect = targetElement.getBoundingClientRect();
+      const popoverRect = popoverRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const SAFE_ZONE_TOP = 112;
+      let top = targetRect.top + (targetRect.height / 2) - (popoverRect.height / 2);
+      let left = targetRect.right + 12;
+      if (left + popoverRect.width > viewportWidth) left = targetRect.left - popoverRect.width - 12;
+      if (top < SAFE_ZONE_TOP) top = SAFE_ZONE_TOP;
+      if (top + popoverRect.height > viewportHeight - 16) top = viewportHeight - popoverRect.height - 16;
+      if (left < 16) left = 16;
+      setPosition({ top, left, opacity: 1 });
     };
-    
+
     const timer = setTimeout(handlePositioning, 0);
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
@@ -107,146 +137,150 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
 
   const isFinished = ['concluido', 'cancelado', 'bloqueado'].includes(appointment.status);
   const canCheckout = !isFinished;
-  
-  // --- NOVO HANDLER DE FINALIZAÇÃO ---
+
   const handleFinalize = () => {
-      if (onConvertToCommand) {
-          onConvertToCommand(appointment);
-      } else {
-          // Fallback para o modal antigo caso a função não seja passada
-          setIsCheckoutOpen(true);
-      }
+    if (onConvertToCommand) {
+      onConvertToCommand(appointment);
+    } else {
+      setIsCheckoutOpen(true);
+    }
   };
 
   return (
     <>
-        <div
-            ref={popoverRef}
-            className={`fixed z-[100] w-80 bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-slate-200 flex flex-col transition-all duration-200 ${isCheckoutOpen ? 'opacity-0 pointer-events-none scale-95' : 'scale-100'}`}
-            style={{ top: position.top, left: position.left, opacity: isCheckoutOpen ? 0 : position.opacity }}
-            onClick={(e) => e.stopPropagation()}
-        >
-            <header className="flex items-center p-3 border-b border-slate-100 bg-slate-50/50">
-                <div className="flex-1 flex items-center gap-1.5">
-                    <button 
-                        onClick={() => { onEdit(appointment); onClose(); }} 
-                        className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors" 
-                        title="Editar"
-                    >
-                        <Edit size={18} />
-                    </button>
-                    
-                    <button 
-                        onClick={() => onDelete(appointment.id)} 
-                        className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all" 
-                        title="Excluir Agendamento"
-                    >
-                        <Trash2 size={18} />
-                    </button>
+      <div
+        ref={popoverRef}
+        className={`fixed z-[100] w-80 bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-slate-200 flex flex-col transition-all duration-200 ${isCheckoutOpen ? 'opacity-0 pointer-events-none scale-95' : 'scale-100'}`}
+        style={{ top: position.top, left: position.left, opacity: isCheckoutOpen ? 0 : position.opacity }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="flex items-center p-3 border-b border-slate-100 bg-slate-50/50">
+          <div className="flex-1 flex items-center gap-1.5">
+            <button
+              onClick={() => { onEdit(appointment); onClose(); }}
+              className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
+              title="Editar"
+            >
+              <Edit size={18} />
+            </button>
+            <button
+              onClick={() => onDelete(appointment.id)}
+              className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+              title="Excluir"
+            >
+              <Trash2 size={18} />
+            </button>
+            <button className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors" title="Ver Perfil">
+              <User size={18} />
+            </button>
+            {clientPhone && !isFinished && (
+              <button
+                onClick={handleSendWhatsAppReminder}
+                className="p-2 text-white bg-green-500 hover:bg-green-600 rounded-xl transition-all shadow-sm shadow-green-200 ml-1"
+                title="Enviar Lembrete via WhatsApp"
+              >
+                <MessageCircle size={18} />
+              </button>
+            )}
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors">
+            <X size={18} />
+          </button>
+        </header>
 
-                    <button className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors" title="Ver Perfil"><User size={18} /></button>
+        <main className="p-6 space-y-4">
+          <div>
+            <h3 className="font-black text-xl text-slate-800 leading-tight">{appointment.client?.nome || 'Horário Bloqueado'}</h3>
+            {appointment.services && appointment.services.length > 0 ? (
+              <div className="mt-2 space-y-1">
+                {appointment.services.map((s, idx) => (
+                  <p key={idx} className="text-[10px] font-black text-orange-500 uppercase tracking-widest leading-none">• {s.name}</p>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mt-1">{appointment.service.name}</p>
+            )}
+          </div>
+
+          <div className="space-y-3 pt-2">
+            <div className="flex items-start gap-3 text-xs font-bold text-slate-600">
+              <div className="p-2 bg-slate-50 rounded-lg"><Calendar size={14} className="text-slate-400" /></div>
+              <div>
+                <span className="capitalize">{format(appointment.start, "EEEE, dd 'de' MMMM", { locale: pt })}</span>
+                <br />
+                <span className="text-slate-400">{format(appointment.start, "HH:mm")} às {format(appointment.end, "HH:mm")}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 text-xs font-bold text-slate-600">
+              <div className="p-2 bg-emerald-50 rounded-lg"><DollarSign size={14} className="text-emerald-500" /></div>
+              <span className="text-emerald-600 font-black text-lg">R$ {appointment.service.price.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 pt-5 flex flex-col gap-3">
+            <div className="mb-1">
+              <button
+                ref={statusRef}
+                onClick={handleOpenStatus}
+                className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-500 bg-slate-50 hover:bg-slate-100 p-4 rounded-2xl transition-all border border-slate-100"
+              >
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={14} className="text-slate-400" />
+                  <span>{statusLabels[appointment.status]}</span>
                 </div>
-                <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"><X size={18}/></button>
-            </header>
-            
-            <main className="p-6 space-y-4">
-                <div>
-                    <h3 className="font-black text-xl text-slate-800 leading-tight">{appointment.client?.nome || 'Horário Bloqueado'}</h3>
-                    {appointment.services && appointment.services.length > 0 ? (
-                        <div className="mt-2 space-y-1">
-                            {appointment.services.map((s, idx) => (
-                                <p key={idx} className="text-[10px] font-black text-orange-500 uppercase tracking-widest leading-none">
-                                    • {s.name}
-                                </p>
-                            ))}
-                        </div>
-                    ) : (
-                        <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mt-1">{appointment.service.name}</p>
-                    )}
-                </div>
-                
-                <div className="space-y-3 pt-2">
-                    <div className="flex items-start gap-3 text-xs font-bold text-slate-600">
-                        <div className="p-2 bg-slate-50 rounded-lg"><Calendar size={14} className="text-slate-400" /></div>
-                        <div>
-                            <span className="capitalize">{format(appointment.start, "EEEE, dd 'de' MMMM", { locale: pt })}</span>
-                            <br/>
-                            <span className="text-slate-400">{format(appointment.start, "HH:mm")} às {format(appointment.end, "HH:mm")}</span>
-                        </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-3 text-xs font-bold text-slate-600">
-                        <div className="p-2 bg-emerald-50 rounded-lg"><DollarSign size={14} className="text-emerald-500" /></div>
-                        <span className="text-emerald-600 font-black text-lg">R$ {appointment.service.price.toFixed(2)}</span>
-                    </div>
-                </div>
+                <MoreVertical size={14} />
+              </button>
+            </div>
 
-                <div className="border-t border-slate-100 pt-5 flex flex-col gap-3">
-                    <div className="mb-1">
-                        <button
-                            ref={statusRef}
-                            onClick={handleOpenStatus}
-                            className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-500 bg-slate-50 hover:bg-slate-100 p-4 rounded-2xl transition-all border border-slate-100"
-                        >
-                            <div className="flex items-center gap-2">
-                                <CheckCircle2 size={14} className="text-slate-400" />
-                                <span>{statusLabels[appointment.status]}</span>
-                            </div>
-                            <MoreVertical size={14} />
-                        </button>
-                    </div>
+            {canCheckout && (
+              <button
+                onClick={handleFinalize}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-[0.1em] py-5 rounded-[24px] shadow-xl shadow-emerald-100 transition-all active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Receipt size={18} />
+                Finalizar Atendimento
+              </button>
+            )}
 
-                    {canCheckout && (
-                        <button
-                            onClick={handleFinalize}
-                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-[0.1em] py-5 rounded-[24px] shadow-xl shadow-emerald-100 transition-all active:scale-95 flex items-center justify-center gap-2"
-                        >
-                            <Receipt size={18} />
-                            Finalizar Atendimento
-                        </button>
-                    )}
+            {appointment.status === 'concluido' && (
+              <div className="flex items-center justify-center gap-2 py-4 bg-emerald-50 text-emerald-700 rounded-2xl border border-emerald-100">
+                <CheckCircle2 size={16} />
+                <span className="text-[10px] font-black uppercase tracking-widest">Pagamento Recebido</span>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
 
-                    {appointment.status === 'concluido' && (
-                        <div className="flex items-center justify-center gap-2 py-4 bg-emerald-50 text-emerald-700 rounded-2xl border border-emerald-100">
-                            <CheckCircle2 size={16} />
-                            <span className="text-[10px] font-black uppercase tracking-widest">Pagamento Recebido</span>
-                        </div>
-                    )}
-                </div>
-            </main>
-        </div>
+      {isStatusPopoverOpen && (
+        <StatusUpdatePopover
+          appointment={appointment}
+          targetElement={statusTarget}
+          onClose={() => setIsStatusPopoverOpen(false)}
+          onUpdateStatus={handleStatusUpdateWrapper}
+        />
+      )}
 
-        {isStatusPopoverOpen && (
-            <StatusUpdatePopover
-                appointment={appointment}
-                targetElement={statusTarget}
-                onClose={() => setIsStatusPopoverOpen(false)}
-                onUpdateStatus={handleStatusUpdateWrapper}
-            />
-        )}
-
-        {isCheckoutOpen && (
-            <CheckoutModal 
-                isOpen={isCheckoutOpen}
-                onClose={() => { 
-                    setIsCheckoutOpen(false); 
-                }}
-                appointment={{
-                    id: appointment.id,
-                    client_id: appointment.client?.id,
-                    client_name: appointment.client?.nome || 'Cliente',
-                    service_name: appointment.service.name,
-                    price: appointment.service.price,
-                    professional_id: appointment.professional.id,
-                    professional_name: appointment.professional.name
-                }}
-                onSuccess={() => {
-                    onUpdateStatus(appointment.id, 'concluido');
-                    setIsCheckoutOpen(false);
-                    onClose();
-                }}
-            />
-        )}
+      {isCheckoutOpen && (
+        <CheckoutModal
+          isOpen={isCheckoutOpen}
+          onClose={() => setIsCheckoutOpen(false)}
+          appointment={{
+            id: appointment.id,
+            client_id: appointment.client?.id,
+            client_name: appointment.client?.nome || 'Cliente',
+            service_name: appointment.service.name,
+            price: appointment.service.price,
+            professional_id: appointment.professional.id,
+            professional_name: appointment.professional.name
+          }}
+          onSuccess={() => {
+            onUpdateStatus(appointment.id, 'concluido');
+            setIsCheckoutOpen(false);
+            onClose();
+          }}
+        />
+      )}
     </>
   );
 };
