@@ -34,7 +34,7 @@ const DiscountSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 const { data, error } = await supabase
                     .from('studio_settings')
                     .select('discount_rules')
-                    .eq('id', activeStudioId)
+                    .eq('studio_id', activeStudioId)
                     .maybeSingle();
 
                 if (error) throw error;
@@ -58,10 +58,10 @@ const DiscountSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             const { error } = await supabase
                 .from('studio_settings')
                 .upsert({ 
-                    id: activeStudioId, 
+                    studio_id: activeStudioId, 
                     discount_rules: updatedRules,
                     updated_at: new Date().toISOString()
-                }, { onConflict: 'id' });
+                }, { onConflict: 'studio_id' });
 
             if (error) throw error;
             setRules(updatedRules);

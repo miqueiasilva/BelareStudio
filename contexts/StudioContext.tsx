@@ -65,10 +65,10 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
 
       if (isAdmin) {
         const { data: allStudios } = await supabase.from("studios").select("id, name");
-        const { data: allSettings } = await supabase.from("studio_settings").select("id, theme_color, discount_rules");
+        const { data: allSettings } = await supabase.from("studio_settings").select("studio_id, theme_color, discount_rules");
         
         mappedStudios = (allStudios || []).map(s => {
-          const settings = allSettings?.find(st => st.id === s.id);
+          const settings = allSettings?.find(st => st.studio_id === s.id);
           return { 
             id: s.id, 
             name: s.name, 
@@ -86,11 +86,11 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
         const studioIds = (memberships || []).map(m => m.studio_id);
         const { data: allSettings } = await supabase
           .from("studio_settings")
-          .select("id, theme_color, discount_rules")
-          .in("id", studioIds);
+          .select("studio_id, theme_color, discount_rules")
+          .in("studio_id", studioIds);
         
         mappedStudios = (memberships || []).map(m => {
-          const settings = allSettings?.find(st => st.id === m.studio_id);
+          const settings = allSettings?.find(st => st.studio_id === m.studio_id);
           return {
             id: m.studio_id,
             name: (m.studios as any)?.name || "Unidade",

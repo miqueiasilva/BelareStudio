@@ -32,7 +32,7 @@ const ThemeSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 const { data, error } = await supabase
                     .from('studio_settings')
                     .select('theme_color')
-                    .eq('id', activeStudioId)
+                    .eq('studio_id', activeStudioId)
                     .maybeSingle();
 
                 if (error) throw error;
@@ -56,10 +56,10 @@ const ThemeSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             const { error } = await supabase
                 .from('studio_settings')
                 .upsert({ 
-                    id: activeStudioId, 
+                    studio_id: activeStudioId, 
                     theme_color: selectedColor,
                     updated_at: new Date().toISOString()
-                }, { onConflict: 'id' });
+                }, { onConflict: 'studio_id' });
 
             if (error) throw error;
 
