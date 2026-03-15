@@ -149,11 +149,12 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_studio_id: activeStudioId,
                 p_professional_id: command.professional_id,
                 p_appointment_id: null,
-                p_amount: totals.total,
-                p_method: dbMethod,
+                p_description: description,
+                p_amount: Number(totals.total || 0),
+                p_method: dbMethod || 'pix',
                 p_installments: Number(mainPayment?.installments || 1),
                 p_tax_rate: Number(mainPayment?.rate || 0),
-                p_net_value: Number(mainPayment?.netAmount || totals.total)
+                p_net_value: Number(mainPayment?.netAmount || totals.total || 0)
             });
 
             if (rpcError) {
