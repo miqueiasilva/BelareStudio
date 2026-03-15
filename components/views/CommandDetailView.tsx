@@ -532,8 +532,8 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
                                 <button 
                                     onClick={handleFinishCheckout} 
-                                    disabled={isFinishing || totals.remaining > 0 || addedPayments.length === 0} 
-                                    className={`w-full py-5 rounded-[24px] font-black text-lg uppercase transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 ${totals.remaining === 0 && addedPayments.length > 0 && !isFinishing ? 'bg-emerald-600 text-white shadow-emerald-100' : 'bg-slate-100 text-slate-300'}`}
+                                    disabled={isFinishing || totals.remaining > 0 || (totals.total > 0 && addedPayments.length === 0)} 
+                                    className={`w-full py-5 rounded-[24px] font-black text-lg uppercase transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 ${(totals.remaining === 0 && (totals.total === 0 || addedPayments.length > 0)) && !isFinishing ? 'bg-emerald-600 text-white shadow-emerald-100' : 'bg-slate-100 text-slate-300'}`}
                                 >
                                     {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> LIQUIDAR CONTA</>}
                                 </button>
