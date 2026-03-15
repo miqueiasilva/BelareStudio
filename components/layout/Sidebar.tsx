@@ -94,7 +94,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
     }
 
     return (
-        <aside className={`bg-white border-r border-slate-200 flex flex-col h-full ${className}`}>
+        <aside className={`bg-white border-r border-slate-200 flex flex-col h-full max-h-screen ${className}`}>
             <div className="h-16 flex items-center px-6 gap-3 border-b border-slate-100 flex-shrink-0 mb-4">
                 <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center font-black text-white text-xl shadow-lg shadow-orange-100">
                     B
@@ -107,7 +107,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
 
             <StudioSwitcher />
             
-            <nav className="flex-1 overflow-y-auto p-4 scrollbar-hide">
+            <nav className="flex-1 overflow-y-auto p-4">
                 {filteredPrincipal.length > 0 && (
                     <div className="mb-6">
                         <div className="mb-2 text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] px-3">Principal</div>
@@ -136,7 +136,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
                 )}
             </nav>
 
-            <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+            <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex-shrink-0">
                 <div className="flex items-center gap-3 w-full p-3 rounded-2xl bg-white border border-slate-100 shadow-sm">
                     <img 
                         src={user?.avatar_url || `https://ui-avatars.com/api/?name=${user?.nome || 'User'}&background=random`} 
