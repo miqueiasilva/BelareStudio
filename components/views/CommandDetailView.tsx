@@ -145,9 +145,9 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             const description = `Pagamento Comanda #${commandId}${isCourtesy ? ' (CORTESIA)' : (isTotalZero ? ' (DESCONTO 100%)' : '')}`;
 
             // 1. REGISTRO DO PAGAMENTO NO FINANCEIRO
-            const { data: transaction, error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                p_studio_id: activeStudioId,
-                p_professional_id: command.professional_id,
+            const rpcPayload = {
+                p_studio_id: activeStudioId || null,
+                p_professional_id: (command.professional_id && command.professional_id.length > 10) ? command.professional_id : null,
                 p_appointment_id: null,
                 p_description: description,
                 p_amount: Number(totals.total || 0),
@@ -155,7 +155,11 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_installments: Number(mainPayment?.installments || 1),
                 p_tax_rate: Number(mainPayment?.rate || 0),
                 p_net_value: Number(mainPayment?.netAmount || totals.total || 0)
-            });
+            };
+
+            console.log('[RPC_PAYLOAD]', rpcPayload);
+            const { data: transaction, error: rpcError } = await supabase.rpc('register_payment_transaction', rpcPayload);
+            console.log('[RPC_ERROR]', rpcError);
 
             if (rpcError) {
                 if (rpcError.status === 409 || rpcError.code === '23505' || rpcError.code === 'P0001') {
