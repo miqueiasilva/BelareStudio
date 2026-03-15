@@ -131,7 +131,7 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                                 <div className="flex justify-between items-center">
                                     <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Forma de Pagamento</p>
                                     <span className="text-[10px] font-black text-emerald-400 uppercase">
-                                        {command.payment_data.brand || getMethodLabel(command.payment_data.method || command.payment_method || '')}
+                                        {command.payment_data.brand || getMethodLabel(command.payment_data.payment_method || command.payment_data.method || command.payment_method || '')}
                                         {Number(command.payment_data.installments) > 1 ? ` — ${command.payment_data.installments}x` : ''}
                                     </span>
                                 </div>

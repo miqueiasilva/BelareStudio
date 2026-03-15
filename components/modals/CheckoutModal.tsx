@@ -160,7 +160,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     paid_at: now,
                     payment_method: selectedCategory,
                     payment_data: {
-                        method: selectedCategory,
+                        payment_method: selectedCategory,
                         tax_rate: Number(financialMetrics.rate || 0),
                         gross_value: Number(appointment.price),
                         net_value: Number(financialMetrics.netValue || appointment.price),

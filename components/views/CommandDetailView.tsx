@@ -141,7 +141,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         try {
             const mainPayment = addedPayments[0];
             const isTotalZero = totals.total === 0;
-            const dbMethod = isCourtesy ? 'cortesia' : (isTotalZero ? 'desconto_total' : (mainPayment?.method === 'money' ? 'dinheiro' : mainPayment?.method));
+            const dbMethod = isCourtesy ? 'cortesia' : (isTotalZero ? 'desconto_total' : (mainPayment?.payment_method === 'money' ? 'dinheiro' : mainPayment?.payment_method));
             const description = `Pagamento Comanda #${commandId}${isCourtesy ? ' (CORTESIA)' : (isTotalZero ? ' (DESCONTO 100%)' : '')}`;
 
             // 1. REGISTRO DO PAGAMENTO NO FINANCEIRO
@@ -197,7 +197,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                     discount_amount: totals.discount,
                     discount_info: selectedDiscount || {},
                     payment_data: {
-                        method: dbMethod,
+                        payment_method: dbMethod,
                         tax_rate: Number(mainPayment?.rate || 0),
                         gross_value: Number(totals.total),
                         net_value: Number(mainPayment?.netAmount || totals.total),
@@ -272,7 +272,7 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         if (isNaN(amount) || amount <= 0) return;
         setAddedPayments(prev => [...prev, {
             id: Math.random().toString(36).substring(7),
-            method: selectedConfig.type,
+            payment_method: selectedConfig.type,
             amount: amount,
             installments: installments,
             brand: selectedConfig.brand || selectedConfig.name,

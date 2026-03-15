@@ -216,7 +216,7 @@ const VendasView: React.FC<VendasViewProps> = () => {
                     paid_at: now,
                     payment_method: methodMap[paymentMethod] || 'pix',
                     payment_data: {
-                        method: methodMap[paymentMethod] || 'pix',
+                        payment_method: methodMap[paymentMethod] || 'pix',
                         tax_rate: 0,
                         gross_value: total,
                         net_value: total,
