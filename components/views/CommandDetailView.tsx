@@ -30,8 +30,14 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
     const [availableConfigs, setAvailableConfigs] = useState<any[]>([]);
     const [selectedDiscount, setSelectedDiscount] = useState<any | null>(null);
 
-    const activeStudio = studios.find(s => s.id === activeStudioId);
-    const activeDiscounts = (activeStudio?.discount_rules || []).filter((d: any) => d.active);
+    const activeDiscounts = useMemo(() => {
+        const studio = studios.find(s => s.id === activeStudioId);
+        const rules = (studio?.discount_rules || []).filter((d: any) => d.active);
+        return [
+            { id: 'courtesy', name: 'Cortesia (Parceria)', type: 'percentage', value: 100, active: true, isCourtesy: true },
+            ...rules
+        ];
+    }, [studios, activeStudioId]);
 
     const fetchContext = useCallback(async () => {
         if (!activeStudioId || !commandId) return;
@@ -123,7 +129,8 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
     const handleFinishCheckout = async () => {
         if (isProcessingRef.current || isLocked) return;
         
-        if (totals.remaining > 0 || addedPayments.length === 0) {
+        const isCourtesy = selectedDiscount?.id === 'courtesy';
+        if (totals.remaining > 0 || (totals.total > 0 && addedPayments.length === 0)) {
             setToast({ message: "Saldo pendente. Adicione o pagamento.", type: 'error' });
             return;
         }
@@ -133,8 +140,9 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
         try {
             const mainPayment = addedPayments[0];
-            const dbMethod = mainPayment.method === 'money' ? 'dinheiro' : mainPayment.method;
-            const description = `Pagamento Comanda #${commandId}`;
+            const isTotalZero = totals.total === 0;
+            const dbMethod = isCourtesy ? 'cortesia' : (isTotalZero ? 'desconto_total' : (mainPayment?.method === 'money' ? 'dinheiro' : mainPayment?.method));
+            const description = `Pagamento Comanda #${commandId}${isCourtesy ? ' (CORTESIA)' : (isTotalZero ? ' (DESCONTO 100%)' : '')}`;
 
             // 1. REGISTRO DO PAGAMENTO NO FINANCEIRO
             const { data: transaction, error: rpcError } = await supabase.rpc('register_payment_transaction', {
@@ -143,9 +151,9 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 p_appointment_id: null,
                 p_amount: totals.total,
                 p_method: dbMethod,
-                p_installments: Number(mainPayment.installments || 1),
-                p_tax_rate: Number(mainPayment.rate || 0),
-                p_net_value: Number(mainPayment.netAmount || totals.total)
+                p_installments: Number(mainPayment?.installments || 1),
+                p_tax_rate: Number(mainPayment?.rate || 0),
+                p_net_value: Number(mainPayment?.netAmount || totals.total)
             });
 
             if (rpcError) {
@@ -190,11 +198,11 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                     discount_info: selectedDiscount || {},
                     payment_data: {
                         method: dbMethod,
-                        tax_rate: Number(mainPayment.rate || 0),
+                        tax_rate: Number(mainPayment?.rate || 0),
                         gross_value: Number(totals.total),
-                        net_value: Number(mainPayment.netAmount || totals.total),
-                        installments: Number(mainPayment.installments || 1),
-                        brand: mainPayment.brand || null,
+                        net_value: Number(mainPayment?.netAmount || totals.total),
+                        installments: Number(mainPayment?.installments || 1),
+                        brand: mainPayment?.brand || null,
                         subtotal: totals.subtotal,
                         discount: totals.discount
                     }
