@@ -1,5 +1,3 @@
-
-```tsx
 import React, { useRef, useEffect, useState } from 'react';
 import { LegacyAppointment, AppointmentStatus } from '../../types';
 import { 
@@ -87,7 +85,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
       `📅 *${format(appointment.start, "EEEE, dd/MM", { locale: pt })}*\n` +
       `⏰ *${timeStr}*\n` +
       `✂️ *${serviceName}*\n` +
-      (profName ? `👩‍🎨 Com: *${profName}*\n` : '') +
+      (profName ? `👩🎨 Com: *${profName}*\n` : '') +
       `\nConseguimos confirmar sua presença? Responda aqui mesmo! ✅\n\n` +
       `⚠️ Caso precise cancelar ou reagendar, avise com pelo menos 24h de antecedência.\n\n` +
       `Te esperamos! 💜\n` +
@@ -289,6 +287,3 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
 };
 
 export default AppointmentDetailPopover;
-```
-
-Copie tudo isso, substitua o conteúdo completo do arquivo no GitHub e faça o commit.
