@@ -1,4 +1,5 @@
 
+```tsx
 import React, { useRef, useEffect, useState } from 'react';
 import { LegacyAppointment, AppointmentStatus } from '../../types';
 import { 
@@ -77,18 +78,20 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     const serviceName = appointment.services && appointment.services.length > 0
       ? appointment.services.map(s => s.name).join(' + ')
       : appointment.service.name;
-    const dateStr = format(appointment.start, "dd/MM/yyyy", { locale: pt });
     const timeStr = format(appointment.start, "HH:mm");
     const profName = appointment.professional?.name || '';
 
     const message =
-      `Olá ${clientName}! 😊\n` +
-      `Lembrando do seu agendamento no Studio Jacilene Félix:\n\n` +
-      `📅 Data: ${dateStr}\n` +
-      `⏰ Horário: ${timeStr}\n` +
-      `💆 Serviço: ${serviceName}\n` +
-      (profName ? `💅 Profissional: ${profName}\n` : '') +
-      `\nQualquer dúvida, estamos à disposição! 💜`;
+      `Olá, ${clientName}! 😊\n\n` +
+      `Passando para confirmar seu horário no *Studio Jacilene Félix*:\n\n` +
+      `📅 *${format(appointment.start, "EEEE, dd/MM", { locale: pt })}*\n` +
+      `⏰ *${timeStr}*\n` +
+      `✂️ *${serviceName}*\n` +
+      (profName ? `👩‍🎨 Com: *${profName}*\n` : '') +
+      `\nConseguimos confirmar sua presença? Responda aqui mesmo! ✅\n\n` +
+      `⚠️ Caso precise cancelar ou reagendar, avise com pelo menos 24h de antecedência.\n\n` +
+      `Te esperamos! 💜\n` +
+      `*Studio Jacilene Félix*`;
 
     window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
@@ -286,3 +289,6 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
 };
 
 export default AppointmentDetailPopover;
+```
+
+Copie tudo isso, substitua o conteúdo completo do arquivo no GitHub e faça o commit.
