@@ -169,19 +169,24 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
     const fetchNotifications = useCallback(async () => {
         if (!activeStudioId) return;
-        console.log('🔔 Buscando notificações para o estúdio:', activeStudioId);
+        console.log('🔔 Buscando notificações recentes para o estúdio:', activeStudioId);
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
         const since = new Date();
         since.setDate(since.getDate() - 7);
         
         try {
+            // Buscamos agendamentos criados nos últimos 7 dias, de qualquer origem.
+            // Isso cobrirá os criados hoje e os cancelados recentemente (se criados nos últimos 7 dias).
             const { data, error } = await supabase
                 .from('appointments')
                 .select('id, date, status, client_name, service_name, professional_name, origem, created_at')
                 .eq('studio_id', activeStudioId)
-                .or('origem.eq.online,origem.eq.link')
                 .gte('created_at', since.toISOString())
                 .order('created_at', { ascending: false })
-                .limit(20);
+                .limit(30);
 
             if (error) {
                 console.error('❌ Erro ao buscar notificações:', error);
@@ -189,9 +194,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             }
 
             if (data) {
-                console.log(`✅ ${data.length} notificações encontradas.`);
+                console.log(`✅ ${data.length} notificações recentes encontradas.`);
                 setNotifications(data);
-                setNotificationCount(data.filter(n => n.status === 'agendado').length);
+                
+                // Contamos como "novas" as que foram criadas hoje ou que estão com status agendado
+                const newNotifications = data.filter(n => {
+                    const createdAt = new Date(n.created_at);
+                    return createdAt >= today || n.status === 'agendado';
+                });
+                
+                setNotificationCount(newNotifications.length);
             }
         } catch (err) {
             console.error('💥 Erro catastrófico nas notificações:', err);
@@ -1202,7 +1214,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         <div className="flex items-center justify-between p-6 border-b border-slate-100">
                             <div>
                                 <h3 className="font-black text-slate-800 text-lg">Notificações</h3>
-                                <p className="text-xs text-slate-400 font-medium">Agendamentos Online</p>
+                                <p className="text-xs text-slate-400 font-medium">Atividade Recente</p>
                             </div>
                             <button onClick={() => setIsNotifOpen(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
                                 <X size={18} className="text-slate-400" />
