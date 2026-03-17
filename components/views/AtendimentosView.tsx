@@ -171,22 +171,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!activeStudioId) return;
         console.log('🔔 Buscando notificações recentes para o estúdio:', activeStudioId);
         
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
         const since = new Date();
         since.setDate(since.getDate() - 7);
         
         try {
-            // Buscamos agendamentos criados nos últimos 7 dias, de qualquer origem.
-            // Isso cobrirá os criados hoje e os cancelados recentemente (se criados nos últimos 7 dias).
             const { data, error } = await supabase
                 .from('appointments')
                 .select('id, date, status, client_name, service_name, professional_name, origem, created_at')
                 .eq('studio_id', activeStudioId)
                 .gte('created_at', since.toISOString())
                 .order('created_at', { ascending: false })
-                .limit(30);
+                .limit(20);
 
             if (error) {
                 console.error('❌ Erro ao buscar notificações:', error);
@@ -197,13 +192,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 console.log(`✅ ${data.length} notificações recentes encontradas.`);
                 setNotifications(data);
                 
-                // Contamos como "novas" as que foram criadas hoje ou que estão com status agendado
-                const newNotifications = data.filter(n => {
-                    const createdAt = new Date(n.created_at);
-                    return createdAt >= today || n.status === 'agendado';
-                });
-                
-                setNotificationCount(newNotifications.length);
+                // Badge conta apenas os não-concluídos e não-cancelados dos últimos 7 dias
+                setNotificationCount(data.filter(n => 
+                    n.status !== 'concluido' && 
+                    n.status !== 'cancelado'
+                ).length);
             }
         } catch (err) {
             console.error('💥 Erro catastrófico nas notificações:', err);
