@@ -169,19 +169,32 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
     const fetchNotifications = useCallback(async () => {
         if (!activeStudioId) return;
+        console.log('🔔 Buscando notificações para o estúdio:', activeStudioId);
         const since = new Date();
         since.setDate(since.getDate() - 7);
-        const { data } = await supabase
-            .from('appointments')
-            .select('id, date, status, client_name, service_name, professional_name, origem, created_at')
-            .eq('studio_id', activeStudioId)
-            .eq('origem', 'online')
-            .gte('created_at', since.toISOString())
-            .order('created_at', { ascending: false })
-            .limit(20);
-        if (data) {
-            setNotifications(data);
-            setNotificationCount(data.filter(n => n.status === 'agendado').length);
+        
+        try {
+            const { data, error } = await supabase
+                .from('appointments')
+                .select('id, date, status, client_name, service_name, professional_name, origem, created_at')
+                .eq('studio_id', activeStudioId)
+                .or('origem.eq.online,origem.eq.link')
+                .gte('created_at', since.toISOString())
+                .order('created_at', { ascending: false })
+                .limit(20);
+
+            if (error) {
+                console.error('❌ Erro ao buscar notificações:', error);
+                return;
+            }
+
+            if (data) {
+                console.log(`✅ ${data.length} notificações encontradas.`);
+                setNotifications(data);
+                setNotificationCount(data.filter(n => n.status === 'agendado').length);
+            }
+        } catch (err) {
+            console.error('💥 Erro catastrófico nas notificações:', err);
         }
     }, [activeStudioId]);
 
@@ -875,20 +888,42 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
     const filteredAppointments = useMemo(() => {
         const baseList = appointments.filter(a => {
-            if (periodType === 'Dia' || periodType === 'Lista') return isSameDay(a.start, currentDate);
-            if (periodType === 'Semana') {
+            // 1. Filtro de Período (Data)
+            let inPeriod;
+            if (periodType === 'Dia' || periodType === 'Lista') inPeriod = isSameDay(a.start, currentDate);
+            else if (periodType === 'Semana') {
                 const day = currentDate.getDay();
                 const diff = (day < 1 ? -6 : 1) - day;
-                // FIX: Used getStartOfDay helper
                 const weekStart = getStartOfDay(addDays(currentDate, diff));
                 const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
-
-                return isWithinInterval(a.start, { start: weekStart, end: weekEnd });
+                inPeriod = isWithinInterval(a.start, { start: weekStart, end: weekEnd });
+            } else {
+                inPeriod = isSameMonth(a.start, currentDate);
             }
-            return isSameMonth(a.start, currentDate);
+
+            if (!inPeriod) return false;
+
+            // 2. Filtro de Modo de Visualização (Status)
+            if (viewMode === 'andamento') {
+                // "Andamento" inclui tudo que não está finalizado, cancelado ou bloqueado
+                const activeStatuses: AppointmentStatus[] = [
+                    'agendado', 'confirmado', 'confirmado_whatsapp', 
+                    'chegou', 'em_atendimento', 'em_espera'
+                ];
+                return activeStatuses.includes(a.status);
+            }
+
+            if (viewMode === 'pagamento') {
+                // "Pagamento" foca nos concluídos que precisam de acerto (ou apenas concluídos para conferência)
+                return a.status === 'concluido';
+            }
+
+            // Modo 'profissional' (Equipe) mostra tudo
+            return true;
         });
+
         return [...baseList].sort((a, b) => (STATUS_PRIORITY[a.status] || 99) - (STATUS_PRIORITY[b.status] || 99) || a.start.getTime() - b.start.getTime());
-    }, [appointments, periodType, currentDate]);
+    }, [appointments, periodType, currentDate, viewMode]);
 
     const timeSlotsLabels = useMemo(() => {
         const labels = [];
@@ -921,7 +956,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                             <button onClick={handleCopyBookingLink} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Compartilhar">
                                 <Share2 size={18} />
                             </button>
-                            <button onClick={() => setIsNotifOpen(true)} className="relative p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Notificações">
+                            <button onClick={() => { console.log('🔔 Abrindo painel de notificações...'); setIsNotifOpen(true); }} className="relative p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Notificações">
                                 <Bell size={18} />
                                 {notificationCount > 0 && (
                                     <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center">
@@ -934,9 +969,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                             </button>
                         </div>
                         <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-                            <button onClick={() => setViewMode('profissional')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'profissional' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-700'}`}><LayoutGrid size={14} /> Equipe</button>
-                            <button onClick={() => setViewMode('andamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'andamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-700'}`}><PlayCircle size={14} /> Andamento</button>
-                            <button onClick={() => setViewMode('pagamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'pagamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-700'}`}><CreditCard size={14} /> Pagamento</button>
+                            <button onClick={() => setViewMode('profissional')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'profissional' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-200'}`}><LayoutGrid size={14} /> Equipe</button>
+                            <button onClick={() => setViewMode('andamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'andamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-200'}`}><PlayCircle size={14} /> Andamento</button>
+                            <button onClick={() => setViewMode('pagamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'pagamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-200'}`}><CreditCard size={14} /> Pagamento</button>
                         </div>
                     </div>
                     <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
