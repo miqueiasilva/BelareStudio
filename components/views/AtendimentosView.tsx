@@ -641,6 +641,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 type: 'error' 
             }); 
             await fetchAppointments();
+            throw e; // Re-throw para o modal saber que falhou
         } finally { 
             setIsLoadingData(false); 
         }
