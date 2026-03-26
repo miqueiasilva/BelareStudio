@@ -402,8 +402,26 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     };
 
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
-        if (!activeStudioId) return;
+        console.log('📝 Iniciando handleSaveAppointment...', { 
+            id: app.id, 
+            studioId: activeStudioId,
+            userRole: user?.papel,
+            isForce: force
+        });
+
+        if (!activeStudioId) {
+            console.error('❌ ERRO: activeStudioId não definido ao tentar salvar agendamento.');
+            setToast({ message: '❌ Erro: Estúdio não selecionado. Por favor, recarregue a página.', type: 'error' });
+            return;
+        }
         setIsLoadingData(true);
+        console.log('📝 Iniciando salvamento de agendamento...', { 
+            id: app.id, 
+            studioId: activeStudioId,
+            client: app.client?.nome,
+            professional: app.professional?.name,
+            service: app.service?.name
+        });
         
         try {
             const duration = Number(app.service.duration) || 30;
@@ -492,6 +510,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             } catch (dbError: any) {
                 console.error('❌ ERRO AO SALVAR NO BANCO DE DADOS:', dbError);
+                const errorMessage = dbError.message || dbError.details || JSON.stringify(dbError);
+                setToast({ 
+                    message: `❌ Erro ao salvar: ${errorMessage}`, 
+                    type: 'error' 
+                });
+                setIsLoadingData(false);
                 throw dbError; 
             }
 

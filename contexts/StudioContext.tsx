@@ -57,9 +57,14 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
         return;
       }
 
-      // Prioridade Admin
-      const userRole = (user.app_metadata?.role || user.user_metadata?.role || '').toLowerCase();
-      const isAdmin = userRole === 'admin' || userRole === 'gestor' || user.email === 'admin@belarestudio.com';
+      // Prioridade Admin - Verificamos tanto o papel no AppUser quanto metadados do Supabase
+      const userRoleMetadata = (user.app_metadata?.role || user.user_metadata?.role || '').toLowerCase();
+      const isAdmin = user.papel === 'admin' || 
+                      user.papel === 'gestor' || 
+                      userRoleMetadata === 'admin' || 
+                      userRoleMetadata === 'gestor' || 
+                      user.email === 'admin@belarestudio.com' ||
+                      user.email === 'mykeias@gmail.com';
 
       let mappedStudios: Studio[] = [];
 
@@ -70,7 +75,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
         mappedStudios = (allStudios || []).map(s => {
           const settings = allSettings?.find(st => st.studio_id === s.id);
           return { 
-            id: s.id, 
+            id: String(s.id), 
             name: s.name, 
             role: 'admin',
             theme_color: settings?.theme_color,
@@ -78,21 +83,43 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
           };
         });
       } else {
+        // Buscar em user_studios (mapeamento direto de usuário)
         const { data: memberships } = await supabase
           .from("user_studios")
           .select("studio_id, role, studios(name)")
           .eq("user_id", user.id);
         
-        const studioIds = (memberships || []).map(m => m.studio_id);
+        // Buscar também em team_members pelo email (caso o colaborador tenha sido adicionado apenas lá)
+        const { data: teamMemberships } = await supabase
+          .from("team_members")
+          .select("studio_id, access_level, studios(name)")
+          .eq("email", user.email);
+
+        // Combinar os IDs únicos de estúdios encontrados
+        const allMemberships = [...(memberships || [])];
+        
+        if (teamMemberships) {
+          teamMemberships.forEach(tm => {
+            if (!allMemberships.find(m => m.studio_id === tm.studio_id)) {
+              allMemberships.push({
+                studio_id: tm.studio_id,
+                role: tm.access_level || 'profissional',
+                studios: tm.studios
+              });
+            }
+          });
+        }
+        
+        const studioIds = allMemberships.map(m => m.studio_id);
         const { data: allSettings } = await supabase
           .from("studio_settings")
           .select("studio_id, theme_color, discount_rules")
           .in("studio_id", studioIds);
         
-        mappedStudios = (memberships || []).map(m => {
+        mappedStudios = allMemberships.map(m => {
           const settings = allSettings?.find(st => st.studio_id === m.studio_id);
           return {
-            id: m.studio_id,
+            id: String(m.studio_id),
             name: (m.studios as any)?.name || "Unidade",
             role: m.role,
             theme_color: settings?.theme_color,

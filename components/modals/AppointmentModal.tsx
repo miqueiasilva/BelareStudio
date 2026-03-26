@@ -196,6 +196,12 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
   const handleSave = async () => {
     setError(null);
+    console.log('🔘 Botão Salvar clicado no Modal. Dados:', {
+        client: formData.client?.nome,
+        professional: formData.professional?.name,
+        services: selectedServices.map(s => s.name)
+    });
+
     if (!formData.client) return setError('Por favor, selecione um cliente.');
     if (selectedServices.length === 0) return setError('Por favor, selecione pelo menos um serviço.');
     if (!formData.professional) return setError('Por favor, selecione um profissional.');
@@ -221,10 +227,13 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
                 : formData.notas
         } as LegacyAppointment;
 
+        console.log('🚀 Chamando onSave com:', finalAppointment);
         await onSave(finalAppointment);
-    } catch (err) {
-        console.error("Error saving appointment:", err);
-        setError("Ocorreu um erro ao salvar o agendamento.");
+        console.log('✅ onSave concluído com sucesso');
+    } catch (err: any) {
+        console.error("❌ Erro ao salvar no Modal:", err);
+        const msg = err.message || err.details || "Ocorreu um erro ao salvar o agendamento.";
+        setError(msg);
     } finally {
         setIsSaving(false);
     }
