@@ -188,6 +188,13 @@ const PublicBookingPreview: React.FC = () => {
                     const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true).eq('studio_id', studioId);
                     if (servicesData) setServices(servicesData);
 
+                    // DEBUG: Check if command_id exists in clients table
+                    const { data: colCheck, error: colError } = await supabase.from('clients').select('*').limit(1);
+                    console.log('🔍 [DEBUG] Clients table columns check:', { 
+                        columns: colCheck && colCheck.length > 0 ? Object.keys(colCheck[0]) : 'no data',
+                        error: colError 
+                    });
+
                     const { data: profsData } = await supabase
                         .from('team_members')
                         .select('id, name, photo_url, role, services_enabled')
@@ -351,20 +358,32 @@ const PublicBookingPreview: React.FC = () => {
             if (existingClient) {
                 clientId = existingClient.id;
             } else {
-                console.log('👤 Criando novo cliente:', clientName);
+                const targetStudioId = studio?.studio_id || studio?.id;
+                if (!targetStudioId) {
+                    console.error('❌ [CRITICAL] studio_id não encontrado no estado studio:', studio);
+                }
+
+                console.log('👤 Criando novo cliente:', clientName, 'no estúdio:', targetStudioId);
                 const { data: newClient, error: clientErr } = await supabase
                     .from('clients')
                     .insert([{ 
                         nome: clientName, 
                         whatsapp: cleanPhone, 
                         consent: true, 
-                        referral_source: 'Link Público' 
+                        referral_source: 'Link Público',
+                        studio_id: targetStudioId
                     }])
                     .select('id, nome')
                     .single();
 
                 if (clientErr) {
-                    console.error('❌ Erro ao criar cliente:', clientErr);
+                    console.error('❌ Erro ao criar cliente (Detalhado):', {
+                        message: clientErr.message,
+                        details: clientErr.details,
+                        hint: clientErr.hint,
+                        code: clientErr.code,
+                        payload: { nome: clientName, whatsapp: cleanPhone, studio_id: targetStudioId }
+                    });
                     throw new Error(`Erro ao registrar seus dados: ${clientErr.message}`);
                 }
 
