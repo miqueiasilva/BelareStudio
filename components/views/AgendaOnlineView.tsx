@@ -326,7 +326,7 @@ const AgendaOnlineView: React.FC = () => {
                     <p className="text-slate-500 text-xs font-medium">Configure a experincia pblica do seu estdio.</p>
                 </div>
                 <div className="flex gap-2">
-                    <button onClick={() => window.location.hash = '/public-preview'} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-50 flex items-center gap-2 text-sm transition-all shadow-sm">
+                    <button onClick={() => window.open(realLink, '_blank')} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-50 flex items-center gap-2 text-sm transition-all shadow-sm">
                         <Eye size={18} /> Visualizar
                     </button>
                     <button 
