@@ -301,7 +301,11 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
 
     const refreshClientData = async () => {
         if (!client.id) return;
-        const { data } = await supabase.from('clients').select('*').eq('id', client.id).single();
+        const { data } = await supabase
+            .from('clients')
+            .select('id, nome, whatsapp, telefone, email, nascimento, tags, consent, photo_url, referral_source, apelido, instagram, cpf, rg, sexo, profissao, cep, endereco, numero, complemento, bairro, cidade, estado, online_booking_enabled, observacoes, studio_id')
+            .eq('id', client.id)
+            .single();
         if (data) {
             setFormData({
                 id: data.id,

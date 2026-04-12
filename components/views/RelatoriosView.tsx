@@ -160,12 +160,10 @@ const RelatoriosView: React.FC = () => {
       const { start, end, prevStart, prevEnd } = getDates();
       
       // Fetch current period
-      const [transRes, apptsRes, clientsRes, teamRes, servicesRes, categoriesRes] = await Promise.all([
+      const [transRes, apptsRes, teamRes, categoriesRes] = await Promise.all([
         supabase.from('financial_transactions').select('*').eq('studio_id', activeStudioId).gte('date', start.toISOString()).lte('date', end.toISOString()),
         supabase.from('appointments').select('*').eq('studio_id', activeStudioId).gte('date', start.toISOString()).lte('date', end.toISOString()),
-        supabase.from('clients').select('*').eq('studio_id', activeStudioId),
         supabase.from('team_members').select('*').eq('studio_id', activeStudioId),
-        supabase.from('services').select('*').eq('studio_id', activeStudioId),
         supabase.from('financial_categories').select('name').eq('studio_id', activeStudioId).eq('active', true)
       ]);
 

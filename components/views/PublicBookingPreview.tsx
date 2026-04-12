@@ -360,7 +360,7 @@ const PublicBookingPreview: React.FC = () => {
                         consent: true, 
                         referral_source: 'Link Público' 
                     }])
-                    .select()
+                    .select('id, nome')
                     .single();
 
                 if (clientErr) {
@@ -409,7 +409,7 @@ const PublicBookingPreview: React.FC = () => {
                 const { data, error: apptErr } = await supabase
                     .from('appointments')
                     .insert([payload])
-                    .select()
+                    .select('id, studio_id, client_name, client_whatsapp, professional_id, professional_name, service_name, start_at, duration, value, notes, date')
                     .single();
 
                 if (apptErr) throw apptErr;

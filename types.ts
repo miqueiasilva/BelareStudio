@@ -58,6 +58,7 @@ export interface Client {
   consent: boolean;
   photo_url?: string | null;
   origem?: string;
+  referral_source?: string;
   apelido?: string;
   instagram?: string;
   cpf?: string;

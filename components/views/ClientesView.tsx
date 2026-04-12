@@ -58,7 +58,7 @@ const ClientesView: React.FC = () => {
 
         let query = supabase
             .from('clients')
-            .select('*', { count: 'exact' })
+            .select('id, nome, whatsapp, telefone, email, nascimento, tags, consent, photo_url, referral_source, apelido, instagram, cpf, rg, sexo, profissao, cep, endereco, numero, complemento, bairro, cidade, estado, online_booking_enabled, observacoes, studio_id', { count: 'exact' })
             .eq('studio_id', activeStudioId)
             .abortSignal(abortControllerRef.current.signal);
 
