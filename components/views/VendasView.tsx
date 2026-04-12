@@ -105,7 +105,7 @@ const VendasView: React.FC<VendasViewProps> = () => {
                 supabase.from('products').select('*').eq('studio_id', activeStudioId).eq('active', true).order('name'),
                 // Corrigido: selecionando colunas específicas e usando formato de data compatível
                 supabase.from('appointments')
-                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origem')
+                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origin')
                     .eq('studio_id', activeStudioId)
                     .gte('date', startStr)
                     .lte('date', endStr)

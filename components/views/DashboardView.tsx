@@ -190,7 +190,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         const completed = appointments.filter(a => a.status === 'concluido').length;
         
         const onlineCount = appointments.filter(a => 
-            (a.origem === 'online' || a.origem === 'link' || a.origin === 'online') && 
+            (a.origin === 'online' || a.origin === 'link') && 
             a.status !== 'cancelado'
         ).length;
         

@@ -351,10 +351,27 @@ const PublicBookingPreview: React.FC = () => {
             if (existingClient) {
                 clientId = existingClient.id;
             } else {
-                const { data: newClient } = await supabase
+                console.log('👤 Criando novo cliente:', clientName);
+                const { data: newClient, error: clientErr } = await supabase
                     .from('clients')
-                    .insert([{ nome: clientName, whatsapp: cleanPhone, consent: true, origem: 'Link Público' }])
-                    .select().single();
+                    .insert([{ 
+                        nome: clientName, 
+                        whatsapp: cleanPhone, 
+                        consent: true, 
+                        origin: 'Link Público' 
+                    }])
+                    .select()
+                    .single();
+
+                if (clientErr) {
+                    console.error('❌ Erro ao criar cliente:', clientErr);
+                    throw new Error(`Erro ao registrar seus dados: ${clientErr.message}`);
+                }
+
+                if (!newClient) {
+                    throw new Error("Não foi possível registrar seus dados. Tente novamente.");
+                }
+
                 clientId = newClient.id;
             }
 
@@ -383,10 +400,9 @@ const PublicBookingPreview: React.FC = () => {
                 start_at: appointmentDate.toISOString(),
                 end_at: endDateTime.toISOString(),
                 status: 'pendente',
-                origem: 'online',
                 origin: 'online'
             };
-            console.log('PAYLOAD DO INSERT:', JSON.stringify(payload));
+            console.log('🚀 [DEBUG] PAYLOAD DO INSERT (appointments):', JSON.stringify(payload, null, 2));
 
             let newAppointment = null;
             try {

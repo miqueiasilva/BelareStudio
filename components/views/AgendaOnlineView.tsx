@@ -186,7 +186,7 @@ const AgendaOnlineView: React.FC = () => {
             const { data: appts } = await supabase
                 .from('appointments')
                 .select('value, service_name, date')
-                .eq('origem', 'link')
+                .eq('origin', 'link')
                 .gte('date', thirtyDaysAgo);
 
             const viewsCount = 450; 

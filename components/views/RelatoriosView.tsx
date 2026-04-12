@@ -189,7 +189,7 @@ const RelatoriosView: React.FC = () => {
         const profit = income - expense;
         const margin = income > 0 ? (profit / income) * 100 : 0;
         
-        const onlineAppts = appointments.filter(a => (a.origem === 'online' || a.origem === 'link' || a.origin === 'online') && a.status !== 'cancelado').length;
+        const onlineAppts = appointments.filter(a => (a.origin === 'online' || a.origin === 'link') && a.status !== 'cancelado').length;
         const onlineRate = totalAppts > 0 ? (onlineAppts / totalAppts) * 100 : 0;
         
         return { income, expense, totalAppts, completedAppts, ticketMedio, profit, margin, onlineAppts, onlineRate, transactions, appointments };
@@ -504,7 +504,7 @@ const RelatoriosView: React.FC = () => {
     const onlineVsManual = days.map(day => {
       const dStr = format(day, 'yyyy-MM-dd');
       const dayAppts = data?.appointments.filter((a: any) => format(parseISO(a.date), 'yyyy-MM-dd') === dStr);
-      const online = dayAppts.filter((a: any) => a.origem === 'online' || a.origem === 'link' || a.origin === 'online').length;
+      const online = dayAppts.filter((a: any) => a.origin === 'online' || a.origin === 'link').length;
       const manual = dayAppts.length - online;
       return { name: format(day, 'dd/MM'), online, manual };
     }).filter(d => d.online > 0 || d.manual > 0);
@@ -571,7 +571,7 @@ const RelatoriosView: React.FC = () => {
       if (existing) {
         existing.visits += 1;
         existing.totalSpent += Number(app.value || 0);
-        if (app.origem === 'online' || app.origem === 'link' || app.origin === 'online') {
+        if (app.origin === 'online' || app.origin === 'link') {
           existing.isOnline = true;
         }
       } else {
@@ -581,7 +581,7 @@ const RelatoriosView: React.FC = () => {
           visits: 1,
           totalSpent: Number(app.value || 0),
           lastVisit: app.date,
-          isOnline: app.origem === 'online' || app.origem === 'link' || app.origin === 'online'
+          isOnline: app.origin === 'online' || app.origin === 'link'
         });
       }
       return acc;

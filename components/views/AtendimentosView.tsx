@@ -177,7 +177,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         try {
             const { data, error } = await supabase
                 .from('appointments')
-                .select('id, date, status, client_name, service_name, professional_name, origem, created_at')
+                .select('id, date, status, client_name, service_name, professional_name, origin, created_at')
                 .eq('studio_id', activeStudioId)
                 .gte('created_at', since.toISOString())
                 .order('created_at', { ascending: false })
@@ -248,7 +248,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments')
-                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origem')
+                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origin')
                     .eq('studio_id', activeStudioId)
                     .gte('date', startStr)
                     .lte('date', endStr)
@@ -392,7 +392,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
         return {
             id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
-            notas: row.notes || '', origem: row.origem || 'interno',
+            notas: row.notes || '', origin: row.origin || 'interno',
             type: row.type || 'appointment',
             services: services.length > 0 ? services : undefined,
             client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
@@ -481,7 +481,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 end_at: endStr,
                 status: app.status || 'agendado', 
                 notes: (app.notas || '') + servicesMetadata, 
-                service_color: app.service.color || '#3b82f6'
+                service_color: app.service.color || '#3b82f6',
+                origin: 'interno'
             };
             
             let newAppointment = null;
@@ -1114,7 +1115,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                 }}
                                             >
                                                 <div className="absolute top-1 right-1 flex gap-0.5 z-10">
-                                                    {(app.origem === 'online' || app.origem === 'link' || app.origin === 'online') && (
+                                                    {(app.origin === 'online' || app.origin === 'link') && (
                                                         <Globe size={10} className="text-orange-500 animate-pulse" strokeWidth={3} title="Agendamento Online" />
                                                     )}
                                                     {app.status === 'concluido' && <DollarSign size={10} className="text-emerald-600 font-bold" strokeWidth={3} />}
