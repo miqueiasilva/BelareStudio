@@ -59,7 +59,7 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
              birth_date: nascimento || null,
              // REMOVIDO user_id PARA EVITAR ERROR 42703
              consent: true,
-             origem: 'Importação Excel'
+             referral_source: 'Importação Excel'
            };
         }).filter(item => item.nome && item.whatsapp && item.whatsapp.length >= 8);
 

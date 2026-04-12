@@ -358,7 +358,7 @@ const PublicBookingPreview: React.FC = () => {
                         nome: clientName, 
                         whatsapp: cleanPhone, 
                         consent: true, 
-                        origin: 'Link Público' 
+                        referral_source: 'Link Público' 
                     }])
                     .select()
                     .single();

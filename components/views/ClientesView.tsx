@@ -144,6 +144,12 @@ const ClientesView: React.FC = () => {
       return acc;
     }, {} as any);
     
+    // Mapeia 'origem' para 'referral_source' se existir
+    if (cleanData.origem) {
+      cleanData.referral_source = cleanData.origem;
+      delete cleanData.origem;
+    }
+    
     const isEditing = !!cleanData.id;
     
     try {
