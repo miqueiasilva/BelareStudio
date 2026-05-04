@@ -138,9 +138,9 @@ const PublicBookingPreview: React.FC = () => {
     const [isFinalizing, setIsFinalizing] = useState(false);
     const [bookingSuccess, setBookingSuccess] = useState(false);
 
-    // Form Data
-    const [clientName, setClientName] = useState('');
-    const [clientPhone, setClientPhone] = useState('');
+    // Form Data — recupera do localStorage se disponível
+    const [clientName, setClientName] = useState(() => localStorage.getItem('belare_client_name') || '');
+    const [clientPhone, setClientPhone] = useState(() => localStorage.getItem('belare_client_phone') || '');
 
     const weekdayMap: Record<number, string> = {
         0: 'sunday', 1: 'monday', 2: 'tuesday', 3: 'wednesday', 4: 'thursday', 5: 'friday', 6: 'saturday'
@@ -493,6 +493,10 @@ const PublicBookingPreview: React.FC = () => {
                     console.error('❌ ERRO NA NOTIFICAÇÃO:', emailError.message || emailError);
                 }
             }
+
+            // Salva dados do cliente no localStorage para próximas visitas
+            localStorage.setItem('belare_client_name', clientName);
+            localStorage.setItem('belare_client_phone', clientPhone);
 
             setBookingSuccess(true);
         } catch (e: any) {
