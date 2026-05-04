@@ -23,7 +23,7 @@ const normalizePhone = (phone: string): string => {
 
 const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClose }) => {
     const [step, setStep] = useState<'identify' | 'list'>('identify');
-    const [phone, setPhone] = useState('');
+    const [phone, setPhone] = useState(() => localStorage.getItem('belare_client_phone') || '');
     const [loading, setLoading] = useState(false);
     const [appointments, setAppointments] = useState<any[]>([]);
     const [policyHours, setPolicyHours] = useState(2);
@@ -39,6 +39,32 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
             if (data?.cancellation_hours) setPolicyHours(data.cancellation_hours);
         };
         fetchPolicy();
+    }, []);
+
+    // Se já tem telefone salvo, busca agendamentos automaticamente
+    useEffect(() => {
+        const savedPhone = localStorage.getItem('belare_client_phone');
+        if (savedPhone && savedPhone.length >= 10) {
+            const autoSearch = async () => {
+                setLoading(true);
+                try {
+                    const searchPhone = normalizePhone(savedPhone);
+                    const { data, error } = await supabase
+                        .from('appointments')
+                        .select('*')
+                        .eq('client_whatsapp', searchPhone)
+                        .order('date', { ascending: true });
+                    if (error) throw error;
+                    setAppointments(data || []);
+                    setStep('list');
+                } catch (e) {
+                    // Se falhar, mostra a tela de identificação normalmente
+                } finally {
+                    setLoading(false);
+                }
+            };
+            autoSearch();
+        }
     }, []);
 
     const handleSearch = async (e: React.FormEvent) => {
