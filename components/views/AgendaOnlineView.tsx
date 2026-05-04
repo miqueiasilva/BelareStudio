@@ -16,7 +16,6 @@ import ToggleSwitch from '../shared/ToggleSwitch';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import Toast, { ToastType } from '../shared/Toast';
-// FIX: Grouping date-fns imports and removing problematic members subDays and startOfDay.
 import { format, addDays, isSameDay } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
@@ -158,7 +157,7 @@ const AgendaOnlineView: React.FC = () => {
     const [topServices, setTopServices] = useState<any[]>([]);
 
     const [config, setConfig] = useState({
-        id: null,
+        id: null as string | null,
         isActive: true,
         slug: '',
         studioName: '',
@@ -171,9 +170,7 @@ const AgendaOnlineView: React.FC = () => {
 
     const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
-    // Link real de acesso público baseado na rota atual do navegador
     const realLink = useMemo(() => {
-        console.log("[AGENDA_ONLINE_DEBUG] config.id:", config.id, "activeStudioId:", activeStudioId);
         const sid = activeStudioId || config.id;
         return `${window.location.origin}/#/public-preview?sid=${sid || ''}`;
     }, [config.id, activeStudioId]);
@@ -181,7 +178,6 @@ const AgendaOnlineView: React.FC = () => {
     const fetchAnalytics = async () => {
         setIsRefreshing(true);
         try {
-            // FIX: Manual subDays replacement using addDays with negative value.
             const thirtyDaysAgo = addDays(new Date(), -30).toISOString();
             const { data: appts } = await supabase
                 .from('appointments')
@@ -214,7 +210,6 @@ const AgendaOnlineView: React.FC = () => {
                 setTopServices(sortedRanking);
 
                 const last7Days = Array.from({ length: 7 }).map((_, i) => {
-                    // FIX: Manual subDays replacement.
                     const d = addDays(new Date(), -(6 - i));
                     const dayBookings = appts.filter(a => isSameDay(new Date(a.date), d)).length;
                     const dayViews = Math.floor(Math.random() * 20) + 10; 
@@ -237,11 +232,13 @@ const AgendaOnlineView: React.FC = () => {
         if (!activeStudioId) return;
         setIsLoading(true);
         try {
+            // FIX: usar studio_id (FK) em vez de id (PK) para buscar as configurações
             const { data: settings } = await supabase
                 .from('studio_settings')
                 .select('*')
-                .eq('id', activeStudioId)
+                .eq('studio_id', activeStudioId)
                 .maybeSingle();
+
             if (settings) {
                 setConfig({
                     id: settings.id,
@@ -275,6 +272,10 @@ const AgendaOnlineView: React.FC = () => {
     useEffect(() => { fetchData(); }, [activeStudioId]);
 
     const handleSave = async () => {
+        if (!config.id) {
+            showToast("Erro: configuração não encontrada.", "error");
+            return;
+        }
         setIsSaving(true);
         try {
             const payload = {
@@ -323,7 +324,7 @@ const AgendaOnlineView: React.FC = () => {
                         <Globe className="text-blue-500 w-6 h-6" />
                         Agenda Online
                     </h1>
-                    <p className="text-slate-500 text-xs font-medium">Configure a experincia pblica do seu estdio.</p>
+                    <p className="text-slate-500 text-xs font-medium">Configure a experiência pública do seu estúdio.</p>
                 </div>
                 <div className="flex gap-2">
                     <button onClick={() => window.open(realLink, '_blank')} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-50 flex items-center gap-2 text-sm transition-all shadow-sm">
@@ -480,7 +481,7 @@ const AgendaOnlineView: React.FC = () => {
                                                 { value: '90', label: 'Até 90 dias (3 meses)' },
                                                 { value: '180', label: 'Até 6 meses' },
                                             ]}
-                                            helperText="Define at que data futura o cliente pode ver seus horrios."
+                                            helperText="Define até que data futura o cliente pode ver seus horários."
                                         />
                                     </div>
                                 </Card>
