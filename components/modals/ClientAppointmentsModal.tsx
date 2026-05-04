@@ -12,19 +12,31 @@ interface ClientAppointmentsModalProps {
     onClose: () => void;
 }
 
+// Normaliza telefone para 11 dígitos (DDD + 9 + número)
+const normalizePhone = (phone: string): string => {
+    let clean = phone.replace(/\D/g, '');
+    if (clean.length === 10 && !clean.startsWith('0')) {
+        clean = clean.slice(0, 2) + '9' + clean.slice(2);
+    }
+    return clean;
+};
+
 const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClose }) => {
     const [step, setStep] = useState<'identify' | 'list'>('identify');
     const [phone, setPhone] = useState('');
     const [loading, setLoading] = useState(false);
     const [appointments, setAppointments] = useState<any[]>([]);
-    const [policyHours, setPolicyHours] = useState(2); // Default 2h
+    const [policyHours, setPolicyHours] = useState(2);
     const [activeTab, setActiveTab] = useState<'next' | 'history'>('next');
 
-    // Carrega a política de cancelamento do estúdio
+    // FIX: coluna correta é cancellation_hours, não cancellation_policy_hours
     useEffect(() => {
         const fetchPolicy = async () => {
-            const { data } = await supabase.from('studio_settings').select('cancellation_policy_hours').maybeSingle();
-            if (data?.cancellation_policy_hours) setPolicyHours(data.cancellation_policy_hours);
+            const { data } = await supabase
+                .from('studio_settings')
+                .select('cancellation_hours')
+                .maybeSingle();
+            if (data?.cancellation_hours) setPolicyHours(data.cancellation_hours);
         };
         fetchPolicy();
     }, []);
@@ -35,11 +47,13 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
 
         setLoading(true);
         try {
-            // Busca agendamentos vinculados ao whatsapp (ajustado para a estrutura do seu banco)
+            // FIX: normaliza para 11 dígitos antes de buscar
+            const searchPhone = normalizePhone(phone);
+
             const { data, error } = await supabase
                 .from('appointments')
                 .select('*')
-                .eq('client_whatsapp', phone.replace(/\D/g, '')) // Limpa máscara se houver
+                .eq('client_whatsapp', searchPhone)
                 .order('date', { ascending: true });
 
             if (error) throw error;
@@ -63,7 +77,7 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
         }
 
         const reason = prompt("Por favor, informe o motivo do cancelamento:");
-        if (reason === null) return; // Usuário cancelou o prompt
+        if (reason === null) return;
 
         setLoading(true);
         try {
@@ -78,7 +92,6 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
 
             if (error) throw error;
 
-            // Atualiza lista local
             setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'cancelado' } : a));
             alert("Agendamento cancelado com sucesso.");
         } catch (e) {
@@ -140,7 +153,6 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
                         </div>
                     ) : (
                         <div className="space-y-6">
-                            {/* TABS */}
                             <div className="flex p-1 bg-slate-100 rounded-2xl">
                                 <button 
                                     onClick={() => setActiveTab('next')}
@@ -156,7 +168,6 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
                                 </button>
                             </div>
 
-                            {/* LISTA */}
                             <div className="space-y-3">
                                 {filteredList.length === 0 ? (
                                     <div className="py-20 text-center text-slate-400 italic text-sm">
@@ -165,13 +176,11 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
                                 ) : (
                                     filteredList.map(app => (
                                         <div key={app.id} className="bg-white border border-slate-100 rounded-3xl p-4 shadow-sm hover:shadow-md transition-all flex gap-4 items-center">
-                                            {/* Data Badge */}
                                             <div className="flex-shrink-0 w-14 h-14 bg-slate-50 rounded-2xl flex flex-col items-center justify-center border border-slate-100">
                                                 <span className="text-[10px] font-black text-slate-400 uppercase leading-none">{format(new Date(app.date), 'MMM', { locale: pt })}</span>
                                                 <span className="text-xl font-black text-slate-800 leading-none">{format(new Date(app.date), 'dd')}</span>
                                             </div>
 
-                                            {/* Info */}
                                             <div className="flex-1 min-w-0">
                                                 <h4 className="font-bold text-slate-800 text-sm truncate">{app.service_name}</h4>
                                                 <div className="flex items-center gap-3 text-slate-400 text-[10px] font-bold uppercase mt-0.5">
@@ -180,7 +189,6 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
                                                 </div>
                                             </div>
 
-                                            {/* Status / Ação */}
                                             <div className="flex-shrink-0">
                                                 {activeTab === 'next' ? (
                                                     <button 
