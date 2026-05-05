@@ -10,6 +10,7 @@ import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
 interface ClientAppointmentsModalProps {
     onClose: () => void;
+    clientPhone?: string;
 }
 
 // Normaliza telefone para 11 dígitos (DDD + 9 + número)
@@ -21,9 +22,9 @@ const normalizePhone = (phone: string): string => {
     return clean;
 };
 
-const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClose }) => {
-    const [step, setStep] = useState<'identify' | 'list'>('identify');
-    const [phone, setPhone] = useState(() => localStorage.getItem('belare_client_phone') || '');
+const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClose, clientPhone }) => {
+    const [step, setStep] = useState<'identify' | 'list'>(() => clientPhone ? 'list' : 'identify');
+    const [phone, setPhone] = useState(() => clientPhone || localStorage.getItem('belare_client_phone') || '');
     const [loading, setLoading] = useState(false);
     const [appointments, setAppointments] = useState<any[]>([]);
     const [policyHours, setPolicyHours] = useState(2);
@@ -41,14 +42,17 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
         fetchPolicy();
     }, []);
 
-    // Se já tem telefone salvo, busca agendamentos automaticamente
+    // Se já tem telefone (via prop ou localStorage), busca automaticamente
     useEffect(() => {
-        const savedPhone = localStorage.getItem('belare_client_phone');
-        if (savedPhone && savedPhone.length >= 10) {
+        const phoneToSearch = clientPhone || localStorage.getItem('belare_public_client') 
+            ? JSON.parse(localStorage.getItem('belare_public_client') || '{}').phone 
+            : null;
+            
+        if (phoneToSearch && phoneToSearch.length >= 10) {
             const autoSearch = async () => {
                 setLoading(true);
                 try {
-                    const searchPhone = normalizePhone(savedPhone);
+                    const searchPhone = normalizePhone(phoneToSearch);
                     const { data, error } = await supabase
                         .from('appointments')
                         .select('*')
@@ -58,14 +62,14 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
                     setAppointments(data || []);
                     setStep('list');
                 } catch (e) {
-                    // Se falhar, mostra a tela de identificação normalmente
+                    // Se falhar, mostra tela de identificação
                 } finally {
                     setLoading(false);
                 }
             };
             autoSearch();
         }
-    }, []);
+    }, [clientPhone]);
 
     const handleSearch = async (e: React.FormEvent) => {
         e.preventDefault();
