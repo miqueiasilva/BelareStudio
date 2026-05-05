@@ -9,6 +9,7 @@ import { supabase, supabaseUrl, supabaseAnonKey } from '../../services/supabaseC
 import { useAuth } from '../../contexts/AuthContext';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import ClientAppointmentsModal from '../modals/ClientAppointmentsModal';
+import PublicAuthModal from '../modals/PublicAuthModal';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
     ChevronLeft, Check, Star, Search, Image as ImageIcon, 
@@ -138,9 +139,38 @@ const PublicBookingPreview: React.FC = () => {
     const [isFinalizing, setIsFinalizing] = useState(false);
     const [bookingSuccess, setBookingSuccess] = useState(false);
 
-    // Form Data — recupera do localStorage se disponível
-    const [clientName, setClientName] = useState(() => localStorage.getItem('belare_client_name') || '');
-    const [clientPhone, setClientPhone] = useState(() => localStorage.getItem('belare_client_phone') || '');
+    // Autenticação do cliente público
+    const [isAuthOpen, setIsAuthOpen] = useState(false);
+    const [publicClient, setPublicClient] = useState<{ name: string; phone: string; clientId?: number } | null>(() => {
+        const saved = localStorage.getItem('belare_public_client');
+        return saved ? JSON.parse(saved) : null;
+    });
+
+    // Form Data — preenchido automaticamente se logado
+    const [clientName, setClientName] = useState(() => {
+        const saved = localStorage.getItem('belare_public_client');
+        return saved ? JSON.parse(saved).name : '';
+    });
+    const [clientPhone, setClientPhone] = useState(() => {
+        const saved = localStorage.getItem('belare_public_client');
+        return saved ? JSON.parse(saved).phone : '';
+    });
+
+    const handleAuthenticated = (clientData: { name: string; phone: string; clientId?: number }) => {
+        setPublicClient(clientData);
+        setClientName(clientData.name);
+        setClientPhone(clientData.phone);
+        localStorage.setItem('belare_public_client', JSON.stringify(clientData));
+        setIsAuthOpen(false);
+    };
+
+    const handleLogout = () => {
+        setPublicClient(null);
+        setClientName('');
+        setClientPhone('');
+        localStorage.removeItem('belare_public_client');
+        supabase.auth.signOut();
+    };
 
     const weekdayMap: Record<number, string> = {
         0: 'sunday', 1: 'monday', 2: 'tuesday', 3: 'wednesday', 4: 'thursday', 5: 'friday', 6: 'saturday'
@@ -494,9 +524,12 @@ const PublicBookingPreview: React.FC = () => {
                 }
             }
 
-            // Salva dados do cliente no localStorage para próximas visitas
-            localStorage.setItem('belare_client_name', clientName);
-            localStorage.setItem('belare_client_phone', clientPhone);
+            // Atualiza clientId no publicClient se necessário
+            if (publicClient && !publicClient.clientId) {
+                const updated = { ...publicClient, clientId };
+                setPublicClient(updated);
+                localStorage.setItem('belare_public_client', JSON.stringify(updated));
+            }
 
             setBookingSuccess(true);
         } catch (e: any) {
@@ -564,13 +597,36 @@ const PublicBookingPreview: React.FC = () => {
                 style={{ backgroundImage: `url(${studio?.cover_url || DEFAULT_COVER})` }}
             >
                 <div className="absolute inset-0 bg-slate-900/30"></div>
-                <button 
-                    onClick={() => setIsClientAppsOpen(true)}
-                    className="absolute top-6 right-6 p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-xl z-20"
-                >
-                    <UserCircle2 size={20} />
-                    <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Meus Agendamentos</span>
-                </button>
+                <div className="absolute top-6 right-6 flex items-center gap-2 z-20">
+                    {publicClient ? (
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setIsClientAppsOpen(true)}
+                                className="p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-xl"
+                            >
+                                <UserCircle2 size={20} />
+                                <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">
+                                    Olá, {publicClient.name.split(' ')[0]}
+                                </span>
+                            </button>
+                            <button
+                                onClick={handleLogout}
+                                className="p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-rose-500/50 transition-all border border-white/20 shadow-xl"
+                                title="Sair"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+                    ) : (
+                        <button
+                            onClick={() => setIsAuthOpen(true)}
+                            className="p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-xl"
+                        >
+                            <UserCircle2 size={20} />
+                            <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Entrar / Cadastrar</span>
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="max-w-xl mx-auto px-6 -mt-16 relative z-10 text-center">
@@ -843,7 +899,8 @@ const PublicBookingPreview: React.FC = () => {
                 </div>
             )}
 
-            {isClientAppsOpen && <ClientAppointmentsModal onClose={() => setIsClientAppsOpen(false)} />}
+            {isClientAppsOpen && <ClientAppointmentsModal onClose={() => setIsClientAppsOpen(false)} clientPhone={publicClient?.phone} />}
+            {isAuthOpen && <PublicAuthModal onClose={() => setIsAuthOpen(false)} onAuthenticated={handleAuthenticated} />}
         </div>
     );
 };
