@@ -10,7 +10,6 @@ import { supabase, supabaseUrl, supabaseAnonKey } from '../../services/supabaseC
 import { useAuth } from '../../contexts/AuthContext';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import ClientAppointmentsModal from '../modals/ClientAppointmentsModal';
-import PublicAuthModal from '../PublicAuthModal';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
     ChevronLeft, Check, Star, Search, Image as ImageIcon, 
@@ -140,14 +139,16 @@ const PublicBookingPreview: React.FC = () => {
     const [isFinalizing, setIsFinalizing] = useState(false);
     const [bookingSuccess, setBookingSuccess] = useState(false);
 
-    // Autenticação do cliente público
-    const [isAuthOpen, setIsAuthOpen] = useState(false);
-    const [publicClient, setPublicClient] = useState<{ name: string; phone: string; clientId?: number } | null>(() => {
+    // Cliente público — salvo no localStorage, sem Supabase Auth
+    const [publicClient, setPublicClient] = useState<{ name: string; phone: string } | null>(() => {
         const saved = localStorage.getItem('belare_public_client');
         return saved ? JSON.parse(saved) : null;
     });
+    const [isIdentifyOpen, setIsIdentifyOpen] = useState(false);
+    const [identifyName, setIdentifyName] = useState('');
+    const [identifyPhone, setIdentifyPhone] = useState('');
 
-    // Form Data — preenchido automaticamente se logado
+    // Form Data — preenchido automaticamente se já identificado
     const [clientName, setClientName] = useState(() => {
         const saved = localStorage.getItem('belare_public_client');
         return saved ? JSON.parse(saved).name : '';
@@ -157,12 +158,15 @@ const PublicBookingPreview: React.FC = () => {
         return saved ? JSON.parse(saved).phone : '';
     });
 
-    const handleAuthenticated = (clientData: { name: string; phone: string; clientId?: number }) => {
+    const handleIdentify = () => {
+        if (!identifyName || !identifyPhone || identifyPhone.length < 10) return;
+        const cleanPhone = normalizePhone(identifyPhone);
+        const clientData = { name: identifyName, phone: cleanPhone };
         setPublicClient(clientData);
-        setClientName(clientData.name);
-        setClientPhone(clientData.phone);
+        setClientName(identifyName);
+        setClientPhone(cleanPhone);
         localStorage.setItem('belare_public_client', JSON.stringify(clientData));
-        setIsAuthOpen(false);
+        setIsIdentifyOpen(false);
     };
 
     const handleLogout = () => {
@@ -170,7 +174,6 @@ const PublicBookingPreview: React.FC = () => {
         setClientName('');
         setClientPhone('');
         localStorage.removeItem('belare_public_client');
-        supabase.auth.signOut();
     };
 
     const weekdayMap: Record<number, string> = {
@@ -525,13 +528,6 @@ const PublicBookingPreview: React.FC = () => {
                 }
             }
 
-            // Atualiza clientId no publicClient se necessário
-            if (publicClient && !publicClient.clientId) {
-                const updated = { ...publicClient, clientId };
-                setPublicClient(updated);
-                localStorage.setItem('belare_public_client', JSON.stringify(updated));
-            }
-
             setBookingSuccess(true);
         } catch (e: any) {
             console.error('Erro completo:', JSON.stringify(e));
@@ -620,11 +616,11 @@ const PublicBookingPreview: React.FC = () => {
                         </div>
                     ) : (
                         <button
-                            onClick={() => setIsAuthOpen(true)}
+                            onClick={() => setIsIdentifyOpen(true)}
                             className="p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-xl"
                         >
                             <UserCircle2 size={20} />
-                            <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Entrar / Cadastrar</span>
+                            <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Meus Agendamentos</span>
                         </button>
                     )}
                 </div>
@@ -901,7 +897,52 @@ const PublicBookingPreview: React.FC = () => {
             )}
 
             {isClientAppsOpen && <ClientAppointmentsModal onClose={() => setIsClientAppsOpen(false)} clientPhone={publicClient?.phone} />}
-            {isAuthOpen && <PublicAuthModal onClose={() => setIsAuthOpen(false)} onAuthenticated={handleAuthenticated} />}
+
+            {/* Modal de identificação simples via localStorage */}
+            {isIdentifyOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-white w-full max-w-sm rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <header className="p-6 flex items-center justify-between border-b border-slate-50">
+                            <div>
+                                <h3 className="font-black text-slate-800">Meus Agendamentos</h3>
+                                <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mt-0.5">Identifique-se para continuar</p>
+                            </div>
+                            <button onClick={() => setIsIdentifyOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors">
+                                <X size={22} />
+                            </button>
+                        </header>
+                        <main className="p-6 space-y-4">
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Seu Nome</label>
+                                <input
+                                    value={identifyName}
+                                    onChange={e => setIdentifyName(e.target.value)}
+                                    placeholder="Como devemos te chamar?"
+                                    className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all font-bold text-slate-700 text-sm"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">WhatsApp</label>
+                                <input
+                                    type="tel"
+                                    value={identifyPhone}
+                                    onChange={e => setIdentifyPhone(e.target.value)}
+                                    placeholder="(00) 00000-0000"
+                                    className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all font-bold text-slate-700 text-sm"
+                                />
+                            </div>
+                            <button
+                                onClick={handleIdentify}
+                                disabled={!identifyName || identifyPhone.length < 10}
+                                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-4 rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 mt-2"
+                            >
+                                <CheckCircle2 size={20} /> Continuar
+                            </button>
+                            <p className="text-[10px] text-slate-400 text-center font-medium">Suas informações ficam salvas neste dispositivo.</p>
+                        </main>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
