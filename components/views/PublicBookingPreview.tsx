@@ -9,7 +9,7 @@ import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { supabase, supabaseUrl, supabaseAnonKey } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
 import ToggleSwitch from '../shared/ToggleSwitch';
-import ClientAppointmentsModal from '../modais/ClientAppointmentsModal';
+import ClientAppointmentsModal from '../modals/ClientAppointmentsModal';
 import PublicAuthModal from '../PublicAuthModal';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
