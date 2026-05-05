@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Phone, Lock, User, Loader2, CheckCircle2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
-import { supabase } from '../../services/supabaseClient';
+import { supabase } from '../services/supabaseClient';
 
 interface PublicAuthModalProps {
     onClose: () => void;
