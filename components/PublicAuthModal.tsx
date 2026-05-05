@@ -29,7 +29,7 @@ const PublicAuthModal: React.FC<PublicAuthModalProps> = ({ onClose, onAuthentica
     const [confirmPassword, setConfirmPassword] = useState('');
 
     // Gera um email fictício a partir do telefone para usar no Supabase Auth
-    const phoneToEmail = (p: string) => `${normalizePhone(p)}@belare.client`;
+    const phoneToEmail = (p: string) => `cliente.${normalizePhone(p)}@example.com`;
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
