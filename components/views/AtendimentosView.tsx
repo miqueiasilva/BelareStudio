@@ -163,25 +163,64 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [colWidth, setColWidth] = useState(220);
     const [isAutoWidth, setIsAutoWidth] = useState(false);
     const [timeSlot, setTimeSlot] = useState(30);
-    const [notificationCount, setNotificationCount] = useState(3);
+    const [notificationCount, setNotificationCount] = useState(0);
     const [isNotifOpen, setIsNotifOpen] = useState(false);
     const [notifications, setNotifications] = useState<any[]>([]);
 
+    const handleMarkAsRead = async (notificationId: string | number) => {
+        if (!user || !activeStudioId) return;
+        const key = String(notificationId);
+        
+        console.log('🔕 Marcando notificação como lida:', key);
+        
+        try {
+            const { error } = await supabase
+                .from('notification_reads')
+                .insert([{
+                    user_id: user.id,
+                    notification_key: key,
+                    studio_id: activeStudioId
+                }]);
+
+            if (error && error.code !== '23505') {
+                console.error('❌ Erro ao marcar como lida:', error);
+                return;
+            }
+
+            setNotifications(prev => prev.filter(n => String(n.id) !== key));
+            setNotificationCount(prev => Math.max(0, prev - 1));
+        } catch (err) {
+            console.error('💥 Erro ao processar leitura:', err);
+        }
+    };
+
     const fetchNotifications = useCallback(async () => {
-        if (!activeStudioId) return;
+        if (!activeStudioId || authLoading || !user) return;
         console.log('🔔 Buscando notificações recentes para o estúdio:', activeStudioId);
         
         const since = new Date();
         since.setDate(since.getDate() - 7);
         
         try {
+            const { data: readData, error: readError } = await supabase
+                .from('notification_reads')
+                .select('notification_key')
+                .eq('user_id', user.id)
+                .eq('studio_id', activeStudioId);
+
+            if (readError) {
+                console.error('❌ Erro ao buscar leituras de notificações:', readError);
+            }
+
+            const readKeys = new Set(readData?.map(r => r.notification_key) || []);
+
             const { data, error } = await supabase
                 .from('appointments')
                 .select('id, date, status, client_name, service_name, professional_name, origin, created_at')
                 .eq('studio_id', activeStudioId)
                 .gte('created_at', since.toISOString())
                 .order('created_at', { ascending: false })
-                .limit(20);
+                .limit(40);
 
             if (error) {
                 console.error('❌ Erro ao buscar notificações:', error);
@@ -189,11 +228,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             }
 
             if (data) {
-                console.log(`✅ ${data.length} notificações recentes encontradas.`);
-                setNotifications(data);
+                const unreadNotifications = data.filter(n => !readKeys.has(String(n.id)));
+                console.log(`✅ ${unreadNotifications.length} notificações não lidas encontradas.`);
                 
-                // Badge conta apenas os não-concluídos e não-cancelados dos últimos 7 dias
-                setNotificationCount(data.filter(n => 
+                setNotifications(unreadNotifications);
+                setNotificationCount(unreadNotifications.filter(n => 
                     n.status !== 'concluido' && 
                     n.status !== 'cancelado'
                 ).length);
@@ -201,7 +240,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         } catch (err) {
             console.error('💥 Erro catastrófico nas notificações:', err);
         }
-    }, [activeStudioId]);
+    }, [activeStudioId, user, authLoading]);
 
     const handleCopyBookingLink = () => {
         const link = `${window.location.origin}/booking/${activeStudioId}`;
@@ -1247,8 +1286,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                 </div>
                             ) : (
                                 notifications.map(n => (
-                                    <div key={n.id} className="flex gap-4 p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                                        <div className="flex-shrink-0 w-10 h-10 rounded-2xl bg-orange-50 flex items-center justify-center">
+                                    <div 
+                                        key={n.id} 
+                                        onClick={() => handleMarkAsRead(n.id)}
+                                        className="flex gap-4 p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer group/notif"
+                                    >
+                                        <div className="flex-shrink-0 w-10 h-10 rounded-2xl bg-orange-50 flex items-center justify-center group-hover/notif:bg-orange-100 transition-colors">
                                             <CalendarDays size={18} className="text-orange-500" />
                                         </div>
                                         <div className="flex-1 min-w-0">
@@ -1259,20 +1302,26 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                         {format(new Date(n.date), "HH:mm")}
                                                     </span>
                                                 </p>
-                                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                                                    n.status === 'cancelado' 
-                                                        ? 'bg-red-50 text-red-500' 
-                                                        : 'bg-green-50 text-green-600'
-                                                }`}>
-                                                    {n.status === 'cancelado' ? 'Cancelamento' : 'Agendamento'}
-                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                                        n.status === 'cancelado' 
+                                                            ? 'bg-red-50 text-red-500' 
+                                                            : 'bg-green-50 text-green-600'
+                                                    }`}>
+                                                        {n.status === 'cancelado' ? 'Cancelamento' : 'Agendamento'}
+                                                    </span>
+                                                    <div className="w-2 h-2 bg-orange-400 rounded-full opacity-0 group-hover/notif:opacity-100 transition-opacity" title="Marcar como lida"></div>
+                                                </div>
                                             </div>
                                             <p className="text-sm font-black text-slate-800 truncate">{n.service_name}</p>
                                             <p className="text-xs text-slate-500 truncate">Cliente: {n.client_name}</p>
                                             <p className="text-xs text-slate-400 truncate">Profissional: {n.professional_name}</p>
-                                            <p className="text-[10px] text-slate-300 mt-1">
-                                                Agendado em {format(new Date(n.created_at), "dd/MM/yyyy 'às' HH:mm:ss")}
-                                            </p>
+                                            <div className="flex items-center justify-between mt-1">
+                                                <p className="text-[10px] text-slate-300">
+                                                    Agendado em {format(new Date(n.created_at), "dd/MM/yyyy 'às' HH:mm:ss")}
+                                                </p>
+                                                <span className="text-[9px] font-bold text-orange-400 opacity-0 group-hover/notif:opacity-100 transition-opacity">Limpar</span>
+                                            </div>
                                         </div>
                                     </div>
                                 ))
