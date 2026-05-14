@@ -141,10 +141,25 @@ const PublicBookingPreview: React.FC = () => {
         const fetchRulesAndData = async () => {
             setLoading(true);
             try {
-                const hashParts = window.location.hash.split('?');
+                // Tenta ler o hash direto e também via href completo (fallback mobile)
+                const readHash = () => window.location.hash || location.hash || '';
+                let hashRaw = readHash();
+
+                // Se hash ainda vazio, tenta extrair da URL completa
+                if (!hashRaw.includes('sid') && !hashRaw.includes('?')) {
+                    const fullUrl = window.location.href;
+                    const hashIndex = fullUrl.indexOf('#');
+                    if (hashIndex !== -1) {
+                        hashRaw = fullUrl.substring(hashIndex);
+                    }
+                }
+
+                const hashParts = hashRaw.split('?');
                 const params = new URLSearchParams(hashParts[1] || '');
                 const sid = params.get('sid');
                 const slug = params.get('s');
+
+                console.log('🔍 [DEBUG] hashRaw:', hashRaw, '| sid:', sid);
 
                 if (!sid && !slug) {
                     throw new Error('Link de agendamento incompleto. O identificador do estúdio (sid) está ausente.');
