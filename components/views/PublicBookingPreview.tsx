@@ -109,6 +109,7 @@ const PublicBookingPreview: React.FC = () => {
     const [isBookingOpen, setIsBookingOpen] = useState(false);
     const [isClientAppsOpen, setIsClientAppsOpen] = useState(false);
     const [bookingStep, setBookingStep] = useState(1); 
+    // FIX: Added missing selectedProfessional state and its setter.
     const [selectedProfessional, setSelectedProfessional] = useState<any>(null);
 
     // Regras de Agendamento Dinâmicas
@@ -119,8 +120,10 @@ const PublicBookingPreview: React.FC = () => {
     });
 
     // Appointment Choices
+    // FIX: Manual startOfDay replacement.
     const getStartOfDay = (d: Date) => { const nd = new Date(d); nd.setHours(0, 0, 0, 0); return nd; };
     const [selectedDate, setSelectedDate] = useState<Date>(getStartOfDay(new Date()));
+    // FIX: Manual startOfMonth replacement.
     const getStartOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
     const [viewMonth, setViewMonth] = useState<Date>(getStartOfMonth(new Date()));
     const [selectedTime, setSelectedTime] = useState<string | null>(null);
@@ -141,25 +144,11 @@ const PublicBookingPreview: React.FC = () => {
         const fetchRulesAndData = async () => {
             setLoading(true);
             try {
-                // Tenta ler o hash direto e também via href completo (fallback mobile)
-                const readHash = () => window.location.hash || location.hash || '';
-                let hashRaw = readHash();
-
-                // Se hash ainda vazio, tenta extrair da URL completa
-                if (!hashRaw.includes('sid') && !hashRaw.includes('?')) {
-                    const fullUrl = window.location.href;
-                    const hashIndex = fullUrl.indexOf('#');
-                    if (hashIndex !== -1) {
-                        hashRaw = fullUrl.substring(hashIndex);
-                    }
-                }
-
-                const hashParts = hashRaw.split('?');
+                // Tenta buscar sid ou slug da URL (#/public-preview?sid=ID ou #/public-preview?s=slug)
+                const hashParts = window.location.hash.split('?');
                 const params = new URLSearchParams(hashParts[1] || '');
                 const sid = params.get('sid');
                 const slug = params.get('s');
-
-                console.log('🔍 [DEBUG] hashRaw:', hashRaw, '| sid:', sid);
 
                 if (!sid && !slug) {
                     throw new Error('Link de agendamento incompleto. O identificador do estúdio (sid) está ausente.');
@@ -168,27 +157,29 @@ const PublicBookingPreview: React.FC = () => {
                 let query = supabase.from('studio_settings').select('*');
                 
                 if (sid) {
-                    query = query.eq('studio_id', sid);
+                    query = query.or(`id.eq.${sid},studio_id.eq.${sid}`);
                 } else if (slug) {
                     query = query.eq('slug', slug);
                 } else {
                     query = query.limit(1);
                 }
 
-                const { data: studioData } = await query.maybeSingle();
+                const { data: studioData, error: studioError } = await query.maybeSingle();
 
-                // FIX: servicesData declarado no escopo do try para evitar "not defined" no mobile
-                let servicesData: any[] = [];
+                if (studioError) {
+                    console.error('❌ Erro na consulta de estúdio:', studioError);
+                }
 
                 if (studioData) {
                     const studioId = sid || studioData.studio_id || studioData.id;
                     
+                    // O usuário informou que studio_settings é a tabela correta e contém os dados necessários.
                     setStudio({ 
                         ...studioData,
                         studio_id: studioId,
+                        // Garantir que o nome do estúdio venha do studio_settings
                         studio_name: studioData.studio_name || studioData.business_name || "Seu Estúdio de Beleza"
                     });
-
                     const rawNotice = parseFloat(studioData.min_scheduling_notice || '2');
                     const finalNoticeMinutes = rawNotice < 48 ? rawNotice * 60 : rawNotice;
 
@@ -198,16 +189,10 @@ const PublicBookingPreview: React.FC = () => {
                         cancellationHours: parseInt(studioData.cancellation_notice || '24', 10)
                     });
 
-                    const { data: fetchedServices } = await supabase
-                        .from('services')
-                        .select('*')
-                        .eq('ativo', true)
-                        .eq('studio_id', studioId);
+                    const { data: servicesData } = await supabase.from('services').select('*').eq('ativo', true).eq('studio_id', studioId);
+                    if (servicesData) setServices(servicesData);
 
-                    // FIX: atribui ao servicesData do escopo externo
-                    servicesData = fetchedServices || [];
-                    if (servicesData.length > 0) setServices(servicesData);
-
+                    // DEBUG: Check if command_id exists in clients table
                     const { data: colCheck, error: colError } = await supabase.from('clients').select('*').limit(1);
                     console.log('🔍 [DEBUG] Clients table columns check:', { 
                         columns: colCheck && colCheck.length > 0 ? Object.keys(colCheck[0]) : 'no data',
@@ -227,6 +212,7 @@ const PublicBookingPreview: React.FC = () => {
                     throw new Error('Estúdio não encontrado ou link inválido.');
                 }
 
+                // FIX: Manual subDays replacement using addDays.
                 const sixtyDaysAgo = addDays(new Date(), -60).toISOString();
                 const { data: recentApps } = await supabase
                     .from('appointments')
@@ -243,8 +229,7 @@ const PublicBookingPreview: React.FC = () => {
                         .sort(([, a], [, b]) => b - a)
                         .slice(0, 5)
                         .map(([name]) => name);
-                    // FIX: usa servicesData do escopo correto, nunca undefined
-                    const topIds = servicesData.filter((s: any) => sortedNames.includes(s.nome)).map((s: any) => s.id);
+                    const topIds = servicesData?.filter(s => sortedNames.includes(s.nome)).map(s => s.id) || [];
                     setPopularServiceIds(topIds);
                 }
 
@@ -259,6 +244,7 @@ const PublicBookingPreview: React.FC = () => {
     }, []);
 
     const calendarDays = useMemo(() => {
+        // FIX: Manual startOfMonth and startOfWeek replacements.
         const sm = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1, 0, 0, 0, 0);
         const start = new Date(sm);
         start.setDate(start.getDate() - start.getDay());
@@ -271,6 +257,7 @@ const PublicBookingPreview: React.FC = () => {
     const horizonLimit = useMemo(() => addDays(getStartOfDay(new Date()), rules.windowDays), [rules.windowDays]);
 
     const handlePrevMonth = () => {
+        // FIX: Manual subMonths replacement using addMonths.
         const prev = addMonths(viewMonth, -1);
         if (!isBefore(endOfMonth(prev), getStartOfMonth(new Date()))) {
             setViewMonth(prev);
@@ -302,8 +289,7 @@ const PublicBookingPreview: React.FC = () => {
             const now = new Date();
             const minTimeLimit = addMinutes(now, rules.minNoticeMinutes);
 
-            const getStartOfDay = (d: Date) => { const nd = new Date(d); nd.setHours(0, 0, 0, 0); return nd; };
-
+            // Sincronizando com professional_id (estável) para busca de slots livres
             const { data: busyAppointments } = await supabase
                 .from('appointments')
                 .select('date, duration')
@@ -331,6 +317,7 @@ const PublicBookingPreview: React.FC = () => {
                 }
 
                 const hasOverlap = busyAppointments?.some(app => {
+                    // FIX: Manual parseISO replacement using new Date().
                     const appStart = new Date(app.date);
                     const appEnd = addMinutes(appStart, app.duration);
                     const slotStart = currentPointer;
@@ -421,6 +408,7 @@ const PublicBookingPreview: React.FC = () => {
 
             const endDateTime = addMinutes(appointmentDate, totalDuration);
 
+            // Enviar estritamente professional_id. resource_id gerado no DB como espelho.
             const payload = {
                 studio_id: studio?.studio_id || studio?.id,
                 client_id: clientId,
@@ -462,7 +450,7 @@ const PublicBookingPreview: React.FC = () => {
                     appointment_id: newAppointment.id,
                     studio_id: newAppointment.studio_id,
                     client_name: newAppointment.client_name,
-                    client_email: null,
+                    client_email: null, // No preview público geralmente não temos o email a menos que peçamos
                     client_phone: newAppointment.client_whatsapp,
                     client_whatsapp: newAppointment.client_whatsapp,
                     professional_id: newAppointment.professional_id,
@@ -472,6 +460,7 @@ const PublicBookingPreview: React.FC = () => {
                     duration: newAppointment.duration,
                     total_amount: newAppointment.value,
                     notes: newAppointment.notes,
+                    // Campos legados
                     date: newAppointment.date,
                     start_time: format(new Date(newAppointment.start_at), 'HH:mm'),
                     value: newAppointment.value
@@ -480,6 +469,7 @@ const PublicBookingPreview: React.FC = () => {
                 console.log('📦 Payload enviado para Edge Function (Público):', notificationPayload);
 
                 try {
+                    // Função auxiliar para chamada robusta com logs de debug
                     const invokeFunction = async () => {
                         try {
                             console.log('📡 [DEBUG] Chamando Edge Function via SDK (Público)...');
@@ -494,11 +484,13 @@ const PublicBookingPreview: React.FC = () => {
                         } catch (err: any) {
                             console.warn('⚠️ [DEBUG] Exceção capturada no SDK (Público):', err.message);
                             
+                            // Fallback para fetch direto se o SDK falhar na rede ou por configuração
                             try {
                                 let directUrl = '';
                                 if (supabaseUrl.includes('localhost') || supabaseUrl.includes('127.0.0.1')) {
                                     directUrl = `${supabaseUrl}/functions/v1/send-appointment-notification`;
                                 } else {
+                                    // Converte https://project.supabase.co para https://project.functions.supabase.co
                                     directUrl = `${supabaseUrl.replace('.supabase.co', '.functions.supabase.co')}/send-appointment-notification`;
                                 }
                                 
@@ -540,6 +532,7 @@ const PublicBookingPreview: React.FC = () => {
                     }
                 } catch (emailError: any) {
                     console.error('❌ [DEBUG] ERRO FINAL NA NOTIFICAÇÃO (Público):', emailError.message || emailError);
+                    // No link público, logamos mas não bloqueamos o sucesso visual do cliente
                 }
             }
 
@@ -632,7 +625,7 @@ const PublicBookingPreview: React.FC = () => {
                         <div className="flex items-center gap-1 text-amber-400 font-bold"><Star size={14} fill="currentColor" /> 5.0</div>
                         <div className="flex items-center gap-1 text-xs font-bold text-slate-500 leading-tight">
                             <MapPin size={14} className="text-orange-500" /> 
-                            <span>{studio?.address || studio?.address_street || studio?.street ? `${studio.address || studio.address_street || studio.street}, ${studio.address_number || studio.number || ''}` : "Endereço não informado"}</span>
+                    <span>{studio?.address || studio?.address_street || studio?.street ? `${studio.address || studio.address_street || studio.street}, ${studio.address_number || studio.number || ''}` : "Endereço não informado"}</span>
                         </div>
                     </div>
                 </div>
@@ -698,7 +691,7 @@ const PublicBookingPreview: React.FC = () => {
                                             <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Passo {bookingStep} de 3</p>
                                         </div>
                                     </div>
-                                    <button onClick={() => setIsBookingOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"><X size={24}/></button>
+                                    <button onClick={() => setIsBookingOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors text-slate-400"><X size={24}/></button>
                                 </header>
 
                                 <main className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-slate-50/30 text-left">
@@ -708,6 +701,8 @@ const PublicBookingPreview: React.FC = () => {
                                                 .filter(p => {
                                                     if (selectedServices.length === 0) return true;
                                                     const profSkills = p.services_enabled || [];
+                                                    // Se o profissional não tem habilidades definidas, assume que faz tudo (ou nada, dependendo da lógica desejada)
+                                                    // Aqui vamos assumir que se tiver habilidades, deve ter todas as selecionadas.
                                                     if (profSkills.length === 0) return true; 
                                                     return selectedServices.every(s => profSkills.includes(s.id));
                                                 })
@@ -763,6 +758,7 @@ const PublicBookingPreview: React.FC = () => {
                                                         const isToday = isSameDay(day, new Date());
                                                         const isSelected = isSameDay(day, selectedDate);
                                                         const isCurrentMonth = isSameMonth(day, viewMonth);
+                                                        // FIX: Manual startOfDay replacement.
                                                         const startOfToday = new Date(); startOfToday.setHours(0,0,0,0);
                                                         const isPast = isBefore(day, startOfToday);
                                                         const isOverLimit = isAfter(day, horizonLimit);

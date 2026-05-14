@@ -48,23 +48,15 @@ const AppContent: React.FC = () => {
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
   const [viewingPaidId, setViewingPaidId] = useState<string | null>(() => sessionStorage.getItem('open_paid_command'));
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
-
-  // FIX MOBILE: lê o hash via função para garantir valor correto na inicialização
-  const getHash = () => window.location.hash || '';
-  const [hash, setHash] = useState(getHash);
+  const [hash, setHash] = useState(window.location.hash);
 
   useEffect(() => {
-    const syncHash = () => {
-      const current = window.location.hash || '';
-      setHash(current);
-      if (current === '' || current === '#/') setCurrentView('dashboard');
+    const handleHashChange = () => {
+      setHash(window.location.hash);
+      if (window.location.hash === '' || window.location.hash === '#/') setCurrentView('dashboard');
     };
-
-    // Garante leitura do hash após o DOM estar pronto (resolve timing no mobile)
-    syncHash();
-
-    window.addEventListener('hashchange', syncHash);
-    return () => window.removeEventListener('hashchange', syncHash);
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
   if (hash.startsWith('#/public-preview')) return <Suspense fallback={<ViewLoader />}><PublicBookingPreview /></Suspense>;

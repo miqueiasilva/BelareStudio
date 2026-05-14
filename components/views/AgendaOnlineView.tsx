@@ -240,7 +240,7 @@ const AgendaOnlineView: React.FC = () => {
             const { data: settings } = await supabase
                 .from('studio_settings')
                 .select('*')
-                .eq('id', activeStudioId)
+                .or(`id.eq.${activeStudioId},studio_id.eq.${activeStudioId}`)
                 .maybeSingle();
             if (settings) {
                 setConfig({

@@ -53,8 +53,10 @@ USING (
   )
 );
 
--- Permitir inserção pública para agendamento online (se necessário)
-CREATE POLICY "allow_anon_insert_appointments" ON appointments FOR INSERT TO anon WITH CHECK (true);
+-- Permitir consulta pública para agendamento online (checar slots)
+CREATE POLICY "allow_public_select_appointments" ON appointments FOR SELECT TO public USING (true);
+-- Permitir inserção pública para agendamento online
+CREATE POLICY "allow_anon_insert_appointments" ON appointments FOR INSERT TO public WITH CHECK (true);
 
 -- Políticas para CLIENTS
 DROP POLICY IF EXISTS "allow_public_insert_clients" ON clients;
@@ -94,11 +96,12 @@ CREATE POLICY "allow_public_select_clients" ON clients FOR SELECT TO public USIN
 CREATE POLICY "allow_public_insert_clients" ON clients FOR INSERT TO public WITH CHECK (true);
 
 -- Garantir acesso às outras tabelas necessárias
-CREATE POLICY "allow_auth_select_team_members" ON team_members FOR SELECT TO authenticated USING (true);
-CREATE POLICY "allow_auth_select_services" ON services FOR SELECT TO authenticated USING (true);
-CREATE POLICY "allow_auth_select_studios" ON studios FOR SELECT TO authenticated USING (true);
+CREATE POLICY "allow_public_select_team_members" ON team_members FOR SELECT TO public USING (true);
+CREATE POLICY "allow_public_select_services" ON services FOR SELECT TO public USING (true);
+CREATE POLICY "allow_public_select_studios" ON studios FOR SELECT TO public USING (true);
+CREATE POLICY "allow_public_select_studio_settings" ON studio_settings FOR SELECT TO public USING (true);
+
 CREATE POLICY "allow_auth_select_user_studios" ON user_studios FOR SELECT TO authenticated USING (true);
-CREATE POLICY "allow_auth_select_studio_settings" ON studio_settings FOR SELECT TO authenticated USING (true);
 CREATE POLICY "allow_auth_select_schedule_blocks" ON schedule_blocks FOR SELECT TO authenticated USING (true);
 CREATE POLICY "allow_auth_select_financial_transactions" ON financial_transactions FOR SELECT TO authenticated USING (true);
 CREATE POLICY "allow_auth_select_commands" ON commands FOR SELECT TO authenticated USING (true);

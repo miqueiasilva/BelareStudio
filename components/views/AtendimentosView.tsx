@@ -243,7 +243,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     }, [activeStudioId, user, authLoading]);
 
     const handleCopyBookingLink = () => {
-        const link = `${window.location.origin}/booking/${activeStudioId}`;
+        const link = `${window.location.origin}/#/public-preview?sid=${activeStudioId}`;
         navigator.clipboard.writeText(link).then(() => {
             setToast({ message: '🔗 Link da agenda copiado!', type: 'success' });
         });
