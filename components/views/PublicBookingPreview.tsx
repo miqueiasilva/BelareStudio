@@ -262,8 +262,6 @@ const PublicBookingPreview: React.FC = () => {
         }
     };
 
-    const getStartOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
-
     const handleNextMonth = () => {
         const next = addMonths(viewMonth, 1);
         if (!isAfter(getStartOfMonth(next), horizonLimit)) {
