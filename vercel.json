@@ -1,12 +1,12 @@
 {
-  "rewrites": [
+  "routes": [
     {
-      "source": "/agendar/:sid",
-      "destination": "/agendar.html"
+      "src": "/agendar/(?<sid>[^/]+)",
+      "dest": "/agendar.html"
     },
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "src": "/(.*)",
+      "dest": "/index.html"
     }
   ]
 }
