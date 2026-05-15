@@ -499,8 +499,19 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     return;
                 }
 
-                // 1.1 Break Detection
+                // 1.1 Availability Detection
                 const prof = resources.find(r => String(r.id) === String(app.professional?.id));
+                if (prof?.work_schedule) {
+                    const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][start.getDay()];
+                    const config = prof.work_schedule[dayKey];
+                    if (!config || !config.active) {
+                        setToast({ message: `⚠️ O profissional não atende neste dia.`, type: 'warning' });
+                        setIsLoadingData(false);
+                        return;
+                    }
+                }
+
+                // 1.2 Break Detection
                 if (prof?.work_schedule) {
                     const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][start.getDay()];
                     const config = prof.work_schedule[dayKey];
@@ -1035,8 +1046,18 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         const targetDate = new Date(colDate || currentDate);
         targetDate.setHours(Math.floor((START_HOUR * 60 + minutes) / 60), Math.round((START_HOUR * 60 + minutes) % 60 / 15) * 15, 0, 0);
         
-        // Verificar se está no intervalo do profissional
-        if (professional?.work_schedule) {
+        // Verificar se o profissional atende neste dia
+                                    if (professional?.work_schedule) {
+                                        const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][targetDate.getDay()];
+                                        const config = professional.work_schedule[dayKey];
+                                        if (!config || !config.active) {
+                                            setToast({ message: `⚠️ Este profissional não atende neste dia.`, type: 'warning' });
+                                            return;
+                                        }
+                                    }
+
+                                    // Verificar se está no intervalo do profissional
+                                    if (professional?.work_schedule) {
             const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][targetDate.getDay()];
             const config = professional.work_schedule[dayKey];
             if (config?.active && config.break_active) {
@@ -1176,6 +1197,24 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
                                     const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][colDate.getDay()];
                                     const config = prof.work_schedule[dayKey];
+                                    
+                                    // Bloqueio de dia desativado
+                                    if (!config || !config.active) {
+                                        return (
+                                            <div 
+                                                key="closed-overlay"
+                                                className="absolute inset-0 z-20 bg-slate-100/60 backdrop-blur-[2px] flex flex-col items-center justify-center cursor-not-allowed"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setToast({ message: `⚠️ Este profissional não atende aos ${['domingos', 'segundas', 'terças', 'quartas', 'quintas', 'sextas', 'sábados'][colDate.getDay()]}.`, type: 'warning' });
+                                                }}
+                                            >
+                                                <div className="bg-white/80 px-4 py-2 rounded-full shadow-sm border border-slate-200 flex items-center gap-2">
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Não Atende</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
                                     
                                     if (config && config.active && config.break_active) {
                                         const bS = config.break_start || '12:00';

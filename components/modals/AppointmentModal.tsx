@@ -207,8 +207,18 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     if (selectedServices.length === 0) return setError('Por favor, selecione pelo menos um serviço.');
     if (!formData.professional) return setError('Por favor, selecione um profissional.');
 
-    // Validar intervalo do profissional
+    // Validar se o profissional trabalha neste dia
     const prof = formData.professional as LegacyProfessional;
+    if (prof.work_schedule) {
+        const start = new Date(formData.start!);
+        const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][start.getDay()];
+        const config = prof.work_schedule[dayKey];
+        if (!config || !config.active) {
+            return setError(`⚠️ Este profissional não atende neste dia de semana.`);
+        }
+    }
+
+    // Validar intervalo do profissional
     if (prof.work_schedule) {
         const start = new Date(formData.start!);
         const end = addMinutes(start, manualDuration);
