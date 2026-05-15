@@ -317,13 +317,16 @@ const PublicBookingPreview: React.FC = () => {
             let breakStart: Date | null = null;
             let breakEnd: Date | null = null;
             
-            if (config.break_active && config.break_start && config.break_end) {
+            if (config.break_active) {
+                const bS = config.break_start || '12:00';
+                const bE = config.break_end || '13:00';
+                
                 breakStart = new Date(date);
-                const [bSH, bSM] = config.break_start.split(':').map(Number);
+                const [bSH, bSM] = bS.split(':').map(Number);
                 breakStart.setHours(bSH, bSM, 0, 0);
                 
                 breakEnd = new Date(date);
-                const [bEH, bEM] = config.break_end.split(':').map(Number);
+                const [bEH, bEM] = bE.split(':').map(Number);
                 breakEnd.setHours(bEH, bEM, 0, 0);
             }
 

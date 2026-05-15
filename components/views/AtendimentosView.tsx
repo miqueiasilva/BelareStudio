@@ -504,9 +504,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 if (prof?.work_schedule) {
                     const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][start.getDay()];
                     const config = prof.work_schedule[dayKey];
-                    if (config?.active && config.break_active && config.break_start && config.break_end) {
-                        const [bSH, bSM] = config.break_start.split(':').map(Number);
-                        const [bEH, bEM] = config.break_end.split(':').map(Number);
+                    if (config?.active && config.break_active) {
+                        const bS = config.break_start || '12:00';
+                        const bE = config.break_end || '13:00';
+                        const [bSH, bSM] = bS.split(':').map(Number);
+                        const [bEH, bEM] = bE.split(':').map(Number);
                         
                         const bStart = new Date(start);
                         bStart.setHours(bSH, bSM, 0, 0);
@@ -514,7 +516,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         bEnd.setHours(bEH, bEM, 0, 0);
 
                         if (start < bEnd && end > bStart) {
-                            setToast({ message: `⚠️ Conflito com o intervalo do profissional (${config.break_start} - ${config.break_end}).`, type: 'warning' });
+                            setToast({ message: `⚠️ Conflito com o intervalo do profissional (${bS} - ${bE}).`, type: 'warning' });
                             setIsLoadingData(false);
                             return;
                         }
@@ -1037,16 +1039,19 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (professional?.work_schedule) {
             const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][targetDate.getDay()];
             const config = professional.work_schedule[dayKey];
-            if (config?.active && config.break_active && config.break_start && config.break_end) {
-                const [startH, startM] = config.break_start.split(':').map(Number);
-                const [endH, endM] = config.break_end.split(':').map(Number);
+            if (config?.active && config.break_active) {
+                const bS = config.break_start || '12:00';
+                const bE = config.break_end || '13:00';
+                
+                const [startH, startM] = bS.split(':').map(Number);
+                const [endH, endM] = bE.split(':').map(Number);
                 
                 const clickTime = targetDate.getHours() * 60 + targetDate.getMinutes();
                 const bStart = startH * 60 + startM;
                 const bEnd = endH * 60 + endM;
                 
                 if (clickTime >= bStart && clickTime < bEnd) {
-                    setToast({ message: '⚠️ Este horário é o intervalo do profissional.', type: 'warning' });
+                    setToast({ message: `⚠️ Este horário é o intervalo do profissional (${bS} - ${bE}).`, type: 'warning' });
                     return;
                 }
             }
@@ -1172,9 +1177,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                     const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][colDate.getDay()];
                                     const config = prof.work_schedule[dayKey];
                                     
-                                    if (config && config.active && config.break_active && config.break_start && config.break_end) {
-                                        const [startH, startM] = config.break_start.split(':').map(Number);
-                                        const [endH, endM] = config.break_end.split(':').map(Number);
+                                    if (config && config.active && config.break_active) {
+                                        const bS = config.break_start || '12:00';
+                                        const bE = config.break_end || '13:00';
+                                        
+                                        const [startH, startM] = bS.split(':').map(Number);
+                                        const [endH, endM] = bE.split(':').map(Number);
                                         
                                         const startMinutes = (startH * 60 + startM) - (START_HOUR * 60);
                                         const endMinutes = (endH * 60 + endM) - (START_HOUR * 60);

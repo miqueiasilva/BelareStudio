@@ -215,9 +215,11 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
         const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][start.getDay()];
         const config = prof.work_schedule[dayKey];
         
-        if (config?.active && config.break_active && config.break_start && config.break_end) {
-            const [bSH, bSM] = config.break_start.split(':').map(Number);
-            const [bEH, bEM] = config.break_end.split(':').map(Number);
+        if (config?.active && config.break_active) {
+            const bS = config.break_start || '12:00';
+            const bE = config.break_end || '13:00';
+            const [bSH, bSM] = bS.split(':').map(Number);
+            const [bEH, bEM] = bE.split(':').map(Number);
             
             const bStart = new Date(start);
             bStart.setHours(bSH, bSM, 0, 0);
@@ -225,7 +227,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             bEnd.setHours(bEH, bEM, 0, 0);
 
             if (start < bEnd && end > bStart) {
-                return setError(`⚠️ Este horário choca com o intervalo do profissional (${config.break_start} - ${config.break_end}).`);
+                return setError(`⚠️ Este horário choca com o intervalo do profissional (${bS} - ${bE}).`);
             }
         }
     }

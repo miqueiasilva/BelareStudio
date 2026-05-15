@@ -195,8 +195,24 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
     };
 
     const updateSchedule = (day: string, field: string, value: any) => {
-        const current = prof.work_schedule[day] || { active: false, start: '09:00', end: '18:00' };
-        setProf({ ...prof, work_schedule: { ...prof.work_schedule, [day]: { ...current, [field]: value } } });
+        const current = prof.work_schedule[day] || { 
+            active: false, 
+            start: '09:00', 
+            end: '18:00',
+            break_active: false,
+            break_start: '12:00',
+            break_end: '13:00'
+        };
+        
+        const nextConfig = { ...current, [field]: value };
+        
+        // Se estiver ativando o intervalo e não houver horários definidos, coloca os padrões
+        if (field === 'break_active' && value === true) {
+            if (!nextConfig.break_start) nextConfig.break_start = '12:00';
+            if (!nextConfig.break_end) nextConfig.break_end = '13:00';
+        }
+
+        setProf({ ...prof, work_schedule: { ...prof.work_schedule, [day]: nextConfig } });
     };
 
     const updatePermission = (key: string, value: boolean) => {
