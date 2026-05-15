@@ -16,6 +16,7 @@ import ToggleSwitch from '../shared/ToggleSwitch';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import Toast, { ToastType } from '../shared/Toast';
+// FIX: Grouping date-fns imports and removing problematic members subDays and startOfDay.
 import { format, addDays, isSameDay } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
@@ -170,15 +171,17 @@ const AgendaOnlineView: React.FC = () => {
 
     const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
-    // FIX: Novo formato de link sem hash — compatível com WhatsApp, Samsung e qualquer WebView
+    // Link real de acesso público baseado na rota atual do navegador
     const realLink = useMemo(() => {
+        console.log("[AGENDA_ONLINE_DEBUG] config.id:", config.id, "activeStudioId:", activeStudioId);
         const sid = activeStudioId || config.id;
-        return `${window.location.origin}/agendar/${sid || ''}`;
+        return `${window.location.origin}/#/public-preview?sid=${sid || ''}`;
     }, [config.id, activeStudioId]);
 
     const fetchAnalytics = async () => {
         setIsRefreshing(true);
         try {
+            // FIX: Manual subDays replacement using addDays with negative value.
             const thirtyDaysAgo = addDays(new Date(), -30).toISOString();
             const { data: appts } = await supabase
                 .from('appointments')
@@ -211,6 +214,7 @@ const AgendaOnlineView: React.FC = () => {
                 setTopServices(sortedRanking);
 
                 const last7Days = Array.from({ length: 7 }).map((_, i) => {
+                    // FIX: Manual subDays replacement.
                     const d = addDays(new Date(), -(6 - i));
                     const dayBookings = appts.filter(a => isSameDay(new Date(a.date), d)).length;
                     const dayViews = Math.floor(Math.random() * 20) + 10; 
@@ -319,7 +323,7 @@ const AgendaOnlineView: React.FC = () => {
                         <Globe className="text-blue-500 w-6 h-6" />
                         Agenda Online
                     </h1>
-                    <p className="text-slate-500 text-xs font-medium">Configure a experiência pública do seu estúdio.</p>
+                    <p className="text-slate-500 text-xs font-medium">Configure a experincia pblica do seu estdio.</p>
                 </div>
                 <div className="flex gap-2">
                     <button onClick={() => window.open(realLink, '_blank')} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-50 flex items-center gap-2 text-sm transition-all shadow-sm">
@@ -476,7 +480,7 @@ const AgendaOnlineView: React.FC = () => {
                                                 { value: '90', label: 'Até 90 dias (3 meses)' },
                                                 { value: '180', label: 'Até 6 meses' },
                                             ]}
-                                            helperText="Define até que data futura o cliente pode ver seus horários."
+                                            helperText="Define at que data futura o cliente pode ver seus horrios."
                                         />
                                     </div>
                                 </Card>

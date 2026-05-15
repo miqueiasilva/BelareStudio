@@ -344,15 +344,43 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                         <Card title="Disponibilidade Semanal" className="animate-in fade-in">
                             <div className="space-y-4">
                                 {DAYS_ORDER.map(day => {
-                                    const config = prof.work_schedule[day.key] || { active: false, start: '09:00', end: '18:00' };
+                                    const config = prof.work_schedule[day.key] || { active: false, start: '09:00', end: '18:00', break_active: false, break_start: '12:00', break_end: '13:00' };
                                     return (
-                                        <div key={day.key} className={`flex items-center justify-between p-5 rounded-3xl border transition-all ${config.active ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-transparent opacity-60'}`}>
-                                            <div className="flex items-center gap-4 w-48"><ToggleSwitch on={config.active} onClick={() => updateSchedule(day.key, 'active', !config.active)} /><span className="font-black text-slate-700 text-sm uppercase tracking-tighter">{day.label}</span></div>
+                                        <div key={day.key} className={`flex flex-col p-5 rounded-3xl border transition-all ${config.active ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-transparent opacity-60'}`}>
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-4 w-48">
+                                                    <ToggleSwitch on={config.active} onClick={() => updateSchedule(day.key, 'active', !config.active)} />
+                                                    <span className="font-black text-slate-700 text-sm uppercase tracking-tighter">{day.label}</span>
+                                                </div>
+                                                {config.active && (
+                                                    <div className="flex items-center gap-2">
+                                                        <input type="time" value={config.start} onChange={e => updateSchedule(day.key, 'start', e.target.value)} className="bg-slate-100 px-3 py-2 rounded-xl text-sm font-bold text-slate-700 border-none outline-none focus:ring-2 focus:ring-orange-200" />
+                                                        <span className="text-slate-300 font-bold text-xs">até</span>
+                                                        <input type="time" value={config.end} onChange={e => updateSchedule(day.key, 'end', e.target.value)} className="bg-slate-100 px-3 py-2 rounded-xl text-sm font-bold text-slate-700 border-none outline-none focus:ring-2 focus:ring-orange-200" />
+                                                    </div>
+                                                )}
+                                            </div>
+
                                             {config.active && (
-                                                <div className="flex items-center gap-2">
-                                                    <input type="time" value={config.start} onChange={e => updateSchedule(day.key, 'start', e.target.value)} className="bg-slate-100 px-3 py-2 rounded-xl text-sm font-bold text-slate-700 border-none outline-none focus:ring-2 focus:ring-orange-200" />
-                                                    <span className="text-slate-300 font-bold text-xs">até</span>
-                                                    <input type="time" value={config.end} onChange={e => updateSchedule(day.key, 'end', e.target.value)} className="bg-slate-100 px-3 py-2 rounded-xl text-sm font-bold text-slate-700 border-none outline-none focus:ring-2 focus:ring-orange-200" />
+                                                <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        <ToggleSwitch 
+                                                            on={!!config.break_active} 
+                                                            onClick={() => updateSchedule(day.key, 'break_active', !config.break_active)} 
+                                                            size="small"
+                                                        />
+                                                        <div>
+                                                            <p className="font-bold text-slate-600 text-[10px] uppercase">Intervalo / Almoço</p>
+                                                            <p className="text-[9px] text-slate-400 font-medium">Bloquear horário de descanso</p>
+                                                        </div>
+                                                    </div>
+                                                    {config.break_active && (
+                                                        <div className="flex items-center gap-2">
+                                                            <input type="time" value={config.break_start || '12:00'} onChange={e => updateSchedule(day.key, 'break_start', e.target.value)} className="bg-orange-50 px-3 py-1.5 rounded-lg text-xs font-bold text-orange-700 border-none outline-none focus:ring-2 focus:ring-orange-200" />
+                                                            <span className="text-slate-300 font-bold text-[10px]">até</span>
+                                                            <input type="time" value={config.break_end || '13:00'} onChange={e => updateSchedule(day.key, 'break_end', e.target.value)} className="bg-orange-50 px-3 py-1.5 rounded-lg text-xs font-bold text-orange-700 border-none outline-none focus:ring-2 focus:ring-orange-200" />
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
