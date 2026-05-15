@@ -338,7 +338,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         try {
             const { data, error } = await supabase
                 .from('team_members')
-                .select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled') 
+                .select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled, work_schedule') 
                 .eq('active', true)
                 .eq('studio_id', activeStudioId)
                 .order('order_index', { ascending: true }) 
@@ -347,7 +347,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             if (data && isMounted.current) {
                 const mapped = data.filter((m: any) => m.show_in_calendar !== false).map((p: any) => ({
                     id: p.id, name: p.name, avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
-                    role: p.role, order_index: p.order_index || 0, services_enabled: p.services_enabled || [] 
+                    role: p.role, order_index: p.order_index || 0, services_enabled: p.services_enabled || [],
+                    work_schedule: p.work_schedule || {}
                 }));
                 setResources(mapped);
             }
@@ -496,6 +497,28 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     });
                     setIsLoadingData(false);
                     return;
+                }
+
+                // 1.1 Break Detection
+                const prof = resources.find(r => String(r.id) === String(app.professional?.id));
+                if (prof?.work_schedule) {
+                    const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][start.getDay()];
+                    const config = prof.work_schedule[dayKey];
+                    if (config?.active && config.break_active && config.break_start && config.break_end) {
+                        const [bSH, bSM] = config.break_start.split(':').map(Number);
+                        const [bEH, bEM] = config.break_end.split(':').map(Number);
+                        
+                        const bStart = new Date(start);
+                        bStart.setHours(bSH, bSM, 0, 0);
+                        const bEnd = new Date(start);
+                        bEnd.setHours(bEH, bEM, 0, 0);
+
+                        if (start < bEnd && end > bStart) {
+                            setToast({ message: `⚠️ Conflito com o intervalo do profissional (${config.break_start} - ${config.break_end}).`, type: 'warning' });
+                            setIsLoadingData(false);
+                            return;
+                        }
+                    }
                 }
             }
 
@@ -1009,6 +1032,26 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         const minutes = ((e.clientY - rect.top) / (SLOT_PX_HEIGHT / timeSlot));
         const targetDate = new Date(colDate || currentDate);
         targetDate.setHours(Math.floor((START_HOUR * 60 + minutes) / 60), Math.round((START_HOUR * 60 + minutes) % 60 / 15) * 15, 0, 0);
+        
+        // Verificar se está no intervalo do profissional
+        if (professional?.work_schedule) {
+            const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][targetDate.getDay()];
+            const config = professional.work_schedule[dayKey];
+            if (config?.active && config.break_active && config.break_start && config.break_end) {
+                const [startH, startM] = config.break_start.split(':').map(Number);
+                const [endH, endM] = config.break_end.split(':').map(Number);
+                
+                const clickTime = targetDate.getHours() * 60 + targetDate.getMinutes();
+                const bStart = startH * 60 + startM;
+                const bEnd = endH * 60 + endM;
+                
+                if (clickTime >= bStart && clickTime < bEnd) {
+                    setToast({ message: '⚠️ Este horário é o intervalo do profissional.', type: 'warning' });
+                    return;
+                }
+            }
+        }
+
         setSelectionMenu({ x: e.clientX, y: e.clientY, time: targetDate, professional });
     };
 
@@ -1121,6 +1164,48 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                             >
                                 {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
                                 
+                                {(() => {
+                                    const prof = col.type === 'professional' ? (col.data as LegacyProfessional) : null;
+                                    const colDate = col.type === 'date' ? (col.data as Date) : currentDate;
+                                    if (!prof || !prof.work_schedule) return null;
+
+                                    const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][colDate.getDay()];
+                                    const config = prof.work_schedule[dayKey];
+                                    
+                                    if (config && config.active && config.break_active && config.break_start && config.break_end) {
+                                        const [startH, startM] = config.break_start.split(':').map(Number);
+                                        const [endH, endM] = config.break_end.split(':').map(Number);
+                                        
+                                        const startMinutes = (startH * 60 + startM) - (START_HOUR * 60);
+                                        const endMinutes = (endH * 60 + endM) - (START_HOUR * 60);
+                                        const duration = endMinutes - startMinutes;
+                                        
+                                        if (duration > 0) {
+                                            const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
+                                            const top = startMinutes * pixelsPerMinute;
+                                            const height = duration * pixelsPerMinute;
+                                            
+                                            return (
+                                                <div 
+                                                    className="absolute w-full left-0 z-10 bg-slate-200/40 backdrop-blur-[1px] border-y border-slate-300/30 flex flex-col items-center justify-center pointer-events-none overflow-hidden"
+                                                    style={{ 
+                                                        top: `${top}px`, 
+                                                        height: `${height}px`,
+                                                        backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(203, 213, 225, 0.2) 10px, rgba(203, 213, 225, 0.2) 20px)'
+                                                    }}
+                                                >
+                                                    <div className="flex flex-col items-center opacity-60">
+                                                        <Clock size={14} className="text-slate-400 mb-0.5" />
+                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Intervalo</span>
+                                                        <span className="text-[9px] font-bold text-slate-300">{config.break_start} - {config.break_end}</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+                                    }
+                                    return null;
+                                })()}
+
                                 {filteredAppointments
                                     .filter(app => {
                                         if (periodType === 'Semana') return isSameDay(app.start, col.data as Date);
