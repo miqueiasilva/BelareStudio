@@ -9,10 +9,11 @@ import { format, differenceInHours, isAfter } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
 interface ClientAppointmentsModalProps {
+    studioId?: string;
     onClose: () => void;
 }
 
-const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClose }) => {
+const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ studioId, onClose }) => {
     const [step, setStep] = useState<'identify' | 'list'>('identify');
     const [phone, setPhone] = useState('');
     const [loading, setLoading] = useState(false);
@@ -23,11 +24,19 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
     // Carrega a política de cancelamento do estúdio
     useEffect(() => {
         const fetchPolicy = async () => {
-            const { data } = await supabase.from('studio_settings').select('cancellation_policy_hours').maybeSingle();
-            if (data?.cancellation_policy_hours) setPolicyHours(data.cancellation_policy_hours);
+            if (!studioId) return;
+            const { data } = await supabase
+                .from('studio_settings')
+                .select('cancellation_notice')
+                .or(`id.eq.${studioId},studio_id.eq.${studioId}`)
+                .maybeSingle();
+            
+            if (data && (data.cancellation_notice !== undefined && data.cancellation_notice !== null)) {
+                setPolicyHours(Number(data.cancellation_notice));
+            }
         };
         fetchPolicy();
-    }, []);
+    }, [studioId]);
 
     const handleSearch = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -35,12 +44,17 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
 
         setLoading(true);
         try {
-            // Busca agendamentos vinculados ao whatsapp (ajustado para a estrutura do seu banco)
-            const { data, error } = await supabase
+            // Busca agendamentos vinculados ao whatsapp e ao estúdio atual
+            const query = supabase
                 .from('appointments')
                 .select('*')
-                .eq('client_whatsapp', phone.replace(/\D/g, '')) // Limpa máscara se houver
-                .order('date', { ascending: true });
+                .eq('client_whatsapp', phone.replace(/\D/g, ''));
+            
+            if (studioId) {
+                query.eq('studio_id', studioId);
+            }
+
+            const { data, error } = await query.order('date', { ascending: true });
 
             if (error) throw error;
             setAppointments(data || []);
@@ -67,12 +81,14 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ onClo
 
         setLoading(true);
         try {
+            const currentNotes = app.notes || app.notas || '';
+            const newNote = `\n[Cancelado pelo Cliente em ${format(new Date(), 'dd/MM HH:mm')}]: ${reason}`;
+            
             const { error } = await supabase
                 .from('appointments')
                 .update({ 
                     status: 'cancelado',
-                    cancellation_reason: reason,
-                    cancelled_at: new Date().toISOString()
+                    notes: (currentNotes + newNote).trim()
                 })
                 .eq('id', app.id);
 

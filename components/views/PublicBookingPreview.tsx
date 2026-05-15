@@ -923,7 +923,7 @@ const PublicBookingPreview: React.FC = () => {
                 </div>
             )}
 
-            {isClientAppsOpen && <ClientAppointmentsModal onClose={() => setIsClientAppsOpen(false)} />}
+            {isClientAppsOpen && <ClientAppointmentsModal studioId={studio?.studio_id || studio?.id} onClose={() => setIsClientAppsOpen(false)} />}
         </div>
     );
 };
