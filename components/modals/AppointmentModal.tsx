@@ -82,7 +82,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     try {
       const { data, error: sbError } = await supabase
         .from('team_members')
-        .select('id, name, photo_url, role, active, services_enabled')
+        .select('id, name, photo_url, role, active, services_enabled, work_schedule')
         .eq('studio_id', activeStudioId)
         .eq('active', true)
         .order('name');
@@ -95,7 +95,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           name: p.name,
           avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
           role: p.role,
-          services_enabled: p.services_enabled || []
+          services_enabled: p.services_enabled || [],
+          work_schedule: p.work_schedule || {}
         }));
         setDbProfessionals(mapped);
       }
@@ -205,6 +206,29 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     if (!formData.client) return setError('Por favor, selecione um cliente.');
     if (selectedServices.length === 0) return setError('Por favor, selecione pelo menos um serviço.');
     if (!formData.professional) return setError('Por favor, selecione um profissional.');
+
+    // Validar intervalo do profissional
+    const prof = formData.professional as LegacyProfessional;
+    if (prof.work_schedule) {
+        const start = new Date(formData.start!);
+        const end = addMinutes(start, manualDuration);
+        const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][start.getDay()];
+        const config = prof.work_schedule[dayKey];
+        
+        if (config?.active && config.break_active && config.break_start && config.break_end) {
+            const [bSH, bSM] = config.break_start.split(':').map(Number);
+            const [bEH, bEM] = config.break_end.split(':').map(Number);
+            
+            const bStart = new Date(start);
+            bStart.setHours(bSH, bSM, 0, 0);
+            const bEnd = new Date(start);
+            bEnd.setHours(bEH, bEM, 0, 0);
+
+            if (start < bEnd && end > bStart) {
+                return setError(`⚠️ Este horário choca com o intervalo do profissional (${config.break_start} - ${config.break_end}).`);
+            }
+        }
+    }
 
     setIsSaving(true);
     try {

@@ -1187,14 +1187,19 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                             
                                             return (
                                                 <div 
-                                                    className="absolute w-full left-0 z-10 bg-slate-200/40 backdrop-blur-[1px] border-y border-slate-300/30 flex flex-col items-center justify-center pointer-events-none overflow-hidden"
+                                                    key="break-overlay"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setToast({ message: '⚠️ Este horário é o intervalo do profissional.', type: 'warning' });
+                                                    }}
+                                                    className="absolute w-full left-0 z-10 bg-slate-200/40 backdrop-blur-[1px] border-y border-slate-300/30 flex flex-col items-center justify-center cursor-not-allowed overflow-hidden shadow-inner"
                                                     style={{ 
                                                         top: `${top}px`, 
                                                         height: `${height}px`,
-                                                        backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(203, 213, 225, 0.2) 10px, rgba(203, 213, 225, 0.2) 20px)'
+                                                        backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(203, 213, 225, 0.1) 10px, rgba(203, 213, 225, 0.1) 20px)'
                                                     }}
                                                 >
-                                                    <div className="flex flex-col items-center opacity-60">
+                                                    <div className="flex flex-col items-center opacity-60 pointer-events-none">
                                                         <Clock size={14} className="text-slate-400 mb-0.5" />
                                                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Intervalo</span>
                                                         <span className="text-[9px] font-bold text-slate-300">{config.break_start} - {config.break_end}</span>
