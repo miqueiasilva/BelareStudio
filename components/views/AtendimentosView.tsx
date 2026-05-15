@@ -1203,13 +1203,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                         return (
                                             <div 
                                                 key="closed-overlay"
-                                                className="absolute inset-0 z-20 bg-slate-100/60 backdrop-blur-[2px] flex flex-col items-center justify-center cursor-not-allowed"
+                                                className="absolute inset-0 z-10 bg-slate-100/50 flex flex-col items-center justify-center cursor-not-allowed"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     setToast({ message: `⚠️ Este profissional não atende aos ${['domingos', 'segundas', 'terças', 'quartas', 'quintas', 'sextas', 'sábados'][colDate.getDay()]}.`, type: 'warning' });
                                                 }}
                                             >
-                                                <div className="bg-white/80 px-4 py-2 rounded-full shadow-sm border border-slate-200 flex items-center gap-2">
+                                                <div className="bg-white/90 px-4 py-2 rounded-full shadow-sm border border-slate-200 flex items-center gap-2">
                                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Não Atende</span>
                                                 </div>
                                             </div>
@@ -1239,11 +1239,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                         e.stopPropagation();
                                                         setToast({ message: '⚠️ Este horário é o intervalo do profissional.', type: 'warning' });
                                                     }}
-                                                    className="absolute w-full left-0 z-10 bg-slate-200/40 backdrop-blur-[1px] border-y border-slate-300/30 flex flex-col items-center justify-center cursor-not-allowed overflow-hidden shadow-inner"
+                                                    className="absolute w-full left-0 z-[5] bg-slate-200/30 border-y border-slate-300/20 flex flex-col items-center justify-center cursor-not-allowed overflow-hidden shadow-inner"
                                                     style={{ 
                                                         top: `${top}px`, 
                                                         height: `${height}px`,
-                                                        backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(203, 213, 225, 0.1) 10px, rgba(203, 213, 225, 0.1) 20px)'
+                                                        backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(203, 213, 225, 0.05) 10px, rgba(203, 213, 225, 0.05) 20px)'
                                                     }}
                                                 >
                                                     <div className="flex flex-col items-center opacity-60 pointer-events-none">
@@ -1469,7 +1469,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             )}
             
             <JaciBotPanel isOpen={isJaciBotOpen} onClose={() => setIsJaciBotOpen(false)} />
-            <div className="fixed bottom-8 right-8 z-10"><button onClick={() => setIsJaciBotOpen(true)} className="w-16 h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:scale-110 transition-all"><MessageSquare className="w-8 h-8" /></button></div>
+            <div className="fixed bottom-8 right-8 z-[60]"><button onClick={() => setIsJaciBotOpen(true)} className="w-16 h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all"><MessageSquare className="w-8 h-8" /></button></div>
             <ConfirmDialogComponent />
         </div>
     );

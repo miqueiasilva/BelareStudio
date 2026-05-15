@@ -37,7 +37,7 @@ const JaciBotPanel: React.FC<JaciBotPanelProps> = ({ isOpen, onClose }) => {
 
   return (
     <div
-      className={`fixed top-0 right-0 h-full w-96 bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out ${
+      className={`fixed top-0 right-0 h-full w-80 md:w-96 bg-white shadow-2xl z-[100] transform transition-transform duration-300 ease-in-out ${
         isOpen ? 'translate-x-0' : 'translate-x-full'
       }`}
     >
