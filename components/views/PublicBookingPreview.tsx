@@ -279,11 +279,12 @@ const PublicBookingPreview: React.FC = () => {
         try {
             const dayKey = weekdayMap[getDay(date)];
             
-            // Prioriza o horário individual do profissional, se existir e estiver ativo
+            // Prioriza o horário individual do profissional, se existir
             const profConfig = professional.work_schedule?.[dayKey];
             const studioConfig = studio.business_hours?.[dayKey];
             
-            const config = (profConfig && profConfig.active) ? profConfig : studioConfig;
+            // Se houver config do profissional (mesmo que inativo), usa ela. Caso contrário, fallback para estúdio.
+            const config = profConfig ? profConfig : studioConfig;
 
             if (!config || !config.active) {
                 setAvailableSlots([]);
@@ -795,7 +796,12 @@ const PublicBookingPreview: React.FC = () => {
                                                         const isPast = isBefore(day, startOfToday);
                                                         const isOverLimit = isAfter(day, horizonLimit);
                                                         const dayKey = weekdayMap[getDay(day)];
-                                                        const isClosed = !studio?.business_hours?.[dayKey]?.active;
+                                                        
+                                                        // Verifica se o profissional (ou estúdio) está aberto
+                                                        const profConfig = selectedProfessional?.work_schedule?.[dayKey];
+                                                        const studioConfig = studio?.business_hours?.[dayKey];
+                                                        const activeConfig = profConfig ? profConfig : studioConfig;
+                                                        const isClosed = !activeConfig || !activeConfig.active;
                                                         
                                                         const isDisabled = isPast || isOverLimit || isClosed;
 
