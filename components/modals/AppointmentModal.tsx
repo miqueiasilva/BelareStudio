@@ -43,6 +43,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showOverlapConfirm, setShowOverlapConfirm] = useState(false);
   const [clientEmail, setClientEmail] = useState('');
 
   const fetchServices = async () => {
@@ -218,8 +219,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
         }
     }
 
-    // Validar intervalo do profissional
-    if (prof.work_schedule) {
+    // Validar intervalo do profissional (Aviso apenas no admin)
+    if (prof.work_schedule && !showOverlapConfirm) {
         const start = new Date(formData.start!);
         const end = addMinutes(start, manualDuration);
         const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][start.getDay()];
@@ -237,7 +238,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             bEnd.setHours(bEH, bEM, 0, 0);
 
             if (start < bEnd && end > bStart) {
-                return setError(`⚠️ Este horário choca com o intervalo do profissional (${bS} - ${bE}).`);
+                setShowOverlapConfirm(true);
+                return setError(`⚠️ Horário em conflito com o intervalo (${bS} - ${bE}). Deseja salvar como encaixe?`);
             }
         }
     }
@@ -380,7 +382,27 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Status</label><div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-200"><CheckSquare className="w-5 h-5 text-slate-400" /><select name="status" value={formData.status} onChange={handleChange} className="w-full bg-transparent focus:outline-none text-sm font-medium text-slate-700"><option value="agendado">Agendado</option><option value="confirmado">Confirmado</option><option value="chegou">Cliente Chegou</option><option value="em_atendimento">Em Atendimento</option><option value="concluido">Concluído</option><option value="faltou">Faltou</option><option value="cancelado">Cancelado</option></select></div></div>
           <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Observações</label><div className="flex items-center gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200"><textarea name="notas" placeholder="Observações..." value={formData.notas || ''} onChange={handleChange} className="w-full bg-transparent focus:outline-none text-sm text-slate-700 resize-none" rows={2} /></div></div>
         </main>
-        <footer className="p-4 bg-white border-t flex justify-end items-center gap-3 flex-shrink-0"><button onClick={onClose} className="px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors" disabled={isSaving}>Cancelar</button><button onClick={handleSave} disabled={isSaving} className="px-6 py-2.5 text-sm font-semibold bg-orange-500 text-white rounded-lg hover:bg-orange-600 shadow-lg shadow-orange-200 disabled:opacity-70 flex items-center gap-2">{isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar Agendamento'}</button></footer>
+        <footer className="p-4 bg-white border-t flex justify-end items-center gap-3 flex-shrink-0">
+          <button onClick={onClose} className="px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors" disabled={isSaving}>Cancelar</button>
+          
+          {showOverlapConfirm ? (
+            <button 
+              onClick={handleSave} 
+              disabled={isSaving} 
+              className="px-6 py-2.5 text-sm font-bold bg-amber-500 text-white rounded-lg hover:bg-amber-600 shadow-lg shadow-amber-100 flex items-center gap-2 animate-bounce"
+            >
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar Encaixe'}
+            </button>
+          ) : (
+            <button 
+              onClick={handleSave} 
+              disabled={isSaving} 
+              className="px-6 py-2.5 text-sm font-semibold bg-orange-500 text-white rounded-lg hover:bg-orange-600 shadow-lg shadow-orange-200 disabled:opacity-70 flex items-center gap-2"
+            >
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar Agendamento'}
+            </button>
+          )}
+        </footer>
         {selectionModal === 'client' && (<ClientSearchModal onClose={() => setSelectionModal(null)} onSelect={handleSelectClient} onNewClient={() => { setSelectionModal(null); setIsClientModalOpen(true); }} />)}
         {selectionModal === 'service' && (<SelectionModal title={formData.professional ? `Serviços de ${formData.professional.name}` : "Selecione o Serviço"} items={filteredServicesToSelect} onClose={() => setSelectionModal(null)} onSelect={(item) => handleAddService(dbServices.find(s=>s.id === item.id)!)} searchPlaceholder="Buscar Serviço..." renderItemIcon={() => <Tag size={20}/>} />)}
         {selectionModal === 'professional' && (<SelectionModal title="Selecione o Profissional" items={dbProfessionals} onClose={() => setSelectionModal(null)} onSelect={(item) => handleSelectProfessional(dbProfessionals.find(p => p.id === item.id)!)} searchPlaceholder="Buscar Profissional..." renderItemIcon={() => <Briefcase size={20}/>} />)}

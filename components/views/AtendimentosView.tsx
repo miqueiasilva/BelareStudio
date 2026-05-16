@@ -511,7 +511,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     }
                 }
 
-                // 1.2 Break Detection
+            // 1.2 Break Detection
                 if (prof?.work_schedule) {
                     const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][start.getDay()];
                     const config = prof.work_schedule[dayKey];
@@ -527,9 +527,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         bEnd.setHours(bEH, bEM, 0, 0);
 
                         if (start < bEnd && end > bStart) {
-                            setToast({ message: `⚠️ Conflito com o intervalo do profissional (${bS} - ${bE}).`, type: 'warning' });
-                            setIsLoadingData(false);
-                            return;
+                             const isConfirmed = await confirm({
+                                title: 'Conflito de Intervalo',
+                                message: `O agendamento choca com o intervalo do profissional (${bS} - ${bE}). Deseja salvar como excessão (encaixe)?`,
+                                confirmText: 'Salvar Encaixe',
+                                cancelText: 'Voltar',
+                                type: 'warning'
+                            });
+                            if (!isConfirmed) {
+                                setIsLoadingData(false);
+                                return;
+                            }
                         }
                     }
                 }
@@ -1040,24 +1048,24 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         return labels;
     }, [timeSlot]);
 
-    const handleGridClick = (e: React.MouseEvent, professional: LegacyProfessional, colDate?: Date) => {
+    const handleGridClick = async (e: React.MouseEvent, professional: LegacyProfessional, colDate?: Date) => {
         const rect = e.currentTarget.getBoundingClientRect();
         const minutes = ((e.clientY - rect.top) / (SLOT_PX_HEIGHT / timeSlot));
         const targetDate = new Date(colDate || currentDate);
         targetDate.setHours(Math.floor((START_HOUR * 60 + minutes) / 60), Math.round((START_HOUR * 60 + minutes) % 60 / 15) * 15, 0, 0);
         
         // Verificar se o profissional atende neste dia
-                                    if (professional?.work_schedule) {
-                                        const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][targetDate.getDay()];
-                                        const config = professional.work_schedule[dayKey];
-                                        if (!config || !config.active) {
-                                            setToast({ message: `⚠️ Este profissional não atende neste dia.`, type: 'warning' });
-                                            return;
-                                        }
-                                    }
+        if (professional?.work_schedule) {
+            const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][targetDate.getDay()];
+            const config = professional.work_schedule[dayKey];
+            if (!config || !config.active) {
+                setToast({ message: `⚠️ Este profissional não atende neste dia.`, type: 'warning' });
+                return;
+            }
+        }
 
-                                    // Verificar se está no intervalo do profissional
-                                    if (professional?.work_schedule) {
+        // Verificar se está no intervalo do profissional
+        if (professional?.work_schedule) {
             const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][targetDate.getDay()];
             const config = professional.work_schedule[dayKey];
             if (config?.active && config.break_active) {
@@ -1072,8 +1080,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 const bEnd = endH * 60 + endM;
                 
                 if (clickTime >= bStart && clickTime < bEnd) {
-                    setToast({ message: `⚠️ Este horário é o intervalo do profissional (${bS} - ${bE}).`, type: 'warning' });
-                    return;
+                    const isConfirmed = await confirm({
+                        title: 'Horário de Intervalo',
+                        message: `Este horário coincide com o intervalo do profissional (${bS} - ${bE}). Deseja realizar um agendamento de encaixe?`,
+                        confirmText: 'Sim, Encaixar',
+                        cancelText: 'Voltar',
+                        type: 'warning'
+                    });
+                    if (!isConfirmed) return;
                 }
             }
         }
