@@ -52,18 +52,18 @@ Deno.serve(async (req) => {
     // Preparação de dados para o e-mail
     // Prioriza os campos específicos do payload se existirem
     let displayDate = 'Não informada'
-    const rawDate = appointment_date || date
+    const rawDate = appointment_date || date || start_at
     
     if (rawDate) {
-      if (rawDate.includes('-')) {
-        // Formato YYYY-MM-DD para DD/MM/YYYY
-        const [year, month, day] = rawDate.split('-')
-        displayDate = `${day}/${month}/${year}`
-      } else {
+      try {
+        // Usa a data fornecida para criar um objeto Date e formata para pt-BR
+        displayDate = new Date(rawDate).toLocaleDateString('pt-BR', {
+          timeZone: 'America/Recife'
+        })
+      } catch (e) {
+        console.warn(`⚠️ [WARN] Erro ao formatar data: ${rawDate}. Usando valor bruto.`)
         displayDate = rawDate
       }
-    } else if (start_at) {
-      displayDate = new Date(start_at).toLocaleDateString('pt-BR')
     }
 
     const displayTime = appointment_time || start_time || (start_at ? new Date(start_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'Não informado')
