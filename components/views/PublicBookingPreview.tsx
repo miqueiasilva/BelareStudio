@@ -208,29 +208,30 @@ const PublicBookingPreview: React.FC = () => {
                         .order('order_index');
                     
                     if (profsData) setTeamMembers(profsData);
+
+                    // Identificação de serviços populares
+                    const sixtyDaysAgo = addDays(new Date(), -60).toISOString();
+                    const { data: recentApps } = await supabase
+                        .from('appointments')
+                        .select('service_name') 
+                        .eq('studio_id', studioId)
+                        .gte('date', sixtyDaysAgo)
+                        .in('status', ['concluido', 'agendado', 'confirmado', 'confirmado_whatsapp']);
+
+                    if (recentApps && recentApps.length > 5) {
+                        const counts: Record<string, number> = {};
+                        recentApps.forEach(app => {
+                            counts[app.service_name] = (counts[app.service_name] || 0) + 1;
+                        });
+                        const sortedNames = Object.entries(counts)
+                            .sort(([, a], [, b]) => b - a)
+                            .slice(0, 5)
+                            .map(([name]) => name);
+                        const topIds = servicesData?.filter(s => sortedNames.includes(s.nome)).map(s => s.id) || [];
+                        setPopularServiceIds(topIds);
+                    }
                 } else {
                     throw new Error('Estúdio não encontrado ou link inválido.');
-                }
-
-                // FIX: Manual subDays replacement using addDays.
-                const sixtyDaysAgo = addDays(new Date(), -60).toISOString();
-                const { data: recentApps } = await supabase
-                    .from('appointments')
-                    .select('service_name') 
-                    .gte('date', sixtyDaysAgo)
-                    .in('status', ['concluido', 'agendado', 'confirmado', 'confirmado_whatsapp']);
-
-                if (recentApps && recentApps.length > 5) {
-                    const counts: Record<string, number> = {};
-                    recentApps.forEach(app => {
-                        counts[app.service_name] = (counts[app.service_name] || 0) + 1;
-                    });
-                    const sortedNames = Object.entries(counts)
-                        .sort(([, a], [, b]) => b - a)
-                        .slice(0, 5)
-                        .map(([name]) => name);
-                    const topIds = servicesData?.filter(s => sortedNames.includes(s.nome)).map(s => s.id) || [];
-                    setPopularServiceIds(topIds);
                 }
 
             } catch (e: any) {
