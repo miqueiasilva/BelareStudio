@@ -43,15 +43,39 @@ Deno.serve(async (req) => {
       total_amount,
       notes,
       date, 
-      start_time, 
+      start_time,
+      appointment_date,
+      appointment_time,
       value 
     } = body
 
     // Preparação de dados para o e-mail
-    const displayDate = date || (start_at ? new Date(start_at).toLocaleDateString('pt-BR') : 'Não informada')
-    const displayTime = start_time || (start_at ? new Date(start_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'Não informado')
+    // Prioriza os campos específicos do payload se existirem
+    let displayDate = 'Não informada'
+    const rawDate = appointment_date || date
+    
+    if (rawDate) {
+      if (rawDate.includes('-')) {
+        // Formato YYYY-MM-DD para DD/MM/YYYY
+        const [year, month, day] = rawDate.split('-')
+        displayDate = `${day}/${month}/${year}`
+      } else {
+        displayDate = rawDate
+      }
+    } else if (start_at) {
+      displayDate = new Date(start_at).toLocaleDateString('pt-BR')
+    }
+
+    const displayTime = appointment_time || start_time || (start_at ? new Date(start_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'Não informado')
+    
     const displayValue = value || total_amount
     const numericValue = (displayValue !== undefined && displayValue !== null) ? Number(displayValue) : null
+
+    // Limpeza das observações: remover JSON bruto de serviços se presente
+    let cleanNotes = notes || ''
+    if (cleanNotes.includes('---SERVICES_JSON---')) {
+      cleanNotes = cleanNotes.split('---END_SERVICES_JSON---').pop()?.trim() || ''
+    }
 
     const notificationStatus = {
       client_sent: false,
@@ -89,7 +113,7 @@ Deno.serve(async (req) => {
                   <p><strong>Data:</strong> ${displayDate}</p>
                   <p><strong>Horário:</strong> ${displayTime}</p>
                   ${(numericValue !== null && !isNaN(numericValue)) ? `<p><strong>Valor:</strong> R$ ${numericValue.toFixed(2)}</p>` : ''}
-                  ${notes ? `<p><strong>Observações:</strong> ${notes}</p>` : ''}
+                  ${cleanNotes ? `<p><strong>Observações:</strong> ${cleanNotes}</p>` : ''}
                   <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
                   <p style="font-size: 12px; color: #666;">Este é um e-mail automático enviado por BelareStudio. Por favor, não responda.</p>
                 </div>
@@ -128,7 +152,7 @@ Deno.serve(async (req) => {
                   <p><strong>Data:</strong> ${displayDate}</p>
                   <p><strong>Horário:</strong> ${displayTime}</p>
                   ${(numericValue !== null && !isNaN(numericValue)) ? `<p><strong>Valor:</strong> R$ ${numericValue.toFixed(2)}</p>` : ''}
-                  ${notes ? `<p><strong>Observações:</strong> ${notes}</p>` : ''}
+                  ${cleanNotes ? `<p><strong>Observações:</strong> ${cleanNotes}</p>` : ''}
                   <div style="margin-top: 30px; padding: 15px; background-color: #f8fafc; border-radius: 8px;">
                     <p style="margin: 0; font-size: 14px; color: #475569;">Acesse o painel administrativo para ver mais detalhes.</p>
                   </div>
