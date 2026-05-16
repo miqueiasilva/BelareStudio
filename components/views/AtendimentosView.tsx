@@ -338,7 +338,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         try {
             const { data, error } = await supabase
                 .from('team_members')
-                .select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled, work_schedule') 
+                .select('id, name, photo_url, role, active, show_in_calendar, order_index, services_enabled, work_schedule, email') 
                 .eq('active', true)
                 .eq('studio_id', activeStudioId)
                 .order('order_index', { ascending: true }) 
@@ -348,7 +348,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 const mapped = data.filter((m: any) => m.show_in_calendar !== false).map((p: any) => ({
                     id: p.id, name: p.name, avatarUrl: p.photo_url || `https://ui-avatars.com/api/?name=${p.name}&background=random`,
                     role: p.role, order_index: p.order_index || 0, services_enabled: p.services_enabled || [],
-                    work_schedule: p.work_schedule || {}
+                    work_schedule: p.work_schedule || {},
+                    email: p.email
                 }));
                 setResources(mapped);
             }
@@ -619,6 +620,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         client_whatsapp: newAppointment.client_whatsapp || app.client?.whatsapp || app.client?.telefone,
                         professional_id: newAppointment.professional_id || app.professional?.id,
                         professional_name: newAppointment.professional_name || app.professional?.name,
+                        professional_email: prof?.email,
                         service_name: newAppointment.service_name || app.service?.name,
                         start_at: newAppointment.start_at || app.start,
                         duration: newAppointment.duration || app.service?.duration,

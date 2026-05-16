@@ -37,6 +37,7 @@ Deno.serve(async (req) => {
       client_name, 
       client_email, 
       professional_name, 
+      professional_email,
       service_name, 
       start_at,
       total_amount,
@@ -53,87 +54,111 @@ Deno.serve(async (req) => {
     const numericValue = (displayValue !== undefined && displayValue !== null) ? Number(displayValue) : null
 
     const notificationStatus = {
-      sent: false,
+      client_sent: false,
+      professional_sent: false,
       error: null as string | null,
       warning: null as string | null,
-      resend_response: null as any
+      resend_responses: [] as any[]
     }
 
     if (!resendApiKey) {
       console.warn('⚠️ [WARN] RESEND_API_KEY não configurada. Operando em modo simulação.')
       notificationStatus.warning = 'RESEND_API_KEY não configurada. Modo simulação ativo.'
-    } else if (!client_email) {
-      console.warn('⚠️ [WARN] client_email não fornecido. Notificação não enviada.')
-      notificationStatus.warning = 'E-mail do cliente não fornecido.'
     } else {
-      console.log(`📧 [RESEND] Tentando enviar e-mail para: ${client_email}`)
-      
-      try {
-        const res = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${resendApiKey}`,
-          },
-          body: JSON.stringify({
-            from: 'BelaFlow <notificacoes@belaflow.com.br>',
-            to: [client_email],
-            subject: 'Confirmação de Agendamento - BelareStudio',
-            html: `
-              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-                <h2 style="color: #f97316;">Olá, ${client_name || 'Cliente'}!</h2>
-                <p>Seu agendamento foi confirmado com sucesso.</p>
-                <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-                <p><strong>Serviço:</strong> ${service_name || 'Não informado'}</p>
-                <p><strong>Profissional:</strong> ${professional_name || 'Não informado'}</p>
-                <p><strong>Data:</strong> ${displayDate}</p>
-                <p><strong>Horário:</strong> ${displayTime}</p>
-                ${(numericValue !== null && !isNaN(numericValue)) ? `<p><strong>Valor:</strong> R$ ${numericValue.toFixed(2)}</p>` : ''}
-                ${notes ? `<p><strong>Observações:</strong> ${notes}</p>` : ''}
-                <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-                <p style="font-size: 12px; color: #666;">Este é um e-mail automático enviado por BelareStudio. Por favor, não responda.</p>
-              </div>
-            `,
-          }),
-        })
-
-        const resStatus = res.status
-        const resText = await res.text()
-        let resData = null
+      // 1. Enviar para o CLIENTE
+      if (client_email) {
+        console.log(`📧 [RESEND] Tentando enviar e-mail para o CLIENTE: ${client_email}`)
         try {
-          resData = JSON.parse(resText)
+          const res = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${resendApiKey}`,
+            },
+            body: JSON.stringify({
+              from: 'BelaFlow <notificacoes@belaflow.com.br>',
+              to: [client_email],
+              subject: 'Confirmação de Agendamento - BelareStudio',
+              html: `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                  <h2 style="color: #f97316;">Olá, ${client_name || 'Cliente'}!</h2>
+                  <p>Seu agendamento foi confirmado com sucesso.</p>
+                  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                  <p><strong>Serviço:</strong> ${service_name || 'Não informado'}</p>
+                  <p><strong>Profissional:</strong> ${professional_name || 'Não informado'}</p>
+                  <p><strong>Data:</strong> ${displayDate}</p>
+                  <p><strong>Horário:</strong> ${displayTime}</p>
+                  ${(numericValue !== null && !isNaN(numericValue)) ? `<p><strong>Valor:</strong> R$ ${numericValue.toFixed(2)}</p>` : ''}
+                  ${notes ? `<p><strong>Observações:</strong> ${notes}</p>` : ''}
+                  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                  <p style="font-size: 12px; color: #666;">Este é um e-mail automático enviado por BelareStudio. Por favor, não responda.</p>
+                </div>
+              `,
+            }),
+          })
+          
+          notificationStatus.client_sent = res.ok
+          notificationStatus.resend_responses.push({ type: 'client', status: res.status })
         } catch (e) {
-          resData = { raw: resText }
+          console.error('❌ Erro ao enviar e-mail para cliente:', e)
         }
+      }
 
-        console.log(`📡 [RESEND_RESPONSE] Status: ${resStatus}`)
-        notificationStatus.resend_response = { status: resStatus, data: resData }
-
-        if (res.ok) {
-          console.log('✅ [RESEND_SUCCESS] E-mail enviado com sucesso!')
-          notificationStatus.sent = true
-        } else {
-          console.error('❌ [RESEND_ERROR] Falha na API do Resend')
-          notificationStatus.error = `Resend API Error: ${resStatus}`
-          notificationStatus.warning = 'O agendamento foi salvo, mas a notificação por e-mail falhou.'
+      // 2. Enviar para o PROFISSIONAL
+      if (professional_email) {
+        console.log(`📧 [RESEND] Tentando enviar e-mail para o PROFISSIONAL: ${professional_email}`)
+        try {
+          const res = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${resendApiKey}`,
+            },
+            body: JSON.stringify({
+              from: 'BelaFlow <notificacoes@belaflow.com.br>',
+              to: [professional_email],
+              subject: `Novo Agendamento: ${client_name || 'Cliente'} - ${displayDate}`,
+              html: `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px; border-left: 5px solid #f97316;">
+                  <h2 style="color: #334155;">Olá, ${professional_name}!</h2>
+                  <p>Você tem um <strong>novo agendamento</strong> no sistema.</p>
+                  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                  <p><strong>Cliente:</strong> ${client_name || 'Não informado'}</p>
+                  <p><strong>Serviço:</strong> ${service_name || 'Não informado'}</p>
+                  <p><strong>Data:</strong> ${displayDate}</p>
+                  <p><strong>Horário:</strong> ${displayTime}</p>
+                  ${(numericValue !== null && !isNaN(numericValue)) ? `<p><strong>Valor:</strong> R$ ${numericValue.toFixed(2)}</p>` : ''}
+                  ${notes ? `<p><strong>Observações:</strong> ${notes}</p>` : ''}
+                  <div style="margin-top: 30px; padding: 15px; background-color: #f8fafc; border-radius: 8px;">
+                    <p style="margin: 0; font-size: 14px; color: #475569;">Acesse o painel administrativo para ver mais detalhes.</p>
+                  </div>
+                  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                  <p style="font-size: 12px; color: #666;">Notificação automática de BelareStudio.</p>
+                </div>
+              `,
+            }),
+          })
+          
+          notificationStatus.professional_sent = res.ok
+          notificationStatus.resend_responses.push({ type: 'professional', status: res.status })
+        } catch (e) {
+          console.error('❌ Erro ao enviar e-mail para profissional:', e)
         }
-      } catch (fetchError) {
-        console.error('❌ [FETCH_ERROR] Erro ao chamar API do Resend:', fetchError)
-        notificationStatus.error = fetchError instanceof Error ? fetchError.message : 'Erro de conexão com Resend'
-        notificationStatus.warning = 'O agendamento foi salvo, mas a notificação por e-mail falhou devido a um erro de conexão.'
       }
     }
 
     // 3. Sucesso (ou falha parcial tratada)
+    const totalSent = (notificationStatus.client_sent ? 1 : 0) + (notificationStatus.professional_sent ? 1 : 0)
+    
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: notificationStatus.sent ? 'Agendamento processado e notificação enviada.' : 'Agendamento processado (notificação falhou ou simulada).',
-        notification_sent: notificationStatus.sent,
+        message: totalSent > 0 ? `Agendamento processado e ${totalSent} notificação(ões) enviada(s).` : 'Agendamento processado (notificações falharam ou simuladas).',
+        client_notification_sent: notificationStatus.client_sent,
+        professional_notification_sent: notificationStatus.professional_sent,
         warning: notificationStatus.warning,
         details: {
-          notification_error: notificationStatus.error,
-          resend_info: notificationStatus.resend_response
+          resend_info: notificationStatus.resend_responses
         }
       }),
       {

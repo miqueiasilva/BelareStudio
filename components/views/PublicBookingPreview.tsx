@@ -201,7 +201,7 @@ const PublicBookingPreview: React.FC = () => {
 
                     const { data: profsData } = await supabase
                         .from('team_members')
-                        .select('id, name, photo_url, role, services_enabled, work_schedule')
+                        .select('id, name, photo_url, role, services_enabled, work_schedule, email')
                         .eq('active', true)
                         .eq('online_booking_enabled', true)
                         .eq('studio_id', studioId)
@@ -488,6 +488,7 @@ const PublicBookingPreview: React.FC = () => {
                     client_whatsapp: newAppointment.client_whatsapp,
                     professional_id: newAppointment.professional_id,
                     professional_name: newAppointment.professional_name,
+                    professional_email: selectedProfessional?.email,
                     service_name: newAppointment.service_name,
                     start_at: newAppointment.start_at,
                     duration: newAppointment.duration,
