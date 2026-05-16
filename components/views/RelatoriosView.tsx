@@ -104,6 +104,7 @@ const RelatoriosView: React.FC = () => {
   // Data States
   const [data, setData] = useState<any>(null);
   const [previousData, setPreviousData] = useState<any>(null);
+  const [upcomingData, setUpcomingData] = useState<any>(null);
   
   // Filters
   const [selectedProfessionals, setSelectedProfessionals] = useState<string[]>([]);
@@ -160,12 +161,24 @@ const RelatoriosView: React.FC = () => {
       const { start, end, prevStart, prevEnd } = getDates();
       
       // Fetch current period
-      const [transRes, apptsRes, teamRes, categoriesRes] = await Promise.all([
+      const [transRes, apptsRes, teamRes, categoriesRes, servicesRes] = await Promise.all([
         supabase.from('financial_transactions').select('*').eq('studio_id', activeStudioId).gte('date', start.toISOString()).lte('date', end.toISOString()),
         supabase.from('appointments').select('*').eq('studio_id', activeStudioId).gte('date', start.toISOString()).lte('date', end.toISOString()),
         supabase.from('team_members').select('*').eq('studio_id', activeStudioId),
-        supabase.from('financial_categories').select('name').eq('studio_id', activeStudioId).eq('active', true)
+        supabase.from('financial_categories').select('name').eq('studio_id', activeStudioId).eq('active', true),
+        supabase.from('services').select('id, preco, nome').eq('studio_id', activeStudioId)
       ]);
+
+      // Fetch upcoming appointments for projection (next 30 days)
+      const upcomingStart = endOfMonth(new Date() > end ? new Date() : end);
+      const upcomingEnd = addDays(upcomingStart, 30);
+      const { data: upcomingAppts } = await supabase
+        .from('appointments')
+        .select('*')
+        .eq('studio_id', activeStudioId)
+        .gte('date', new Date().toISOString())
+        .lte('date', upcomingEnd.toISOString())
+        .neq('status', 'cancelado');
 
       // Fetch previous period for comparison
       const [prevTransRes, prevApptsRes] = await Promise.all([
@@ -177,6 +190,8 @@ const RelatoriosView: React.FC = () => {
       const cats = Array.from(new Set((categoriesRes.data || []).map(c => c.name).filter(Boolean)));
       setAvailableCategories(cats as string[]);
 
+      const servicesMap = new Map((servicesRes.data || []).map(s => [s.id, s.preco]));
+
       // Process Data
       const process = (transactions: any[], appointments: any[]) => {
         const income = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -187,14 +202,29 @@ const RelatoriosView: React.FC = () => {
         const profit = income - expense;
         const margin = income > 0 ? (profit / income) * 100 : 0;
         
+        // potential value calculation
+        const potentialIncome = appointments.filter(a => a.status !== 'cancelado').reduce((acc, a) => {
+            const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
+            const valFromServices = svcIds.reduce((sum: number, id: any) => sum + (servicesMap.get(id) || 0), 0);
+            return acc + (a.value || a.price || valFromServices || 0);
+        }, 0);
+
         const onlineAppts = appointments.filter(a => (a.origin === 'online' || a.origin === 'link') && a.status !== 'cancelado').length;
         const onlineRate = totalAppts > 0 ? (onlineAppts / totalAppts) * 100 : 0;
         
-        return { income, expense, totalAppts, completedAppts, ticketMedio, profit, margin, onlineAppts, onlineRate, transactions, appointments };
+        return { income, expense, totalAppts, completedAppts, ticketMedio, profit, margin, onlineAppts, onlineRate, transactions, appointments, potentialIncome };
       };
 
       setData(process(transRes.data || [], apptsRes.data || []));
       setPreviousData(process(prevTransRes.data || [], prevApptsRes.data || []));
+      
+      const upcomingFiltered = upcomingAppts || [];
+      const projectedIncome = upcomingFiltered.reduce((acc, a) => {
+          const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
+          const valFromServices = svcIds.reduce((sum: number, id: any) => sum + (servicesMap.get(id) || 0), 0);
+          return acc + (a.value || a.price || valFromServices || 0);
+      }, 0);
+      setUpcomingData({ projectedIncome, count: upcomingFiltered.length });
       
     } catch (err) {
       console.error("Erro ao buscar dados do BI:", err);
@@ -282,6 +312,28 @@ const RelatoriosView: React.FC = () => {
 
   // --- Render Helpers ---
 
+  const teamStats = useMemo(() => {
+    if (!data || !availableProfessionals) return [];
+    
+    return availableProfessionals.map(p => {
+      const pAppts = data.appointments.filter((a: any) => a.professional_id === p.id || a.professional?.id === p.id);
+      const pTrans = data.transactions.filter((t: any) => (t.professionalId === p.id || t.professional_id === p.id) && (t.type === 'income' || t.type === 'receita'));
+      
+      const revenue = pTrans.reduce((acc: number, t: any) => acc + Number(t.amount || 0), 0);
+      const count = pAppts.length;
+      const ticket = count > 0 ? revenue / count : 0;
+      const commission = revenue * (Number(p.commission_rate || 30) / 100);
+
+      return {
+        ...p,
+        count,
+        revenue,
+        ticket,
+        commission
+      };
+    }).sort((a: any, b: any) => b.revenue - a.revenue);
+  }, [data, availableProfessionals]);
+
   const renderFilters = () => (
     <div className="bg-white p-4 md:p-6 rounded-[32px] border border-slate-100 shadow-sm mb-8 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 md:gap-6">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
@@ -343,13 +395,13 @@ const RelatoriosView: React.FC = () => {
   const renderExecutivo = () => (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
-        <KPICard title="Faturamento Total" value={`R$ ${data?.income.toLocaleString('pt-BR')}`} trend={metrics?.incomeTrend} color="bg-emerald-500" icon={DollarSign} loading={isLoading} />
-        <KPICard title="Ticket Médio" value={`R$ ${data?.ticketMedio.toFixed(2)}`} trend={metrics?.ticketTrend} color="bg-indigo-500" icon={TrendingUp} loading={isLoading} />
-        <KPICard title="Atendimentos" value={data?.totalAppts} trend={metrics?.apptsTrend} color="bg-orange-500" icon={Calendar} loading={isLoading} />
-        <KPICard title="Agendamentos Online" value={data?.onlineAppts} color="bg-purple-500" icon={Globe} loading={isLoading} />
-        <KPICard title="Taxa Online" value={`${data?.onlineRate.toFixed(1)}%`} color="bg-orange-600" icon={Zap} loading={isLoading} />
+        <KPICard title="Faturamento Realizado (Pago)" value={`R$ ${data?.income.toLocaleString('pt-BR')}`} trend={metrics?.incomeTrend} color="bg-emerald-500" icon={DollarSign} loading={isLoading} />
+        <KPICard title="Faturamento Projetado (Agenda)" value={`R$ ${data?.potentialIncome.toLocaleString('pt-BR')}`} color="bg-blue-600" icon={Target} subtext="Total da agenda no período" loading={isLoading} />
+        <KPICard title="Projeção Futura (30 dias)" value={`R$ ${upcomingData?.projectedIncome.toLocaleString('pt-BR') || '0'}`} color="bg-indigo-600" icon={TrendingUp} subtext={`${upcomingData?.count || 0} agendamentos futuros`} loading={isLoading} />
+        <KPICard title="Ticket Médio" value={`R$ ${data?.ticketMedio.toFixed(2)}`} trend={metrics?.ticketTrend} color="bg-slate-700" icon={Layers} loading={isLoading} />
+        <KPICard title="Atendimentos Total" value={data?.totalAppts} trend={metrics?.apptsTrend} color="bg-orange-500" icon={Calendar} loading={isLoading} />
         <KPICard title="Taxa Ocupação" value={`${data?.margin.toFixed(1)}%`} color="bg-slate-800" icon={Target} loading={isLoading} />
-        <KPICard title="Novos Clientes" value="12" trend={15} color="bg-blue-500" icon={UserPlus} loading={isLoading} />
+        <KPICard title="Novos Clientes" value="12" trend={15} color="bg-cyan-500" icon={UserPlus} loading={isLoading} />
         <KPICard title="Margem de Lucro" value={`${data?.margin.toFixed(1)}%`} color="bg-rose-500" icon={Percent} loading={isLoading} />
       </div>
 
@@ -687,9 +739,9 @@ const RelatoriosView: React.FC = () => {
   const renderEquipe = () => (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-        <KPICard title="Faturamento Equipe" value={`R$ ${data?.income.toLocaleString('pt-BR')}`} color="bg-emerald-500" icon={DollarSign} loading={isLoading} />
-        <KPICard title="Comissões a Pagar" value="R$ 4.500,00" color="bg-rose-500" icon={Wallet} loading={isLoading} />
-        <KPICard title="Avaliação Média" value="4.9 / 5" color="bg-orange-500" icon={Star} loading={isLoading} />
+        <KPICard title="Faturamento Realizado (Equipe)" value={`R$ ${data?.income.toLocaleString('pt-BR')}`} color="bg-emerald-500" icon={DollarSign} loading={isLoading} />
+        <KPICard title="Projeção Equipe (Agenda)" value={`R$ ${data?.potentialIncome.toLocaleString('pt-BR')}`} color="bg-blue-500" icon={Target} loading={isLoading} />
+        <KPICard title="Ticket Médio Geral" value={`R$ ${data?.ticketMedio.toFixed(2)}`} color="bg-orange-500" icon={Star} loading={isLoading} />
       </div>
 
       <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
@@ -699,29 +751,29 @@ const RelatoriosView: React.FC = () => {
 
         {/* Mobile: cards */}
         <div className="md:hidden divide-y divide-slate-50">
-          {availableProfessionals.map(p => (
+          {teamStats.map(p => (
             <div key={p.id} className="p-4 hover:bg-slate-50/50 transition-colors">
               <div className="flex justify-between items-start mb-3">
                 <div className="flex items-center gap-3">
                   <img src={p.photo_url || `https://ui-avatars.com/api/?name=${p.name}`} className="w-10 h-10 rounded-full object-cover shadow-sm" alt="" />
                   <div>
                     <p className="text-sm font-black text-slate-800">{p.name}</p>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">45 atendimentos</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">{p.count} atendimentos</p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-black text-slate-800">R$ 5.200,00</p>
-                  <p className="text-[10px] text-rose-600 font-black uppercase">Comissão: R$ 1.560,00</p>
+                  <p className="text-sm font-black text-slate-800">R$ {p.revenue.toLocaleString('pt-BR')}</p>
+                  <p className="text-[10px] text-rose-600 font-black uppercase">Comissão: R$ {p.commission.toLocaleString('pt-BR')}</p>
                 </div>
               </div>
               <div className="flex justify-between items-center bg-slate-50 p-2 rounded-xl">
                 <div className="text-center flex-1 border-r border-slate-200">
                   <p className="text-[9px] text-slate-400 font-bold uppercase">Ticket Médio</p>
-                  <p className="text-[11px] font-black text-slate-700">R$ 115,00</p>
+                  <p className="text-[11px] font-black text-slate-700">R$ {p.ticket.toFixed(2)}</p>
                 </div>
                 <div className="text-center flex-1">
-                  <p className="text-[9px] text-slate-400 font-bold uppercase">Avaliação</p>
-                  <p className="text-[11px] font-black text-emerald-600">4.9 ★</p>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase">Meta</p>
+                  <p className="text-[11px] font-black text-emerald-600">85%</p>
                 </div>
               </div>
             </div>
@@ -737,11 +789,11 @@ const RelatoriosView: React.FC = () => {
                 <TableHeader>Atendimentos</TableHeader>
                 <TableHeader>Faturamento</TableHeader>
                 <TableHeader>Ticket Médio</TableHeader>
-                <TableHeader>Comissão</TableHeader>
+                <TableHeader>Comissão Est.</TableHeader>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {availableProfessionals.map(p => (
+              {teamStats.map(p => (
                 <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
                   <TableCell>
                     <div className="flex items-center gap-3">
@@ -749,10 +801,10 @@ const RelatoriosView: React.FC = () => {
                       <span>{p.name}</span>
                     </div>
                   </TableCell>
-                  <TableCell>45</TableCell>
-                  <TableCell>R$ 5.200,00</TableCell>
-                  <TableCell>R$ 115,00</TableCell>
-                  <TableCell className="text-rose-600">R$ 1.560,00</TableCell>
+                  <TableCell>{p.count}</TableCell>
+                  <TableCell>R$ {p.revenue.toLocaleString('pt-BR')}</TableCell>
+                  <TableCell>R$ {p.ticket.toFixed(2)}</TableCell>
+                  <TableCell className="text-rose-600">R$ {p.commission.toLocaleString('pt-BR')}</TableCell>
                 </tr>
               ))}
             </tbody>
