@@ -111,6 +111,7 @@ const RelatoriosView: React.FC = () => {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [availableProfessionals, setAvailableProfessionals] = useState<any[]>([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
+  const [services, setServices] = useState<any[]>([]);
 
   // --- Data Fetching ---
 
@@ -191,6 +192,7 @@ const RelatoriosView: React.FC = () => {
       setAvailableCategories(cats as string[]);
 
       const servicesMap = new Map((servicesRes.data || []).map(s => [s.id, s.preco]));
+      setServices(servicesRes.data || []);
 
       // Process Data
       const process = (transactions: any[], appointments: any[]) => {
@@ -315,11 +317,21 @@ const RelatoriosView: React.FC = () => {
   const teamStats = useMemo(() => {
     if (!data || !availableProfessionals) return [];
     
+    const servicesMap = new Map(services.map(s => [s.id, s.preco]));
+
     return availableProfessionals.map(p => {
       const pAppts = data.appointments.filter((a: any) => a.professional_id === p.id || a.professional?.id === p.id);
       const pTrans = data.transactions.filter((t: any) => (t.professionalId === p.id || t.professional_id === p.id) && (t.type === 'income' || t.type === 'receita'));
       
       const revenue = pTrans.reduce((acc: number, t: any) => acc + Number(t.amount || 0), 0);
+      
+      // Calculate projected revenue for this professional based on their appointments
+      const projectedRevenue = pAppts.filter((a: any) => a.status !== 'cancelado').reduce((acc: number, a: any) => {
+        const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
+        const valFromServices = svcIds.reduce((sum: number, id: any) => sum + (servicesMap.get(id) || 0), 0);
+        return acc + (a.value || a.price || valFromServices || 0);
+      }, 0);
+
       const count = pAppts.length;
       const ticket = count > 0 ? revenue / count : 0;
       const commission = revenue * (Number(p.commission_rate || 30) / 100);
@@ -328,11 +340,12 @@ const RelatoriosView: React.FC = () => {
         ...p,
         count,
         revenue,
+        projectedRevenue,
         ticket,
         commission
       };
     }).sort((a: any, b: any) => b.revenue - a.revenue);
-  }, [data, availableProfessionals]);
+  }, [data, availableProfessionals, services]);
 
   const renderFilters = () => (
     <div className="bg-white p-4 md:p-6 rounded-[32px] border border-slate-100 shadow-sm mb-8 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 md:gap-6">
@@ -762,7 +775,8 @@ const RelatoriosView: React.FC = () => {
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-black text-slate-800">R$ {p.revenue.toLocaleString('pt-BR')}</p>
+                  <p className="text-xs font-black text-slate-800">Realizado: R$ {p.revenue.toLocaleString('pt-BR')}</p>
+                  <p className="text-[10px] text-blue-600 font-black uppercase">Projetado: R$ {p.projectedRevenue.toLocaleString('pt-BR')}</p>
                   <p className="text-[10px] text-rose-600 font-black uppercase">Comissão: R$ {p.commission.toLocaleString('pt-BR')}</p>
                 </div>
               </div>
@@ -787,7 +801,8 @@ const RelatoriosView: React.FC = () => {
               <tr className="bg-slate-50/50">
                 <TableHeader>Profissional</TableHeader>
                 <TableHeader>Atendimentos</TableHeader>
-                <TableHeader>Faturamento</TableHeader>
+                <TableHeader>Realizado</TableHeader>
+                <TableHeader>Projetado</TableHeader>
                 <TableHeader>Ticket Médio</TableHeader>
                 <TableHeader>Comissão Est.</TableHeader>
               </tr>
@@ -802,7 +817,8 @@ const RelatoriosView: React.FC = () => {
                     </div>
                   </TableCell>
                   <TableCell>{p.count}</TableCell>
-                  <TableCell>R$ {p.revenue.toLocaleString('pt-BR')}</TableCell>
+                  <TableCell className="text-emerald-600">R$ {p.revenue.toLocaleString('pt-BR')}</TableCell>
+                  <TableCell className="text-blue-600">R$ {p.projectedRevenue.toLocaleString('pt-BR')}</TableCell>
                   <TableCell>R$ {p.ticket.toFixed(2)}</TableCell>
                   <TableCell className="text-rose-600">R$ {p.commission.toLocaleString('pt-BR')}</TableCell>
                 </tr>
