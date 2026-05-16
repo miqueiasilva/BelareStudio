@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
               'Authorization': `Bearer ${resendApiKey}`,
             },
             body: JSON.stringify({
-              from: 'BelaFlow <notificacoes@belaflow.com.br>',
+              from: 'Belare Gestão <notificacoes@belaregestao.com.br>',
               to: [client_email],
               subject: 'Confirmação de Agendamento - BelareStudio',
               html: `
@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
               'Authorization': `Bearer ${resendApiKey}`,
             },
             body: JSON.stringify({
-              from: 'BelaFlow <notificacoes@belaflow.com.br>',
+              from: 'Belare Gestão <notificacoes@belaregestao.com.br>',
               to: [professional_email],
               subject: `Novo Agendamento: ${client_name || 'Cliente'} - ${displayDate}`,
               html: `
