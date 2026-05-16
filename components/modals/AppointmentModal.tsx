@@ -288,10 +288,16 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     setIsSaving(true);
     try {
         // Limpa o whatsapp/telefone (apenas números)
-        const sanitizedPhone = clientData.whatsapp ? clientData.whatsapp.replace(/\D/g, '') : '';
+        const sanitizedPhone = clientData.whatsapp ? String(clientData.whatsapp).replace(/\D/g, '') : null;
         const { data, error } = await supabase
             .from('clients')
-            .insert([{ ...clientData, whatsapp: sanitizedPhone, studio_id: activeStudioId }])
+            .insert([{ 
+                ...clientData, 
+                whatsapp: sanitizedPhone, 
+                telefone: sanitizedPhone,
+                referral_source: (clientData as any).origem || 'Outros',
+                studio_id: activeStudioId 
+            }])
             .select()
             .single();
         

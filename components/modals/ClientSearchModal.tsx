@@ -38,8 +38,8 @@ const ClientSearchModal: React.FC<ClientSearchModalProps> = ({ onClose, onSelect
         .limit(20);
 
       if (term.trim()) {
-        // Busca filtrada
-        query = query.ilike('nome', `%${term}%`);
+        // Busca filtrada por nome, telefone/whatsapp ou apelido
+        query = query.or(`nome.ilike.%${term}%,whatsapp.ilike.%${term}%,telefone.ilike.%${term}%,apelido.ilike.%${term}%`);
       } else {
         // Estado inicial: Recentes
         query = query.order('created_at', { ascending: false });
@@ -92,7 +92,7 @@ const ClientSearchModal: React.FC<ClientSearchModalProps> = ({ onClose, onSelect
           <input
             ref={inputRef}
             type="text"
-            placeholder="Digite o nome para buscar..."
+            placeholder="Busque por nome ou telefone..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-12 pr-4 py-3.5 border-2 border-slate-200 rounded-2xl bg-white focus:ring-4 focus:ring-orange-100 focus:border-orange-400 outline-none font-bold text-slate-700 transition-all shadow-sm"

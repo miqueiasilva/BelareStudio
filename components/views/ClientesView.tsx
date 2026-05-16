@@ -63,7 +63,7 @@ const ClientesView: React.FC = () => {
             .abortSignal(abortControllerRef.current.signal);
 
         if (searchVal.trim()) {
-            query = query.or(`nome.ilike.%${searchVal}%,whatsapp.ilike.%${searchVal}%`);
+            query = query.or(`nome.ilike.%${searchVal}%,whatsapp.ilike.%${searchVal}%,telefone.ilike.%${searchVal}%,apelido.ilike.%${searchVal}%`);
         }
 
         const { data, error, count } = await query

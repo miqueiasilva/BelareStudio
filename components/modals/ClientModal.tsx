@@ -104,10 +104,11 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
 
     setIsSaving(true);
     try {
-        const sanitizedWhatsapp = formData.whatsapp ? String(formData.whatsapp).replace(/\D/g, '') : '';
+        const sanitizedWhatsapp = formData.whatsapp ? String(formData.whatsapp).replace(/\D/g, '') : null;
         const savedClient: Client = {
             ...formData,
             whatsapp: sanitizedWhatsapp,
+            telefone: sanitizedWhatsapp,
             id: client?.id || undefined,
         };
         await onSave(savedClient);
