@@ -105,8 +105,15 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
     setIsSaving(true);
     try {
         const sanitizedWhatsapp = formData.whatsapp ? String(formData.whatsapp).replace(/\D/g, '') : null;
+        
+        // Converte strings vazias em null para evitar erros no Postgres (principalmente em datas)
+        const cleanedData = Object.entries(formData).reduce((acc: any, [key, value]) => {
+            acc[key] = (value === '' || value === undefined) ? null : value;
+            return acc;
+        }, {});
+
         const savedClient: Client = {
-            ...formData,
+            ...cleanedData,
             whatsapp: sanitizedWhatsapp,
             telefone: sanitizedWhatsapp,
             id: client?.id || undefined,

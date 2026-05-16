@@ -289,10 +289,17 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     try {
         // Limpa o whatsapp/telefone (apenas números)
         const sanitizedPhone = clientData.whatsapp ? String(clientData.whatsapp).replace(/\D/g, '') : null;
+        
+        // Converte strings vazias em null para evitar erros no Postgres
+        const cleanedData = Object.entries(clientData).reduce((acc: any, [key, value]) => {
+            acc[key] = (value === '' || value === undefined) ? null : value;
+            return acc;
+        }, {});
+
         const { data, error } = await supabase
             .from('clients')
             .insert([{ 
-                ...clientData, 
+                ...cleanedData, 
                 whatsapp: sanitizedPhone, 
                 telefone: sanitizedPhone,
                 referral_source: (clientData as any).origem || 'Outros',
