@@ -686,11 +686,13 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 return value;
             };
             
+            const sanitizedPhone = formData.telefone ? String(formData.telefone).replace(/\D/g, '') : null;
+            
             const payload = {
                 nome: formData.nome,
                 apelido: cleanValue(formData.apelido),
-                telefone: cleanValue(formData.telefone),
-                whatsapp: cleanValue(formData.telefone),
+                telefone: sanitizedPhone,
+                whatsapp: sanitizedPhone,
                 email: cleanValue(formData.email),
                 instagram: cleanValue(formData.instagram),
                 gender: cleanValue(formData.sexo),

@@ -104,14 +104,16 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
 
     setIsSaving(true);
     try {
+        const sanitizedWhatsapp = formData.whatsapp ? String(formData.whatsapp).replace(/\D/g, '') : '';
         const savedClient: Client = {
             ...formData,
+            whatsapp: sanitizedWhatsapp,
             id: client?.id || undefined,
         };
         await onSave(savedClient);
-        // O fechamento ocorre no callback onSave do pai se bem sucedido
     } catch (err) {
         console.error("Erro crítico no salvamento:", err);
+        toast.error("Ocorreu um erro ao salvar os dados.");
     } finally {
         setIsSaving(false);
     }

@@ -283,10 +283,13 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
   const handlePersistAndSelectClient = async (clientData: Client) => {
     if (!activeStudioId) return;
+    setIsSaving(true);
     try {
+        // Limpa o whatsapp/telefone (apenas números)
+        const sanitizedPhone = clientData.whatsapp ? clientData.whatsapp.replace(/\D/g, '') : '';
         const { data, error } = await supabase
             .from('clients')
-            .insert([{ ...clientData, studio_id: activeStudioId }])
+            .insert([{ ...clientData, whatsapp: sanitizedPhone, studio_id: activeStudioId }])
             .select()
             .single();
         
@@ -294,7 +297,11 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
         handleSelectClient(data);
         setIsClientModalOpen(false);
     } catch (err: any) {
-        alert("Erro ao cadastrar cliente: " + err.message);
+        console.error("Erro ao cadastrar cliente:", err);
+        // Use toast info instead of alert if possible, or a clearer message
+        setError("Erro ao cadastrar cliente: " + (err.message || "Tente novamente"));
+    } finally {
+        setIsSaving(false);
     }
   };
 
