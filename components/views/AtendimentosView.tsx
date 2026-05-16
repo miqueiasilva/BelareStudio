@@ -611,6 +611,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 (async () => {
                     console.log('📧 Iniciando tentativa de notificação por e-mail...');
                     
+                    const profId = newAppointment.professional_id || app.professional?.id;
+                    const professional = resources.find(r => String(r.id) === String(profId));
+                    
                     const notificationPayload = {
                         appointment_id: newAppointment.id,
                         studio_id: newAppointment.studio_id || activeStudioId,
@@ -618,9 +621,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         client_email: newAppointment.client_email || app.client?.email,
                         client_phone: newAppointment.client_whatsapp || app.client?.telefone || app.client?.whatsapp,
                         client_whatsapp: newAppointment.client_whatsapp || app.client?.whatsapp || app.client?.telefone,
-                        professional_id: newAppointment.professional_id || app.professional?.id,
-                        professional_name: newAppointment.professional_name || app.professional?.name,
-                        professional_email: prof?.email,
+                        professional_id: profId,
+                        professional_name: newAppointment.professional_name || app.professional?.name || professional?.name,
+                        professional_email: professional?.email,
                         service_name: newAppointment.service_name || app.service?.name,
                         start_at: newAppointment.start_at || app.start,
                         duration: newAppointment.duration || app.service?.duration,
