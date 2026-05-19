@@ -221,11 +221,19 @@ const DREReport: React.FC = () => {
     };
 
     const DRERow = ({ label, value, isSubtotal = false, isNegative = false, isPercentage = false }: any) => (
-        <div className={`flex justify-between items-center py-4 px-6 ${isSubtotal ? 'bg-slate-800 text-white rounded-xl my-2 shadow-md' : 'border-b border-slate-50'}`}>
-            <span className={`text-[11px] font-black uppercase tracking-widest ${isSubtotal ? 'text-slate-300' : 'text-slate-500'}`}>
+        <div className={`flex justify-between items-center py-4 px-6 transition-all ${
+            isSubtotal 
+            ? 'bg-slate-900 text-white rounded-2xl my-3 shadow-xl scale-[1.02] border border-slate-800' 
+            : 'border-b border-slate-50 hover:bg-slate-50/50'
+        }`}>
+            <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${isSubtotal ? 'text-orange-400' : 'text-slate-400'}`}>
                 {label}
             </span>
-            <span className={`text-sm font-black ${isSubtotal ? 'text-white' : (isNegative ? 'text-rose-500' : (value > 0 ? 'text-emerald-500' : 'text-slate-700'))}`}>
+            <span className={`text-sm font-black tracking-tight ${
+                isSubtotal 
+                ? 'text-white text-lg' 
+                : (isNegative ? 'text-rose-500' : (value > 0 ? 'text-emerald-500' : 'text-slate-700'))
+            }`}>
                 {isPercentage ? `${value.toFixed(2)}%` : formatBRL(value)}
             </span>
         </div>

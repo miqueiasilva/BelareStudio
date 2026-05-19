@@ -44,7 +44,7 @@ const RemuneracoesView: React.FC = () => {
         const [teamRes, itemsRes] = await Promise.all([
             // FIX 1: Filtra apenas membros ATIVOS — remove "Geral/Studio" e inativos
             supabase.from('team_members')
-                .select('id, name, photo_url, commission_rate, commission_percent, email')
+                .select('id, name, photo_url, commission_rate, commission_percent, email, role, access_level')
                 .eq('studio_id', activeStudioId)
                 .eq('active', true)
                 .order('name')
@@ -151,7 +151,13 @@ const RemuneracoesView: React.FC = () => {
       };
     })
     // FIX 7: Oculta membros sem nenhum serviço E sem comissão definida (ex: gestor)
-    .filter(item => item.count > 0 || item.rate > 0)
+    // But permite que profissionais apareçam mesmo sem produção
+    .filter(item => 
+        item.count > 0 || 
+        item.rate > 0 || 
+        item.member.access_level === 'profissional' ||
+        item.member.role?.toLowerCase()?.includes('profissional')
+    )
     .sort((a, b) => b.totalBase - a.totalBase);
   }, [teamMembers, commandItems, calculationBase]);
 

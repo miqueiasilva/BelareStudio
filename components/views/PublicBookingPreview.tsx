@@ -24,12 +24,22 @@ const DEFAULT_LOGO = "https://ui-avatars.com/api/?name=BelareStudio&background=r
 const ServiceItem = ({ service, isSelected, onToggle }: any) => (
     <div 
         onClick={(e) => { e.stopPropagation(); onToggle(service); }}
-        className={`p-4 flex justify-between items-center border-b border-slate-50 last:border-0 cursor-pointer transition-all active:scale-[0.98] ${isSelected ? 'bg-orange-50/50' : 'hover:bg-slate-50'}`}
+        className={`group p-4 flex gap-4 items-start border-b border-slate-50 last:border-0 cursor-pointer transition-all active:scale-[0.98] ${isSelected ? 'bg-orange-50/50' : 'hover:bg-slate-50/80'}`}
     >
-        <div className="flex-1 pr-4">
-            <h4 className="font-bold text-slate-800 text-sm">{service.nome || service.name}</h4>
-            <div className="flex items-center gap-3 mt-1">
-                <span className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1">
+        <div className="w-16 h-16 rounded-2xl overflow-hidden flex-shrink-0 bg-slate-100 border border-slate-50 shadow-sm transition-transform group-hover:scale-105">
+            {service.image_url ? (
+                <img src={service.image_url} className="w-full h-full object-cover" alt={service.nome} />
+            ) : (
+                <div className="w-full h-full flex items-center justify-center text-slate-300">
+                    <Scissors size={24} />
+                </div>
+            )}
+        </div>
+        <div className="flex-1 min-w-0 pr-4">
+            <h4 className="font-bold text-slate-800 text-sm truncate group-hover:text-orange-600 transition-colors">{service.nome || service.name}</h4>
+            <p className="text-[10px] text-slate-400 font-medium line-clamp-1 mt-0.5">{service.descricao || "Serviço profissional personalizado"}</p>
+            <div className="flex items-center gap-3 mt-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-full">
                     <Clock size={10} /> {service.duracao_min} min
                 </span>
                 <span className="text-orange-600 font-black text-sm">
@@ -38,10 +48,10 @@ const ServiceItem = ({ service, isSelected, onToggle }: any) => (
             </div>
         </div>
         <button 
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
                 isSelected 
                 ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' 
-                : 'border-2 border-slate-100 text-slate-300'
+                : 'bg-white border-2 border-slate-100 text-slate-300 group-hover:border-orange-200 group-hover:text-orange-400'
             }`}
         >
             {isSelected ? <Check size={20} /> : <Plus size={20} />}
@@ -633,40 +643,56 @@ const PublicBookingPreview: React.FC = () => {
             )}
 
             <div 
-                className="relative w-full h-56 md:h-72 lg:h-96 bg-slate-200 bg-cover bg-center transition-all duration-500 overflow-hidden"
+                className="relative w-full h-64 md:h-80 lg:h-[400px] bg-slate-200 bg-cover bg-center transition-all duration-700 overflow-hidden"
                 style={{ backgroundImage: `url(${studio?.cover_url || DEFAULT_COVER})` }}
             >
-                <div className="absolute inset-0 bg-slate-900/30"></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/20 to-transparent"></div>
                 <button 
                     onClick={() => setIsClientAppsOpen(true)}
-                    className="absolute top-6 right-6 p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-xl z-20"
+                    className="absolute top-6 right-6 p-4 bg-white/10 backdrop-blur-xl rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-2xl z-20 group"
                 >
-                    <UserCircle2 size={20} />
-                    <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Meus Agendamentos</span>
+                    <UserCircle2 size={20} className="group-hover:scale-110 transition-transform" />
+                    <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Minha Agenda</span>
                 </button>
             </div>
 
-            <div className="max-w-xl mx-auto px-6 -mt-16 relative z-10 text-center">
-                <div className="bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 flex flex-col items-center">
-                    <div className="w-24 h-24 rounded-[28px] bg-white border-4 border-white shadow-xl -mt-20 overflow-hidden mb-4 flex items-center justify-center">
+            <div className="max-w-2xl mx-auto px-6 -mt-24 relative z-10 text-center scale-up-center">
+                <div className="bg-white rounded-[40px] p-8 shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-white/50 backdrop-blur-xl flex flex-col items-center">
+                    <div className="w-28 h-28 rounded-[32px] bg-white border-8 border-white shadow-2xl -mt-24 overflow-hidden mb-6 flex items-center justify-center transition-transform hover:scale-105">
                         {studio?.profile_url ? (
                             <img src={studio.profile_url} className="w-full h-full object-cover" alt="Logo" />
                         ) : (
-                            <div className="w-full h-full bg-orange-100 text-orange-50 flex items-center justify-center font-black text-2xl">{studio?.studio_name?.charAt(0) || 'B'}</div>
+                            <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 text-white flex items-center justify-center font-black text-4xl">{studio?.studio_name?.charAt(0) || 'B'}</div>
                         )}
                     </div>
-                    <h1 className="text-2xl font-black text-slate-800 leading-tight">{studio?.studio_name || "Seu Estúdio de Beleza"}</h1>
-                    <div className="flex flex-col items-center gap-2 mt-2 text-slate-400">
-                        <div className="flex items-center gap-1 text-amber-400 font-bold"><Star size={14} fill="currentColor" /> 5.0</div>
-                        <div className="flex items-center gap-1 text-xs font-bold text-slate-500 leading-tight">
-                            <MapPin size={14} className="text-orange-500" /> 
-                    <span>{studio?.address || studio?.address_street || studio?.street ? `${studio.address || studio.address_street || studio.street}, ${studio.address_number || studio.number || ''}` : "Endereço não informado"}</span>
+                    <h1 className="text-3xl font-black text-slate-800 leading-tight tracking-tighter">{studio?.studio_name || "Seu Estúdio de Beleza"}</h1>
+                    <p className="text-slate-400 text-xs font-medium mt-2 max-w-xs">{studio?.description || "Realçando sua beleza natural com excelência e cuidado profissional."}</p>
+                    <div className="flex flex-wrap justify-center items-center gap-4 mt-6">
+                        <div className="flex items-center gap-2 bg-amber-50 text-amber-600 px-3 py-1.5 rounded-full text-xs font-black border border-amber-100 italic">
+                            <Star size={14} fill="currentColor" /> 5.0 (250+ avaliações)
                         </div>
+                        <a 
+                            href={`https://wa.me/${studio?.whatsapp?.replace(/\D/g, '')}`} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-full text-xs font-black border border-emerald-100 hover:bg-emerald-100 transition-colors"
+                        >
+                            <Phone size={14} /> WhatsApp
+                        </a>
+                    </div>
+                    <div className="flex items-center gap-2 mt-4 px-6 py-2.5 bg-slate-50 rounded-2xl border border-slate-100 w-full max-w-xs justify-center group overflow-hidden">
+                        <MapPin size={16} className="text-orange-500 flex-shrink-0 group-hover:scale-110 transition-transform" /> 
+                        <span className="text-[10px] font-bold text-slate-500 truncate lowercase first-letter:uppercase">
+                            {studio?.address || studio?.address_street || studio?.street ? `${studio.address || studio.address_street || studio.street}, ${studio.address_number || studio.number || ''}` : "Endereço não informado"}
+                        </span>
                     </div>
                 </div>
 
-                <div className="mt-8 space-y-2 text-left">
-                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-4 ml-2">Serviços Disponíveis</h2>
+                <div className="mt-12 space-y-4 text-left">
+                    <div className="flex items-center justify-between px-2 mb-6">
+                        <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Menu de Serviços</h2>
+                        <span className="h-px bg-slate-200 flex-1 ml-4 opacity-50"></span>
+                    </div>
                     {Object.entries(servicesByCategory).map(([cat, items]) => (
                         <AccordionCategory 
                             key={cat} category={cat} services={items} 
@@ -678,25 +704,29 @@ const PublicBookingPreview: React.FC = () => {
             </div>
 
             {selectedServices.length > 0 && !isBookingOpen && (
-                <div className="fixed bottom-0 left-0 right-0 p-6 z-40 bg-gradient-to-t from-white via-white to-white/80 backdrop-blur-md border-t border-slate-100 animate-in slide-in-from-bottom-full duration-500">
-                    <div className="max-w-xl mx-auto flex items-center justify-between gap-6">
-                        <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{selectedServices.length} selecionados</p>
-                                <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                                    <Clock size={10} /> {totalDuration} min
+                <div className="fixed bottom-6 left-6 right-6 z-40 flex justify-center animate-in slide-in-from-bottom-full duration-700">
+                    <div className="w-full max-w-lg bg-slate-900/90 backdrop-blur-2xl px-6 py-5 rounded-[32px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] border border-white/10 flex items-center justify-between gap-6 group hover:scale-[1.02] transition-transform">
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5">
+                                <div className="flex -space-x-2">
+                                    {selectedServices.slice(0, 3).map((s, i) => (
+                                        <div key={s.id} className="w-5 h-5 rounded-full border-2 border-slate-900 bg-orange-500 flex items-center justify-center text-[8px] font-black text-white" style={{ zIndex: 3 - i }}>
+                                            {s.nome?.[0] || 'S'}
+                                        </div>
+                                    ))}
+                                </div>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest truncate">
+                                    {selectedServices.length} {selectedServices.length === 1 ? 'Serviço' : 'Serviços'} • {totalDuration} min
                                 </p>
-                                <button 
-                                    onClick={() => setSelectedServices([])}
-                                    className="ml-2 text-[10px] font-black text-orange-500 uppercase tracking-widest hover:text-orange-600 transition-colors"
-                                >
-                                    Limpar
-                                </button>
                             </div>
-                            <p className="text-xl font-black text-slate-800">Total R$ {totalPrice.toFixed(2)}</p>
+                            <p className="text-2xl font-black text-white">R$ {totalPrice.toFixed(2)}</p>
                         </div>
-                        <button onClick={() => { setIsBookingOpen(true); setBookingStep(1); }} className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95">Continuar <ArrowRight size={20} /></button>
+                        <button 
+                            onClick={() => { setIsBookingOpen(true); setBookingStep(1); }} 
+                            className="bg-orange-500 hover:bg-orange-400 text-white px-8 py-4 rounded-[24px] font-black shadow-lg shadow-orange-500/20 flex items-center justify-center gap-2 transition-all active:scale-95 whitespace-nowrap group-hover:px-10"
+                        >
+                            Agendar <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+                        </button>
                     </div>
                 </div>
             )}

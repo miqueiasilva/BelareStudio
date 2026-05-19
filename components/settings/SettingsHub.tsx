@@ -32,8 +32,17 @@ const SettingsHub: React.FC<SettingsHubProps> = ({ onNavigate, onTopLevelNavigat
             action: () => onNavigate('profile')
         },
         { 
-            id: 'payments', 
+            id: 'billing', 
             icon: CreditCard, 
+            label: 'Assinatura & Plano', 
+            description: 'Gerenciar seu pacote, faturamento e métodos de pagamento', 
+            iconColor: 'text-orange-600',
+            iconBg: 'bg-orange-50',
+            action: () => onNavigate('billing')
+        },
+        { 
+            id: 'payments', 
+            icon: Banknote, 
             label: 'Pagamentos & Taxas', 
             description: 'Configurar taxas de cartão, PIX e regras de parcelamento', 
             iconColor: 'text-emerald-600',

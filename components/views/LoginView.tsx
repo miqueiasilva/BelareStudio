@@ -13,7 +13,11 @@ const GoogleIcon = () => (
   </svg>
 );
 
-const LoginView: React.FC = () => {
+interface LoginViewProps {
+  onBack?: () => void;
+}
+
+const LoginView: React.FC<LoginViewProps> = ({ onBack }) => {
     const { signIn, signUp, resetPassword, signInWithGoogle } = useAuth();
     
     const [email, setEmail] = useState('');
@@ -85,7 +89,15 @@ const LoginView: React.FC = () => {
 
             <div className="w-full max-w-[420px] bg-[#1a1e26]/80 backdrop-blur-xl rounded-[32px] p-8 md:p-10 shadow-2xl border border-white/5 relative z-10">
                 
-                <div className="text-center mb-8">
+                <div className="text-center mb-8 relative">
+                    {onBack && (
+                        <button 
+                            onClick={onBack}
+                            className="absolute left-0 top-0 p-2 text-slate-500 hover:text-white transition-colors"
+                        >
+                            <ArrowRight className="rotate-180" size={20} />
+                        </button>
+                    )}
                     <div className="w-16 h-16 bg-gradient-to-tr from-orange-500 to-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-500/20 transition-transform hover:scale-105 duration-300">
                         <span className="text-white font-black text-3xl">B</span>
                     </div>

@@ -7,13 +7,14 @@ import BusinessSettings from '../settings/BusinessSettings';
 import BlocksSettings from '../settings/BlocksSettings';
 import ResourcesSettings from '../settings/ResourcesSettings';
 import UnderConstruction from '../settings/UnderConstruction';
+import BillingSettings from '../settings/BillingSettings';
 
 import FinancialCategoriesSettings from '../settings/FinancialCategoriesSettings';
 import ThemeSettings from '../settings/ThemeSettings';
 import DiscountSettings from '../settings/DiscountSettings';
 
 const ConfiguracoesView: React.FC = () => {
-    const [subView, setSubView] = useState<'hub' | 'profile' | 'payments' | 'theme' | 'resources' | 'discounts' | 'blocks' | 'financial_categories'>('hub');
+    const [subView, setSubView] = useState<'hub' | 'profile' | 'payments' | 'theme' | 'resources' | 'discounts' | 'blocks' | 'financial_categories' | 'billing'>('hub');
     
     // Função para renderizar o conteúdo dinâmico
     const renderSubView = () => {
@@ -29,6 +30,8 @@ const ConfiguracoesView: React.FC = () => {
                 );
             case 'profile':
                 return <BusinessSettings onBack={() => setSubView('hub')} />;
+            case 'billing':
+                return <BillingSettings onBack={() => setSubView('hub')} />;
             case 'payments':
                 return <PaymentSettings onBack={() => setSubView('hub')} />;
             case 'blocks':
@@ -56,7 +59,7 @@ const ConfiguracoesView: React.FC = () => {
                     {subView === 'hub' ? 'Configurações' : 'Ajustes Técnicos'}
                 </h1>
                 <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-2 ml-12 leading-none">
-                    {subView === 'hub' ? 'Gestão da sua marca e regras do negócio.' : `Menu / Configurações / ${subView === 'profile' ? 'Perfil' : subView}`}
+                    {subView === 'hub' ? 'Gestão da sua marca e regras do negócio.' : `Menu / Configurações / ${subView === 'profile' ? 'Perfil' : subView === 'billing' ? 'Plano & Assinatura' : subView}`}
                 </p>
             </header>
 

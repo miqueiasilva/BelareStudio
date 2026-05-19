@@ -407,6 +407,29 @@ const RelatoriosView: React.FC = () => {
 
   const renderExecutivo = () => (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
+      {/* AI Health Check Banner */}
+      <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-[32px] md:rounded-[40px] p-6 md:p-10 text-white relative overflow-hidden shadow-2xl">
+        <div className="absolute top-0 right-0 p-12 opacity-10 group-hover:scale-110 transition-transform">
+          <Zap size={150} />
+        </div>
+        <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-8">
+          <div className="space-y-4 text-center md:text-left">
+            <div className="inline-flex items-center gap-2 bg-orange-500/20 text-orange-400 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.3em] border border-orange-500/30">
+              <Sparkles size={14} fill="currentColor" /> Monitoramento de Saúde do Negócio
+            </div>
+            <h2 className="text-3xl md:text-5xl font-black tracking-tighter leading-none">
+              Seu estúdio está <span className="text-emerald-400">crescendo 12%</span> acima da média.
+            </h2>
+            <p className="text-slate-400 font-medium max-w-xl text-sm md:text-base">
+              A Jaci detectou que sua retenção de clientes aumentou 5.4% este mês. <br className="hidden md:block" /> Recomendo focar no Ticket Médio nas próximas duas semanas.
+            </p>
+          </div>
+          <div className="flex gap-4">
+            <button className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-orange-500/20">Ver Estratégia</button>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
         <KPICard title="Faturamento Realizado (Pago)" value={`R$ ${data?.income.toLocaleString('pt-BR')}`} trend={metrics?.incomeTrend} color="bg-emerald-500" icon={DollarSign} loading={isLoading} />
         <KPICard title="Faturamento Projetado (Agenda)" value={`R$ ${data?.potentialIncome.toLocaleString('pt-BR')}`} color="bg-blue-600" icon={Target} subtext="Total da agenda no período" loading={isLoading} />
@@ -867,23 +890,23 @@ const RelatoriosView: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 overflow-x-auto scrollbar-hide w-full lg:w-auto">
+        <div className="flex bg-slate-100 p-1.5 rounded-[24px] border border-slate-200 overflow-x-auto scrollbar-hide w-full lg:w-auto shadow-inner">
           <div className="flex gap-1">
             {[
-              { id: 'executivo', label: 'Executivo', icon: LayoutDashboard },
+              { id: 'executivo', label: 'Estratégico', icon: LayoutDashboard },
               { id: 'financeiro', label: 'Financeiro', icon: Wallet },
               { id: 'agenda', label: 'Operação', icon: Calendar },
               { id: 'clientes', label: 'Clientes', icon: Users },
-              { id: 'equipe', label: 'Equipe', icon: Briefcase },
+              { id: 'equipe', label: 'Time', icon: Briefcase },
               { id: 'marketing', label: 'Marketing', icon: Sparkles },
-              { id: 'dre', label: 'DRE Gerencial', icon: FileText }
+              { id: 'dre', label: 'DRE Real', icon: FileText }
             ].map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 md:px-6 py-2 md:py-3 text-[9px] md:text-[10px] font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white shadow-md text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}
+                className={`flex items-center gap-2 px-4 md:px-6 py-3 md:py-3.5 text-[9px] md:text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-slate-900 shadow-xl text-white scale-105' : 'text-slate-400 hover:text-slate-700 hover:bg-white'}`}
               >
-                <tab.icon size={12} className="md:w-3.5 md:h-3.5" />
+                <tab.icon size={14} className={activeTab === tab.id ? 'text-orange-400' : ''} />
                 {tab.label}
               </button>
             ))}

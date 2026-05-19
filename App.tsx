@@ -4,7 +4,10 @@ import { useStudio } from './contexts/StudioContext';
 import { ViewState, FinancialTransaction, UserRole } from './types';
 import EnvGate from './components/EnvGate';
 import { hasAccess } from './utils/permissions';
-import { Loader2, ShieldAlert, RefreshCw } from 'lucide-react';
+import { Loader2, ShieldAlert, RefreshCw, CloudOff } from 'lucide-react';
+import { usePWA } from './hooks/usePWA';
+import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+import { PWAUpdateToast } from './components/PWAUpdateToast';
 
 // Componentes estáticos
 import MainLayout from './components/layout/MainLayout';
@@ -31,6 +34,8 @@ const ServicosView = lazy(() => import('./components/views/ServicosView'));
 const EquipeView = lazy(() => import('./components/views/EquipeView'));
 const MarketingView = lazy(() => import('./components/views/MarketingView'));
 const PublicBookingPreview = lazy(() => import('./components/views/PublicBookingPreview'));
+const LandingPageView = lazy(() => import('./components/views/LandingPageView'));
+const StudioSetupWizard = lazy(() => import('./components/onboarding/StudioSetupWizard'));
 
 import { mockTransactions } from './data/mockData';
 
@@ -49,12 +54,20 @@ const AppContent: React.FC = () => {
   const [viewingPaidId, setViewingPaidId] = useState<string | null>(() => sessionStorage.getItem('open_paid_command'));
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
   const [hash, setHash] = useState(window.location.hash);
+  const [showLogin, setShowLogin] = useState(false);
 
   useEffect(() => {
     const handleHashChange = () => {
-      setHash(window.location.hash);
-      if (window.location.hash === '' || window.location.hash === '#/') setCurrentView('dashboard');
+      const currentHash = window.location.hash;
+      setHash(currentHash);
+      if (currentHash === '#/login' || currentHash === '#login') {
+        setShowLogin(true);
+      } else if (currentHash === '' || currentHash === '#/' || currentHash === '#landing') {
+        setShowLogin(false);
+        if (currentHash === '' || currentHash === '#/') setCurrentView('dashboard');
+      }
     };
+    handleHashChange(); // Initial check
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
@@ -70,24 +83,23 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (!user) return <LoginView />;
+  if (!user) {
+    if (showLogin) return <LoginView onBack={() => window.location.hash = '#landing'} />;
+    return (
+      <Suspense fallback={<ViewLoader />}>
+        <LandingPageView onLogin={() => window.location.hash = '#login'} />
+      </Suspense>
+    );
+  }
 
   const userRole = (user.papel as UserRole) || 'profissional';
   const isAdmin = userRole === 'admin' || userRole === 'gestor';
 
   if (!activeStudioId && !isAdmin) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white rounded-[40px] shadow-2xl p-10 text-center">
-          <ShieldAlert size={60} className="mx-auto text-rose-500 mb-6" />
-          <h2 className="text-2xl font-black text-slate-800">Unidade não definida</h2>
-          <p className="text-slate-500 mt-4">Sincronize sua conta com uma unidade para continuar.</p>
-          <div className="mt-8 flex flex-col gap-3">
-             <button onClick={() => refreshStudios(true)} className="w-full bg-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2"><RefreshCw size={18} /> Sincronizar Agora</button>
-             <button onClick={signOut} className="w-full py-4 text-rose-500 font-bold flex items-center justify-center gap-2">Sair</button>
-          </div>
-        </div>
-      </div>
+      <Suspense fallback={<ViewLoader />}>
+        <StudioSetupWizard />
+      </Suspense>
     );
   }
 
@@ -163,6 +175,8 @@ import { Toaster } from 'react-hot-toast';
 import { Toaster as SonnerToaster } from 'sonner';
 
 export default function App() {
+  const { isOffline } = usePWA();
+
   return (
     <EnvGate>
       <AuthProvider>
@@ -176,6 +190,21 @@ export default function App() {
           },
         }} />
         <SonnerToaster position="top-right" richColors closeButton />
+        
+        {/* PWA Components */}
+        <PWAUpdateToast />
+        <PWAInstallPrompt />
+
+        {/* Offline Warning Banner */}
+        {isOffline && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[10000] animate-in slide-in-from-top-4 fade-in duration-300">
+            <div className="bg-amber-500 text-white font-black text-[10px] uppercase tracking-widest px-6 py-3.5 rounded-full shadow-[0_10px_30px_rgba(245,158,11,0.3)] flex items-center gap-2 border border-amber-400">
+              <CloudOff size={14} className="animate-pulse text-amber-100" />
+              <span>Você está offline — visualização somente leitura</span>
+            </div>
+          </div>
+        )}
+
         <AppContent />
       </AuthProvider>
     </EnvGate>

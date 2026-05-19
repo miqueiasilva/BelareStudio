@@ -82,7 +82,22 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
           }
         }
 
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.warn("[AUTH_DEBUG] Erro na sessão inicial:", sessionError.message);
+          const msg = sessionError.message.toLowerCase();
+          if (msg.includes("refresh_token_not_found") || 
+              msg.includes("refresh token not found") ||
+              msg.includes("invalid refresh token") ||
+              msg.includes("invalid_grant")) {
+            console.log("[AUTH_DEBUG] Sessão corrompida detectada, limpando...");
+            await supabase.auth.signOut();
+            localStorage.clear();
+            sessionStorage.clear();
+          }
+        }
+
         if (session?.user) {
           const appUser = await fetchProfile(session.user);
           if (isMounted.current) setUser(appUser);
@@ -152,7 +167,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
       options: { 
         redirectTo: callbackUrl,
         skipBrowserRedirect: false,
-        flowType: 'implicit'
+        flowType: 'pkce'
       } 
     });
   }, []);

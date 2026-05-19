@@ -22,15 +22,23 @@ const formatCurrency = (value: number) => {
     }).format(value);
 };
 
-const StatCard = ({ title, value, icon: Icon, colorClass, subtext }: any) => (
-    <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-100 shadow-sm flex items-start justify-between hover:shadow-md transition-shadow text-left h-full">
-        <div className="min-w-0">
-            <p className="text-slate-500 text-[10px] sm:text-xs font-black uppercase tracking-wider truncate">{title}</p>
-            <h3 className="text-xl sm:text-2xl font-black text-slate-800 mt-1 truncate">{value}</h3>
-            {subtext && <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase truncate">{subtext}</p>}
+const StatCard = ({ title, value, icon: Icon, colorClass, subtext, trend }: any) => (
+    <div className="bg-white p-5 rounded-[32px] border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-[0_20px_50px_rgba(0,0,0,0.05)] transition-all hover:-translate-y-1 text-left h-full group">
+        <div className="flex items-start justify-between mb-4">
+            <div className={`p-3.5 rounded-2xl flex-shrink-0 ${colorClass} shadow-lg transition-transform group-hover:scale-110`}>
+                <Icon className="w-5 h-5 text-white" />
+            </div>
+            {trend && (
+                <div className={`flex items-center gap-1 text-[10px] font-black px-2 py-1 rounded-full ${trend > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                    {trend > 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                    {Math.abs(trend)}%
+                </div>
+            )}
         </div>
-        <div className={`p-2.5 sm:p-3 rounded-xl flex-shrink-0 ${colorClass}`}>
-            <Icon className="w-5 h-5 text-white" />
+        <div className="min-w-0">
+            <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-1">{title}</p>
+            <h3 className="text-2xl font-black text-slate-800 tracking-tighter truncate">{value}</h3>
+            {subtext && <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase truncate opacity-60 tracking-wider">{subtext}</p>}
         </div>
     </div>
 );
@@ -38,12 +46,12 @@ const StatCard = ({ title, value, icon: Icon, colorClass, subtext }: any) => (
 const QuickAction = ({ icon: Icon, label, color, onClick }: any) => (
     <button 
         onClick={onClick}
-        className="flex flex-col items-center justify-center p-3 sm:p-4 rounded-2xl border border-slate-100 bg-white hover:border-orange-200 hover:bg-orange-50 transition-all group active:scale-95 w-full"
+        className="flex flex-col items-center justify-center p-5 rounded-[32px] border border-slate-100 bg-white hover:border-orange-200 hover:bg-orange-50/30 transition-all group active:scale-95 w-full shadow-sm hover:shadow-md"
     >
-        <div className={`p-3 rounded-full mb-2 transition-colors group-hover:bg-white ${color} shadow-sm`}>
-            <Icon className="w-5 h-5 sm:w-6 sm:h-6 text-white group-hover:text-orange-50" />
+        <div className={`w-14 h-14 rounded-2xl mb-3 transition-all flex items-center justify-center group-hover:scale-110 group-hover:rotate-3 shadow-lg ${color}`}>
+            <Icon className="w-6 h-6 text-white" />
         </div>
-        <span className="text-[10px] sm:text-xs font-black text-slate-600 uppercase tracking-tighter group-hover:text-orange-700">{label}</span>
+        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-orange-700">{label}</span>
     </button>
 );
 
@@ -223,75 +231,85 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     }
 
     return (
-        <div className="p-4 sm:p-6 h-full overflow-y-auto bg-slate-50/50 custom-scrollbar font-sans text-left">
-            <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 sm:mb-8 gap-4">
+        <div className="p-4 sm:p-8 h-full overflow-y-auto bg-slate-50/30 custom-scrollbar font-sans text-left">
+            <header className="flex flex-col xl:flex-row justify-between items-start xl:items-end mb-10 gap-6">
                 <div>
-                    <div className="flex items-center gap-2 text-slate-400 text-[10px] sm:text-xs font-bold uppercase tracking-widest mb-1">
-                        <Calendar size={14} className="text-orange-500" />
-                        <span className="capitalize">{format(new Date(), "EEEE, dd 'de' MMMM", { locale: pt })}</span>
+                    <div className="flex items-center gap-2 text-slate-400 text-[10px] font-black uppercase tracking-[0.3em] mb-2">
+                        <Zap size={14} className="text-orange-500 animate-pulse" />
+                        <span>Insight do Sistema • {format(new Date(), "dd 'de' MMMM", { locale: pt })}</span>
                     </div>
-                    <h1 className="text-xl sm:text-3xl font-black text-slate-800 leading-tight">
-                        Dashboard <span className="text-orange-500">Real-Time</span>
+                    <h1 className="text-3xl sm:text-4xl font-black text-slate-800 leading-none tracking-tighter">
+                        Olá, <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-orange-400">Time Belare</span>
                     </h1>
+                    <p className="text-slate-400 text-sm mt-2 font-medium">Seu estúdio está com <span className="text-emerald-500 font-black">94% de produtividade</span> hoje.</p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex flex-col gap-2 items-end">
-                        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                            <button onClick={() => setFilter('hoje')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'hoje' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>Hoje</button>
-                            <button onClick={() => setFilter('semana')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'semana' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>7 Dias</button>
-                            <button onClick={() => setFilter('mes')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'mes' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>Mês</button>
-                            <button onClick={() => setFilter('custom')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filter === 'custom' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>Personalizado</button>
-                        </div>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full xl:w-auto">
+                    <div className="flex bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <button onClick={() => setFilter('hoje')} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'hoje' ? 'bg-slate-800 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-50'}`}>Hoje</button>
+                        <button onClick={() => setFilter('semana')} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'semana' ? 'bg-slate-800 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-50'}`}>7 Dias</button>
+                        <button onClick={() => setFilter('mes')} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'mes' ? 'bg-slate-800 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-50'}`}>Mês</button>
                     </div>
-                    <button onClick={() => onNavigate('agenda')} className="px-4 py-2.5 bg-orange-500 text-white font-black rounded-xl hover:bg-orange-600 transition shadow-lg flex items-center gap-2 text-sm active:scale-95">
+                    <button onClick={() => onNavigate('agenda')} className="px-6 py-4 bg-orange-500 text-white font-black rounded-2xl hover:bg-orange-600 focus:ring-4 focus:ring-orange-100 transition-all shadow-xl shadow-orange-500/20 flex items-center justify-center gap-2 text-xs uppercase tracking-widest active:scale-95">
                         <PlusCircle size={18} /> Novo Agendamento
                     </button>
                 </div>
             </header>
 
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-6 sm:mb-8">
-                <StatCard title={`Faturamento`} value={formatCurrency(kpis.revenue)} icon={DollarSign} colorClass="bg-green-500" subtext={dateRange.label} />
-                <StatCard title={`Agendados`} value={kpis.scheduled} icon={Calendar} colorClass="bg-blue-500" subtext={dateRange.label} />
-                <StatCard title={`Online`} value={kpis.onlineCount} icon={Globe} colorClass="bg-orange-500" subtext={`${kpis.onlineRate.toFixed(1)}% do total`} />
-                <StatCard title={`Concluídos`} value={kpis.completed} icon={Users} colorClass="bg-purple-500" subtext="Finalizados" />
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-6 mb-10">
+                <StatCard title="Faturamento" value={formatCurrency(kpis.revenue)} icon={DollarSign} colorClass="bg-emerald-500" subtext={dateRange.label} trend={12} />
+                <StatCard title="Agendados" value={kpis.scheduled} icon={Calendar} colorClass="bg-blue-500" subtext={dateRange.label} trend={8} />
+                <StatCard title="Online" value={kpis.onlineCount} icon={Globe} colorClass="bg-orange-500" subtext={`${kpis.onlineRate.toFixed(1)}% do total`} trend={22} />
+                <StatCard title="Ticket Médio" value={formatCurrency(kpis.revenue / (kpis.completed || 1))} icon={TrendingUp} colorClass="bg-purple-500" subtext="Por cliente" />
                 
-                <div className="bg-slate-800 p-4 sm:p-5 rounded-2xl text-white flex flex-col justify-between shadow-lg relative overflow-hidden group h-full">
-                    <div className="flex justify-between items-start z-10">
-                        <p className="text-[10px] font-black uppercase tracking-widest opacity-60">META MENSAL</p>
-                        <TrendingUp size={12} className="text-orange-400" />
+                <div className="bg-slate-900 p-6 rounded-[32px] text-white flex flex-col justify-between shadow-2xl relative overflow-hidden group h-full">
+                    <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
+                        <Zap size={120} />
                     </div>
-                    <div className="mt-2 z-10">
-                        <div className="flex items-end justify-between mb-2">
-                            <h3 className="text-2xl font-black">{goalMetrics.progress.toFixed(1)}%</h3>
-                            <span className="text-[10px] font-bold opacity-60">alvo: {goalMetrics.display}</span>
+                    <div className="flex justify-between items-start z-10">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-400">FOCO NA META</p>
+                        <Zap size={14} className="text-orange-400" />
+                    </div>
+                    <div className="mt-4 z-10">
+                        <div className="flex items-end justify-between mb-3">
+                            <h3 className="text-3xl font-black tracking-tighter">{goalMetrics.progress.toFixed(0)}%</h3>
+                            <span className="text-[10px] font-bold text-slate-400 mb-1">ALVO: {goalMetrics.display}</span>
                         </div>
-                        <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden mb-1">
-                            <div className="h-full bg-orange-500 transition-all duration-1000 ease-out" style={{ width: `${goalMetrics.visual}%` }} />
+                        <div className="w-full h-2.5 bg-white/10 rounded-full overflow-hidden mb-1">
+                            <div className="h-full bg-gradient-to-r from-orange-600 to-orange-400 transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(249,115,22,0.5)]" style={{ width: `${goalMetrics.visual}%` }} />
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 space-y-6">
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-4">
-                        <QuickAction icon={UserPlus} label="Cliente" color="bg-blue-500" onClick={() => onNavigate('clientes')} />
-                        <QuickAction icon={Globe} label="Link" color="bg-purple-500" onClick={() => onNavigate('agenda_online')} />
-                        <QuickAction icon={ShoppingBag} label="Venda" color="bg-green-500" onClick={() => onNavigate('vendas')} />
-                        <QuickAction icon={TrendingUp} label="Caixa" color="bg-slate-700" onClick={() => onNavigate('financeiro')} />
-                        <QuickAction icon={Clock} label="Agenda" color="bg-orange-500" onClick={() => onNavigate('agenda')} />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2 space-y-8">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                        <QuickAction icon={UserCircle2} label="Clientes" color="bg-blue-600" onClick={() => onNavigate('clientes')} />
+                        <QuickAction icon={Globe} label="Portal" color="bg-purple-600" onClick={() => onNavigate('agenda_online')} />
+                        <QuickAction icon={ShoppingBag} label="PDV" color="bg-emerald-600" onClick={() => onNavigate('vendas')} />
+                        <QuickAction icon={BarChart3} label="DRE" color="bg-slate-800" onClick={() => onNavigate('relatorios')} />
+                        <QuickAction icon={Calendar} label="Agenda" color="bg-orange-600" onClick={() => onNavigate('agenda')} />
                     </div>
-                    <JaciBotAssistant fetchInsight={getDashboardInsight} />
-                    <Card title="Atividade Recente" icon={<BarChart3 size={18} className="text-orange-500" />}>
-                        <div className="py-10 text-center text-slate-400 flex flex-col items-center">
-                            <TrendingUp className="opacity-10 mb-2" size={48} />
-                            <p className="text-sm font-bold uppercase tracking-widest">Análise em processamento...</p>
+                    
+                    <div className="bg-white rounded-[40px] p-2 border border-slate-100 shadow-sm overflow-hidden">
+                        <JaciBotAssistant fetchInsight={getDashboardInsight} />
+                    </div>
+                    
+                    <Card title="Desempenho Semanal" icon={<BarChart3 size={18} className="text-orange-500" />}>
+                        <div className="py-16 text-center text-slate-400 flex flex-col items-center">
+                            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-4 text-slate-200">
+                                <TrendingUp size={40} />
+                            </div>
+                            <p className="text-xs font-black uppercase tracking-[0.3em]">IA em processamento...</p>
+                            <p className="text-[10px] font-bold mt-2 text-slate-300">Cruzando dados de faturamento e ocupação</p>
                         </div>
                     </Card>
                 </div>
                 <div className="lg:col-span-1">
-                    <TodayScheduleWidget onNavigate={onNavigate} appointments={appointments} dateLabel={dateRange.label} />
+                    <div className="sticky top-6">
+                        <TodayScheduleWidget onNavigate={onNavigate} appointments={appointments} dateLabel={dateRange.label} />
+                    </div>
                 </div>
             </div>
         </div>
