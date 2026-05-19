@@ -16,6 +16,7 @@ import {
   DollarSign
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { usePWA } from '../../hooks/usePWA';
 
 interface LandingPageViewProps {
   onLogin: () => void;
@@ -23,6 +24,22 @@ interface LandingPageViewProps {
 
 const LandingPageView: React.FC<LandingPageViewProps> = ({ onLogin }) => {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
+  const { isInstallable, promptInstall } = usePWA();
+
+  const handleInstallClick = async () => {
+    if (isInstallable) {
+      const success = await promptInstall();
+      if (success) return;
+    }
+    
+    // Fallback: Smooth scroll to #instalar section
+    const element = document.getElementById('instalar');
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      window.location.hash = 'instalar';
+    }
+  };
 
   const features = [
     {
@@ -116,6 +133,9 @@ const LandingPageView: React.FC<LandingPageViewProps> = ({ onLogin }) => {
           </div>
 
           <div className="hidden md:flex items-center gap-8 text-sm font-bold text-slate-500">
+            <button onClick={handleInstallClick} className="text-[#b5895a] hover:opacity-80 transition-opacity font-extrabold flex items-center gap-1.5 cursor-pointer">
+              <Smartphone size={16} /> Instalar App
+            </button>
             <button onClick={onLogin} className="text-slate-900 hover:opacity-70 transition-opacity">Entrar</button>
             <button onClick={onLogin} className="bg-slate-900 text-white px-6 py-3 rounded-xl hover:shadow-xl transition-all active:scale-95 shadow-lg shadow-slate-900/10">Testar Grátis</button>
           </div>
@@ -128,6 +148,7 @@ const LandingPageView: React.FC<LandingPageViewProps> = ({ onLogin }) => {
         {isMenuOpen && (
           <div className="md:hidden absolute top-full left-0 right-0 bg-white border-b border-slate-100 p-6 flex flex-col gap-4 animate-in slide-in-from-top-4 duration-300">
             <button onClick={() => { onLogin(); setIsMenuOpen(false); }} className="w-full text-left text-lg font-bold">Entrar</button>
+            <button onClick={() => { handleInstallClick(); setIsMenuOpen(false); }} className="w-full text-left text-lg font-bold text-[#b5895a]">Instalar Aplicativo</button>
             <button onClick={() => { onLogin(); setIsMenuOpen(false); }} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl underline underline-offset-4 decoration-orange-500">Começar Teste Grátis</button>
           </div>
         )}
@@ -149,11 +170,14 @@ const LandingPageView: React.FC<LandingPageViewProps> = ({ onLogin }) => {
               Seu estúdio perde dinheiro todos os dias <br/> <span className="text-orange-500">sem você perceber.</span>
             </h1>
             <p className="text-xl text-slate-500 max-w-lg leading-relaxed font-medium">
-              O BelareStudio organiza sua agenda, automatiza cobranças, reduz faltas e mostra quanto seu estúdio realmente lucra enquanto você atende.
+              O BelareStudio organiza sua agenda, automatiza cobranças, reduces faltas e mostra quanto seu estúdio realmente lucra enquanto você atende.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 pt-4">
               <button onClick={onLogin} className="bg-slate-900 text-white px-10 py-6 rounded-3xl text-xl font-black shadow-[0_20px_50px_rgba(0,0,0,0.2)] hover:shadow-slate-300 transition-all active:scale-95 flex items-center justify-center gap-3">
                 Começar Teste Grátis <ArrowRight size={20} />
+              </button>
+              <button onClick={handleInstallClick} className="bg-[#b5895a] hover:bg-[#a47a4d] text-white px-10 py-6 rounded-3xl text-xl font-black shadow-[0_20px_50px_rgba(181,137,90,0.2)] transition-all active:scale-95 flex items-center justify-center gap-3 cursor-pointer">
+                <Smartphone size={20} /> Instalar no Celular
               </button>
             </div>
             <div className="flex items-center gap-6 pt-4">
@@ -474,6 +498,67 @@ const LandingPageView: React.FC<LandingPageViewProps> = ({ onLogin }) => {
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Manual PWA Install Instructions Section */}
+      <section id="instalar" className="py-24 px-6 bg-white border-t border-slate-100 scroll-mt-20">
+        <div className="max-w-4xl mx-auto space-y-12">
+          <div className="text-center space-y-4">
+            <div className="inline-flex items-center gap-2 bg-amber-50 text-[#b5895a] px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest border border-amber-100/50">
+              <Smartphone size={14} /> Aplicativo Web Progressivo (PWA)
+            </div>
+            <h2 className="text-4xl font-black tracking-tighter">Como Instalar no seu Celular</h2>
+            <p className="text-slate-500 max-w-lg mx-auto text-sm font-medium leading-relaxed">
+              Tenha o BelareStudio sempre à mão, com carregamento ultrarrápido diretamente da sua tela de início.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-8 text-left">
+            {/* iOS Tutorial Card */}
+            <div className="bg-slate-50 rounded-[32px] p-8 border border-slate-100 shadow-sm space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white font-black text-sm">iOS</div>
+                <h3 className="font-black text-slate-800 tracking-tight">iPhone e iPad</h3>
+              </div>
+              <ol className="space-y-4 text-slate-600 text-sm font-semibold">
+                <li className="flex items-start gap-3">
+                  <span className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs text-slate-700 font-extrabold flex-shrink-0 mt-0.5">1</span>
+                  <span>Abra este site no navegador <strong className="text-slate-900">Safari</strong>.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs text-slate-700 font-extrabold flex-shrink-0 mt-0.5">2</span>
+                  <span>Toque no botão de <strong className="text-slate-900">Compartilhar</strong> (ícone de quadrado com seta para cima no rodapé do Safari).</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs text-slate-700 font-extrabold flex-shrink-0 mt-0.5">3</span>
+                  <span>Role a lista e selecione <strong className="text-slate-900">"Adicionar à Tela de Início"</strong>.</span>
+                </li>
+              </ol>
+            </div>
+
+            {/* Android / Desktop Tutorial Card */}
+            <div className="bg-slate-50 rounded-[32px] p-8 border border-slate-100 shadow-sm space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-[#b5895a] rounded-xl flex items-center justify-center text-white font-black text-sm">AND</div>
+                <h3 className="font-black text-slate-800 tracking-tight">Android e Google Chrome</h3>
+              </div>
+              <ol className="space-y-4 text-slate-600 text-sm font-semibold">
+                <li className="flex items-start gap-3">
+                  <span className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs text-slate-700 font-extrabold flex-shrink-0 mt-0.5">1</span>
+                  <span>Toque nos três pontinhos no canto superior do <strong className="text-slate-900">Google Chrome</strong>.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs text-slate-700 font-extrabold flex-shrink-0 mt-0.5">2</span>
+                  <span>Procure e selecione <strong className="text-slate-900">"Instalar aplicativo"</strong> ou <strong className="text-slate-900">"Adicionar à tela inicial"</strong>.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs text-slate-700 font-extrabold flex-shrink-0 mt-0.5">3</span>
+                  <span>Confirme a instalação e selecione "Adicionar" para fixar o atalho no celular.</span>
+                </li>
+              </ol>
+            </div>
           </div>
         </div>
       </section>

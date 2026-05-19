@@ -107,6 +107,7 @@ export function usePWA() {
     isInstalled,
     isIOS,
     isOffline,
-    installApp
+    installApp,
+    promptInstall: installApp
   };
 }
