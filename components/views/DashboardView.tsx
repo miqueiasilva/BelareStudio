@@ -4,7 +4,7 @@ import Card from '../shared/Card';
 import JaciBotAssistant from '../shared/JaciBotAssistant';
 import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import { getDashboardInsight } from '../../services/geminiService';
-import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3, Zap } from 'lucide-react';
+import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3, Zap, UserCircle } from 'lucide-react';
 // FIX: Grouping date-fns imports and removing problematic members startOfDay, subDays, startOfMonth.
 import { 
     format, addDays, endOfDay, endOfMonth
@@ -285,7 +285,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-2 space-y-8">
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-                        <QuickAction icon={UserCircle2} label="Clientes" color="bg-blue-600" onClick={() => onNavigate('clientes')} />
+                        <QuickAction icon={UserCircle} label="Clientes" color="bg-blue-600" onClick={() => onNavigate('clientes')} />
                         <QuickAction icon={Globe} label="Portal" color="bg-purple-600" onClick={() => onNavigate('agenda_online')} />
                         <QuickAction icon={ShoppingBag} label="PDV" color="bg-emerald-600" onClick={() => onNavigate('vendas')} />
                         <QuickAction icon={BarChart3} label="DRE" color="bg-slate-800" onClick={() => onNavigate('relatorios')} />

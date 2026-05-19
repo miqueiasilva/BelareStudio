@@ -14,7 +14,7 @@ import {
     ChevronLeft, Check, Star, Search, Image as ImageIcon, 
     ChevronDown, ChevronUp, Share2, Loader2, MapPin, Phone, 
     User, Mail, ShoppingBag, Clock, Calendar, Scissors, 
-    CheckCircle2, ArrowRight, UserCircle2, X, AlertTriangle,
+    CheckCircle2, ArrowRight, UserCircle, X, AlertTriangle,
     ArrowLeft, ChevronRight
 } from 'lucide-react';
 
@@ -651,7 +651,7 @@ const PublicBookingPreview: React.FC = () => {
                     onClick={() => setIsClientAppsOpen(true)}
                     className="absolute top-6 right-6 p-4 bg-white/10 backdrop-blur-xl rounded-2xl text-white hover:bg-white/20 transition-all flex items-center gap-2 border border-white/20 shadow-2xl z-20 group"
                 >
-                    <UserCircle2 size={20} className="group-hover:scale-110 transition-transform" />
+                    <UserCircle size={20} className="group-hover:scale-110 transition-transform" />
                     <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Minha Agenda</span>
                 </button>
             </div>
