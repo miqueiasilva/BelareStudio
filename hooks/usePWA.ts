@@ -10,8 +10,18 @@ export interface BeforeInstallPromptEvent extends Event {
 }
 
 export function usePWA() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstallable, setIsInstallable] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(() => {
+    if (typeof window !== 'undefined') {
+      return (window as any).deferredInstallPrompt || null;
+    }
+    return null;
+  });
+  const [isInstallable, setIsInstallable] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return !!(window as any).deferredInstallPrompt;
+    }
+    return false;
+  });
   const canInstall = isInstallable;
   
   const [isInstalled, setIsInstalled] = useState(() => {
@@ -43,8 +53,22 @@ export function usePWA() {
       setDeferredPrompt(e as BeforeInstallPromptEvent);
       setIsInstallable(true);
     };
+
+    const customHandler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        setDeferredPrompt(detail);
+        setIsInstallable(true);
+      }
+    };
+
     window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
+    window.addEventListener('pwa-beforeinstallprompt', customHandler);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('pwa-beforeinstallprompt', customHandler);
+    };
   }, []);
 
   useEffect(() => {

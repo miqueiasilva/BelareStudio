@@ -1,6 +1,15 @@
 <!DOCTYPE html>
 <html lang="pt-BR" translate="no">
   <head>
+    <script>
+      // Early capture of PWA installation prompt
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        window.deferredInstallPrompt = e;
+        // Dispatch custom event to notify usePWA hook if it is already mounted
+        window.dispatchEvent(new CustomEvent('pwa-beforeinstallprompt', { detail: e }));
+      });
+    </script>
     <meta charset="UTF-8" />
     <meta name="google" content="notranslate" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />

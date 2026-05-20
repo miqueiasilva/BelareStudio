@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { usePWA } from '../hooks/usePWA';
 import { X, Share, PlusSquare, ArrowDown, Sparkles } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 export const PWAInstallPrompt: React.FC = () => {
   const { canInstall, isInstalled, isIOS, installApp } = usePWA();
@@ -35,6 +36,10 @@ export const PWAInstallPrompt: React.FC = () => {
       }
     } else {
       setShowAndroidManual(true);
+      toast.success('Abra o menu do Chrome e selecione "Adicionar à tela inicial"!', {
+        icon: '📱',
+        duration: 5000,
+      });
     }
   };
 
