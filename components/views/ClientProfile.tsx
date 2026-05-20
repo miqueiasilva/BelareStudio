@@ -314,11 +314,11 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 telefone: data.telefone || data.whatsapp || '',
                 email: data.email || '',
                 instagram: data.instagram || '',
-                nascimento: data.birth_date || '',
+                nascimento: data.nascimento || '',
                 cpf: data.cpf || '',
                 rg: data.rg || '',
-                sexo: data.gender || '',
-                profissao: data.occupation || '',
+                sexo: data.sexo || '',
+                profissao: data.profissao || '',
                 cep: data.cep || '',
                 endereco: data.endereco || '',
                 numero: data.numero || '',
@@ -329,7 +329,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 photo_url: data.photo_url || null,
                 online_booking_enabled: data.online_booking_enabled ?? true,
                 origem: data.referral_source || 'Instagram',
-                observacoes: data.notes || ''
+                observacoes: data.observacoes || ''
             });
         }
     };
@@ -695,11 +695,11 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 whatsapp: sanitizedPhone,
                 email: cleanValue(formData.email),
                 instagram: cleanValue(formData.instagram),
-                gender: cleanValue(formData.sexo),
+                sexo: cleanValue(formData.sexo),
                 referral_source: formData.origem || 'Outros',
-                occupation: cleanValue(formData.profissao),
-                birth_date: cleanValue(formData.nascimento),
-                notes: cleanValue(formData.observacoes),
+                profissao: cleanValue(formData.profissao),
+                nascimento: cleanValue(formData.nascimento),
+                observacoes: cleanValue(formData.observacoes),
                 cep: cleanValue(formData.cep),
                 endereco: cleanValue(formData.endereco),
                 numero: cleanValue(formData.numero),
