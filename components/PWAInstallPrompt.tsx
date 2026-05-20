@@ -62,9 +62,11 @@ export const PWAInstallPrompt: React.FC = () => {
 
         {/* Header */}
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-slate-900/10">
-            <span className="font-black text-lg">B</span>
-          </div>
+          <img 
+            src="/icons/icone-192x192.png" 
+            alt="BelareStudio" 
+            className="w-12 h-12 rounded-2xl"
+          />
           <div>
             <div className="flex items-center gap-1.5 text-[10px] font-black uppercase text-[#b5895a] tracking-widest">
               <Sparkles size={10} fill="currentColor" />
