@@ -1,18 +1,11 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
 import { initialAppointments, mockTransactions, clients } from "../data/mockData";
 import { format } from "date-fns";
+import { supabase } from "./supabaseClient";
 
 // --- IA Model Configs ---
-const modelId = "gemini-3-flash-preview";
+const modelId = "gemini-3.5-flash";
 const imageModelId = "gemini-2.5-flash-image";
-
-/**
- * Cria uma nova instância da IA do Google.
- * FIX: Guidelines requerem o uso direto de process.env.API_KEY e criação de instância sob demanda.
- */
-const getAIClient = () => {
-    return new GoogleGenAI({ apiKey: process.env.API_KEY });
-};
 
 /**
  * Limpa strings retornadas pela IA que podem conter blocos de código markdown
@@ -28,62 +21,68 @@ const insightsFallback = [
 ];
 
 export const getDashboardInsight = async (): Promise<string> => {
-    const ai = getAIClient();
     try {
-        // FIX: Using generateContent with direct model ID.
-        const response = await ai.models.generateContent({
-            model: modelId,
-            contents: "Você é JaciBot, analista de beleza. Gere 1 dica curta de gestão.",
+        const { data, error } = await supabase.functions.invoke('jacibot', {
+            body: {
+                prompt: "Você é JaciBot, analista de beleza. Gere 1 dica curta de gestão.",
+                model: modelId,
+            }
         });
-        // FIX: Access .text property directly (not a function).
-        return response.text || insightsFallback[0];
+        if (error) throw error;
+        return data?.text || insightsFallback[0];
     } catch (error) {
+        console.error("Dashboard Insight Error:", error);
         return insightsFallback[0];
     }
 };
 
 export const generateMarketingContent = async (service: string, theme: string, tone: string) => {
-    const ai = getAIClient();
-
     try {
         // 1. Legendas
-        const textResponse = await ai.models.generateContent({
-            model: modelId,
-            contents: `Crie 3 legendas para Instagram sobre "${service}". Tema: "${theme}". Tom: "${tone}". Retorne apenas JSON puro.`,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            title: { type: Type.STRING },
-                            content: { type: Type.STRING }
-                        },
-                        required: ["title", "content"],
-                        // FIX: Added propertyOrdering as per guideline requirements for object clarity.
-                        propertyOrdering: ["title", "content"]
+        const { data: textData, error: textError } = await supabase.functions.invoke('jacibot', {
+            body: {
+                prompt: `Crie 3 legendas para Instagram sobre "${service}". Tema: "${theme}". Tom: "${tone}". Retorne apenas JSON puro.`,
+                model: modelId,
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                title: { type: Type.STRING },
+                                content: { type: Type.STRING }
+                            },
+                            required: ["title", "content"],
+                            propertyOrdering: ["title", "content"]
+                        }
                     }
                 }
             }
         });
 
-        // FIX: Access .text property directly.
-        const captions = JSON.parse(cleanJsonResponse(textResponse.text || "[]"));
+        if (textError) throw textError;
+        const captions = JSON.parse(cleanJsonResponse(textData?.text || "[]"));
 
         // 2. Imagem
         const imagePrompt = `Professional aesthetic banner for beauty salon. Topic: ${service}. Style: ${theme}. No text. High resolution.`;
-        const imageResponse = await ai.models.generateContent({
-            model: imageModelId,
-            // FIX: Using standardized { parts: [...] } structure.
-            contents: { parts: [{ text: imagePrompt }] },
-            config: { imageConfig: { aspectRatio: "1:1" } }
+        const { data: imageData, error: imageError } = await supabase.functions.invoke('jacibot', {
+            body: {
+                prompt: imagePrompt,
+                model: imageModelId,
+                config: {
+                    imageConfig: {
+                        aspectRatio: "1:1"
+                    }
+                }
+            }
         });
 
+        if (imageError) throw imageError;
+
         let imageUrl = '';
-        if (imageResponse.candidates?.[0]?.content?.parts) {
-            // FIX: Iterate through parts to find image data as per guidelines.
-            for (const part of imageResponse.candidates[0].content.parts) {
+        if (imageData?.candidates?.[0]?.content?.parts) {
+            for (const part of imageData.candidates[0].content.parts) {
                 if (part.inlineData) {
                     imageUrl = `data:image/png;base64,${part.inlineData.data}`;
                     break;
@@ -99,7 +98,6 @@ export const generateMarketingContent = async (service: string, theme: string, t
 };
 
 export const analyzeStaffPerformance = async (staffData: any[]): Promise<string> => {
-    const ai = getAIClient();
     try {
         const prompt = `
             Você é um consultor sênior de gestão para salões de beleza e estúdios.
@@ -111,11 +109,15 @@ export const analyzeStaffPerformance = async (staffData: any[]): Promise<string>
             Formate a resposta em Markdown, sendo direto e profissional. Foque em taxas de ocupação, ticket médio por profissional e consistência.
         `;
 
-        const response = await ai.models.generateContent({
-            model: modelId,
-            contents: prompt,
+        const { data, error } = await supabase.functions.invoke('jacibot', {
+            body: {
+                prompt,
+                model: modelId,
+            }
         });
-        return response.text || "Não foi possível gerar a análise no momento.";
+
+        if (error) throw error;
+        return data?.text || "Não foi possível gerar a análise no momento.";
     } catch (error) {
         console.error("Staff Analysis AI Error:", error);
         return "Erro ao processar análise de performance da equipe.";
@@ -123,15 +125,18 @@ export const analyzeStaffPerformance = async (staffData: any[]): Promise<string>
 };
 
 export const getInsightByTopic = async (topic: string): Promise<string> => {
-    const ai = getAIClient();
     try {
-        const response = await ai.models.generateContent({
-            model: modelId,
-            contents: `Dê uma dica de 10 palavras sobre ${topic} para um estúdio de beleza.`,
+        const { data, error } = await supabase.functions.invoke('jacibot', {
+            body: {
+                prompt: `Dê uma dica de 10 palavras sobre ${topic} para um estúdio de beleza.`,
+                model: modelId,
+            }
         });
-        // FIX: Access .text property directly.
-        return response.text || "Mantenha o foco na experiência do cliente.";
+
+        if (error) throw error;
+        return data?.text || "Mantenha o foco na experiência do cliente.";
     } catch (error) {
+        console.error("Topic Insight Error:", error);
         return "Revise seus indicadores mensais.";
     }
 };
