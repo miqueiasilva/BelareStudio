@@ -170,7 +170,7 @@ const LandingPageView: React.FC<LandingPageViewProps> = ({ onLogin }) => {
               Seu estúdio perde dinheiro todos os dias <br/> <span className="text-orange-500">sem você perceber.</span>
             </h1>
             <p className="text-xl text-slate-500 max-w-lg leading-relaxed font-medium">
-              O BelareStudio organiza sua agenda, automatiza cobranças, reduces faltas e mostra quanto seu estúdio realmente lucra enquanto você atende.
+              O BelareStudio organiza sua agenda, automatiza cobranças, reduz faltas e mostra quanto seu estúdio realmente lucra enquanto você atende.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 pt-4">
               <button onClick={onLogin} className="bg-slate-900 text-white px-10 py-6 rounded-3xl text-xl font-black shadow-[0_20px_50px_rgba(0,0,0,0.2)] hover:shadow-slate-300 transition-all active:scale-95 flex items-center justify-center gap-3">
@@ -206,7 +206,7 @@ const LandingPageView: React.FC<LandingPageViewProps> = ({ onLogin }) => {
                  <div className="flex justify-between items-center bg-slate-50 p-4 rounded-3xl border border-slate-100">
                     <div>
                         <p className="text-[10px] font-black text-slate-400 uppercase">Lucro Hoje</p>
-                        <p className="text-2xl font-black text-emerald-600 tracking-tighter">R$ 1.842,50</p>
+                        <p className="text-2xl font-black text-emerald-600 tracking-tighter whitespace-nowrap">R$ 1.842,50</p>
                     </div>
                     <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center text-emerald-600">
                         <TrendingUp size={24} />
@@ -306,7 +306,7 @@ const LandingPageView: React.FC<LandingPageViewProps> = ({ onLogin }) => {
                     <div className="flex justify-between items-end mb-6">
                         <div>
                             <p className="text-[10px] font-black text-slate-400 uppercase">Faturamento Mensal</p>
-                            <p className="text-3xl font-black text-slate-900">R$ 54.320,00</p>
+                            <p className="text-3xl font-black text-slate-900 whitespace-nowrap">R$ 54.320,00</p>
                         </div>
                         <div className="text-right">
                             <p className="text-[10px] font-black text-emerald-500 uppercase">Meta Alcanada</p>
@@ -319,11 +319,11 @@ const LandingPageView: React.FC<LandingPageViewProps> = ({ onLogin }) => {
                     <div className="grid grid-cols-2 gap-4 mt-8">
                         <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
                             <p className="text-[9px] font-black text-slate-400 uppercase">Custos Fixos</p>
-                            <p className="text-sm font-black">R$ 12.400</p>
+                            <p className="text-sm font-black whitespace-nowrap">R$ 12.400</p>
                         </div>
                         <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
                             <p className="text-[9px] font-black text-slate-400 uppercase">Lucro Líquido</p>
-                            <p className="text-sm font-black text-emerald-600">R$ 41.920</p>
+                            <p className="text-sm font-black text-emerald-600 whitespace-nowrap">R$ 41.920</p>
                         </div>
                     </div>
                 </div>
@@ -475,9 +475,9 @@ const LandingPageView: React.FC<LandingPageViewProps> = ({ onLogin }) => {
                   <p className={`text-xs font-black uppercase tracking-widest ${plan.highlight ? 'text-orange-400' : 'text-slate-400'}`}>{plan.sub}</p>
                   <p className={`text-sm mt-4 leading-relaxed font-medium ${plan.highlight ? 'text-slate-400' : 'text-slate-500'}`}>{plan.description}</p>
                 </div>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-6xl font-black tracking-tighter">{plan.price}</span>
-                  <span className={`text-sm font-bold ${plan.highlight ? 'text-slate-500' : 'text-slate-400'}`}>{plan.period}</span>
+                <div className="flex items-baseline gap-1 whitespace-nowrap">
+                  <span className="text-5xl sm:text-6xl font-black tracking-tighter">{plan.price}</span>
+                  <span className={`text-xs sm:text-sm font-bold ${plan.highlight ? 'text-slate-500' : 'text-slate-400'}`}>{plan.period}</span>
                 </div>
                 <div className="space-y-4 flex-1">
                   {plan.features.map((feat, j) => (
