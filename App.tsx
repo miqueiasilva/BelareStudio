@@ -53,13 +53,35 @@ const AppContent: React.FC = () => {
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
   const [viewingPaidId, setViewingPaidId] = useState<string | null>(() => sessionStorage.getItem('open_paid_command'));
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
-  const [hash, setHash] = useState(window.location.hash);
-  const [showLogin, setShowLogin] = useState(false);
+  const [hash, setHash] = useState(() => {
+    const path = window.location.pathname.toLowerCase();
+    if (path === '/login' || path === '/login/') {
+      return '';
+    }
+    return window.location.hash;
+  });
+  const [showLogin, setShowLogin] = useState(() => {
+    const path = window.location.pathname.toLowerCase();
+    if (path === '/login' || path === '/login/') {
+      return true;
+    }
+    const currentHash = window.location.hash;
+    return currentHash === '#/login' || currentHash === '#login';
+  });
 
+  // Sync state with hash change
   useEffect(() => {
     const handleHashChange = () => {
       const currentHash = window.location.hash;
+      const path = window.location.pathname.toLowerCase();
+      
       setHash(currentHash);
+      
+      if (path === '/login' || path === '/login/') {
+        setShowLogin(true);
+        return;
+      }
+
       if (currentHash === '#/login' || currentHash === '#login') {
         setShowLogin(true);
       } else if (currentHash === '' || currentHash === '#/' || currentHash === '#landing') {
@@ -71,6 +93,28 @@ const AppContent: React.FC = () => {
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
+
+  // Redirect logged-in users directly to dashboard, bypassing landing page or login page
+  useEffect(() => {
+    if (user) {
+      const currentHash = window.location.hash;
+      const path = window.location.pathname.toLowerCase();
+      if (
+        currentHash === '#/login' || 
+        currentHash === '#login' || 
+        currentHash === '#landing' || 
+        path === '/login' || 
+        path === '/login/'
+      ) {
+        window.history.replaceState(null, '', '/#/');
+        setTimeout(() => {
+          setHash('#/');
+          setShowLogin(false);
+          setCurrentView('dashboard');
+        }, 0);
+      }
+    }
+  }, [user]);
 
   if (hash.startsWith('#/public-preview')) return <Suspense fallback={<ViewLoader />}><PublicBookingPreview /></Suspense>;
   if (hash.startsWith('#/reset-password')) return <Suspense fallback={<ViewLoader />}><ResetPasswordView /></Suspense>;
@@ -84,7 +128,20 @@ const AppContent: React.FC = () => {
   }
 
   if (!user) {
-    if (showLogin) return <LoginView onBack={() => window.location.hash = '#landing'} />;
+    if (showLogin) {
+      return (
+        <LoginView 
+          onBack={() => {
+            const path = window.location.pathname.toLowerCase();
+            if (path === '/login' || path === '/login/') {
+              window.location.href = '/';
+            } else {
+              window.location.hash = '#landing';
+            }
+          }} 
+        />
+      );
+    }
     return (
       <Suspense fallback={<ViewLoader />}>
         <LandingPageView onLogin={() => window.location.hash = '#login'} />
