@@ -8,6 +8,7 @@ import { ViewState, UserRole } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { hasAccess } from '../../utils/permissions';
 import { StudioSwitcher } from './StudioSwitcher';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface SidebarProps {
     currentView: ViewState;
@@ -95,14 +96,17 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate, className = 
 
     return (
         <aside className={`bg-white border-r border-slate-200 flex flex-col h-full max-h-screen ${className}`}>
-            <div className="h-16 flex items-center px-6 gap-3 border-b border-slate-100 flex-shrink-0 mb-4">
-                <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center font-black text-white text-xl shadow-lg shadow-slate-200">
-                    B
+            <div className="h-16 flex items-center justify-between px-6 border-b border-slate-100 flex-shrink-0 mb-4 gap-2">
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center font-black text-white text-xl shadow-lg shadow-slate-200 flex-shrink-0">
+                        B
+                    </div>
+                    <div className="min-w-0">
+                        <h1 className="font-black text-slate-800 text-base leading-tight tracking-tight scale-y-100 truncate">BelareStudio</h1>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest truncate">Gestão Inteligente</p>
+                    </div>
                 </div>
-                <div>
-                    <h1 className="font-black text-slate-800 text-base leading-tight tracking-tight">BelareStudio</h1>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Gestão Inteligente</p>
-                </div>
+                <PWAInstallButton />
             </div>
 
             <StudioSwitcher />

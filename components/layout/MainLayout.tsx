@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import { ViewState } from '../../types';
 import { Menu, ChevronLeft } from 'lucide-react';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -87,18 +88,21 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, currentView, onNaviga
         
         {/* Top Toggle Bar (Z-index baixo para não cobrir a sidebar aberta) */}
         {(!isSidebarOpen || isMobile) && (
-            <div className="flex-shrink-0 bg-white border-b border-slate-200 px-4 h-14 flex items-center gap-3 z-30 shadow-sm md:shadow-none">
-                <button
-                    onClick={toggleSidebar}
-                    className="p-2 bg-slate-50 hover:bg-orange-50 text-slate-600 hover:text-orange-600 rounded-lg transition-colors"
-                    aria-label="Abrir Menu"
-                >
-                    <Menu className="w-5 h-5" />
-                </button>
-                <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 bg-orange-500 rounded flex items-center justify-center font-bold text-white text-xs">B</div>
-                    <span className="font-bold text-slate-700 text-sm">BelareStudio</span>
+            <div className="flex-shrink-0 bg-white border-b border-slate-200 px-4 h-14 flex items-center justify-between z-30 shadow-sm md:shadow-none">
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={toggleSidebar}
+                        className="p-2 bg-slate-50 hover:bg-orange-50 text-slate-600 hover:text-orange-600 rounded-lg transition-colors"
+                        aria-label="Abrir Menu"
+                    >
+                        <Menu className="w-5 h-5" />
+                    </button>
+                    <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 bg-orange-500 rounded flex items-center justify-center font-bold text-white text-xs">B</div>
+                        <span className="font-bold text-slate-700 text-sm">BelareStudio</span>
+                    </div>
                 </div>
+                <PWAInstallButton />
             </div>
         )}
 
