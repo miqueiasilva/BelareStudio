@@ -94,12 +94,34 @@ export const PWAInstallButton: React.FC<{ inline?: boolean }> = ({ inline }) => 
               </div>
             ) : (
               <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-3">
-                <p className="text-[10px] font-black text-[#b5895a] uppercase tracking-widest">Instruções para Android / Chrome:</p>
+                <p className="text-[10px] font-black text-[#b5895a] uppercase tracking-widest">Instruções para Chrome / Edge:</p>
+                
+                <div className="text-[11px] font-bold text-slate-700 border-b border-slate-200/60 pb-1.5 mb-1.5">
+                  🖥️ No Computador (Desktop):
+                </div>
+                <ol className="space-y-2 text-xs text-slate-600 font-bold mb-3">
+                  <li className="flex items-start gap-2">
+                    <span className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] text-slate-700 flex-shrink-0">1</span>
+                    <span className="mt-0.5">
+                      Clique nos <strong className="text-slate-900">3 pontinhos</strong> no canto superior direito do Chrome.
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] text-slate-700 flex-shrink-0">2</span>
+                    <span className="mt-0.5">
+                      Vá em <strong className="text-slate-900">Salvar e compartilhar</strong> ➡️ <strong className="text-slate-900">Instalar página como app...</strong> ou <strong className="text-slate-900">Instalar BelareStudio</strong>.
+                    </span>
+                  </li>
+                </ol>
+
+                <div className="text-[11px] font-bold text-slate-700 border-b border-slate-200/60 pb-1.5 pt-0.5">
+                  📱 No Celular (Android):
+                </div>
                 <ol className="space-y-2 text-xs text-slate-600 font-bold">
                   <li className="flex items-start gap-2">
                     <span className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] text-slate-700 flex-shrink-0">1</span>
                     <span className="mt-0.5">
-                      Toque nos <strong className="text-slate-900">3 pontinhos</strong> do Chrome no canto superior direito.
+                      Toque nos <strong className="text-slate-900">3 pontinhos</strong> do Chrome (no canto superior direito).
                     </span>
                   </li>
                   <li className="flex items-start gap-2">
