@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="96" height="96">
+  <defs>
+    <linearGradient id="gold-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#dfb76c" />
+      <stop offset="50%" stop-color="#b5895a" />
+      <stop offset="100%" stop-color="#8e6735" />
+    </linearGradient>
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#bg-grad)" />
+  <g transform="translate(146, 106)">
+    <rect x="0" y="0" width="44" height="300" rx="12" fill="url(#gold-grad)" />
+    <path d="M 30,0 C 120,0 150,5 150,75 C 150,140 120,145 30,145" fill="none" stroke="url(#gold-grad)" stroke-width="44" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M 30,145 C 140,145 180,150 180,225 C 180,295 130,300 30,300" fill="none" stroke="url(#gold-grad)" stroke-width="44" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M 125, 75 Q 130, 75 130, 70 Q 130, 75 135, 75 Q 130, 75 130, 80 Q 130, 75 125, 75" fill="#ffffff" />
+    <path d="M 152, 222 Q 155, 222 155, 219 Q 155, 222 158, 222 Q 155, 222 155, 225 Q 155, 222 152, 222" fill="#ffffff" />
+  </g>
+</svg>
