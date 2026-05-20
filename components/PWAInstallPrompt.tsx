@@ -5,32 +5,26 @@ import { X, Share, PlusSquare, ArrowDown, Sparkles } from 'lucide-react';
 export const PWAInstallPrompt: React.FC = () => {
   const { canInstall, isInstalled, isIOS, installApp } = usePWA();
   const [isVisible, setIsVisible] = useState(false);
+  const [showAndroidManual, setShowAndroidManual] = useState(false);
 
   useEffect(() => {
-    // Avoid showing prompt in native/standalone mode or if already installed
-    if (isInstalled) return;
+    // Detect "already installed" or standalone mode
+    const isStandalone = typeof window !== 'undefined' && (
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (navigator as any).standalone === true
+    );
+    if (isInstalled || isStandalone) return;
 
-    // Check if user dismissed the prompt temporarily (7 days check)
-    const dismissUntil = localStorage.getItem('pwa_prompt_dismissed_until');
-    if (dismissUntil && Date.now() < parseInt(dismissUntil, 10)) {
-      return;
-    }
-
-    // Show prompt if the app is installable or if it is an iOS Safari browser
-    if (canInstall || isIOS) {
-      // Delay slightly for better UX
-      const timer = setTimeout(() => {
-        setIsVisible(true);
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [canInstall, isInstalled, isIOS]);
+    // Show prompt automatically after 3 seconds on every visit
+    const timer = setTimeout(() => {
+      setIsVisible(true);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [isInstalled]);
 
   const handleDismiss = () => {
     setIsVisible(false);
-    // Dismiss and hide for 7 days
-    const nextShowTime = Date.now() + 7 * 24 * 60 * 60 * 1000;
-    localStorage.setItem('pwa_prompt_dismissed_until', nextShowTime.toString());
+    setShowAndroidManual(false);
   };
 
   const handleInstall = async () => {
@@ -39,6 +33,8 @@ export const PWAInstallPrompt: React.FC = () => {
       if (success) {
         setIsVisible(false);
       }
+    } else {
+      setShowAndroidManual(true);
     }
   };
 
@@ -99,9 +95,30 @@ export const PWAInstallPrompt: React.FC = () => {
           </div>
         ) : null}
 
+        {showAndroidManual && !isIOS ? (
+          /* Android / Chrome Manual Install Instruction UI */
+          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-3 mb-6 animate-in fade-in duration-300">
+            <p className="text-[10px] font-black text-[#b5895a] uppercase tracking-widest">Como instalar manualmente:</p>
+            <ol className="space-y-2.5 text-xs text-slate-600 font-bold">
+              <li className="flex items-start gap-2.5">
+                <span className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] text-slate-700 flex-shrink-0">1</span>
+                <span>
+                  Toque nos <strong className="text-slate-900">3 pontinhos</strong> do Chrome (no canto superior direito).
+                </span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] text-slate-700 flex-shrink-0">2</span>
+                <span>
+                  Selecione a opção <strong className="text-slate-900">Adicionar à tela inicial</strong> ou <strong className="text-slate-900">Instalar aplicativo</strong>.
+                </span>
+              </li>
+            </ol>
+          </div>
+        ) : null}
+
         {/* Actions Buttons */}
         <div className="flex items-center gap-3">
-          {canInstall && (
+          {!isIOS && (
             <button
               onClick={handleInstall}
               className="flex-1 bg-[#b5895a] hover:bg-[#a47a4d] text-white py-3.5 px-6 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-[#b5895a]/10 active:scale-95 flex items-center justify-center gap-2"
@@ -111,7 +128,7 @@ export const PWAInstallPrompt: React.FC = () => {
           )}
           <button
             onClick={handleDismiss}
-            className={`py-3.5 px-5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all text-slate-400 hover:text-slate-600 hover:bg-slate-50 ${!canInstall ? 'w-full text-center' : ''}`}
+            className={`py-3.5 px-5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all text-slate-400 hover:text-slate-600 hover:bg-slate-50 ${isIOS ? 'w-full text-center' : 'flex-1 text-center'}`}
           >
             Agora não
           </button>
