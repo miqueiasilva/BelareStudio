@@ -1,6 +1,7 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { HashRouter } from 'react-router-dom';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import { StudioProvider } from './contexts/StudioContext';
@@ -15,7 +16,9 @@ root.render(
   <React.StrictMode>
     <ErrorBoundary>
       <StudioProvider>
-        <App />
+        <HashRouter>
+          <App />
+        </HashRouter>
       </StudioProvider>
     </ErrorBoundary>
   </React.StrictMode>

@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { usePWA } from '../hooks/usePWA';
 import { X, Share, PlusSquare, ArrowDown, Sparkles } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { useLocation } from 'react-router-dom';
 
 export const PWAInstallPrompt: React.FC = () => {
   const { canInstall, isInstalled, isIOS, installApp } = usePWA();
   const [isVisible, setIsVisible] = useState(false);
   const [showAndroidManual, setShowAndroidManual] = useState(false);
+  const location = useLocation();
 
   useEffect(() => {
     // Detect "already installed" or standalone mode
@@ -42,6 +44,48 @@ export const PWAInstallPrompt: React.FC = () => {
       });
     }
   };
+
+  // Condition check: only show on "/" (landing page) or "#login" / "/login"
+  const path = (location.pathname || '').toLowerCase();
+  const hash = (location.hash || window.location.hash || '').toLowerCase();
+  
+  const isInternalRoute = 
+    path.includes('/dashboard') || 
+    path.includes('/atendimentos') || 
+    path.includes('/clientes') || 
+    path.includes('/financeiro') || 
+    path.includes('/vendas') || 
+    path.includes('/caixa') || 
+    path.includes('/agenda') || 
+    path.includes('/comandas') || 
+    path.includes('/relatorios') || 
+    path.includes('/produtos') || 
+    path.includes('/servicos') || 
+    path.includes('/equipe') || 
+    path.includes('/configuracoes') || 
+    path.includes('/remuneracoes') || 
+    path.includes('/reset-password') || 
+    path.includes('/public-preview') ||
+    hash.includes('dashboard') ||
+    hash.includes('atendimentos') ||
+    hash.includes('clientes') ||
+    hash.includes('financeiro') ||
+    hash.includes('vendas') ||
+    hash.includes('caixa') ||
+    hash.includes('agenda') ||
+    hash.includes('comandas') ||
+    hash.includes('relatorios') ||
+    hash.includes('produtos') ||
+    hash.includes('servicos') ||
+    hash.includes('equipe') ||
+    hash.includes('configuracoes') ||
+    hash.includes('remuneracoes');
+
+  const isAllowedPath = path === '/' || path === '/login' || hash === '#login' || hash === '#/login';
+
+  if (isInternalRoute || !isAllowedPath) {
+    return null;
+  }
 
   if (!isVisible) return null;
 
