@@ -3,7 +3,7 @@ import { usePWA } from '../hooks/usePWA';
 import { X, Share, PlusSquare, ArrowDown, Sparkles } from 'lucide-react';
 
 export const PWAInstallPrompt: React.FC = () => {
-  const { isInstallable, isInstalled, isIOS, installApp } = usePWA();
+  const { canInstall, isInstalled, isIOS, installApp } = usePWA();
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -17,14 +17,14 @@ export const PWAInstallPrompt: React.FC = () => {
     }
 
     // Show prompt if the app is installable or if it is an iOS Safari browser
-    if (isInstallable || isIOS) {
+    if (canInstall || isIOS) {
       // Delay slightly for better UX
       const timer = setTimeout(() => {
         setIsVisible(true);
       }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [isInstallable, isInstalled, isIOS]);
+  }, [canInstall, isInstalled, isIOS]);
 
   const handleDismiss = () => {
     setIsVisible(false);
@@ -34,7 +34,7 @@ export const PWAInstallPrompt: React.FC = () => {
   };
 
   const handleInstall = async () => {
-    if (isInstallable) {
+    if (canInstall) {
       const success = await installApp();
       if (success) {
         setIsVisible(false);
@@ -101,7 +101,7 @@ export const PWAInstallPrompt: React.FC = () => {
 
         {/* Actions Buttons */}
         <div className="flex items-center gap-3">
-          {isInstallable && (
+          {canInstall && (
             <button
               onClick={handleInstall}
               className="flex-1 bg-[#b5895a] hover:bg-[#a47a4d] text-white py-3.5 px-6 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-[#b5895a]/10 active:scale-95 flex items-center justify-center gap-2"
@@ -111,7 +111,7 @@ export const PWAInstallPrompt: React.FC = () => {
           )}
           <button
             onClick={handleDismiss}
-            className={`py-3.5 px-5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all text-slate-400 hover:text-slate-600 hover:bg-slate-50 ${!isInstallable ? 'w-full text-center' : ''}`}
+            className={`py-3.5 px-5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all text-slate-400 hover:text-slate-600 hover:bg-slate-50 ${!canInstall ? 'w-full text-center' : ''}`}
           >
             Agora não
           </button>

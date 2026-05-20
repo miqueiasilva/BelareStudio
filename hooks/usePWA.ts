@@ -12,6 +12,7 @@ export interface BeforeInstallPromptEvent extends Event {
 export function usePWA() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallable, setIsInstallable] = useState(false);
+  const canInstall = isInstallable;
   
   const [isInstalled, setIsInstalled] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -37,18 +38,17 @@ export function usePWA() {
   });
 
   useEffect(() => {
-    // 3. Handle beforeinstallprompt (Android / Desktop Chrome)
-    const handleBeforeInstallPrompt = (e: Event) => {
-      // Prevent Chrome 67 and earlier from automatically showing the prompt
+    const handler = (e: Event) => {
       e.preventDefault();
-      // Stash the event so it can be triggered later
       setDeferredPrompt(e as BeforeInstallPromptEvent);
       setIsInstallable(true);
     };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
-    // 4. Handle appinstalled event
+  useEffect(() => {
+    // Handle appinstalled event
     const handleAppInstalled = () => {
       setIsInstalled(true);
       setIsInstallable(false);
@@ -57,7 +57,7 @@ export function usePWA() {
 
     window.addEventListener('appinstalled', handleAppInstalled);
 
-    // 5. Detect offline status
+    // Detect offline status
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
 
@@ -66,7 +66,6 @@ export function usePWA() {
 
     // Cleanup listeners
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
@@ -104,6 +103,7 @@ export function usePWA() {
 
   return {
     isInstallable,
+    canInstall,
     isInstalled,
     isIOS,
     isOffline,

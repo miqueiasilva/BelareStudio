@@ -8,6 +8,7 @@ export const PWAUpdateToast: React.FC = () => {
     updateServiceWorker,
   } = useRegisterSW({
     onRegistered(r) {
+      console.log('[PWA] SW registrado');
       // Validate background updates periodically
       if (r) {
         setInterval(() => {
