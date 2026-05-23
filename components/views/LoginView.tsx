@@ -74,7 +74,9 @@ const LoginView: React.FC<LoginViewProps> = ({ onBack }) => {
         } catch (err: any) {
             console.error('[AUTH_DEBUG] Falha no processo de autenticação:', err);
             let message = err.message;
-            if (message === "Invalid login credentials") message = "E-mail ou senha incorretos.";
+            if (message === "Invalid login credentials") {
+                message = "E-mail ou senha incorretos. Dica: Se for seu primeiro acesso neste ambiente, clique em 'Cadastre-se' abaixo para criar seu usuário administrador!";
+            }
             if (message.includes("API key")) message = "Erro técnico: Chave de API não configurada corretamente.";
             setError(message);
         } finally {
