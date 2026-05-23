@@ -44,6 +44,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showOverlapConfirm, setShowOverlapConfirm] = useState(false);
+  const [showDayOffConfirm, setShowDayOffConfirm] = useState(false);
   const [clientEmail, setClientEmail] = useState('');
 
   const fetchServices = async () => {
@@ -172,6 +173,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     if (error) setError(null);
+    setShowOverlapConfirm(false);
+    setShowDayOffConfirm(false);
   };
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -183,6 +186,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
         newStart.setFullYear(year, month - 1, day);
         setFormData(prev => ({...prev, start: newStart}));
     }
+    setShowOverlapConfirm(false);
+    setShowDayOffConfirm(false);
   };
 
   const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -194,6 +199,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
         newStart.setHours(hour, minute);
         setFormData(prev => ({...prev, start: newStart}));
      }
+     setShowOverlapConfirm(false);
+     setShowDayOffConfirm(false);
   };
 
   const handleSave = async () => {
@@ -210,12 +217,13 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
     // Validar se o profissional trabalha neste dia
     const prof = formData.professional as LegacyProfessional;
-    if (prof.work_schedule) {
+    if (prof.work_schedule && !showDayOffConfirm) {
         const start = new Date(formData.start!);
         const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][start.getDay()];
         const config = prof.work_schedule[dayKey];
         if (!config || !config.active) {
-            return setError(`⚠️ Este profissional não atende neste dia de semana.`);
+            setShowDayOffConfirm(true);
+            return setError(`⚠️ Este profissional não atende neste dia de semana. Deseja abrir uma exceção e agendar mesmo assim?`);
         }
     }
 
@@ -339,6 +347,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     }
     setFormData(prev => ({ ...prev, professional }));
     setSelectionModal(null);
+    setShowOverlapConfirm(false);
+    setShowDayOffConfirm(false);
   };
   
   return (
@@ -398,7 +408,15 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
         <footer className="p-4 bg-white border-t flex justify-end items-center gap-3 flex-shrink-0">
           <button onClick={onClose} className="px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors" disabled={isSaving}>Cancelar</button>
           
-          {showOverlapConfirm ? (
+          {showDayOffConfirm ? (
+            <button 
+              onClick={handleSave} 
+              disabled={isSaving} 
+              className="px-6 py-2.5 text-sm font-bold bg-rose-500 text-white rounded-lg hover:bg-rose-600 shadow-lg shadow-rose-100 flex items-center gap-2 animate-bounce animate-duration-1000"
+            >
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar com Exceção'}
+            </button>
+          ) : showOverlapConfirm ? (
             <button 
               onClick={handleSave} 
               disabled={isSaving} 

@@ -1140,19 +1140,25 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         return labels;
     }, [timeSlot]);
 
-    const handleGridClick = async (e: React.MouseEvent, professional: LegacyProfessional, colDate?: Date) => {
+    const handleGridClick = async (e: React.MouseEvent, professional: LegacyProfessional, colDate?: Date, bypassScheduleCheck = false) => {
         const rect = e.currentTarget.getBoundingClientRect();
         const minutes = ((e.clientY - rect.top) / (SLOT_PX_HEIGHT / timeSlot));
         const targetDate = new Date(colDate || currentDate);
         targetDate.setHours(Math.floor((START_HOUR * 60 + minutes) / 60), Math.round((START_HOUR * 60 + minutes) % 60 / 15) * 15, 0, 0);
         
         // Verificar se o profissional atende neste dia
-        if (professional?.work_schedule) {
+        if (professional?.work_schedule && !bypassScheduleCheck) {
             const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][targetDate.getDay()];
             const config = professional.work_schedule[dayKey];
             if (!config || !config.active) {
-                setToast({ message: `⚠️ Este profissional não atende neste dia.`, type: 'warning' });
-                return;
+                const isConfirmed = await confirm({
+                    title: 'Abrir Exceção de Agenda',
+                    message: `${professional.name} não atende aos ${['domingos', 'segundas', 'terças', 'quartas', 'quintas', 'sextas', 'sábados'][targetDate.getDay()]}. Deseja abrir uma exceção e realizar o agendamento mesmo assim?`,
+                    confirmText: 'Sim, Agendar',
+                    cancelText: 'Voltar',
+                    type: 'warning'
+                });
+                if (!isConfirmed) return;
             }
         }
 
@@ -1330,14 +1336,24 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                         return (
                                             <div 
                                                 key="closed-overlay"
-                                                className="absolute inset-0 z-10 bg-slate-100/50 flex flex-col items-center justify-center cursor-not-allowed"
-                                                onClick={(e) => {
+                                                className="absolute inset-0 z-10 bg-slate-100/40 hover:bg-slate-100/20 flex flex-col items-center justify-center cursor-pointer transition-all group/closed !m-0"
+                                                onClick={async (e) => {
                                                     e.stopPropagation();
-                                                    setToast({ message: `⚠️ Este profissional não atende aos ${['domingos', 'segundas', 'terças', 'quartas', 'quintas', 'sextas', 'sábados'][colDate.getDay()]}.`, type: 'warning' });
+                                                    const isConfirmed = await confirm({
+                                                        title: 'Abrir Exceção de Agenda',
+                                                        message: `${prof.name} não atende aos ${['domingos', 'segundas', 'terças', 'quartas', 'quintas', 'sextas', 'sábados'][colDate.getDay()]}. Deseja abrir uma exceção e realizar um agendamento nesta data?`,
+                                                        confirmText: 'Sim, Agendar',
+                                                        cancelText: 'Voltar',
+                                                        type: 'warning'
+                                                    });
+                                                    if (isConfirmed) {
+                                                        handleGridClick(e, prof, colDate, true);
+                                                    }
                                                 }}
                                             >
-                                                <div className="bg-white/90 px-4 py-2 rounded-full shadow-sm border border-slate-200 flex items-center gap-2">
-                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Não Atende</span>
+                                                <div className="bg-white/95 px-4 py-2.5 rounded-2xl shadow-md border border-slate-200/80 flex flex-col items-center gap-1 group-hover/closed:scale-105 group-hover/closed:border-orange-200 transition-all">
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Não Atende</span>
+                                                    <span className="text-[8px] font-black text-orange-500 uppercase tracking-tighter leading-none mt-0.5">Abrir Exceção</span>
                                                 </div>
                                             </div>
                                         );
