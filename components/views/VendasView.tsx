@@ -86,6 +86,7 @@ const VendasView: React.FC<VendasViewProps> = () => {
     const [dbAppointments, setDbAppointments] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isFinishing, setIsFinishing] = useState(false);
+    const [showCartMobile, setShowCartMobile] = useState(false);
 
     const fetchPOSData = async () => {
         if (!activeStudioId) return;
@@ -133,6 +134,7 @@ const VendasView: React.FC<VendasViewProps> = () => {
         setPaymentMethod('pix');
         setLastTransaction(null);
         setSearchTerm('');
+        setShowCartMobile(false);
         setToast({ message: "Ambiente pronto para nova venda! 🧼", type: 'info' });
     };
 
@@ -160,6 +162,7 @@ const VendasView: React.FC<VendasViewProps> = () => {
             }
             return [...prev, { uuid: Math.random().toString(36).substring(2, 11), id: itemId, name: itemName, price: itemPrice, type, quantity: 1 }];
         });
+        toast.success(`${item.nome || item.name || item.client_name || 'Item'} adicionado!`);
     };
 
     const updateQuantity = (index: number, delta: number) => {
@@ -280,7 +283,7 @@ const VendasView: React.FC<VendasViewProps> = () => {
     ];
 
     return (
-        <div className="h-full flex flex-col md:flex-row bg-slate-50 overflow-hidden relative font-sans text-left">
+        <div className="h-full flex flex-col md:flex-row bg-slate-50 overflow-hidden relative font-sans text-left pb-20 md:pb-0">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
             {lastTransaction && (
@@ -291,12 +294,19 @@ const VendasView: React.FC<VendasViewProps> = () => {
                 />
             )}
 
-            <div className="flex-1 flex flex-col min-w-0 border-r border-slate-200">
+            {/* Catalog Column */}
+            <div className="flex-1 flex flex-col min-w-0 border-r border-slate-200 h-full overflow-hidden">
                 <div className="bg-white p-4 border-b border-slate-200 space-y-4">
-                    <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
-                        <button onClick={() => setActiveTab('servicos')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'servicos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}><Scissors size={16} /> Serviços</button>
-                        <button onClick={() => setActiveTab('produtos')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'produtos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}><ShoppingCart size={16} /> Produtos</button>
-                        <button onClick={() => setActiveTab('agenda')} className={`flex-1 py-2 rounded-lg font-black text-xs uppercase transition-all ${activeTab === 'agenda' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}><Calendar size={16} /> Agenda</button>
+                    <div className="flex gap-1.5 p-1 bg-slate-100 rounded-xl overflow-x-auto custom-scrollbar">
+                        <button onClick={() => setActiveTab('servicos')} className={`flex-1 py-2.5 px-3 rounded-lg font-black text-xs uppercase transition-all flex items-center justify-center gap-1.5 shrink-0 ${activeTab === 'servicos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}>
+                            <Scissors size={14} /> Serviços
+                        </button>
+                        <button onClick={() => setActiveTab('produtos')} className={`flex-1 py-2.5 px-3 rounded-lg font-black text-xs uppercase transition-all flex items-center justify-center gap-1.5 shrink-0 ${activeTab === 'produtos' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}>
+                            <ShoppingCart size={14} /> Produtos
+                        </button>
+                        <button onClick={() => setActiveTab('agenda')} className={`flex-1 py-2.5 px-3 rounded-lg font-black text-xs uppercase transition-all flex items-center justify-center gap-1.5 shrink-0 ${activeTab === 'agenda' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}>
+                            <Calendar size={14} /> Agenda
+                        </button>
                     </div>
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
@@ -304,13 +314,13 @@ const VendasView: React.FC<VendasViewProps> = () => {
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 bg-slate-50">
+                <div className="flex-1 overflow-y-auto p-4 bg-slate-50 pb-28 md:pb-6">
                     {isLoading ? (
                         <div className="h-full flex flex-col items-center justify-center text-slate-400"><Loader2 className="animate-spin text-orange-500 mb-2" /><p className="text-[10px] font-black uppercase">Sincronizando...</p></div>
                     ) : (
-                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                             {filteredItems.map((item: any) => (
-                                <button key={item.id} onClick={() => addToCart(item, activeTab === 'servicos' ? 'servico' : 'produto')} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:border-orange-400 hover:shadow-md transition-all text-left flex flex-col h-full group">
+                                <button key={item.id} onClick={() => addToCart(item, activeTab === 'servicos' ? 'servico' : 'produto')} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:border-orange-400 hover:shadow-md transition-all text-left flex flex-col h-full group active:scale-98">
                                     <div className="flex-1">
                                         <span className="text-[9px] uppercase font-black text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">{item.categoria || activeTab}</span>
                                         <h4 className="font-black text-slate-800 text-sm leading-tight mt-2 line-clamp-2">{item.nome || item.name || item.client_name}</h4>
@@ -321,55 +331,99 @@ const VendasView: React.FC<VendasViewProps> = () => {
                                     </div>
                                 </button>
                             ))}
+                            {filteredItems.length === 0 && (
+                                <div className="col-span-full py-16 text-center text-slate-400">
+                                    <p className="text-xs uppercase font-black">Nenhum item localizado</p>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
             </div>
 
-            <div className="w-full md:w-[420px] bg-white flex flex-col shadow-2xl z-10">
+            {/* Cart & Checkout Column (Responsive overlay on mobile) */}
+            <div className={`
+                ${showCartMobile ? 'fixed inset-0 z-[200] flex animate-in slide-in-from-right duration-300' : 'hidden'} 
+                md:flex md:relative md:w-[420px] bg-white flex-col h-full shadow-2xl z-10
+            `}>
                 <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                    <div><h3 className="font-black text-slate-800 uppercase tracking-tighter text-lg flex items-center gap-2"><ShoppingCart className="text-orange-500" size={22} /> Carrinho</h3><p className="text-[10px] text-slate-400 font-bold uppercase">{cart.length} itens</p></div>
-                    {selectedClient && <div className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full font-black text-[10px] flex items-center gap-2">{selectedClient.nome} <X size={12} className="cursor-pointer" onClick={() => setSelectedClient(null)}/></div>}
+                    <div>
+                        <h3 className="font-black text-slate-800 uppercase tracking-tighter text-lg flex items-center gap-2">
+                            <ShoppingCart className="text-orange-500" size={22} /> Carrinho
+                        </h3>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">{cart.length} itens</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {selectedClient && (
+                            <div className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full font-black text-[10px] flex items-center gap-2">
+                                {selectedClient.nome} 
+                                <X size={12} className="cursor-pointer" onClick={() => setSelectedClient(null)}/>
+                            </div>
+                        )}
+                        <button 
+                            onClick={() => setShowCartMobile(false)} 
+                            className="md:hidden p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl transition-all"
+                            title="Voltar ao Catálogo"
+                        >
+                            <X size={20} />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 space-y-4">
                     {cart.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-60"><ShoppingCart size={40} /><p className="font-black text-xs uppercase mt-4">Carrinho vazio</p></div>
+                        <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-60 py-12">
+                            <ShoppingCart size={40} />
+                            <p className="font-black text-xs uppercase mt-4">Carrinho vazio</p>
+                        </div>
                     ) : (
                         cart.map((item, index) => (
-                            <div key={item.uuid} className="flex items-center gap-4 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm animate-in slide-in-from-right-4">
-                                <div className="flex-1 min-w-0"><p className="font-black text-slate-800 text-sm truncate">{item.name}</p><p className="text-[10px] text-slate-400 font-bold">R$ {item.price.toFixed(2)}</p></div>
-                                <div className="flex items-center bg-slate-50 rounded-2xl p-1 border border-slate-100">
-                                    <button onClick={() => updateQuantity(index, -1)} className="p-2 text-slate-400 hover:text-rose-500">
-                                        <Plus size={14} className="rotate-45" />
-                                    </button>
-                                    <span className="w-8 text-center text-xs font-black text-slate-800">{item.quantity}</span>
-                                    <button onClick={() => updateQuantity(index, 1)} className="p-2 text-slate-400 hover:text-emerald-500"><Plus size={14} /></button>
+                            <div key={item.uuid} className="flex items-center gap-3 bg-white p-3.5 rounded-3xl border border-slate-100 shadow-sm animate-in slide-in-from-right-4">
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-black text-slate-800 text-sm truncate">{item.name}</p>
+                                    <p className="text-[10px] text-slate-400 font-bold">R$ {item.price.toFixed(2)}</p>
                                 </div>
-                                <button onClick={() => setCart(cart.filter((_, i) => i !== index))} className="p-2 text-slate-200 hover:text-rose-500"><Trash2 size={16} /></button>
+                                <div className="flex items-center bg-slate-50 rounded-2xl p-1 border border-slate-100">
+                                    <button onClick={() => updateQuantity(index, -1)} className="p-1.5 text-slate-400 hover:text-rose-500">
+                                        <Plus size={12} className="rotate-45" />
+                                    </button>
+                                    <span className="w-6 text-center text-xs font-black text-slate-800">{item.quantity}</span>
+                                    <button onClick={() => updateQuantity(index, 1)} className="p-1.5 text-slate-400 hover:text-emerald-500">
+                                        <Plus size={12} />
+                                    </button>
+                                </div>
+                                <button onClick={() => setCart(cart.filter((_, i) => i !== index))} className="p-2 text-slate-200 hover:text-rose-500 transition-colors">
+                                    <Trash2 size={16} />
+                                </button>
                             </div>
                         ))
                     )}
                 </div>
 
-                <div className="bg-slate-50/80 p-6 border-t border-slate-200 space-y-4">
-                    <div className="flex justify-between text-xs font-bold text-slate-500 uppercase tracking-widest"><span>Subtotal</span><span className="text-slate-800 font-black">R$ {subtotal.toFixed(2)}</span></div>
-                    <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase tracking-widest"><span>Desconto</span><input type="number" value={discount} onChange={e => setDiscount(e.target.value)} className="w-24 px-2 py-1 text-right border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-100" placeholder="0,00" /></div>
-                    <div className="flex justify-between items-center border-t pt-4">
+                <div className="bg-slate-50/90 p-5 border-t border-slate-200 space-y-4">
+                    <div className="flex justify-between text-xs font-bold text-slate-500 uppercase tracking-widest">
+                        <span>Subtotal</span>
+                        <span className="text-slate-800 font-black">R$ {subtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase tracking-widest">
+                        <span>Desconto</span>
+                        <input type="number" value={discount} onChange={e => setDiscount(e.target.value)} className="w-24 px-3 py-1.5 text-right border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-100 bg-white font-extrabold text-slate-700" placeholder="0,00" />
+                    </div>
+                    <div className="flex justify-between items-center border-t border-slate-200/60 pt-4">
                         <span className="text-xs font-black uppercase text-slate-400">Total</span>
                         <span className="text-3xl font-black text-slate-800">R$ {total.toFixed(2)}</span>
                     </div>
 
                     <div className="grid grid-cols-4 gap-2">
                         {paymentMethodsConfig.map(pm => (
-                            <button key={pm.id} onClick={() => setPaymentMethod(pm.id as PaymentMethod)} className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${paymentMethod === pm.id ? 'border-orange-500 bg-orange-50/50 shadow-md ring-4 ring-orange-50' : 'bg-white border-slate-100 text-slate-400'}`}>
-                                <pm.icon size={20} className="mb-1" />
-                                <span className="text-[8px] font-black uppercase">{pm.label}</span>
+                            <button key={pm.id} onClick={() => setPaymentMethod(pm.id as PaymentMethod)} className={`flex flex-col items-center justify-center p-2.5 rounded-2xl border-2 transition-all ${paymentMethod === pm.id ? 'border-orange-500 bg-orange-50/50 shadow-md ring-4 ring-orange-100' : 'bg-white border-slate-100 text-slate-400'}`}>
+                                <pm.icon size={18} className="mb-1" />
+                                <span className="text-[8px] font-black uppercase tracking-tighter leading-none">{pm.label}</span>
                             </button>
                         ))}
                     </div>
 
-                    <div className="flex gap-3 pt-2">
+                    <div className="flex gap-2.5 pt-1">
                         <button onClick={async () => { 
                             const isConfirmed = await confirm({
                                 title: 'Limpar Carrinho',
@@ -379,13 +433,39 @@ const VendasView: React.FC<VendasViewProps> = () => {
                                 type: 'danger'
                             });
                             if(isConfirmed) resetSaleState(); 
-                        }} className="p-4 bg-white border border-slate-200 text-slate-300 hover:text-rose-500 rounded-2xl transition-all"><Eraser size={24} /></button>
-                        <button onClick={handleFinishSale} disabled={cart.length === 0 || isFinishing} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-black py-4 rounded-2xl shadow-xl flex items-center justify-center gap-3 text-lg uppercase transition-all disabled:opacity-50">
-                            {isFinishing ? <Loader2 className="animate-spin" /> : <><CheckCircle size={24} /> Finalizar Venda</>}
+                        }} className="p-3 bg-white border border-slate-200 text-slate-300 hover:text-rose-500 hover:border-rose-200 rounded-2xl transition-all shadow-sm">
+                            <Eraser size={22} />
+                        </button>
+                        <button onClick={handleFinishSale} disabled={cart.length === 0 || isFinishing} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-black py-4 rounded-2xl shadow-xl flex items-center justify-center gap-2.5 text-base uppercase transition-all disabled:opacity-50">
+                            {isFinishing ? <Loader2 className="animate-spin" size={20} /> : <><CheckCircle size={20} /> Finalizar Venda</>}
                         </button>
                     </div>
                 </div>
             </div>
+
+            {/* Floating Mobile Bottom Action Bar */}
+            {cart.length > 0 && !showCartMobile && (
+                <div className="md:hidden fixed bottom-5 left-4 right-4 z-40 animate-in slide-in-from-bottom-6 duration-300">
+                    <button 
+                        onClick={() => setShowCartMobile(true)} 
+                        className="w-full bg-slate-900 border border-slate-800 text-white p-4 rounded-2xl flex items-center justify-between shadow-2xl font-black text-xs uppercase tracking-wider hover:scale-[1.02] active:scale-[0.98] transition-all"
+                    >
+                        <span className="flex items-center gap-2.5">
+                            <div className="relative">
+                                <ShoppingCart className="text-orange-400" size={20} />
+                                <span className="absolute -top-2 -right-2 bg-rose-500 text-white text-[9px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center border border-slate-900 shadow-sm">
+                                    {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                                </span>
+                            </div>
+                            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-[0.1em]">Ver Carrinho</span>
+                        </span>
+                        <span className="bg-orange-500 text-white px-3 py-1.5 rounded-xl font-black text-sm">
+                            R$ {total.toFixed(2)}
+                        </span>
+                    </button>
+                </div>
+            )}
+
             <ConfirmDialogComponent />
         </div>
     );
