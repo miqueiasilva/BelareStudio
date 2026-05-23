@@ -82,19 +82,51 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
           }
         }
 
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        let session = null;
+        let sessionError = null;
+        try {
+          const res = await supabase.auth.getSession();
+          session = res.data?.session;
+          sessionError = res.error;
+        } catch (e: any) {
+          console.error("[AUTH_DEBUG] Exceção ao obter sessão:", e);
+          sessionError = e;
+        }
         
         if (sessionError) {
-          console.warn("[AUTH_DEBUG] Erro na sessão inicial:", sessionError.message);
-          const msg = sessionError.message.toLowerCase();
+          console.warn("[AUTH_DEBUG] Erro na sessão inicial:", sessionError.message || sessionError);
+          const msg = String(sessionError.message || sessionError || "").toLowerCase();
           if (msg.includes("refresh_token_not_found") || 
-              msg.includes("refresh token not found") ||
+              msg.includes("refresh token") ||
               msg.includes("invalid refresh token") ||
-              msg.includes("invalid_grant")) {
-            console.log("[AUTH_DEBUG] Sessão corrompida detectada, limpando...");
-            await supabase.auth.signOut();
-            localStorage.clear();
-            sessionStorage.clear();
+              msg.includes("invalid-refresh-token") ||
+              msg.includes("invalid_grant") ||
+              msg.includes("not found")) {
+            console.log("[AUTH_DEBUG] Sessão corrompida detectada, limpando de forma agressiva...");
+            try {
+              await supabase.auth.signOut();
+            } catch (signOutErr) {
+              console.warn("[AUTH_DEBUG] Erro ao dar signOut:", signOutErr);
+            }
+            try {
+              for (let i = localStorage.length - 1; i >= 0; i--) {
+                const key = localStorage.key(i);
+                if (key && (key.includes('auth-token') || key.includes('sb-'))) {
+                  localStorage.removeItem(key);
+                }
+              }
+            } catch (e) {
+              console.error("[AUTH_DEBUG] Erro ao limpar keys de auth do localStorage:", e);
+            }
+            try {
+              localStorage.clear();
+              sessionStorage.clear();
+            } catch (e) {
+              console.warn(e);
+            }
+            if (isMounted.current) {
+              setUser(null);
+            }
           }
         }
 

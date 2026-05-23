@@ -232,6 +232,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const [templates, setTemplates] = useState<any[]>([]);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
     const [photos, setPhotos] = useState<any[]>([]);
+    const [clientAppointments, setClientAppointments] = useState<any[]>([]);
+    const [loadingAppointments, setLoadingAppointments] = useState(false);
 
     const [formData, setFormData] = useState<any>({
         nome: '',
@@ -295,6 +297,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 fetchPhotos();
                 fetchTemplates();
                 refreshClientData();
+                fetchClientAppointments();
             }
         }
     }, [client]);
@@ -553,6 +556,24 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
         if (data) setPhotos(data);
     };
 
+    const fetchClientAppointments = async () => {
+        if (!client.id) return;
+        setLoadingAppointments(true);
+        try {
+            const { data, error } = await supabase
+                .from('appointments')
+                .select('id, date, status, notes, professional_name, service_name, value')
+                .eq('client_id', client.id)
+                .order('date', { ascending: false });
+            if (error) throw error;
+            setClientAppointments(data || []);
+        } catch (err) {
+            console.error("Erro ao carregar agendamentos do cliente:", err);
+        } finally {
+            setLoadingAppointments(false);
+        }
+    };
+
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setFormData((prev: any) => ({ ...prev, [name]: value }));
@@ -771,6 +792,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 <button onClick={() => setActiveTab('geral')} className={`py-4 px-4 font-black text-xs uppercase tracking-widest border-b-2 transition-all ${activeTab === 'geral' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400'}`}>Dados</button>
                 <button onClick={() => setActiveTab('anamnese')} className={`py-4 px-4 font-black text-xs uppercase tracking-widest border-b-2 transition-all ${activeTab === 'anamnese' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400'}`}>Anamnese</button>
                 <button onClick={() => setActiveTab('fotos')} className={`py-4 px-4 font-black text-xs uppercase tracking-widest border-b-2 transition-all ${activeTab === 'fotos' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400'}`}>Galeria</button>
+                <button onClick={() => setActiveTab('historico')} className={`py-4 px-4 font-black text-xs uppercase tracking-widest border-b-2 transition-all ${activeTab === 'historico' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400'}`}>Histórico</button>
             </nav>
             <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/50">
                 <div className="max-w-5xl mx-auto space-y-6 pb-24">
@@ -983,6 +1005,121 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                     ))}
                                 </div>
                             )}
+                        </div>
+                    )}
+                    {activeTab === 'historico' && (
+                        <div className="space-y-6 animate-in fade-in duration-500">
+                            {/* KPI Cards */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                                <div className="bg-white p-5 rounded-[24px] border border-slate-200 shadow-sm flex items-center gap-4">
+                                    <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                                        <CheckCircle size={20} />
+                                    </div>
+                                    <div>
+                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Atendimentos Efetuados</p>
+                                        <p className="text-xl font-black text-slate-800">
+                                            {clientAppointments.filter(app => ['concluido', 'chegou'].includes(app.status)).length}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="bg-white p-5 rounded-[24px] border border-slate-200 shadow-sm flex items-center gap-4">
+                                    <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                                        <Calendar size={20} />
+                                    </div>
+                                    <div>
+                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Próxima Agenda</p>
+                                        <p className="text-xs font-bold text-slate-700 truncate max-w-[180px]">
+                                            {(() => {
+                                                const nextApp = [...clientAppointments]
+                                                    .reverse() // Do antigo pro novo pra achar o primeiro futuro
+                                                    .find(app => new Date(app.date) >= new Date() && app.status !== 'cancelado');
+                                                if (!nextApp) return "Nenhum horário marcado";
+                                                return `${format(new Date(nextApp.date), 'dd/MM/yy HH:mm')} - ${nextApp.service_name}`;
+                                            })()}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="bg-white p-5 rounded-[24px] border border-slate-200 shadow-sm flex items-center gap-4">
+                                    <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
+                                        <AlertCircle size={20} />
+                                    </div>
+                                    <div>
+                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Cancelados / Ausências</p>
+                                        <p className="text-xl font-black text-rose-600">
+                                            {clientAppointments.filter(app => ['cancelado', 'faltou'].includes(app.status)).length}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Appointments Timeline */}
+                            <Card title="Linha do Tempo de Atendimentos" icon={<History size={18} />}>
+                                {loadingAppointments ? (
+                                    <div className="flex justify-center items-center py-12 text-slate-400 gap-2">
+                                        <Loader2 className="animate-spin text-orange-500" size={20} />
+                                        <span className="text-xs font-black uppercase">Sincronizando histórico...</span>
+                                    </div>
+                                ) : clientAppointments.length === 0 ? (
+                                    <div className="py-16 text-center text-slate-400 italic text-sm">
+                                        Nenhum atendimento registrado no histórico até o momento.
+                                    </div>
+                                ) : (
+                                    <div className="relative border-l-2 border-slate-100 pl-6 ml-3 py-2 space-y-8">
+                                        {clientAppointments.map((app) => (
+                                            <div key={app.id} className="relative group text-left">
+                                                {/* Timeline Marker (Circle) */}
+                                                <div className={`absolute -left-[31px] top-1.5 w-4 h-4 rounded-full border-4 border-white shadow-sm transition-all group-hover:scale-125 ${
+                                                    app.status === 'concluido' ? 'bg-green-500' :
+                                                    app.status === 'cancelado' ? 'bg-rose-500' :
+                                                    app.status === 'faltou' ? 'bg-orange-500' :
+                                                    app.status === 'chegou' ? 'bg-blue-500' : 'bg-slate-400'
+                                                }`} />
+                                                
+                                                {/* Appointment Card */}
+                                                <div className="bg-slate-50/70 border border-slate-200/60 rounded-[20px] p-5 shadow-sm hover:shadow-md transition-shadow">
+                                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                                        <div>
+                                                            <span className="text-[10px] bg-white border border-slate-200 text-slate-400 px-2.5 py-1 rounded-lg font-mono font-black uppercase tracking-wider block sm:inline-block">
+                                                                {format(new Date(app.date), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: pt })}
+                                                            </span>
+                                                            <h4 className="font-black text-slate-800 text-base mt-2 flex items-center gap-2">
+                                                                {app.service_name}
+                                                                {app.value && (
+                                                                    <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                                                                        R$ {parseFloat(app.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                                    </span>
+                                                                )}
+                                                            </h4>
+                                                            <p className="text-xs text-slate-500 font-bold uppercase mt-1">
+                                                                Profissional: <span className="text-slate-600">{app.professional_name || 'Não informado'}</span>
+                                                            </p>
+                                                        </div>
+                                                        <div>
+                                                            <span className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider border ${
+                                                                app.status === 'concluido' ? 'bg-green-50 border-green-200 text-green-700' :
+                                                                app.status === 'cancelado' ? 'bg-rose-50 border-rose-200 text-rose-700' :
+                                                                app.status === 'faltou' ? 'bg-orange-50 border-orange-200 text-orange-700' :
+                                                                app.status === 'chegou' ? 'bg-blue-50 border-blue-200 text-blue-700' :
+                                                                'bg-slate-50 border-slate-200 text-slate-600'
+                                                            }`}>
+                                                                {app.status}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    {/* Internal Notes/Cancellation motive */}
+                                                    {app.notes && (
+                                                        <div className="mt-4 p-3 bg-white border border-slate-100 rounded-xl text-xs text-slate-600 font-medium">
+                                                            <p className="text-[8px] font-black uppercase text-slate-400 tracking-wider mb-1">Anotações do Horário</p>
+                                                            <p className="whitespace-pre-line leading-relaxed">{app.notes}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </Card>
                         </div>
                     )}
                 </div>

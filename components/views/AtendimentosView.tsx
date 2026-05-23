@@ -252,6 +252,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const isMounted = useRef(true);
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
     const gridScrollRef = useRef<HTMLDivElement>(null); 
+    const dateInputRef = useRef<HTMLInputElement>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastRequestId = useRef(0);
 
@@ -1144,7 +1145,28 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         <button onClick={() => handleDateChange(-1)} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronLeft size={20} /></button>
                         <button onClick={() => handleDateChange(1)} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronRight size={20} /></button>
                     </div>
-                    <span className="text-orange-500 font-bold text-lg capitalize tracking-tight">{format(currentDate, "EEE, dd 'de' MMMM", { locale: pt })}</span>
+                    <div className="relative">
+                        <button 
+                            onClick={() => dateInputRef.current?.showPicker()} 
+                            className="text-orange-500 hover:text-orange-600 font-bold text-lg capitalize tracking-tight flex items-center gap-2 hover:bg-orange-50 px-3.5 py-1.5 rounded-2xl transition-all active:scale-95 cursor-pointer select-none border border-transparent hover:border-orange-100 shadow-sm md:shadow-none bg-white md:bg-transparent"
+                            title="Escolher outra data"
+                        >
+                            <CalendarIcon size={18} className="text-orange-400" />
+                            <span>{format(currentDate, "EEE, dd 'de' MMMM", { locale: pt })}</span>
+                        </button>
+                        <input
+                            type="date"
+                            ref={dateInputRef}
+                            className="absolute opacity-0 pointer-events-none w-0 h-0"
+                            value={format(currentDate, 'yyyy-MM-dd')}
+                            onChange={(e) => {
+                                if (e.target.value) {
+                                    const [year, month, day] = e.target.value.split('-').map(Number);
+                                    setCurrentDate(new Date(year, month - 1, day));
+                                }
+                            }}
+                        />
+                    </div>
                 </div>
             </header>
 

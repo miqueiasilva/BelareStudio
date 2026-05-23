@@ -48,7 +48,13 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
     setIsSyncing(true);
 
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
+      let sessionData = null;
+      try {
+        const { data } = await supabase.auth.getSession();
+        sessionData = data;
+      } catch (e) {
+        console.warn("[StudioProvider] Exceção ao sincronizar sessão:", e);
+      }
       const user = sessionData?.session?.user;
       
       if (!user) {
