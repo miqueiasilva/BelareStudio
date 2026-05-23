@@ -250,9 +250,18 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
           <div>
             <h3 className="font-black text-xl text-slate-800 leading-tight">{appointment.client?.nome || 'Horário Bloqueado'}</h3>
             {appointment.services && appointment.services.length > 0 ? (
-              <div className="mt-2 space-y-1">
+              <div className="mt-3 space-y-2 max-h-36 overflow-y-auto pr-1">
+                <p className="text-[9px] font-extrabold uppercase text-slate-400 tracking-wider">Procedimentos Marcados:</p>
                 {appointment.services.map((s, idx) => (
-                  <p key={idx} className="text-[10px] font-black text-orange-500 uppercase tracking-widest leading-none">• {s.name}</p>
+                  <div key={idx} className="flex justify-between items-center bg-slate-50 border border-slate-100 p-2.5 rounded-2xl shadow-sm">
+                    <div className="min-w-0 pr-2">
+                      <p className="text-xs font-bold text-slate-700 truncate leading-tight">{s.name}</p>
+                      <p className="text-[9px] text-slate-400 font-semibold mt-0.5">{s.duration} min</p>
+                    </div>
+                    <span className="text-xs font-black text-slate-600 flex-shrink-0 bg-slate-100 px-2 py-1 rounded-lg">
+                      R$ {Number(s.price).toFixed(2)}
+                    </span>
+                  </div>
                 ))}
               </div>
             ) : (
@@ -271,7 +280,10 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
             </div>
             <div className="flex items-center gap-3 text-xs font-bold text-slate-600">
               <div className="p-2 bg-emerald-50 rounded-lg"><DollarSign size={14} className="text-emerald-500" /></div>
-              <span className="text-emerald-600 font-black text-lg">R$ {appointment.service.price.toFixed(2)}</span>
+              <div>
+                <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider leading-none mb-0.5">Valor Total</p>
+                <span className="text-emerald-600 font-black text-lg">R$ {appointment.service.price.toFixed(2)}</span>
+              </div>
             </div>
           </div>
 

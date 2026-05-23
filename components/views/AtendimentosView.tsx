@@ -112,6 +112,92 @@ const getAppointmentPosition = (start: Date, end: Date, timeSlot: number) => {
     };
 };
 
+const computeOverlappingLayouts = (appsInCol: LegacyAppointment[]) => {
+    // Sort by start time, then by duration/end time
+    const sorted = [...appsInCol].sort((a, b) => {
+        const startDiff = a.start.getTime() - b.start.getTime();
+        if (startDiff !== 0) return startDiff;
+        return (b.end.getTime() - b.start.getTime()) - (a.end.getTime() - a.start.getTime()); // longer duration first
+    });
+
+    interface LayoutGroup {
+        maxEnd: number;
+        apps: LegacyAppointment[];
+    }
+
+    const groups: LayoutGroup[] = [];
+
+    // Group into overlapping clusters
+    for (const app of sorted) {
+        let placed = false;
+        // Check if this app overlaps with any existing group
+        for (const g of groups) {
+            // If the start time of the app is before the maximum end time of the group, it overlaps
+            if (app.start.getTime() < g.maxEnd) {
+                g.apps.push(app);
+                if (app.end.getTime() > g.maxEnd) {
+                    g.maxEnd = app.end.getTime();
+                }
+                placed = true;
+                break;
+            }
+        }
+        if (!placed) {
+            groups.push({
+                maxEnd: app.end.getTime(),
+                apps: [app]
+            });
+        }
+    }
+
+    const layoutMap = new Map<number | string, { width: string; left: string; zIndex: number; isOverlapping: boolean }>();
+
+    for (const g of groups) {
+        const columns: LegacyAppointment[][] = [];
+        
+        for (const app of g.apps) {
+            let colIndex = 0;
+            while (true) {
+                if (!columns[colIndex]) {
+                    columns[colIndex] = [];
+                }
+                
+                // Check if app overlaps with any app already in this column
+                const hasOverlap = columns[colIndex].some(other => {
+                    return app.start.getTime() < other.end.getTime() && other.start.getTime() < app.end.getTime();
+                });
+                
+                if (!hasOverlap) {
+                    columns[colIndex].push(app);
+                    break;
+                }
+                colIndex++;
+            }
+        }
+
+        const maxCols = columns.length;
+        for (let c = 0; c < maxCols; c++) {
+            for (const app of columns[c]) {
+                const widthVal = 100 / maxCols;
+                const leftVal = c * widthVal;
+                const isOverlapping = maxCols > 1;
+                // Add minor padding to overlapping cards to allow click/view with flawless styling
+                const widthStr = isOverlapping ? `calc(${widthVal}% - 2px)` : '100%';
+                const leftStr = isOverlapping ? `calc(${leftVal}% + 1px)` : '0px';
+
+                layoutMap.set(app.id, {
+                    width: widthStr,
+                    left: leftStr,
+                    zIndex: 20 + c,
+                    isOverlapping
+                });
+            }
+        }
+    }
+
+    return layoutMap;
+};
+
 const TimelineIndicator = ({ timeSlot }: { timeSlot: number }) => {
     const [topPosition, setTopPosition] = useState(0);
     useEffect(() => {
@@ -1299,18 +1385,22 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                     return null;
                                 })()}
 
-                                {filteredAppointments
-                                    .filter(app => {
+                                {(() => {
+                                    const colApps = filteredAppointments.filter(app => {
                                         if (periodType === 'Semana') return isSameDay(app.start, col.data as Date);
                                         if (app.type === 'block' && (app.professional.id === null || String(app.professional.id) === 'null')) {
                                             return true;
                                         }
                                         return String(app.professional.id) === String(col.id); 
-                                    })
-                                    .map(app => {
+                                    });
+
+                                    const layoutMap = computeOverlappingLayouts(colApps);
+
+                                    return colApps.map(app => {
                                         const durationMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
                                         const isShort = durationMinutes <= 25;
                                         const cardColor = app.type === 'block' ? '#f87171' : (app.service.color || '#3b82f6');
+                                        const layout = layoutMap.get(app.id) || { width: '100%', left: '0px', zIndex: 20, isOverlapping: false };
                                         
                                         return (
                                             <div 
@@ -1324,14 +1414,24 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                         setModalState({ type: 'block', data: app });
                                                     }
                                                 }} 
-                                                className="rounded-none shadow-sm border-l-4 p-1.5 cursor-pointer hover:brightness-95 transition-all overflow-hidden flex flex-col group/card !m-0 border-r border-b border-slate-200/50"
+                                                className={`rounded-none shadow-sm border-l-4 p-1.5 cursor-pointer hover:brightness-95 hover:shadow-md transition-all overflow-hidden flex flex-col group/card !m-0 border-r border-b border-slate-200/50 ${
+                                                    layout.isOverlapping ? 'hover:scale-[1.01] hover:z-50' : ''
+                                                }`}
                                                 style={{ 
                                                     ...getAppointmentPosition(app.start, app.end, timeSlot),
+                                                    width: layout.width,
+                                                    left: layout.left,
+                                                    zIndex: layout.zIndex,
                                                     borderLeftColor: cardColor,
                                                     backgroundColor: `${cardColor}15`
                                                 }}
                                             >
-                                                <div className="absolute top-1 right-1 flex gap-0.5 z-10">
+                                                <div className="absolute top-1 right-1 flex items-center gap-0.5 z-10">
+                                                    {layout.isOverlapping && !isShort && (
+                                                        <span className="bg-orange-100 text-[8px] font-black text-orange-600 px-1 py-0.5 rounded border border-orange-200 mr-1 scale-90 uppercase tracking-widest leading-none">
+                                                            Encaixe
+                                                        </span>
+                                                    )}
                                                     {(app.origin === 'online' || app.origin === 'link') && (
                                                         <Globe size={10} className="text-orange-500 animate-pulse" strokeWidth={3} title="Agendamento Online" />
                                                     )}
@@ -1350,9 +1450,24 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                         </p>
                                                     </div>
                                                     {!isShort && (
-                                                        <p className="text-[10px] text-slate-500 truncate leading-none mt-auto opacity-80">
-                                                            {app.service.name}
-                                                        </p>
+                                                        <div className="mt-auto opacity-90 leading-none">
+                                                            {app.services && app.services.length > 1 ? (
+                                                                <div className="flex flex-col gap-0.5 mt-1">
+                                                                    <div className="flex items-center gap-1">
+                                                                        <span className="inline-block px-1 py-0.5 bg-orange-100 text-[8px] font-extrabold text-orange-600 rounded border border-orange-200 uppercase tracking-widest leading-none">
+                                                                            {app.services.length} Procedimentos
+                                                                        </span>
+                                                                    </div>
+                                                                    <p className="text-[9px] font-bold text-slate-600 truncate leading-none mt-0.5" title={app.services.map(s => s.name).join(' + ')}>
+                                                                        {app.services.map(s => s.name).join(' + ')}
+                                                                    </p>
+                                                                </div>
+                                                            ) : (
+                                                                <p className="text-[10px] text-slate-500 truncate leading-none opacity-80">
+                                                                    {app.service.name}
+                                                                </p>
+                                                            )}
+                                                        </div>
                                                     )}
                                                 </div>
 
@@ -1367,7 +1482,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                 )}
                                             </div>
                                         );
-                                    })}
+                                    });
+                                })()}
                             </div>
                         ))}
                         <TimelineIndicator timeSlot={timeSlot} />
