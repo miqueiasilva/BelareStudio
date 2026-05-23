@@ -20,7 +20,17 @@ export const PWAInstallPrompt: React.FC = () => {
     );
     if (isInstalled || isStandalone) return;
 
-    // Show prompt automatically after 3 seconds on every visit
+    // Check if dismissed previously
+    try {
+      const dismissed = localStorage.getItem('pwa_prompt_dismissed');
+      if (dismissed === 'true') {
+        return;
+      }
+    } catch (e) {
+      console.warn('Erro ao ler pwa_prompt_dismissed do localStorage:', e);
+    }
+
+    // Show prompt automatically after 3 seconds on every visit if not dismissed
     const timer = setTimeout(() => {
       setIsVisible(true);
     }, 3000);
@@ -30,6 +40,11 @@ export const PWAInstallPrompt: React.FC = () => {
   const handleDismiss = () => {
     setIsVisible(false);
     setShowAndroidManual(false);
+    try {
+      localStorage.setItem('pwa_prompt_dismissed', 'true');
+    } catch (e) {
+      console.warn('Erro ao salvar pwa_prompt_dismissed no localStorage:', e);
+    }
   };
 
   const handleInstall = async () => {
@@ -49,9 +64,11 @@ export const PWAInstallPrompt: React.FC = () => {
 
   const { pathname } = location;
   const realPath = typeof window !== 'undefined' ? window.location.pathname : '/';
+  const currentHash = typeof window !== 'undefined' ? window.location.hash : '';
+  const isExcludedRoute = currentHash.includes('login') || currentHash.includes('reset-password') || currentHash.includes('public-preview');
 
   // O banner de instalação só deve aparecer na rota "/" (landing page) e quando o usuário não estiver logado
-  if (user || pathname !== '/' || realPath !== '/') {
+  if (user || pathname !== '/' || realPath !== '/' || isExcludedRoute) {
     return null;
   }
 

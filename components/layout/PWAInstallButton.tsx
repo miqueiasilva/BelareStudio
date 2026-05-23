@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { usePWA } from '../../hooks/usePWA';
 import { Download, X, Share, PlusSquare, Sparkles } from 'lucide-react';
 
-export const PWAInstallButton: React.FC<{ inline?: boolean }> = ({ inline }) => {
+export const PWAInstallButton: React.FC<{ inline?: boolean; fullWidth?: boolean }> = ({ inline, fullWidth }) => {
   const { canInstall, isInstalled, isIOS, installApp } = usePWA();
   const [showModal, setShowModal] = useState(false);
   const [isStandalone] = useState(() => {
@@ -32,13 +32,16 @@ export const PWAInstallButton: React.FC<{ inline?: boolean }> = ({ inline }) => 
     <>
       <button
         onClick={handleClick}
-        className={`flex items-center gap-1.5 px-2.5 py-1.5 border border-slate-200 hover:border-orange-500 hover:bg-orange-50/50 text-slate-600 hover:text-orange-600 rounded-xl transition-all font-black text-[10px] uppercase tracking-wider shadow-sm select-none shrink-0 ${
-          inline ? 'ml-auto' : ''
-        }`}
+        className={fullWidth ? 
+          "flex items-center justify-center gap-2 w-full px-4 py-3 border border-orange-200 bg-orange-50/40 hover:bg-orange-50 text-orange-600 hover:text-orange-700 rounded-2xl transition-all font-black text-xs uppercase tracking-wider shadow-sm select-none"
+          : `flex items-center gap-1.5 px-2.5 py-1.5 border border-slate-200 hover:border-orange-500 hover:bg-orange-50/50 text-slate-600 hover:text-orange-600 rounded-xl transition-all font-black text-[10px] uppercase tracking-wider shadow-sm select-none shrink-0 ${
+            inline ? 'ml-auto' : ''
+          }`
+        }
         title="Instalar BelareStudio no celular ou computador"
       >
-        <Download size={11} className="stroke-[3]" />
-        <span>Instalar App</span>
+        <Download size={fullWidth ? 13 : 11} className="stroke-[3]" />
+        <span>{fullWidth ? 'Instalar Aplicativo' : 'Instalar App'}</span>
       </button>
 
       {/* Modal simples de instruções */}
