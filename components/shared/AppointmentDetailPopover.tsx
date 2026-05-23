@@ -61,7 +61,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
       try {
         const { data } = await supabase
           .from('business_settings')
-          .select('whatsapp_reminder_template, business_name')
+          .select('*')
           .eq('studio_id', activeStudioId)
           .maybeSingle();
         if (data) {
