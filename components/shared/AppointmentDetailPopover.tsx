@@ -9,6 +9,7 @@ import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import StatusUpdatePopover from './StatusUpdatePopover';
 import CheckoutModal from '../modals/CheckoutModal';
 import { supabase } from '../../services/supabaseClient';
+import { useStudio } from '../../contexts/StudioContext';
 
 interface AppointmentDetailPopoverProps {
   appointment: LegacyAppointment;
@@ -50,6 +51,34 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [clientPhone, setClientPhone] = useState<string | null>(null);
 
+  const { activeStudioId } = useStudio();
+  const [reminderTemplate, setReminderTemplate] = useState<string | null>(null);
+  const [studioName, setStudioName] = useState<string>('Studio Jacilene Félix');
+
+  useEffect(() => {
+    const fetchStudioSettings = async () => {
+      if (!activeStudioId) return;
+      try {
+        const { data } = await supabase
+          .from('business_settings')
+          .select('whatsapp_reminder_template, business_name')
+          .eq('studio_id', activeStudioId)
+          .maybeSingle();
+        if (data) {
+          if (data.whatsapp_reminder_template) {
+            setReminderTemplate(data.whatsapp_reminder_template);
+          }
+          if (data.business_name) {
+            setStudioName(data.business_name);
+          }
+        }
+      } catch (e) {
+        // silencioso
+      }
+    };
+    fetchStudioSettings();
+  }, [activeStudioId]);
+
   useEffect(() => {
     const fetchClientPhone = async () => {
       if (!appointment.client?.id) return;
@@ -78,20 +107,31 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
       : appointment.service.name;
     const timeStr = format(appointment.start, "HH:mm");
     const profName = appointment.professional?.name || '';
+    const dateStr = format(appointment.start, "EEEE, dd/MM", { locale: pt });
+    const fallbackLink = `${window.location.origin}/#/public-preview/${activeStudioId}`;
 
-    const message =
-      `Olá, ${clientName}! 😊\n\n` +
-      `Passando para confirmar seu horário no *Studio Jacilene Félix*:\n\n` +
-      `📅 *${format(appointment.start, "EEEE, dd/MM", { locale: pt })}*\n` +
-      `⏰ *${timeStr}*\n` +
-      `✂️ *${serviceName}*\n` +
-      (profName ? `👩🎨 Com: *${profName}*\n` : '') +
-      `\nConseguimos confirmar sua presença? Responda aqui mesmo! ✅\n\n` +
-      `⚠️ Caso precise cancelar ou reagendar, avise com pelo menos 24h de antecedência.\n\n` +
-      `Te esperamos! 💜\n` +
-      `*Studio Jacilene Félix*`;
+    const template = reminderTemplate || 
+      'Olá, {cliente}! 😊\n\n' +
+      'Passando para confirmar seu horário no *{empresa}*:\n\n' +
+      '📅 *{data}*\n' +
+      '⏰ *{horario}*\n' +
+      '✂️ *{servico}*\n' +
+      (profName ? '👩🎨 Com: *{profissional}*\n' : '') +
+      '\nConseguimos confirmar sua presença? Responda aqui mesmo! ✅\n\n' +
+      '⚠️ Caso precise cancelar ou reagendar, avise com pelo menos 24h de antecedência.\n\n' +
+      'Te esperamos! 💜\n' +
+      '*{empresa}*';
 
-    window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
+    const finalMessage = template
+      .replace(/{cliente}/g, clientName)
+      .replace(/{servico}/g, serviceName)
+      .replace(/{profissional}/g, profName)
+      .replace(/{data}/g, dateStr)
+      .replace(/{horario}/g, timeStr)
+      .replace(/{link_confirmacao}/g, fallbackLink)
+      .replace(/{empresa}/g, studioName);
+
+    window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(finalMessage)}`, '_blank');
   };
 
   useEffect(() => {
