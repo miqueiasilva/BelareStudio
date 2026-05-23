@@ -1,9 +1,12 @@
 
 import React, { useState, useRef } from 'react';
-import { X, Upload, Database, Table, Check, AlertTriangle, Loader2, ArrowRight } from 'lucide-react';
+import { X, Upload, Database, Table, Check, AlertTriangle, Loader2, ArrowRight, Sparkles } from 'lucide-react';
 import Papa from 'papaparse';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
+import { useStudio } from '../../contexts/StudioContext';
+import { fixCorruptedText } from '../../utils/encodingCorrection';
+import { toast } from 'sonner';
 
 interface ImportClientsModalProps {
   onClose: () => void;
@@ -14,70 +17,183 @@ const BATCH_SIZE = 100;
 
 const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSuccess }) => {
   const { user } = useAuth();
+  const { activeStudioId } = useStudio();
   const [status, setStatus] = useState<'idle' | 'parsing' | 'ready' | 'importing' | 'done' | 'error'>('idle');
   const [parsedData, setParsedData] = useState<any[]>([]);
   const [progress, setProgress] = useState({ current: 0, total: 0, percentage: 0, debugText: '' });
   const [errorMsg, setErrorMsg] = useState('');
+  const [isFixing, setIsFixing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFixRetroactive = async () => {
+    if (!activeStudioId) {
+      toast.error("Nenhum estúdio ativo selecionado.");
+      return;
+    }
+    setIsFixing(true);
+    try {
+      // 1. Obter todos os clientes da unidade ativa
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, nome, email, whatsapp')
+        .eq('studio_id', activeStudioId);
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        toast.info("Nenhum cliente cadastrado neste estúdio para correção.");
+        return;
+      }
+
+      // Função matemática precisa pra detectar codificação corrompida (mojibake ou caractere de substituição)
+      const isCorrupted = (str: string | null | undefined): boolean => {
+        if (!str) return false;
+        return /[\uFFFD]|[\u00C3][\u0080-\u00BF]|Ã[¢£¡©­³º§ªº»¼½¾¿À-ÿ]/.test(str);
+      };
+
+      // 2. Filtrar clientes que possuem caractere corrompido no nome ou email (\uFFFD ou caracteres mojibake)
+      const clientsToFix = data.filter(c => isCorrupted(c.nome) || isCorrupted(c.email));
+
+      if (clientsToFix.length === 0) {
+        toast.success("Nenhum contato corrompido foi detectado!");
+        return;
+      }
+
+      let successCount = 0;
+      const backupLogs: { id: number; nome_antigo: string; nome_novo: string; whatsapp: string }[] = [];
+
+      // 3. Executar correção e atualizar no Supabase com log seguro
+      for (const client of clientsToFix) {
+        const newNome = fixCorruptedText(client.nome || '');
+        const newEmail = fixCorruptedText(client.email || '');
+
+        if (newNome !== client.nome || newEmail !== client.email) {
+          const { error: updateError } = await supabase
+            .from('clients')
+            .update({ 
+              nome: newNome,
+              email: newEmail 
+            })
+            .eq('id', client.id);
+
+          if (!updateError) {
+            successCount++;
+            backupLogs.push({
+              id: client.id,
+              nome_antigo: client.nome || '',
+              nome_novo: newNome,
+              whatsapp: client.whatsapp || ''
+            });
+          }
+        }
+      }
+
+      if (successCount > 0) {
+        console.log("[CORREÇÃO ENCODING] Relatório de correção retroativa:", backupLogs);
+        toast.success(`${successCount} contatos corrigidos com sucesso! Detalhes nos consoles do desenvolvedor.`);
+        onSuccess(); // atualiza a lista principal de clientes
+      } else {
+        toast.info("Os nomes dos contatos já estão corretos.");
+      }
+    } catch (e: any) {
+      console.error("Erro na correção retroativa:", e);
+      toast.error(`Erro ao corrigir: ${e.message || 'Falha técnica'}`);
+    } finally {
+      setIsFixing(false);
+    }
+  };
 
   const handleFileSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setStatus('parsing');
-    
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: 'greedy',
-      encoding: "UTF-8",
-      complete: (results) => {
-        // Função auxiliar para busca de coluna case-insensitive
-        const getVal = (row: any, ...keys: string[]) => {
-            const rowKeys = Object.keys(row);
-            for (const k of keys) {
-                const found = rowKeys.find(rk => rk.toLowerCase().trim() === k.toLowerCase());
-                if (found) return row[found];
-            }
-            return null;
-        };
 
-        const mapped = results.data.map((row: any) => {
-           // Mapeamento flexível incluindo 'telefone 1' solicitado pelo usuário
-           const nome = getVal(row, 'Nome', 'NOME', 'Client', 'Cliente', 'nome');
-           const rawTel = getVal(row, 'Telefone 1', 'telefone 1', 'Telefone', 'WhatsApp', 'Celular', 'tel', 'phone');
-           const email = getVal(row, 'E-mail', 'Email', 'email');
-           const genero = getVal(row, 'Sexo', 'Gênero', 'Genero', 'Gender', 'sexo');
-           const nascimento = getVal(row, 'Nascimento', 'Data', 'Birth', 'nascimento');
+    const reader = new FileReader();
 
-           const cleanedTel = rawTel ? rawTel.toString().replace(/\D/g, '') : '';
+    reader.onload = (event) => {
+      try {
+        const arrayBuffer = event.target?.result as ArrayBuffer;
+        const uint8Array = new Uint8Array(arrayBuffer);
 
-           return {
-             nome: nome?.toString().trim(),
-             whatsapp: cleanedTel,
-             email: email?.toString().trim() || null,
-             gender: genero?.toString().trim() || null,
-             birth_date: nascimento || null,
-             // REMOVIDO user_id PARA EVITAR ERROR 42703
-             consent: true,
-             referral_source: 'Importação Excel'
-           };
-        }).filter(item => item.nome && item.whatsapp && item.whatsapp.length >= 8);
-
-        if (mapped.length === 0) {
-            setErrorMsg("O arquivo foi lido, mas nenhum registro válido foi encontrado. Certifique-se de que as colunas 'Nome' e 'Telefone' estão presentes.");
-            setStatus('error');
-            return;
+        let text = '';
+        try {
+          // Decodifica tentando UTF-8 estrito primeiro (levanta erro em bytes inválidos)
+          const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+          text = utf8Decoder.decode(uint8Array);
+        } catch (utf8Error) {
+          console.warn("[IMPORT_DEBUG] Arquivo com codificação não-UTF8 pura. Usando fallback para ISO-8859-1 (Latin1).", utf8Error);
+          const latin1Decoder = new TextDecoder('iso-8859-1');
+          text = latin1Decoder.decode(uint8Array);
         }
 
-        setParsedData(mapped);
-        setProgress({ current: 0, total: mapped.length, percentage: 0, debugText: 'Arquivo validado' });
-        setStatus('ready');
-      },
-      error: (err) => {
-        setErrorMsg("Erro na leitura do arquivo CSV: " + err.message);
+        Papa.parse(text, {
+          header: true,
+          skipEmptyLines: 'greedy',
+          complete: (results) => {
+            // Função auxiliar para busca de coluna case-insensitive
+            const getVal = (row: any, ...keys: string[]) => {
+                const rowKeys = Object.keys(row);
+                for (const k of keys) {
+                    const found = rowKeys.find(rk => rk.toLowerCase().trim() === k.toLowerCase());
+                    if (found) return row[found];
+                }
+                return null;
+            };
+
+            const mapped = results.data.map((row: any) => {
+               // Mapeamento flexível incluindo 'telefone 1' solicitado pelo usuário
+               const nome = getVal(row, 'Nome', 'NOME', 'Client', 'Cliente', 'nome');
+               const rawTel = getVal(row, 'Telefone 1', 'telefone 1', 'Telefone', 'WhatsApp', 'Celular', 'tel', 'phone');
+               const email = getVal(row, 'E-mail', 'Email', 'email');
+               const genero = getVal(row, 'Sexo', 'Gênero', 'Genero', 'Gender', 'sexo');
+               const nascimento = getVal(row, 'Nascimento', 'Data', 'Birth', 'nascimento');
+
+               const cleanedTel = rawTel ? rawTel.toString().replace(/\D/g, '') : '';
+
+               const cleanNome = nome?.toString().trim() || '';
+               const cleanEmail = email?.toString().trim() || '';
+
+               return {
+                 nome: fixCorruptedText(cleanNome),
+                 whatsapp: cleanedTel,
+                 email: cleanEmail ? fixCorruptedText(cleanEmail) : null,
+                 gender: genero?.toString().trim() || null,
+                 birth_date: nascimento || null,
+                 // REMOVIDO user_id PARA EVITAR ERROR 42703
+                 consent: true,
+                 referral_source: 'Importação Excel'
+               };
+            }).filter(item => item.nome && item.whatsapp && item.whatsapp.length >= 8);
+
+            if (mapped.length === 0) {
+                setErrorMsg("O arquivo foi lido, mas nenhum registro válido foi encontrado. Certifique-se de que as colunas 'Nome' e 'Telefone' estão presentes.");
+                setStatus('error');
+                return;
+            }
+
+            setParsedData(mapped);
+            setProgress({ current: 0, total: mapped.length, percentage: 0, debugText: 'Arquivo validado e decodificado' });
+            setStatus('ready');
+          },
+          error: (err) => {
+            setErrorMsg("Erro na leitura do arquivo CSV: " + err.message);
+            setStatus('error');
+          }
+        });
+      } catch (err: any) {
+        console.error("Erro ao decodificar buffer de arquivo:", err);
+        setErrorMsg("Erro ao decodificar o arquivo: " + (err.message || err));
         setStatus('error');
       }
-    });
+    };
+
+    reader.onerror = (err) => {
+      console.error("Erro do FileReader:", err);
+      setErrorMsg("Erro ao ler o arquivo físico.");
+      setStatus('error');
+    };
+
+    reader.readAsArrayBuffer(file);
   };
 
   const startImport = async () => {
@@ -162,16 +278,37 @@ const ImportClientsModal: React.FC<ImportClientsModalProps> = ({ onClose, onSucc
 
         <div className="p-8">
           {status === 'idle' && (
-            <div 
-              onClick={() => fileInputRef.current?.click()}
-              className="border-4 border-dashed border-slate-100 rounded-[40px] p-16 flex flex-col items-center justify-center cursor-pointer hover:border-orange-200 hover:bg-orange-50/30 transition-all group"
-            >
-              <div className="w-20 h-20 bg-orange-100 rounded-3xl flex items-center justify-center text-orange-600 mb-6 group-hover:scale-110 transition-transform shadow-lg">
-                <Upload size={40} strokeWidth={3} />
+            <div className="space-y-6">
+              <div 
+                onClick={() => fileInputRef.current?.click()}
+                className="border-4 border-dashed border-slate-100 rounded-[40px] p-16 flex flex-col items-center justify-center cursor-pointer hover:border-orange-200 hover:bg-orange-50/30 transition-all group"
+              >
+                <div className="w-20 h-20 bg-orange-100 rounded-3xl flex items-center justify-center text-orange-600 mb-6 group-hover:scale-110 transition-transform shadow-lg">
+                  <Upload size={40} strokeWidth={3} />
+                </div>
+                <h3 className="text-lg font-black text-slate-700">Escolher Planilha</h3>
+                <p className="text-xs text-slate-400 mt-2 font-bold uppercase text-center">Arraste seu arquivo .CSV aqui</p>
+                <input type="file" ref={fileInputRef} className="hidden" accept=".csv" onChange={handleFileSelection} />
               </div>
-              <h3 className="text-lg font-black text-slate-700">Escolher Planilha</h3>
-              <p className="text-xs text-slate-400 mt-2 font-bold uppercase text-center">Arraste seu arquivo .CSV aqui</p>
-              <input type="file" ref={fileInputRef} className="hidden" accept=".csv" onChange={handleFileSelection} />
+
+              <div className="bg-amber-50 border border-amber-100 rounded-[30px] p-5 flex flex-col sm:flex-row items-center gap-4 justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="bg-amber-500 text-white p-2.5 rounded-xl shadow-md flex-shrink-0">
+                    <Sparkles size={18} />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-amber-900 uppercase tracking-tight">Correção Retroativa</h4>
+                    <p className="text-[10px] text-amber-700 font-bold uppercase tracking-wider">Corrigir nomes com acentuação corrompida já cadastrados</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={handleFixRetroactive} 
+                  disabled={isFixing}
+                  className="w-full sm:w-auto bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white px-4 py-2 text-xs font-black uppercase tracking-wider rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-1.5 flex-shrink-0"
+                >
+                  {isFixing ? <Loader2 className="animate-spin" size={14} /> : 'Corrigir Agora'}
+                </button>
+              </div>
             </div>
           )}
 
