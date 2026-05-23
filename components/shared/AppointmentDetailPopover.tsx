@@ -131,6 +131,23 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
       .replace(/{link_confirmacao}/g, fallbackLink)
       .replace(/{empresa}/g, studioName);
 
+    // Registro silencioso do lembrete enviado via Jaci IA no Supabase
+    const logReminder = async () => {
+      if (!activeStudioId) return;
+      try {
+        await supabase.from('whatsapp_reminders_log').insert([{
+          studio_id: activeStudioId,
+          appointment_id: appointment.id,
+          client_name: clientName,
+          phone: cleanPhone,
+          sender: 'Jaci IA'
+        }]);
+      } catch (err) {
+        console.error("Erro ao registrar envio do lembrete:", err);
+      }
+    };
+    logReminder();
+
     window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(finalMessage)}`, '_blank');
   };
 

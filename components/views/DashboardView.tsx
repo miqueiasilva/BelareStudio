@@ -4,7 +4,7 @@ import Card from '../shared/Card';
 import JaciBotAssistant from '../shared/JaciBotAssistant';
 import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import { getDashboardInsight } from '../../services/geminiService';
-import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3, Zap, UserCircle } from 'lucide-react';
+import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3, Zap, UserCircle, Sparkles } from 'lucide-react';
 // FIX: Grouping date-fns imports and removing problematic members startOfDay, subDays, startOfMonth.
 import { 
     format, addDays, endOfDay, endOfMonth
@@ -61,6 +61,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const [appointments, setAppointments] = useState<any[]>([]);
     const [financialGoal, setFinancialGoal] = useState(0);
     const [monthRevenueTotal, setMonthRevenueTotal] = useState(0);
+    const [last24hReminders, setLast24hReminders] = useState(0);
     
     // Filtro de Período
     const [filter, setFilter] = useState<'hoje' | 'semana' | 'mes' | 'custom'>('hoje');
@@ -174,6 +175,22 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     setFinancialGoal(settings?.revenue_goal || 5000);
                 }
 
+                // Busca dinâmica de disparos de lembrete da Jaci IA nas últimas 24h
+                const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+                try {
+                    const { count: reminderCount, error: countError } = await supabase
+                        .from('whatsapp_reminders_log')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('studio_id', activeStudioId)
+                        .gte('sent_at', twentyFourHoursAgo);
+
+                    if (!countError && mounted) {
+                        setLast24hReminders(reminderCount || 0);
+                    }
+                } catch (err) {
+                    console.error("Erro ao buscar lembretes 24h:", err);
+                }
+
             } catch (e) {
                 console.error("Erro crítico ao sincronizar dashboard:", e);
             } finally {
@@ -256,17 +273,18 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 </div>
             </header>
 
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-6 mb-10">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 lg:gap-6 mb-10">
                 <StatCard title="Faturamento" value={formatCurrency(kpis.revenue)} icon={DollarSign} colorClass="bg-emerald-500" subtext={dateRange.label} trend={12} />
                 <StatCard title="Agendados" value={kpis.scheduled} icon={Calendar} colorClass="bg-blue-500" subtext={dateRange.label} trend={8} />
                 <StatCard title="Online" value={kpis.onlineCount} icon={Globe} colorClass="bg-orange-500" subtext={`${kpis.onlineRate.toFixed(1)}% do total`} trend={22} />
                 <StatCard title="Ticket Médio" value={formatCurrency(kpis.revenue / (kpis.completed || 1))} icon={TrendingUp} colorClass="bg-purple-500" subtext="Por cliente" />
+                <StatCard title="Lembretes Jaci IA" value={`${last24hReminders} ${last24hReminders === 1 ? 'disparo' : 'disparos'}`} icon={Sparkles} colorClass="bg-orange-500" subtext="Últimas 24 horas" />
                 
                 <div className="bg-slate-900 p-6 rounded-[32px] text-white flex flex-col justify-between shadow-2xl relative overflow-hidden group h-full">
                     <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
                         <Zap size={120} />
                     </div>
-                    <div className="flex justify-between items-start z-10">
+                    <div className="flex justify-between items-start z-10 font-bold">
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-400">FOCO NA META</p>
                         <Zap size={14} className="text-orange-400" />
                     </div>
