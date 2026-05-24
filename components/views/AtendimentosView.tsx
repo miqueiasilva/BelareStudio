@@ -1140,9 +1140,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         return labels;
     }, [timeSlot]);
 
-    const handleGridClick = async (e: React.MouseEvent, professional: LegacyProfessional, colDate?: Date, bypassScheduleCheck = false) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const minutes = ((e.clientY - rect.top) / (SLOT_PX_HEIGHT / timeSlot));
+    const handleGridClick = async (e: React.MouseEvent | { currentTarget: HTMLElement; clientY: number; clientX: number }, professional: LegacyProfessional, colDate?: Date, bypassScheduleCheck = false) => {
+        const currentTarget = e.currentTarget;
+        const clientY = e.clientY;
+        const clientX = e.clientX;
+        
+        if (!currentTarget) return;
+        
+        const rect = currentTarget.getBoundingClientRect();
+        const minutes = ((clientY - rect.top) / (SLOT_PX_HEIGHT / timeSlot));
         const targetDate = new Date(colDate || currentDate);
         targetDate.setHours(Math.floor((START_HOUR * 60 + minutes) / 60), Math.round((START_HOUR * 60 + minutes) % 60 / 15) * 15, 0, 0);
         
@@ -1190,7 +1196,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             }
         }
 
-        setSelectionMenu({ x: e.clientX, y: e.clientY, time: targetDate, professional });
+        setSelectionMenu({ x: clientX, y: clientY, time: targetDate, professional });
     };
 
     return (
@@ -1339,6 +1345,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                 className="absolute inset-0 z-10 bg-slate-100/40 hover:bg-slate-100/20 flex flex-col items-center justify-center cursor-pointer transition-all group/closed !m-0"
                                                 onClick={async (e) => {
                                                     e.stopPropagation();
+                                                    const currentTarget = e.currentTarget;
+                                                    const clientY = e.clientY;
+                                                    const clientX = e.clientX;
                                                     const isConfirmed = await confirm({
                                                         title: 'Abrir Exceção de Agenda',
                                                         message: `${prof.name} não atende aos ${['domingos', 'segundas', 'terças', 'quartas', 'quintas', 'sextas', 'sábados'][colDate.getDay()]}. Deseja abrir uma exceção e realizar um agendamento nesta data?`,
@@ -1347,7 +1356,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                         type: 'warning'
                                                     });
                                                     if (isConfirmed) {
-                                                        handleGridClick(e, prof, colDate, true);
+                                                        handleGridClick({ currentTarget, clientY, clientX } as any, prof, colDate, true);
                                                     }
                                                 }}
                                             >
