@@ -374,7 +374,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments')
-                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origin, clients:client_id(id, nome, apelido, whatsapp, email)')
+                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origin')
                     .eq('studio_id', activeStudioId)
                     .gte('date', startStr)
                     .lte('date', endStr)
@@ -390,8 +390,26 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             if (apptRes.error) throw apptRes.error;
             if (blocksRes.error) throw blocksRes.error;
 
+            let finalAppts = apptRes.data || [];
+            if (finalAppts.length > 0) {
+                const clientIds = Array.from(new Set(finalAppts.map(r => r.client_id).filter(Boolean)));
+                if (clientIds.length > 0) {
+                    const { data: cData } = await supabase
+                        .from('clients')
+                        .select('id, nome, apelido, whatsapp, email')
+                        .in('id', clientIds);
+                    if (cData) {
+                        const clientsMap = new Map(cData.map(c => [c.id, c]));
+                        finalAppts = finalAppts.map(row => ({
+                            ...row,
+                            clients: row.client_id ? clientsMap.get(row.client_id) : undefined
+                        }));
+                    }
+                }
+            }
+
             if (isMounted.current && requestId === lastRequestId.current) {
-                const mappedAppts = (apptRes.data || []).map(row => ({
+                const mappedAppts = finalAppts.map(row => ({
                     ...mapRowToAppointment(row, resources),
                     type: row.type || 'appointment'
                 }));

@@ -135,14 +135,33 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
 
                 const { data: appts, error: apptsError } = await supabase
                     .from('appointments')
-                    .select('*, clients:client_id(id, nome, apelido, whatsapp, email)')
+                    .select('*')
                     .eq('studio_id', activeStudioId)
                     .gte('date', dateRange.start)
                     .lte('date', dateRange.end)
                     .order('date', { ascending: true });
 
                 if (apptsError) throw apptsError;
-                if (mounted) setAppointments(appts || []);
+
+                let finalAppts = appts || [];
+                if (finalAppts.length > 0) {
+                    const clientIds = Array.from(new Set(finalAppts.map(r => r.client_id).filter(Boolean)));
+                    if (clientIds.length > 0) {
+                        const { data: cData } = await supabase
+                            .from('clients')
+                            .select('id, nome, apelido, whatsapp, email')
+                            .in('id', clientIds);
+                        if (cData) {
+                            const clientsMap = new Map(cData.map(c => [c.id, c]));
+                            finalAppts = finalAppts.map(row => ({
+                                ...row,
+                                clients: row.client_id ? clientsMap.get(row.client_id) : undefined
+                            }));
+                        }
+                    }
+                }
+
+                if (mounted) setAppointments(finalAppts);
 
                 const now = new Date();
                 // FIX: Manual startOfMonth replacement.
