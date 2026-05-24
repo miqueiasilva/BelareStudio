@@ -270,8 +270,10 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             services: selectedServices,
             notas: selectedServices.length > 1 
                 ? `${formData.notas || ''} \n[Serviços: ${selectedServices.map(s => s.name).join(', ')}]`
-                : formData.notas
-        } as LegacyAppointment;
+                : formData.notas,
+            bypassScheduleCheck: showDayOffConfirm || showOverlapConfirm,
+            isForce: showDayOffConfirm || showOverlapConfirm
+        } as any;
 
         console.log('🚀 Chamando onSave com:', finalAppointment, 'force:', showDayOffConfirm || showOverlapConfirm);
         await onSave(finalAppointment, showDayOffConfirm || showOverlapConfirm);

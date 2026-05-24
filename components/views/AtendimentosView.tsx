@@ -530,11 +530,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     };
 
     const handleSaveAppointment = async (app: LegacyAppointment, force: boolean = false) => {
+        const isForce = force || (app as any).bypassScheduleCheck || (app as any).isForce;
         console.log('📝 Iniciando handleSaveAppointment...', { 
             id: app.id, 
             studioId: activeStudioId,
             userRole: user?.papel,
-            isForce: force
+            isForce: isForce
         });
 
         if (!activeStudioId) {
@@ -548,7 +549,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             studioId: activeStudioId,
             client: app.client?.nome,
             professional: app.professional?.name,
-            service: app.service?.name
+            service: app.service?.name,
+            isForce: isForce
         });
         
         try {
@@ -557,7 +559,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const end = addMinutes(start, duration);
 
             // 1. Conflict Detection
-            if (!force && app.status !== 'cancelado') {
+            if (!isForce && app.status !== 'cancelado') {
                 const conflict = appointments.find(existing => {
                     // Skip self if editing
                     if (existing.id === app.id) return false;
