@@ -80,6 +80,11 @@ const VendasView: React.FC<VendasViewProps> = () => {
     const [discount, setDiscount] = useState<string>('');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [lastTransaction, setLastTransaction] = useState<any | null>(null);
+    const [salesDate, setSalesDate] = useState<string>(() => {
+        const d = new Date();
+        const tzoffset = d.getTimezoneOffset() * 60000;
+        return (new Date(Date.now() - tzoffset)).toISOString().slice(0, 10);
+    });
 
     const [dbServices, setDbServices] = useState<any[]>([]);
     const [dbProducts, setDbProducts] = useState<any[]>([]);
@@ -135,6 +140,9 @@ const VendasView: React.FC<VendasViewProps> = () => {
         setLastTransaction(null);
         setSearchTerm('');
         setShowCartMobile(false);
+        const d = new Date();
+        const tzoffset = d.getTimezoneOffset() * 60000;
+        setSalesDate((new Date(Date.now() - tzoffset)).toISOString().slice(0, 10));
         setToast({ message: "Ambiente pronto para nova venda! 🧼", type: 'info' });
     };
 
@@ -206,8 +214,13 @@ const VendasView: React.FC<VendasViewProps> = () => {
 
             if (rpcError) throw rpcError;
 
+            // Determinar a data da venda retroativa ou atual
+            const targetDate = new Date(salesDate);
+            const nowTime = new Date();
+            targetDate.setHours(nowTime.getHours(), nowTime.getMinutes(), nowTime.getSeconds(), nowTime.getMilliseconds());
+            const finalDateISO = targetDate.toISOString();
+
             // CRIAR COMANDA VINCULADA PARA HISTÓRICO PADRONIZADO
-            const now = new Date().toISOString();
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
@@ -216,8 +229,8 @@ const VendasView: React.FC<VendasViewProps> = () => {
                     client_name: selectedClient?.nome || 'Consumidor Final',
                     status: 'pago',
                     total_amount: total,
-                    closed_at: now,
-                    paid_at: now,
+                    closed_at: finalDateISO,
+                    paid_at: finalDateISO,
                     payment_method: methodMap[paymentMethod] || 'pix',
                     payment_data: {
                         payment_method: methodMap[paymentMethod] || 'pix',
@@ -243,25 +256,37 @@ const VendasView: React.FC<VendasViewProps> = () => {
                 }));
                 await supabase.from('command_items').insert(commandItems);
 
-                // Vincular transação financeira à comanda e atualizar descrição
+                // Vincular transação financeira à comanda, atualizar descrição e data retroativa
                 const transactionId = (transaction as any)?.id;
                 if (transactionId) {
                     await supabase
                         .from('financial_transactions')
                         .update({ 
                             command_id: command.id,
-                            description: description 
+                            description: description,
+                            date: finalDateISO
+                        })
+                        .eq('id', transactionId);
+                }
+            } else {
+                // Se der erro ao criar comanda, ainda atualiza a data da transação avulsa
+                const transactionId = (transaction as any)?.id;
+                if (transactionId) {
+                    await supabase
+                        .from('financial_transactions')
+                        .update({ 
+                            date: finalDateISO 
                         })
                         .eq('id', transactionId);
                 }
             }
 
-            // Se o RPC não retornar o objeto completo, criamos um mock para o modal de recibo
+            // Se o RPC não retornar o objeto completo, criamos um mock para o modal de recibo com a data correta
             setLastTransaction(transaction || {
                 amount: total,
                 payment_method: paymentMethod,
                 description: description,
-                date: new Date().toISOString()
+                date: finalDateISO
             });
             
             setToast({ message: "Venda registrada!", type: 'success' });
@@ -401,6 +426,20 @@ const VendasView: React.FC<VendasViewProps> = () => {
                 </div>
 
                 <div className="bg-slate-50/90 p-5 border-t border-slate-200 space-y-4">
+                    {/* Campo de Data Retroativa (Baixa) */}
+                    <div className="bg-white border border-slate-150 rounded-2xl p-3.5 space-y-1.5 shadow-sm text-left">
+                        <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                            <Calendar size={12} className="text-orange-500" />
+                            Data da Venda (Retroativa)
+                        </label>
+                        <input 
+                            type="date"
+                            value={salesDate}
+                            onChange={(e) => setSalesDate(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-150 rounded-xl px-3 py-1.5 font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-500 transition-all text-xs"
+                        />
+                    </div>
+
                     <div className="flex justify-between text-xs font-bold text-slate-500 uppercase tracking-widest">
                         <span>Subtotal</span>
                         <span className="text-slate-800 font-black">R$ {subtotal.toFixed(2)}</span>

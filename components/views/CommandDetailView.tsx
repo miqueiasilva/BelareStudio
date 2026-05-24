@@ -4,7 +4,7 @@ import {
     Loader2, CheckCircle,
     ShoppingCart, X,
     CreditCard as CardIcon,
-    Tag, Percent
+    Tag, Percent, Calendar
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
@@ -29,6 +29,11 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [availableConfigs, setAvailableConfigs] = useState<any[]>([]);
     const [selectedDiscount, setSelectedDiscount] = useState<any | null>(null);
+    const [paymentDate, setPaymentDate] = useState<string>(() => {
+        const d = new Date();
+        const tzoffset = d.getTimezoneOffset() * 60000;
+        return (new Date(Date.now() - tzoffset)).toISOString().slice(0, 10);
+    });
 
     const activeDiscounts = useMemo(() => {
         const studio = studios.find(s => s.id === activeStudioId);
@@ -174,7 +179,13 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 throw rpcError;
             }
 
-            // 2. VINCULAR TRANSAÇÃO À COMANDA E ATUALIZAR DESCRIÇÃO
+            // Determinar a data da baixa retroativa ou atual
+            const targetDate = new Date(paymentDate);
+            const nowTime = new Date();
+            targetDate.setHours(nowTime.getHours(), nowTime.getMinutes(), nowTime.getSeconds(), nowTime.getMilliseconds());
+            const finalDateISO = targetDate.toISOString();
+
+            // 2. VINCULAR TRANSAÇÃO À COMANDA E ATUALIZAR DESCRIÇÃO + DATA
             const transactionId = (transaction as any)?.id;
             if (transactionId) {
                 try {
@@ -182,7 +193,8 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                         .from('financial_transactions')
                         .update({ 
                             command_id: commandId,
-                            description: description 
+                            description: description,
+                            date: finalDateISO
                         })
                         .eq('id', transactionId);
                 } catch (updateErr) {
@@ -191,13 +203,12 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             }
 
             // 3. ATUALIZAR COMANDA
-            const now = new Date().toISOString();
             const { error: updateError } = await supabase
                 .from('commands')
                 .update({ 
                     status: 'pago',
-                    closed_at: now,
-                    paid_at: now,
+                    closed_at: finalDateISO,
+                    paid_at: finalDateISO,
                     payment_method: dbMethod,
                     discount_amount: totals.discount,
                     discount_info: selectedDiscount || {},
@@ -367,6 +378,22 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
 
                     {/* PAINEL DIREITO */}
                     <div className="space-y-6">
+                        {/* Campo de Data Retroativa (Baixa) */}
+                        {!isLocked && (
+                            <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-6 space-y-2">
+                                <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                                    <Calendar size={14} className="text-orange-500" />
+                                    Data de Recebimento (Baixa Retroativa)
+                                </label>
+                                <input 
+                                    type="date"
+                                    value={paymentDate}
+                                    onChange={(e) => setPaymentDate(e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-500 transition-all text-xs"
+                                />
+                            </div>
+                        )}
+
                         <div className="bg-slate-900 rounded-[40px] p-8 text-white shadow-2xl relative overflow-hidden">
                             <p className="text-[10px] font-black uppercase text-slate-400 mb-2 tracking-widest">Total a Receber</p>
                             <h2 className="text-5xl font-black text-emerald-400 tracking-tighter">R$ {totals.total.toFixed(2)}</h2>

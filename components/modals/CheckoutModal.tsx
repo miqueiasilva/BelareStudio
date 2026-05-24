@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
     X, CheckCircle, CreditCard, Banknote, 
-    Smartphone, Loader2
+    Smartphone, Loader2, Calendar
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import Toast, { ToastType } from '../shared/Toast';
@@ -48,6 +48,11 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     const [selectedCategory, setSelectedCategory] = useState<'pix' | 'money' | 'credit' | 'debit'>('pix');
     const [selectedMethodId, setSelectedMethodId] = useState<string>('');
     const [installments, setInstallments] = useState(1);
+    const [paymentDate, setPaymentDate] = useState<string>(() => {
+        const d = new Date();
+        const tzoffset = d.getTimezoneOffset() * 60000;
+        return (new Date(Date.now() - tzoffset)).toISOString().slice(0, 10);
+    });
 
     const isSafeUUID = (id: any): boolean => {
         if (!id) return false;
@@ -60,6 +65,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
         setSelectedCategory('pix');
         setSelectedMethodId('');
         setInstallments(1);
+        const d = new Date();
+        const tzoffset = d.getTimezoneOffset() * 60000;
+        setPaymentDate((new Date(Date.now() - tzoffset)).toISOString().slice(0, 10));
     };
 
     const loadSystemData = useCallback(async () => {
@@ -146,8 +154,13 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
 
             if (rpcError) throw rpcError;
 
+            // Determinar a data da baixa retroativa ou atual
+            const targetDate = new Date(paymentDate);
+            const nowTime = new Date();
+            targetDate.setHours(nowTime.getHours(), nowTime.getMinutes(), nowTime.getSeconds(), nowTime.getMilliseconds());
+            const finalDateISO = targetDate.toISOString();
+
             // 2. CRIAR COMANDA VINCULADA PARA HISTÓRICO PADRONIZADO
-            const now = new Date().toISOString();
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
@@ -157,8 +170,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     professional_id: profId,
                     status: 'pago',
                     total_amount: appointment.price,
-                    closed_at: now,
-                    paid_at: now,
+                    closed_at: finalDateISO,
+                    paid_at: finalDateISO,
                     payment_method: selectedCategory,
                     payment_data: {
                         payment_method: selectedCategory,
@@ -184,12 +197,26 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     professional_id: profId
                 }]);
 
-                // Vincular transação financeira à comanda
+                // Vincular transação financeira à comanda e atualizar a data de ocorrência
                 const transactionId = (transaction as any)?.id;
                 if (transactionId) {
                     await supabase
                         .from('financial_transactions')
-                        .update({ command_id: command.id })
+                        .update({ 
+                            command_id: command.id,
+                            date: finalDateISO 
+                        })
+                        .eq('id', transactionId);
+                }
+            } else {
+                // Se der algum erro ao criar a comanda, ainda atualiza a data da transação avulsa
+                const transactionId = (transaction as any)?.id;
+                if (transactionId) {
+                    await supabase
+                        .from('financial_transactions')
+                        .update({ 
+                            date: finalDateISO 
+                        })
                         .eq('id', transactionId);
                 }
             }
@@ -230,10 +257,24 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                     <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-all"><X size={24} /></button>
                 </header>
 
-                <main className="p-8 space-y-6">
+                <main className="p-8 space-y-5">
                     <div className="bg-slate-900 rounded-[32px] p-6 text-white text-center">
                         <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">{appointment.service_name}</p>
                         <h3 className="text-3xl font-black text-emerald-400">{formatCurrency(appointment.price)}</h3>
+                    </div>
+
+                    {/* Campo de Data Retroativa / Baixa */}
+                    <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 space-y-1.5 shadow-sm text-left">
+                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                            <Calendar size={12} className="text-orange-500" />
+                            Data do Recebimento (Baixa Retroativa)
+                        </label>
+                        <input 
+                            type="date"
+                            value={paymentDate}
+                            onChange={(e) => setPaymentDate(e.target.value)}
+                            className="w-full bg-white border border-slate-250 rounded-xl px-4 py-2 font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 focus:border-orange-500 transition-all text-xs"
+                        />
                     </div>
 
                     <div className="grid grid-cols-4 gap-2">
