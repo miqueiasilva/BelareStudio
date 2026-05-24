@@ -203,7 +203,7 @@ const VendasView: React.FC<VendasViewProps> = () => {
             const { data: transaction, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: activeStudioId,
                 p_professional_id: null, // Venda direta no PDV sem profissional vinculado
-                p_description: 'Venda Direta PDV',
+                p_description: description,
                 p_amount: Number(total || 0),
                 p_method: methodMap[paymentMethod] || 'pix',
                 p_installments: 1,

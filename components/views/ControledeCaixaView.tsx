@@ -114,9 +114,9 @@ const ControledeCaixaView: React.FC = () => {
                 .from('financial_transactions')
                 .select('*, clients:client_id(nome)')
                 .eq('studio_id', activeStudioId)
-                .gte('created_at', startStr)
-                .lte('created_at', endStr)
-                .order('created_at', { ascending: false });
+                .gte('date', startStr)
+                .lte('date', endStr)
+                .order('date', { ascending: false });
             
             if (error) throw error;
 
@@ -464,7 +464,7 @@ const ControledeCaixaView: React.FC = () => {
                                             <div>
                                                 <p className="font-black text-slate-700 text-sm uppercase tracking-tight">{sale.description || sale.clients?.nome || 'Venda'}</p>
                                                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                                                    {format(new Date(sale.created_at || sale.date), 'HH:mm')} • {sale.payment_method}
+                                                    {format(new Date(sale.date || sale.created_at), 'dd/MM HH:mm')} • {sale.payment_method}
                                                 </p>
                                             </div>
                                         </div>
@@ -485,7 +485,7 @@ const ControledeCaixaView: React.FC = () => {
                                 <div key={m.id} className="py-3 flex items-center justify-between">
                                     <div className="flex flex-col">
                                         <span className="text-xs font-bold text-slate-700 truncate max-w-[200px]">{m.descricao}</span>
-                                        <span className="text-[9px] text-slate-400 font-bold uppercase">{format(new Date(m.created_at), 'HH:mm')} • {m.tipo}</span>
+                                        <span className="text-[9px] text-slate-400 font-bold uppercase">{format(new Date(m.created_at), 'dd/MM HH:mm')} • {m.tipo}</span>
                                     </div>
                                     <span className={`text-xs font-black ${m.tipo === 'suprimento' ? 'text-emerald-500' : 'text-rose-500'}`}>
                                         {m.tipo === 'suprimento' ? '+' : '-'} R$ {Number(m.valor).toFixed(2)}
@@ -496,7 +496,7 @@ const ControledeCaixaView: React.FC = () => {
                                 <div key={m.id} className="py-3 flex items-center justify-between">
                                     <div className="flex flex-col">
                                         <span className="text-xs font-bold text-slate-700 truncate max-w-[200px]">{m.description}</span>
-                                        <span className="text-[9px] text-slate-400 font-bold uppercase">{format(new Date(m.created_at || m.date), 'HH:mm')}</span>
+                                        <span className="text-[9px] text-slate-400 font-bold uppercase">{format(new Date(m.date || m.created_at), 'dd/MM HH:mm')}</span>
                                     </div>
                                     <span className={`text-xs font-black ${m.type === 'income' ? 'text-emerald-500' : 'text-rose-500'}`}>
                                         {m.type === 'income' ? '+' : '-'} R$ {Number(m.type === 'income' ? (m.net_value || m.amount) : m.amount).toFixed(2)}

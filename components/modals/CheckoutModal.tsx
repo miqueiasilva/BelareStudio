@@ -143,7 +143,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             const { data: transaction, error: rpcError } = await supabase.rpc('register_payment_transaction', {
                 p_studio_id: (window as any).activeStudioId || null,
                 p_professional_id: profId,
-                p_description: `Pagamento de Agendamento - ${appointment.client_name}`,
+                p_description: `Atendimento - ${appointment.client_name} - ${appointment.service_name}`,
                 p_amount: Number(appointment.price || 0),
                 p_method: selectedCategory || 'pix',
                 p_installments: Number(installments || 1),

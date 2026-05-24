@@ -147,7 +147,9 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
             const mainPayment = addedPayments[0];
             const isTotalZero = totals.total === 0;
             const dbMethod = isCourtesy ? 'cortesia' : (isTotalZero ? 'desconto_total' : (mainPayment?.payment_method === 'money' ? 'dinheiro' : mainPayment?.payment_method));
-            const description = `Pagamento Comanda #${commandId}${isCourtesy ? ' (CORTESIA)' : (isTotalZero ? ' (DESCONTO 100%)' : '')}`;
+            const itTitles = command?.command_items?.map((i: any) => i.title).join(', ') || 'Serviços/Produtos';
+            const clName = command?.client_name || 'Consumidor Final';
+            const description = `Comanda #${commandId.slice(0, 8)} - ${clName} - ${itTitles}${isCourtesy ? ' (CORTESIA)' : (isTotalZero ? ' (DESCONTO 100%)' : '')}`;
 
             // 1. REGISTRO DO PAGAMENTO NO FINANCEIRO
             const rpcPayload = {
