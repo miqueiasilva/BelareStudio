@@ -13,7 +13,7 @@ import { useStudio } from '../../contexts/StudioContext';
 interface AppointmentModalProps {
   appointment: LegacyAppointment | Partial<LegacyAppointment> | null;
   onClose: () => void;
-  onSave: (appointment: LegacyAppointment) => void;
+  onSave: (appointment: LegacyAppointment, force?: boolean) => void | Promise<void>;
 }
 
 const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClose, onSave }) => {
@@ -273,8 +273,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
                 : formData.notas
         } as LegacyAppointment;
 
-        console.log('🚀 Chamando onSave com:', finalAppointment);
-        await onSave(finalAppointment);
+        console.log('🚀 Chamando onSave com:', finalAppointment, 'force:', showDayOffConfirm || showOverlapConfirm);
+        await onSave(finalAppointment, showDayOffConfirm || showOverlapConfirm);
         console.log('✅ onSave concluído com sucesso');
     } catch (err: any) {
         console.error("❌ Erro ao salvar no Modal:", err);
