@@ -143,25 +143,33 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
 
                 if (apptsError) throw apptsError;
 
-                let finalAppts = appts || [];
-                if (finalAppts.length > 0) {
-                    const clientIds = Array.from(new Set(finalAppts.map(r => r.client_id).filter(Boolean)));
+                const rawAppts = appts || [];
+                // Exibe os agendamentos imediatamente
+                if (mounted) setAppointments(rawAppts);
+
+                // Enriquesse depois de forma assíncrona e segura com o apelido/whatsapp do cliente
+                if (rawAppts.length > 0) {
+                    const clientIds = Array.from(new Set(rawAppts.map(r => r.client_id).filter(Boolean)));
                     if (clientIds.length > 0) {
-                        const { data: cData } = await supabase
-                            .from('clients')
-                            .select('id, nome, apelido, whatsapp, email')
-                            .in('id', clientIds);
-                        if (cData) {
-                            const clientsMap = new Map(cData.map(c => [c.id, c]));
-                            finalAppts = finalAppts.map(row => ({
-                                ...row,
-                                clients: row.client_id ? clientsMap.get(row.client_id) : undefined
-                            }));
+                        try {
+                            const { data: cData, error: cError } = await supabase
+                                .from('clients')
+                                .select('id, nome, apelido, whatsapp, email')
+                                .in('id', clientIds);
+                            
+                            if (!cError && cData && cData.length > 0) {
+                                const clientsMap = new Map(cData.map(c => [c.id, c]));
+                                const enrichedAppts = rawAppts.map(row => ({
+                                    ...row,
+                                    clients: row.client_id ? clientsMap.get(row.client_id) : undefined
+                                }));
+                                if (mounted) setAppointments(enrichedAppts);
+                            }
+                        } catch (enrichError) {
+                            console.warn("Falha silenciosa ao enriquecer clientes no dashboard:", enrichError);
                         }
                     }
                 }
-
-                if (mounted) setAppointments(finalAppts);
 
                 const now = new Date();
                 // FIX: Manual startOfMonth replacement.

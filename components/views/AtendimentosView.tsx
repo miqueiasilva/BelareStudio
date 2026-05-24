@@ -390,41 +390,56 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             if (apptRes.error) throw apptRes.error;
             if (blocksRes.error) throw blocksRes.error;
 
-            let finalAppts = apptRes.data || [];
-            if (finalAppts.length > 0) {
-                const clientIds = Array.from(new Set(finalAppts.map(r => r.client_id).filter(Boolean)));
-                if (clientIds.length > 0) {
-                    const { data: cData } = await supabase
-                        .from('clients')
-                        .select('id, nome, apelido, whatsapp, email')
-                        .in('id', clientIds);
-                    if (cData) {
-                        const clientsMap = new Map(cData.map(c => [c.id, c]));
-                        finalAppts = finalAppts.map(row => ({
-                            ...row,
-                            clients: row.client_id ? clientsMap.get(row.client_id) : undefined
-                        }));
-                    }
-                }
-            }
+            const rawAppts = apptRes.data || [];
+            const mappedBlocks = (blocksRes.data || []).map(row => ({
+                id: row.id,
+                start: new Date(row.start_time),
+                end: new Date(row.end_time),
+                professional: { id: row.professional_id },
+                service: { name: row.reason, color: '#fca5a5' },
+                status: 'bloqueado',
+                type: 'block'
+            }));
 
+            // Exibe os agendamentos imediatamente para NUNCA ficar em branco
             if (isMounted.current && requestId === lastRequestId.current) {
-                const mappedAppts = finalAppts.map(row => ({
+                const initialMappedAppts = rawAppts.map(row => ({
                     ...mapRowToAppointment(row, resources),
                     type: row.type || 'appointment'
                 }));
+                setAppointments([...initialMappedAppts, ...mappedBlocks]);
+            }
 
-                const mappedBlocks = (blocksRes.data || []).map(row => ({
-                    id: row.id,
-                    start: new Date(row.start_time),
-                    end: new Date(row.end_time),
-                    professional: { id: row.professional_id },
-                    service: { name: row.reason, color: '#fca5a5' },
-                    status: 'bloqueado',
-                    type: 'block'
-                }));
-
-                setAppointments([...mappedAppts, ...mappedBlocks]);
+            // Enriquecimento assíncrono e isolado com os dados dos clientes (apelido, etc)
+            if (rawAppts.length > 0) {
+                const clientIds = Array.from(new Set(rawAppts.map(r => r.client_id).filter(Boolean)));
+                if (clientIds.length > 0) {
+                    try {
+                        const { data: cData, error: cError } = await supabase
+                            .from('clients')
+                            .select('id, nome, apelido, whatsapp, email')
+                            .in('id', clientIds);
+                        
+                        if (!cError && cData && cData.length > 0) {
+                            const clientsMap = new Map(cData.map(c => [c.id, c]));
+                            if (isMounted.current && requestId === lastRequestId.current) {
+                                const enrichedAppts = rawAppts.map(row => {
+                                    const enrichedRow = {
+                                        ...row,
+                                        clients: row.client_id ? clientsMap.get(row.client_id) : undefined
+                                    };
+                                    return {
+                                        ...mapRowToAppointment(enrichedRow, resources),
+                                        type: row.type || 'appointment'
+                                    };
+                                });
+                                setAppointments([...enrichedAppts, ...mappedBlocks]);
+                            }
+                        }
+                    } catch (enrichError) {
+                        console.warn("Falha silenciosa ao enriquecer clientes do calendário:", enrichError);
+                    }
+                }
             }
         } catch (e: any) {
             if (e.name !== 'AbortError') {
@@ -526,7 +541,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         }
 
         const notes = row.notes || '';
-        const servicesMatch = notes.match(/---SERVICES_JSON---\n([\s\S]*?)\n---END_SERVICES_JSON---/);
+        const servicesMatch = notes.match(/---SERVICES_JSON---[\r\n\s]*([\s\S]*?)[\r\n\s]*---END_SERVICES_JSON---/);
         let services = [];
         if (servicesMatch) {
             try {
