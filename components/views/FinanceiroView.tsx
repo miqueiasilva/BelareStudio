@@ -197,9 +197,10 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             return matchSearch && matchCat;
         });
 
-        const categories = dbCategories.length > 0 
-            ? dbCategories.map(c => c.name) 
-            : Array.from(new Set(dbTransactions.map(t => t.category).filter(Boolean)));
+        const categories = Array.from(new Set([
+            ...dbCategories.map(c => c.name),
+            ...dbTransactions.map(t => t.category).filter(Boolean)
+        ]));
 
         const categoryMix = categories.map(cat => {
             const total = dbTransactions

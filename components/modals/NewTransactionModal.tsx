@@ -51,7 +51,18 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
     fetchCategories();
   }, [fetchCategories]);
 
-  const activeCategories = dbCategories.map(c => c.name);
+  const activeCategories = (() => {
+    const list = dbCategories.map(c => c.name);
+    if (type === 'receita') {
+      if (!list.includes('Serviço')) list.push('Serviço');
+      if (!list.includes('Venda de Produtos')) list.push('Venda de Produtos');
+    } else {
+      if (list.length === 0) {
+        return ['Aluguel', 'Água/Luz/Internet', 'Produtos e Insumos', 'Marketing', 'Comissões', 'Outros'];
+      }
+    }
+    return list;
+  })();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
       const { name, value } = e.target;
