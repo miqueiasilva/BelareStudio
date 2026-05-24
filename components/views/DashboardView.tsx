@@ -135,7 +135,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
 
                 const { data: appts, error: apptsError } = await supabase
                     .from('appointments')
-                    .select('*')
+                    .select('*, clients:client_id(id, nome, apelido, whatsapp, email)')
                     .eq('studio_id', activeStudioId)
                     .gte('date', dateRange.start)
                     .lte('date', dateRange.end)

@@ -76,7 +76,7 @@ const TodayScheduleWidget: React.FC<TodayScheduleWidgetProps> = ({ onNavigate, a
                                     </div>
                                     
                                     <h4 className="text-sm font-bold text-slate-700 truncate flex items-center gap-2">
-                                        {app.client_name || 'Bloqueado'}
+                                        {(Array.isArray(app.clients) ? app.clients[0]?.apelido : app.clients?.apelido) || app.client_name || 'Bloqueado'}
                                         {app.status === 'em_atendimento' && <Scissors size={10} className="text-indigo-600 animate-bounce" />}
                                     </h4>
                                     

@@ -248,7 +248,14 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
 
         <main className="p-6 space-y-4">
           <div>
-            <h3 className="font-black text-xl text-slate-800 leading-tight">{appointment.client?.nome || 'Horário Bloqueado'}</h3>
+            <h3 className="font-black text-xl text-slate-800 leading-tight flex flex-col gap-1">
+              <span>{appointment.client?.nome || 'Horário Bloqueado'}</span>
+              {appointment.client?.apelido && (
+                <span className="text-xs font-black text-orange-600 bg-orange-50 border border-orange-100 rounded-lg px-2 py-0.5 w-fit uppercase tracking-tight">
+                  "{appointment.client.apelido}"
+                </span>
+              )}
+            </h3>
             {appointment.services && appointment.services.length > 0 ? (
               <div className="mt-3 space-y-2 max-h-36 overflow-y-auto pr-1">
                 <p className="text-[9px] font-extrabold uppercase text-slate-400 tracking-wider">Procedimentos Marcados:</p>

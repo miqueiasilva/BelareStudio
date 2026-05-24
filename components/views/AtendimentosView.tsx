@@ -374,7 +374,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments')
-                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origin')
+                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origin, clients:client_id(id, nome, apelido, whatsapp, email)')
                     .eq('studio_id', activeStudioId)
                     .gte('date', startStr)
                     .lte('date', endStr)
@@ -523,7 +523,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             notas: row.notes || '', origin: row.origin || 'interno',
             type: row.type || 'appointment',
             services: services.length > 0 ? services : undefined,
-            client: { id: row.client_id, nome: row.client_name || 'Cliente', consent: true },
+            client: { 
+                id: row.client_id, 
+                nome: row.client_name || 'Cliente', 
+                apelido: (Array.isArray(row.clients) ? row.clients[0]?.apelido : row.clients?.apelido) || undefined,
+                consent: true 
+            },
             professional: prof || teamMembersList[0] || { id: 0, name: row.professional_name, avatarUrl: '' },
             service: { id: 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : (row.service_color || '#3b82f6') }
         } as LegacyAppointment;
@@ -1473,7 +1478,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                             {format(app.start, 'HH:mm')} - {format(app.end, 'HH:mm')}
                                                         </p>
                                                         <p className="text-xs font-bold text-slate-800 truncate leading-tight">
-                                                            {app.type === 'block' ? 'INDISPONÍVEL' : (app.client?.nome || 'Bloqueado')}
+                                                            {app.type === 'block' ? 'INDISPONÍVEL' : (app.client?.apelido || app.client?.nome || 'Bloqueado')}
                                                         </p>
                                                     </div>
                                                     {!isShort && (

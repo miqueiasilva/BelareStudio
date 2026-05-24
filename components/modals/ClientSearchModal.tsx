@@ -33,7 +33,7 @@ const ClientSearchModal: React.FC<ClientSearchModalProps> = ({ onClose, onSelect
     try {
       let query = supabase
         .from('clients')
-        .select('id, nome, whatsapp, email')
+        .select('id, nome, apelido, whatsapp, email')
         .eq('studio_id', activeStudioId)
         .limit(20);
 
@@ -115,7 +115,14 @@ const ClientSearchModal: React.FC<ClientSearchModalProps> = ({ onClose, onSelect
                         {client.nome.charAt(0).toUpperCase()}
                     </div>
                     <div>
-                        <p className="font-black text-slate-700 group-hover:text-orange-700 transition-colors">{client.nome}</p>
+                        <p className="font-black text-slate-700 group-hover:text-orange-700 transition-colors flex items-center gap-2">
+                          {client.nome}
+                          {client.apelido && (
+                            <span className="text-[10px] text-orange-600 font-black bg-orange-50 border border-orange-100 px-1.5 py-0.5 rounded uppercase">
+                              "{client.apelido}"
+                            </span>
+                          )}
+                        </p>
                         <p className="text-xs text-slate-400 font-bold tracking-tighter uppercase">{client.whatsapp || 'Sem WhatsApp'}</p>
                     </div>
                   </div>

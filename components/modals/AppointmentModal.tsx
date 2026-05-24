@@ -372,7 +372,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             <div className="flex items-center gap-3 group cursor-pointer" onClick={() => setSelectionModal('client')}>
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${formData.client ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}><User className="w-5 h-5" /></div>
                 <div className="flex-1 border-b border-slate-200 pb-2 group-hover:border-orange-300 transition-colors">
-                    <input type="text" readOnly value={formData.client?.nome || ''} placeholder="Selecione o cliente" className="w-full bg-transparent cursor-pointer focus:outline-none font-medium text-slate-800 placeholder:font-normal" />
+                    <input type="text" readOnly value={formData.client ? (formData.client.apelido ? `${formData.client.nome} (${formData.client.apelido})` : formData.client.nome) : ''} placeholder="Selecione o cliente" className="w-full bg-transparent cursor-pointer focus:outline-none font-medium text-slate-800 placeholder:font-normal" />
                 </div>
             </div>
           </div>
