@@ -130,7 +130,9 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           start: appointment?.start || new Date(),
       });
       
-      const initialServices = appointment?.service ? [appointment.service] : [];
+      const initialServices = appointment?.services && appointment.services.length > 0
+          ? appointment.services
+          : (appointment?.service ? [appointment.service] : []);
       setSelectedServices(initialServices);
       
       if (appointment?.service) {

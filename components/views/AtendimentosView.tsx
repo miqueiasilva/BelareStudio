@@ -518,9 +518,21 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             }
         }
 
+        let cleanNotes = notes;
+        const jsonIndex = cleanNotes.indexOf('---SERVICES_JSON---');
+        if (jsonIndex !== -1) {
+            const endIndex = cleanNotes.indexOf('---END_SERVICES_JSON---');
+            if (endIndex !== -1) {
+                cleanNotes = (cleanNotes.substring(0, jsonIndex) + cleanNotes.substring(endIndex + '---END_SERVICES_JSON---'.length)).trim();
+            } else {
+                cleanNotes = cleanNotes.substring(0, jsonIndex).trim();
+            }
+        }
+        cleanNotes = cleanNotes.replace(/\[Serviços:.*?\]/g, '').trim();
+
         return {
             id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
-            notas: row.notes || '', origin: row.origin || 'interno',
+            notas: cleanNotes, origin: row.origin || 'interno',
             type: row.type || 'appointment',
             services: services.length > 0 ? services : undefined,
             client: { 
