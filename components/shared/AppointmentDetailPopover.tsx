@@ -50,6 +50,8 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const [statusTarget, setStatusTarget] = useState<HTMLElement | null>(null);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [clientPhone, setClientPhone] = useState<string | null>(null);
+  const [sameDayAppointments, setSameDayAppointments] = useState<any[]>([]);
+  const [sendAllTogether, setSendAllTogether] = useState<boolean>(true);
 
   const { activeStudioId } = useStudio();
   const [reminderTemplate, setReminderTemplate] = useState<string | null>(null);
@@ -98,15 +100,77 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     fetchClientPhone();
   }, [appointment.client?.id]);
 
+  useEffect(() => {
+    const fetchSameDayAppointments = async () => {
+      const clientId = appointment.client?.id;
+      const clientName = appointment.client_name || appointment.client?.nome;
+      if ((!clientId && !clientName) || !activeStudioId) return;
+      
+      try {
+        const appointmentDate = new Date(appointment.start);
+        const startOfDay = new Date(appointmentDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(appointmentDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        let query = supabase
+          .from('appointments')
+          .select('id, date, service_name, professional_name, status')
+          .eq('studio_id', activeStudioId)
+          .gte('date', startOfDay.toISOString())
+          .lte('date', endOfDay.toISOString())
+          .neq('status', 'cancelado');
+
+        if (clientId) {
+          query = query.eq('client_id', clientId);
+        } else if (clientName) {
+          query = query.eq('client_name', clientName);
+        } else {
+          return;
+        }
+
+        const { data, error } = await query;
+        if (data && data.length > 1) {
+          const sorted = data.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          setSameDayAppointments(sorted);
+        } else {
+          setSameDayAppointments([]);
+        }
+      } catch (e) {
+        console.error("Erro ao buscar agendamentos do mesmo dia:", e);
+      }
+    };
+    fetchSameDayAppointments();
+  }, [appointment.client?.id, appointment.client_name, appointment.start, activeStudioId]);
+
   const handleSendWhatsAppReminder = () => {
     if (!clientPhone) return;
     const cleanPhone = clientPhone.replace(/\D/g, '');
-    const clientName = appointment.client?.nome || 'Cliente';
-    const serviceName = appointment.services && appointment.services.length > 0
-      ? appointment.services.map(s => s.name).join(' + ')
-      : appointment.service.name;
-    const timeStr = format(appointment.start, "HH:mm");
-    const profName = appointment.professional?.name || '';
+    const clientName = appointment.client?.nome || appointment.client_name || 'Cliente';
+    
+    let serviceName: string;
+    let timeStr: string;
+    let profName: string;
+
+    if (sameDayAppointments.length > 1 && sendAllTogether) {
+      // Formata a lista agrupando todos os procedimentos de forma elegante
+      serviceName = '\n' + sameDayAppointments.map((app, idx) => {
+        const t = format(new Date(app.date), "HH:mm");
+        const prof = app.professional_name ? ` (com ${app.professional_name})` : '';
+        return `${idx + 1}. *${app.service_name}* às *${t}*${prof}`;
+      }).join('\n');
+
+      const firstAppt = sameDayAppointments[0];
+      timeStr = `A partir das ${format(new Date(firstAppt.date), "HH:mm")} (Múltiplos procedimentos)`;
+      profName = '';
+    } else {
+      serviceName = appointment.services && appointment.services.length > 0
+        ? appointment.services.map(s => s.name).join(' + ')
+        : appointment.service?.name || appointment.service_name || 'Procedimento';
+      timeStr = format(appointment.start, "HH:mm");
+      profName = appointment.professional?.name || appointment.professional_name || '';
+    }
+
     const dateStr = format(appointment.start, "EEEE, dd/MM", { locale: pt });
     const fallbackLink = `${window.location.origin}/#/public-preview/${activeStudioId}`;
 
@@ -131,7 +195,6 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
       .replace(/{link_confirmacao}/g, fallbackLink)
       .replace(/{empresa}/g, studioName);
 
-    // Registro silencioso do lembrete enviado via Jaci IA no Supabase
     const logReminder = async () => {
       if (!activeStudioId) return;
       try {
@@ -275,6 +338,42 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
               <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mt-1">{appointment.service.name}</p>
             )}
           </div>
+
+          {sameDayAppointments.length > 1 && (
+            <div className="bg-orange-50/70 border border-orange-100 rounded-[20px] p-3 space-y-2 text-xs">
+              <div className="flex items-center gap-1.5 font-bold text-orange-850">
+                <MessageCircle size={14} className="text-orange-600 flex-shrink-0" />
+                <span>Múltiplos horários hoje!</span>
+              </div>
+              <p className="text-[10px] text-slate-500 font-semibold leading-tight0">
+                Esse cliente possui <b>{sameDayAppointments.length} agendamentos</b> no mesmo dia. Como prefere enviar o lembrete?
+              </p>
+              <div className="flex gap-2 pt-1 text-center">
+                <button 
+                  type="button"
+                  onClick={() => setSendAllTogether(true)}
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-[9px] font-black uppercase tracking-tight transition-all border ${
+                    sendAllTogether 
+                      ? 'bg-orange-500 text-white border-orange-600 shadow-sm shadow-orange-100' 
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  Tudo Junto ✅
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setSendAllTogether(false)}
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-[9px] font-black uppercase tracking-tight transition-all border ${
+                    !sendAllTogether 
+                      ? 'bg-orange-500 text-white border-orange-600 shadow-sm shadow-orange-100' 
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  Separado 📲
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-3 pt-2">
             <div className="flex items-start gap-3 text-xs font-bold text-slate-600">
