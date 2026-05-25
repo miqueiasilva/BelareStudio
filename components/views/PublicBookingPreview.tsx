@@ -291,11 +291,10 @@ const PublicBookingPreview: React.FC = () => {
             const dayKey = weekdayMap[getDay(date)];
             
             // Prioriza o horário individual do profissional, se existir
-            const profConfig = professional.work_schedule?.[dayKey];
-            const studioConfig = studio.business_hours?.[dayKey];
-            
-            // Se houver config do profissional (mesmo que inativo), usa ela. Caso contrário, fallback para estúdio.
-            const config = profConfig ? profConfig : studioConfig;
+            const hasWorkSchedule = professional.work_schedule && Object.keys(professional.work_schedule).length > 0;
+            const config = hasWorkSchedule 
+                ? professional.work_schedule[dayKey] 
+                : studio.business_hours?.[dayKey];
 
             if (!config || !config.active) {
                 setAvailableSlots([]);
@@ -830,9 +829,10 @@ const PublicBookingPreview: React.FC = () => {
                                                         const dayKey = weekdayMap[getDay(day)];
                                                         
                                                         // Verifica se o profissional (ou estúdio) está aberto
-                                                        const profConfig = selectedProfessional?.work_schedule?.[dayKey];
-                                                        const studioConfig = studio?.business_hours?.[dayKey];
-                                                        const activeConfig = profConfig ? profConfig : studioConfig;
+                                                        const hasWorkSchedule = selectedProfessional?.work_schedule && Object.keys(selectedProfessional.work_schedule).length > 0;
+                                                        const activeConfig = hasWorkSchedule 
+                                                            ? selectedProfessional.work_schedule[dayKey] 
+                                                            : studio?.business_hours?.[dayKey];
                                                         const isClosed = !activeConfig || !activeConfig.active;
                                                         
                                                         const isDisabled = isPast || isOverLimit || isClosed;
