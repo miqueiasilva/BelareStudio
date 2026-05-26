@@ -104,7 +104,7 @@ const statusMeta: { [key: string]: { label: string, bg: string, text: string } }
 // --- Main Component ---
 
 const RelatoriosView: React.FC = () => {
-  const { activeStudioId } = useStudio();
+  const { activeStudioId, studios } = useStudio();
   const [activeTab, setActiveTab] = useState<string>('executivo');
   const [period, setPeriod] = useState<Period>('30d');
   const [compareWithPrevious, setCompareWithPrevious] = useState(true);
@@ -369,6 +369,202 @@ const RelatoriosView: React.FC = () => {
     setSelectedProfDetails(null);
     setModalSearch('');
     setModalStatusFilter('todos');
+  };
+
+  const exportCollaboratorExcel = () => {
+    if (!selectedProfDetails || modalAppointments.length === 0) {
+      toast.error('Nenhum dado para exportar.');
+      return;
+    }
+    
+    const activeStudio = studios?.find(s => s.id === activeStudioId);
+    const studioName = activeStudio?.name || 'BelareStudio';
+
+    // 1. Prepare data rows
+    const rows = modalAppointments.map((a: any) => {
+      const clientName = a.client_name || a.client?.nome || 'Cliente Avulso';
+      const parsedDate = typeof a.date === 'string' ? parseISO(a.date) : new Date(a.date);
+      const formattedDate = format(parsedDate, "dd/MM/yyyy HH:mm");
+      
+      const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
+      const serviceNames = svcIds.map((id: any) => {
+        const s = services.find((srv: any) => srv.id === id);
+        return s?.nome || '';
+      }).filter(Boolean).join(', ') || a.service_name || 'Serviço';
+      
+      const valFromServices = svcIds.reduce((sum: number, id: any) => {
+        const s = services.find((srv: any) => srv.id === id);
+        return sum + (s?.preco || 0);
+      }, 0);
+      const appointmentValue = a.value || a.price || valFromServices || 0;
+      const statusLabel = statusMeta[a.status]?.label || a.status || 'Agendado';
+      
+      return {
+        'Cliente': clientName,
+        'Data / Horário': formattedDate,
+        'Serviço(s)': serviceNames,
+        'Status': statusLabel,
+        'Valor (R$)': appointmentValue
+      };
+    });
+
+    const summaryData = [
+      { 'Cliente': 'RELATÓRIO DE ATENDIMENTOS' },
+      { 'Cliente': `Unidade: ${studioName}` },
+      { 'Cliente': `Colaborador(a): ${selectedProfDetails.name}` },
+      { 'Cliente': `Período: ${format(getDates().start, 'dd/MM/yyyy')} até ${format(getDates().end, 'dd/MM/yyyy')}` },
+      { 'Cliente': '' },
+      { 'Cliente': 'RESUMO FINANCEIRO' },
+      { 'Cliente': 'Atendimentos Totais', 'Data / Horário': selectedProfDetails.count },
+      { 'Cliente': 'Realizado (Pago)', 'Data / Horário': selectedProfDetails.revenue },
+      { 'Cliente': 'Projetado (Agenda)', 'Data / Horário': selectedProfDetails.projectedRevenue },
+      { 'Cliente': 'Comissão Est.', 'Data / Horário': selectedProfDetails.commission },
+      { 'Cliente': '' },
+      { 'Cliente': 'LISTAGEM DE ATENDIMENTOS' },
+      ...rows
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(summaryData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Relatório');
+    
+    // Set widths
+    const wscols = [
+      {wch: 35}, // Cliente / Campo
+      {wch: 22}, // Data / Valor resumo
+      {wch: 35}, // Serviço
+      {wch: 15}, // Status
+      {wch: 15}, // Valor
+    ];
+    ws['!cols'] = wscols;
+
+    const fileName = `Relatorio_${selectedProfDetails.name.replace(/\s+/g, '_')}_${format(new Date(), 'dd-MM-yyyy')}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    toast.success('Excel exportado com sucesso!');
+  };
+
+  const exportCollaboratorPDF = () => {
+    if (!selectedProfDetails || modalAppointments.length === 0) {
+      toast.error('Nenhum dado para exportar.');
+      return;
+    }
+
+    const doc = new jsPDF() as any;
+    const activeStudio = studios?.find(s => s.id === activeStudioId);
+    const studioName = activeStudio?.name || 'BelareStudio';
+
+    // Title / Header
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text(studioName.toUpperCase(), 14, 18);
+    
+    doc.setFontSize(13);
+    doc.setFont("helvetica", "normal");
+    doc.text('Relatório de Atendimentos de Colaborador', 14, 25);
+    
+    // Period & Name info
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Colaborador(a):`, 14, 34);
+    doc.setFont("helvetica", "normal");
+    doc.text(selectedProfDetails.name, 43, 34);
+
+    doc.setFont("helvetica", "bold");
+    doc.text(`Período:`, 14, 39);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${format(getDates().start, 'dd/MM/yyyy')} até ${format(getDates().end, 'dd/MM/yyyy')}`, 32, 39);
+
+    doc.setFont("helvetica", "bold");
+    doc.text(`Filtro de Status:`, 14, 44);
+    doc.setFont("helvetica", "normal");
+    const statusLabels: Record<string, string> = { todos: 'Todos', concluidos: 'Concluídos', pendentes: 'Não Finalizados', cancelados: 'Cancelados' };
+    doc.text(statusLabels[modalStatusFilter] || 'Todos', 44, 44);
+
+    // Mini Stats Box
+    doc.setFillColor(248, 250, 252); // bg-slate-50
+    doc.rect(14, 49, 182, 22, "F");
+    
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139); // slate-500
+    doc.text("ATENDIMENTOS", 18, 55);
+    doc.text("REALIZADO (PAGO)", 62, 55);
+    doc.text("PROJETADO (AGENDA)", 110, 55);
+    doc.text("COMISSÃO EST.", 158, 55);
+
+    doc.setFontSize(11);
+    doc.setTextColor(30, 41, 59); // slate-800
+    doc.text(String(selectedProfDetails.count), 18, 63);
+    
+    doc.setTextColor(16, 185, 129); // emerald-600
+    doc.text(`R$ ${selectedProfDetails.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 62, 63);
+    
+    doc.setTextColor(37, 99, 235); // blue-600
+    doc.text(`R$ ${selectedProfDetails.projectedRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 110, 63);
+    
+    doc.setTextColor(225, 29, 72); // rose-600
+    doc.text(`R$ ${selectedProfDetails.commission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 158, 63);
+
+    // Prepare table lines
+    const tableData = modalAppointments.map((a: any) => {
+      const clientName = a.client_name || a.client?.nome || 'Cliente Avulso';
+      const parsedDate = typeof a.date === 'string' ? parseISO(a.date) : new Date(a.date);
+      const formattedDate = format(parsedDate, "dd/MM/yyyy HH:mm");
+      
+      const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
+      const serviceNames = svcIds.map((id: any) => {
+        const s = services.find((srv: any) => srv.id === id);
+        return s?.nome || '';
+      }).filter(Boolean).join(', ') || a.service_name || 'Serviço';
+      
+      const valFromServices = svcIds.reduce((sum: number, id: any) => {
+        const s = services.find((srv: any) => srv.id === id);
+        return sum + (s?.preco || 0);
+      }, 0);
+      const appointmentValue = a.value || a.price || valFromServices || 0;
+      const statusLabel = statusMeta[a.status]?.label || a.status || 'Agendado';
+
+      return [
+        clientName,
+        formattedDate,
+        serviceNames,
+        statusLabel,
+        `R$ ${appointmentValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+      ];
+    });
+
+    autoTable(doc, {
+      head: [['Cliente', 'Data / Horário', 'Serviço(s)', 'Status', 'Valor']],
+      body: tableData,
+      startY: 77,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [30, 41, 59], // slate-800
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 9,
+        halign: 'left'
+      },
+      columnStyles: {
+        0: { cellWidth: 42 },
+        1: { cellWidth: 32 },
+        2: { cellWidth: 55 },
+        3: { cellWidth: 28, halign: 'center' },
+        4: { cellWidth: 25, halign: 'right' }
+      },
+      styles: {
+        fontSize: 8.5,
+        font: "helvetica",
+        cellPadding: 3
+      },
+      alternateRowStyles: {
+        fillColor: [250, 251, 252]
+      }
+    });
+
+    const fileName = `Relatorio_${selectedProfDetails.name.replace(/\s+/g, '_')}_${format(new Date(), 'dd-MM-yyyy')}.pdf`;
+    doc.save(fileName);
+    toast.success('PDF exportado com sucesso!');
   };
 
   const modalAppointments = useMemo(() => {
@@ -859,12 +1055,30 @@ const RelatoriosView: React.FC = () => {
                 </p>
               </div>
             </div>
-            <button 
-              onClick={handleCloseModal}
-              className="p-3 bg-slate-200/50 hover:bg-slate-200 text-slate-500 hover:text-slate-800 rounded-2xl transition-all cursor-pointer"
-            >
-              <X size={18} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={exportCollaboratorPDF}
+                title="Exportar como PDF"
+                className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer border border-rose-100"
+              >
+                <FileText size={14} className="sm:w-4 sm:h-4 text-rose-600" />
+                <span className="hidden sm:inline">PDF</span>
+              </button>
+              <button
+                onClick={exportCollaboratorExcel}
+                title="Exportar para Excel"
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-800 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer border border-emerald-100"
+              >
+                <FileSpreadsheet size={14} className="sm:w-4 sm:h-4 text-emerald-600" />
+                <span className="hidden sm:inline">Excel</span>
+              </button>
+              <button 
+                onClick={handleCloseModal}
+                className="p-2 sm:p-3 bg-slate-200/50 hover:bg-slate-200 text-slate-500 hover:text-slate-800 rounded-xl sm:rounded-2xl transition-all cursor-pointer ml-1"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
 
           {/* Mini Stats Grid */}
