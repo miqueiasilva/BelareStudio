@@ -10,15 +10,38 @@
         window.dispatchEvent(new CustomEvent('pwa-beforeinstallprompt', { detail: e }));
       });
 
-      // Aggressive fallback to detect old build chunks and clear cache automatically
+      // Aggressive fallback to detect old build chunks and clear cache automatically without infinite loading loops
       window.addEventListener('error', function(e) {
+        var target = e.target;
         var errorMsg = String(e.message || e.error || "");
-        var isChunkError = errorMsg.indexOf("ChunkLoadError") !== -1 || 
-                           errorMsg.indexOf("Loading chunk") !== -1 || 
-                           errorMsg.indexOf("Failed to fetch dynamically imported module") !== -1 ||
-                           (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK'));
-        
-        if (isChunkError) {
+        var isChunkTextError = errorMsg.indexOf("ChunkLoadError") !== -1 || 
+                               errorMsg.indexOf("Loading chunk") !== -1 || 
+                               errorMsg.indexOf("Failed to fetch dynamically imported module") !== -1;
+
+        var isOurAssetLoadFailure = false;
+        if (target && typeof target.tagName === 'string') {
+          var tagName = target.tagName.toUpperCase();
+          if (tagName === 'SCRIPT' || tagName === 'LINK') {
+            var src = String(target.src || target.href || "");
+            var isLocal = src.indexOf(window.location.origin) === 0 || src.indexOf('/') === 0 || src.indexOf('.') === 0;
+            var isAsset = src.indexOf('/assets/') !== -1;
+            if (isLocal && isAsset) {
+              isOurAssetLoadFailure = true;
+            }
+          }
+        }
+
+        if (isChunkTextError || isOurAssetLoadFailure) {
+          try {
+            var now = Date.now();
+            var lastReload = sessionStorage.getItem('pwa_chunk_error_reload');
+            if (lastReload && (now - parseInt(lastReload, 10) < 15000)) {
+              console.warn("[PWA_FALLBACK] Evitando loop de recarregamento infinito. Último recarregamento foi há menos de 15s.");
+              return;
+            }
+            sessionStorage.setItem('pwa_chunk_error_reload', String(now));
+          } catch(err) {}
+
           console.error("[PWA_FALLBACK] Falha de recurso ou chunk antigo detectado. Limpando caches e recarregando...", e);
           
           if ('caches' in window) {
@@ -57,6 +80,16 @@
                                reasonText.indexOf("Failed to fetch dynamically imported module") !== -1;
         
         if (isChunkRejection) {
+          try {
+            var now = Date.now();
+            var lastReload = sessionStorage.getItem('pwa_chunk_error_reload');
+            if (lastReload && (now - parseInt(lastReload, 10) < 15000)) {
+              console.warn("[PWA_FALLBACK] Evitando loop de recarregamento infinito no unhandledrejection.");
+              return;
+            }
+            sessionStorage.setItem('pwa_chunk_error_reload', String(now));
+          } catch(err) {}
+
           console.error("[PWA_FALLBACK] Promessa rejeitada por falha de chunk detectada. Forçando limpeza de caches...", e);
           if ('caches' in window) {
             caches.keys().then(function(keys) {

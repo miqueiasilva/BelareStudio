@@ -19,6 +19,12 @@ class ErrorBoundary extends Component<Props, State> {
   };
 
   public static getDerivedStateFromError(error: unknown): State {
+    return { hasError: true, error };
+  }
+
+  public componentDidCatch(error: unknown, errorInfo: ErrorInfo) {
+    console.error("App crash capturado pelo ErrorBoundary:", error, errorInfo);
+
     const errorMsg = String(error ?? "");
     if (
       errorMsg.indexOf("ChunkLoadError") !== -1 ||
@@ -27,6 +33,18 @@ class ErrorBoundary extends Component<Props, State> {
     ) {
       console.warn("[ErrorBoundary] Erro de carregamento de chunk. Limpando cache e recarregando para o código mais recente...");
       if (typeof window !== "undefined") {
+        try {
+          const now = Date.now();
+          const lastReload = sessionStorage.getItem('pwa_chunk_error_reload');
+          if (lastReload && (now - parseInt(lastReload, 10) < 15000)) {
+            console.warn("[ErrorBoundary] Evitando loop de recarregamento infinito. Último recarregamento foi há menos de 15s.");
+            return;
+          }
+          sessionStorage.setItem('pwa_chunk_error_reload', String(now));
+        } catch (err) {
+          console.warn("[ErrorBoundary] Falha de depuração ao acessar sessionStorage", err);
+        }
+
         if ("caches" in window) {
           caches.keys().then((keys) => {
             return Promise.all(keys.map((key) => caches.delete(key)));
@@ -40,11 +58,6 @@ class ErrorBoundary extends Component<Props, State> {
         }
       }
     }
-    return { hasError: true, error };
-  }
-
-  public componentDidCatch(error: unknown, errorInfo: ErrorInfo) {
-    console.error("App crash capturado pelo ErrorBoundary:", error, errorInfo);
   }
 
   public render(): ReactNode {
