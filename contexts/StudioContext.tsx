@@ -65,8 +65,8 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
 
       // Prioridade Admin - Verificamos tanto o papel no AppUser quanto metadados do Supabase
       const userRoleMetadata = (user.app_metadata?.role || user.user_metadata?.role || '').toLowerCase();
-      const isAdmin = user.papel === 'admin' || 
-                      user.papel === 'gestor' || 
+      const isAdmin = (user as any).papel === 'admin' || 
+                      (user as any).papel === 'gestor' || 
                       userRoleMetadata === 'admin' || 
                       userRoleMetadata === 'gestor' || 
                       user.email === 'admin@belarestudio.com' ||
@@ -74,9 +74,29 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
 
       let mappedStudios: Studio[] = [];
 
+      const timeoutPromise = (ms: number, reason: string) => 
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error(`Timeout: ${reason}`)), ms));
+
       if (isAdmin) {
-        const { data: allStudios } = await supabase.from("studios").select("id, name");
-        const { data: allSettings } = await supabase.from("studio_settings").select("studio_id, theme_color, discount_rules");
+        console.log("[StudioProvider] Sincronizando estúdios como Administrador...");
+        const queryStudios = supabase.from("studios").select("id, name");
+        const querySettings = supabase.from("studio_settings").select("studio_id, theme_color, discount_rules");
+
+        const { data: allStudios } = await Promise.race([
+          queryStudios,
+          timeoutPromise(2500, "studios query")
+        ]).catch(err => {
+          console.warn("[StudioProvider] Falha ao carregar lista de estúdios (timeout/erro):", err);
+          return { data: null };
+        });
+
+        const { data: allSettings } = await Promise.race([
+          querySettings,
+          timeoutPromise(2500, "studio_settings query")
+        ]).catch(err => {
+          console.warn("[StudioProvider] Falha ao carregar configurações de estúdio (timeout/erro):", err);
+          return { data: null };
+        });
         
         mappedStudios = (allStudios || []).map(s => {
           const settings = allSettings?.find(st => st.studio_id === s.id);
@@ -89,17 +109,34 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
           };
         });
       } else {
+        console.log("[StudioProvider] Sincronizando estúdios de colaborador...");
         // Buscar em user_studios (mapeamento direto de usuário)
-        const { data: memberships } = await supabase
+        const membershipsPromise = supabase
           .from("user_studios")
           .select("studio_id, role, studios(name)")
           .eq("user_id", user.id);
         
         // Buscar também em team_members pelo email (caso o colaborador tenha sido adicionado apenas lá)
-        const { data: teamMemberships } = await supabase
+        const teamMembershipsPromise = supabase
           .from("team_members")
           .select("studio_id, access_level")
           .eq("email", user.email);
+
+        const { data: memberships } = await Promise.race([
+          membershipsPromise,
+          timeoutPromise(2500, "user_studios query")
+        ]).catch(err => {
+          console.warn("[StudioProvider] Falha ao consultar user_studios:", err);
+          return { data: null };
+        });
+
+        const { data: teamMemberships } = await Promise.race([
+          teamMembershipsPromise,
+          timeoutPromise(2500, "team_memberships query")
+        ]).catch(err => {
+          console.warn("[StudioProvider] Falha ao consultar team_members:", err);
+          return { data: null };
+        });
 
         // Combinar os IDs únicos de estúdios encontrados
         const allMemberships = [...(memberships || [])];
@@ -118,28 +155,58 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
         
         const studioIds = allMemberships.map(m => m.studio_id);
         
-        // Buscar nomes dos estúdios e configurações
-        const { data: studiosData } = await supabase
-          .from("studios")
-          .select("id, name")
-          .in("id", studioIds);
+        if (studioIds.length > 0) {
+          // Buscar nomes dos estúdios e configurações
+          const studiosDataPromise = supabase
+            .from("studios")
+            .select("id, name")
+            .in("id", studioIds);
 
-        const { data: allSettings } = await supabase
-          .from("studio_settings")
-          .select("studio_id, theme_color, discount_rules")
-          .in("studio_id", studioIds);
-        
-        mappedStudios = allMemberships.map(m => {
-          const settings = allSettings?.find(st => st.studio_id === m.studio_id);
-          const studioInfo = studiosData?.find(s => s.id === m.studio_id);
-          return {
-            id: String(m.studio_id),
-            name: (m.studios as any)?.name || studioInfo?.name || "Unidade",
-            role: m.role,
-            theme_color: settings?.theme_color,
-            discount_rules: settings?.discount_rules
-          };
-        });
+          const settingsPromise = supabase
+            .from("studio_settings")
+            .select("studio_id, theme_color, discount_rules")
+            .in("studio_id", studioIds);
+
+          const { data: studiosData } = await Promise.race([
+            studiosDataPromise,
+            timeoutPromise(2500, "studios details query")
+          ]).catch(err => {
+            console.warn("[StudioProvider] Falha ao carregar detalhes dos estúdios:", err);
+            return { data: null };
+          });
+
+          const { data: allSettings } = await Promise.race([
+            settingsPromise,
+            timeoutPromise(2500, "studio_settings details query")
+          ]).catch(err => {
+            console.warn("[StudioProvider] Falha ao carregar configurações detalhadas dos estúdios:", err);
+            return { data: null };
+          });
+          
+          mappedStudios = allMemberships.map(m => {
+            const settings = allSettings?.find(st => st.studio_id === m.studio_id);
+            const studioInfo = studiosData?.find(s => s.id === m.studio_id);
+            return {
+              id: String(m.studio_id),
+              name: (m.studios as any)?.name || studioInfo?.name || "Unidade",
+              role: m.role,
+              theme_color: settings?.theme_color,
+              discount_rules: settings?.discount_rules
+            };
+          });
+        }
+      }
+
+      // Fallback de Emergência: Evitar loop de carregamento e tela branca sob conexões instáveis ou banco de dados pausado
+      if (mappedStudios.length === 0) {
+        console.warn("[StudioProvider] Nenhum estúdio encontrado na nuvem (ou erro de Timeout). Criando estúdio local de fallback...");
+        mappedStudios = [{
+          id: "default-studio",
+          name: isAdmin ? "BelareStudio (Principal - Local)" : "BelareStudio Colaborador (Local)",
+          role: isAdmin ? "admin" : "profissional",
+          theme_color: "#f97316",
+          discount_rules: []
+        }];
       }
 
       setStudios(mappedStudios);
