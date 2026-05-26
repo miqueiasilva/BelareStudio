@@ -55,6 +55,26 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
   useEffect(() => {
     isMounted.current = true;
 
+    // Safety timeout: force resolve initial loading in max 5 seconds under any network circumstance
+    const safetyTimer = setTimeout(() => {
+      if (isMounted.current && loading) {
+        console.warn("[AUTH_DEBUG] Segurança de tempo limite acionada após 5s de carregamento inicial.");
+        setLoading(false);
+      }
+    }, 5000);
+
+    // Timeout helper for promises
+    const withTimeout = async <T,>(promise: Promise<T>, ms: number, fallbackValue: T): Promise<T> => {
+      let timeoutId: any;
+      const timeoutPromise = new Promise<T>((resolve) => {
+        timeoutId = setTimeout(() => {
+          console.warn(`[AUTH_DEBUG] Operação de autenticação excedeu o tempo limite de ${ms}ms.`);
+          resolve(fallbackValue);
+        }, ms);
+      });
+      return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+    };
+
     // Check initial session
     const initSession = async () => {
       try {
@@ -63,7 +83,11 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         
         if (code) {
           console.log("[AUTH_DEBUG] Detectado código OAuth, trocando por sessão...");
-          const { data, error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+          const { data, error } = await withTimeout(
+            supabase.auth.exchangeCodeForSession(window.location.href),
+            4000,
+            { data: { session: null, user: null }, error: new Error('Exchange timeout') }
+          );
           window.history.replaceState({}, '', '/');
           
           if (error) {
@@ -73,7 +97,11 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
           }
           
           if (data?.session?.user) {
-            const appUser = await fetchProfile(data.session.user);
+            const appUser = await withTimeout(
+              fetchProfile(data.session.user),
+              2000,
+              { ...data.session.user, papel: 'profissional', nome: 'Usuário' }
+            );
             if (isMounted.current) {
               setUser(appUser);
               setLoading(false);
@@ -85,7 +113,11 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         let session = null;
         let sessionError = null;
         try {
-          const res = await supabase.auth.getSession();
+          const res = await withTimeout(
+            supabase.auth.getSession(),
+            3000, // 3 seconds timeout for Chrome dynamic SW hangs
+            { data: { session: null }, error: new Error('Sessão expirou ou rede lenta') }
+          );
           session = res.data?.session;
           sessionError = res.error;
         } catch (e: any) {
@@ -101,7 +133,8 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
               msg.includes("invalid refresh token") ||
               msg.includes("invalid-refresh-token") ||
               msg.includes("invalid_grant") ||
-              msg.includes("not found")) {
+              msg.includes("not found") ||
+              msg.includes("sessão expirou")) {
             console.log("[AUTH_DEBUG] Sessão corrompida detectada, limpando de forma agressiva...");
             try {
               await supabase.auth.signOut();
@@ -131,7 +164,11 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         }
 
         if (session?.user) {
-          const appUser = await fetchProfile(session.user);
+          const appUser = await withTimeout(
+            fetchProfile(session.user),
+            2000,
+            { ...session.user, papel: 'profissional', nome: 'Usuário' }
+          );
           if (isMounted.current) setUser(appUser);
         }
       } catch (err) {
@@ -174,6 +211,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
 
     return () => {
       isMounted.current = false;
+      clearTimeout(safetyTimer);
       subscription.unsubscribe();
     };
   }, [fetchProfile]);

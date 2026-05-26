@@ -19,6 +19,27 @@ class ErrorBoundary extends Component<Props, State> {
   };
 
   public static getDerivedStateFromError(error: unknown): State {
+    const errorMsg = String(error ?? "");
+    if (
+      errorMsg.indexOf("ChunkLoadError") !== -1 ||
+      errorMsg.indexOf("Loading chunk") !== -1 ||
+      errorMsg.indexOf("Failed to fetch dynamically imported module") !== -1
+    ) {
+      console.warn("[ErrorBoundary] Erro de carregamento de chunk. Limpando cache e recarregando para o código mais recente...");
+      if (typeof window !== "undefined") {
+        if ("caches" in window) {
+          caches.keys().then((keys) => {
+            return Promise.all(keys.map((key) => caches.delete(key)));
+          }).catch((err) => {
+            console.error("[ErrorBoundary] Falha ao limpar caches:", err);
+          }).finally(() => {
+            window.location.reload();
+          });
+        } else {
+          window.location.reload();
+        }
+      }
+    }
     return { hasError: true, error };
   }
 

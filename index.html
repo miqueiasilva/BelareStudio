@@ -9,6 +9,70 @@
         // Dispatch custom event to notify usePWA hook if it is already mounted
         window.dispatchEvent(new CustomEvent('pwa-beforeinstallprompt', { detail: e }));
       });
+
+      // Aggressive fallback to detect old build chunks and clear cache automatically
+      window.addEventListener('error', function(e) {
+        var errorMsg = String(e.message || e.error || "");
+        var isChunkError = errorMsg.indexOf("ChunkLoadError") !== -1 || 
+                           errorMsg.indexOf("Loading chunk") !== -1 || 
+                           errorMsg.indexOf("Failed to fetch dynamically imported module") !== -1 ||
+                           (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK'));
+        
+        if (isChunkError) {
+          console.error("[PWA_FALLBACK] Falha de recurso ou chunk antigo detectado. Limpando caches e recarregando...", e);
+          
+          if ('caches' in window) {
+            caches.keys().then(function(keys) {
+              return Promise.all(
+                keys.map(function(key) {
+                  return caches.delete(key);
+                })
+              );
+            }).then(function() {
+              if ('serviceWorker' in navigator) {
+                return navigator.serviceWorker.getRegistrations().then(function(regs) {
+                  return Promise.all(
+                    regs.map(function(r) {
+                      return r.unregister();
+                    })
+                  );
+                });
+              }
+            }).catch(function(err) {
+              console.error("[PWA_FALLBACK] Falha ao limpar caches:", err);
+            }).finally(function() {
+              window.location.reload(true);
+            });
+          } else {
+            window.location.reload(true);
+          }
+        }
+      }, true); // Use capture phase to catch script/link load failures
+
+      // Catch unhandled promise rejections representing module/chunk loading failures
+      window.addEventListener('unhandledrejection', function(e) {
+        var reasonText = String(e.reason || "");
+        var isChunkRejection = reasonText.indexOf("ChunkLoadError") !== -1 || 
+                               reasonText.indexOf("Loading chunk") !== -1 || 
+                               reasonText.indexOf("Failed to fetch dynamically imported module") !== -1;
+        
+        if (isChunkRejection) {
+          console.error("[PWA_FALLBACK] Promessa rejeitada por falha de chunk detectada. Forçando limpeza de caches...", e);
+          if ('caches' in window) {
+            caches.keys().then(function(keys) {
+              return Promise.all(
+                keys.map(function(key) {
+                  return caches.delete(key);
+                })
+              );
+            }).finally(function() {
+              window.location.reload(true);
+            });
+          } else {
+            window.location.reload(true);
+          }
+        }
+      });
     </script>
     <meta charset="UTF-8" />
     <meta name="google" content="notranslate" />

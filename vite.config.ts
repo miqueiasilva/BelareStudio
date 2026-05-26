@@ -49,6 +49,10 @@ export default defineConfig({
         ]
       },
       workbox: {
+        cacheId: 'belare-pwa-' + Date.now(),
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         runtimeCaching: [
           {
@@ -71,7 +75,7 @@ export default defineConfig({
           },
           {
             urlPattern: /\.(?:js|css)$/i,
-            handler: 'CacheFirst',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'static-assets-cache',
               expiration: {
