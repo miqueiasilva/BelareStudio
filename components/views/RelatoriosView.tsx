@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
     LayoutDashboard, Wallet, Calendar, Users, Briefcase, Sparkles, 
-    TrendingUp, TrendingDown, DollarSign, Target, Clock, XCircle, 
+    TrendingUp, TrendingDown, DollarSign, Target, Clock, XCircle, X,
     UserPlus, UserCheck, History, Gift, Share2, ArrowUpRight, 
     ArrowDownRight, Download, FileText, FileSpreadsheet, Filter, 
     ChevronDown, Search, Loader2, AlertTriangle, PieChart as PieChartIcon,
@@ -88,6 +88,19 @@ const TableCell = ({ children, className = "" }: { children: React.ReactNode, cl
   </td>
 );
 
+const statusMeta: { [key: string]: { label: string, bg: string, text: string } } = {
+  agendado: { label: 'Agendado', bg: 'bg-amber-50 text-amber-700 border border-amber-200/50', text: 'text-amber-700' },
+  confirmado: { label: 'Confirmado', bg: 'bg-emerald-50 text-emerald-700 border border-emerald-200/50', text: 'text-emerald-700' },
+  confirmado_whatsapp: { label: 'Confirmado Whats', bg: 'bg-green-50 text-green-700 border border-green-200/50', text: 'text-green-700' },
+  chegou: { label: 'Chegou', bg: 'bg-blue-50 text-blue-700 border border-blue-200/50', text: 'text-blue-700' },
+  em_atendimento: { label: 'Atendimento', bg: 'bg-indigo-50 text-indigo-700 border border-indigo-200/50', text: 'text-indigo-700' },
+  concluido: { label: 'Concluído', bg: 'bg-sky-50 text-sky-700 border border-sky-200/50', text: 'text-sky-700' },
+  faltou: { label: 'Faltou', bg: 'bg-rose-50 text-rose-700 border border-rose-200/50', text: 'text-rose-700' },
+  cancelado: { label: 'Cancelado', bg: 'bg-slate-100 text-slate-500 border border-slate-200', text: 'text-slate-500' },
+  bloqueado: { label: 'Bloqueado', bg: 'bg-slate-200 text-slate-700 border border-slate-300', text: 'text-slate-700' },
+  em_espera: { label: 'Em Espera', bg: 'bg-purple-50 text-purple-700 border border-purple-200/50', text: 'text-purple-700' },
+};
+
 // --- Main Component ---
 
 const RelatoriosView: React.FC = () => {
@@ -112,6 +125,11 @@ const RelatoriosView: React.FC = () => {
   const [availableProfessionals, setAvailableProfessionals] = useState<any[]>([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const [services, setServices] = useState<any[]>([]);
+
+  // Detalhamento de Equipe states
+  const [selectedProfDetails, setSelectedProfDetails] = useState<any | null>(null);
+  const [modalSearch, setModalSearch] = useState('');
+  const [modalStatusFilter, setModalStatusFilter] = useState('todos');
 
   // --- Data Fetching ---
 
@@ -346,6 +364,54 @@ const RelatoriosView: React.FC = () => {
       };
     }).sort((a: any, b: any) => b.revenue - a.revenue);
   }, [data, availableProfessionals, services]);
+
+  const handleCloseModal = () => {
+    setSelectedProfDetails(null);
+    setModalSearch('');
+    setModalStatusFilter('todos');
+  };
+
+  const modalAppointments = useMemo(() => {
+    if (!selectedProfDetails || !data) return [];
+    
+    // 1. Get all appointments for this professional
+    let appts = data.appointments.filter((a: any) => a.professional_id === selectedProfDetails.id || a.professional?.id === selectedProfDetails.id);
+    
+    // 2. Filter by status
+    if (modalStatusFilter !== 'todos') {
+      if (modalStatusFilter === 'concluidos') {
+        appts = appts.filter((a: any) => a.status === 'concluido');
+      } else if (modalStatusFilter === 'pendentes') {
+        appts = appts.filter((a: any) => a.status !== 'concluido' && a.status !== 'cancelado');
+      } else if (modalStatusFilter === 'cancelados') {
+        appts = appts.filter((a: any) => a.status === 'cancelado');
+      }
+    }
+    
+    // 3. Filter by search query (client name or service name)
+    if (modalSearch.trim()) {
+      const q = modalSearch.toLowerCase();
+      appts = appts.filter((a: any) => {
+        const clientName = (a.client_name || a.client?.nome || '').toLowerCase();
+        
+        // resolve service names
+        const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
+        const serviceNames = (svcIds.map((id: any) => {
+          const s = services.find((srv: any) => srv.id === id);
+          return s?.nome || '';
+        }).join(' ') + ' ' + (a.service_name || '')).toLowerCase();
+        
+        return clientName.includes(q) || serviceNames.includes(q);
+      });
+    }
+    
+    // Sort chronologically (latest to earliest, i.e., date descending to see most recent first)
+    return appts.sort((a: any, b: any) => {
+      const d1 = typeof a.date === 'string' ? parseISO(a.date) : new Date(a.date);
+      const d2 = typeof b.date === 'string' ? parseISO(b.date) : new Date(b.date);
+      return d2.getTime() - d1.getTime();
+    });
+  }, [selectedProfDetails, data, modalStatusFilter, modalSearch, services]);
 
   const renderFilters = () => (
     <div className="bg-white p-4 md:p-6 rounded-[32px] border border-slate-100 shadow-sm mb-8 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 md:gap-6">
@@ -772,6 +838,219 @@ const RelatoriosView: React.FC = () => {
     );
   };
 
+  const renderDetailModal = () => {
+    if (!selectedProfDetails) return null;
+
+    return (
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
+        <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 font-sans text-left">
+          
+          {/* Header */}
+          <div className="p-6 md:p-8 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <img src={selectedProfDetails.photo_url || `https://ui-avatars.com/api/?name=${selectedProfDetails.name}`} className="w-14 h-14 rounded-full object-cover shadow-sm ring-4 ring-orange-500/10" alt="" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-black text-orange-500 uppercase tracking-widest bg-orange-50 px-2 py-0.5 rounded-full">Colaborador(a)</span>
+                </div>
+                <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter mt-1">{selectedProfDetails.name}</h2>
+                <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
+                  Período: {format(getDates().start, 'dd/MM/yyyy')} até {format(getDates().end, 'dd/MM/yyyy')}
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={handleCloseModal}
+              className="p-3 bg-slate-200/50 hover:bg-slate-200 text-slate-500 hover:text-slate-800 rounded-2xl transition-all cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Mini Stats Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-slate-100 border-b border-slate-100 text-center bg-slate-50/20">
+            <div className="p-4">
+              <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Atendimentos</p>
+              <p className="text-base font-black text-slate-800 mt-1">{selectedProfDetails.count}</p>
+            </div>
+            <div className="p-4">
+              <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Realizado (Pago)</p>
+              <p className="text-base font-black text-emerald-600 mt-1">R$ {selectedProfDetails.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+            </div>
+            <div className="p-4">
+              <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Projetado (Agenda)</p>
+              <p className="text-base font-black text-blue-600 mt-1">R$ {selectedProfDetails.projectedRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+            </div>
+            <div className="p-4">
+              <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Comissão Est.</p>
+              <p className="text-base font-black text-rose-600 mt-1">R$ {selectedProfDetails.commission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+            </div>
+          </div>
+
+          {/* Filters bar inside modal */}
+          <div className="p-4 lg:p-6 bg-white border-b border-slate-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+            {/* Search */}
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+              <input 
+                type="text" 
+                placeholder="Buscar por cliente ou serviço..." 
+                value={modalSearch}
+                onChange={e => setModalSearch(e.target.value)}
+                className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/30 transition-all font-sans"
+              />
+              {modalSearch && (
+                <button onClick={() => setModalSearch('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Status buttons */}
+            <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 self-start md:self-auto overflow-x-auto max-w-full scrollbar-hide">
+              {[
+                { id: 'todos', label: 'Todos' },
+                { id: 'concluidos', label: 'Concluídos' },
+                { id: 'pendentes', label: 'Não Finalizados' },
+                { id: 'cancelados', label: 'Cancelados' },
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  onClick={() => setModalStatusFilter(st.id)}
+                  className={`px-3 py-1.5 text-[9px] md:text-[10px] font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${modalStatusFilter === st.id ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Content list */}
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar bg-slate-50/30">
+            {modalAppointments.length === 0 ? (
+              <div className="py-12 text-center">
+                <p className="text-slate-400 font-bold uppercase tracking-wider text-xs">Nenhum atendimento neste período com os filtros selecionados.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Desktop Table */}
+                <div className="hidden md:block bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-slate-50/50 border-b border-slate-100">
+                        <th className="px-6 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">Cliente</th>
+                        <th className="px-6 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">Data / Horário</th>
+                        <th className="px-6 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest">Serviço(s)</th>
+                        <th className="px-6 py-4 text-center text-[9px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+                        <th className="px-6 py-4 text-right text-[9px] font-black text-slate-400 uppercase tracking-widest">Valor</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {modalAppointments.map((a: any) => {
+                        const clientName = a.client_name || a.client?.nome || 'Cliente Avulso';
+                        const parsedDate = typeof a.date === 'string' ? parseISO(a.date) : new Date(a.date);
+                        const formattedDate = format(parsedDate, "dd 'de' MMM 'às' HH:mm", { locale: pt });
+                        
+                        const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
+                        const serviceNames = svcIds.map((id: any) => {
+                          const s = services.find((srv: any) => srv.id === id);
+                          return s?.nome || '';
+                        }).filter(Boolean).join(', ') || a.service_name || 'Serviço';
+                        
+                        const valFromServices = svcIds.reduce((sum: number, id: any) => {
+                          const s = services.find((srv: any) => srv.id === id);
+                          return sum + (s?.preco || 0);
+                        }, 0);
+                        const appointmentValue = a.value || a.price || valFromServices || 0;
+                        
+                        const st = statusMeta[a.status] || { label: a.status || 'Agendado', bg: 'bg-amber-50 text-amber-700 border border-amber-200', text: 'text-amber-700' };
+
+                        return (
+                          <tr key={a.id} className="hover:bg-slate-50/30 transition-colors">
+                            <td className="px-6 py-4 text-xs font-black text-slate-800">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full bg-slate-100 text-slate-600 font-bold text-[10px] flex items-center justify-center">
+                                  {clientName.charAt(0).toUpperCase()}
+                                </div>
+                                <span className="font-extrabold">{clientName}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">
+                              {formattedDate}
+                            </td>
+                            <td className="px-6 py-4 text-xs font-bold text-slate-600">
+                              {serviceNames}
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <span className={`inline-flex px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg ${st.bg} ${st.text}`}>
+                                {st.label}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-right text-xs font-black text-slate-800">
+                              R$ {appointmentValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile List cards */}
+                <div className="md:hidden space-y-3">
+                  {modalAppointments.map((a: any) => {
+                    const clientName = a.client_name || a.client?.nome || 'Cliente Avulso';
+                    const parsedDate = typeof a.date === 'string' ? parseISO(a.date) : new Date(a.date);
+                    const formattedDate = format(parsedDate, "dd 'de' MMM 'às' HH:mm", { locale: pt });
+                    
+                    const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
+                    const serviceNames = svcIds.map((id: any) => {
+                      const s = services.find((srv: any) => srv.id === id);
+                      return s?.nome || '';
+                    }).filter(Boolean).join(', ') || a.service_name || 'Serviço';
+                    
+                    const valFromServices = svcIds.reduce((sum: number, id: any) => {
+                      const s = services.find((srv: any) => srv.id === id);
+                      return sum + (s?.preco || 0);
+                    }, 0);
+                    const appointmentValue = a.value || a.price || valFromServices || 0;
+                    
+                    const st = statusMeta[a.status] || { label: a.status || 'Agendado', bg: 'bg-amber-50 text-amber-700 border border-amber-200', text: 'text-amber-700' };
+
+                    return (
+                      <div key={a.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-2 text-left">
+                        <div className="flex justify-between items-center animate-in fade-in duration-250">
+                          <div className="flex items-center gap-2">
+                            <div className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 font-bold text-[9px] flex items-center justify-center">
+                              {clientName.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="text-xs font-black text-slate-800">{clientName}</span>
+                          </div>
+                          <span className={`px-2 py-0.5 text-[8px] font-black uppercase tracking-widest rounded-md ${st.bg} ${st.text}`}>
+                            {st.label}
+                          </span>
+                        </div>
+                        <div className="text-[10px] font-bold text-slate-400 uppercase">
+                          {formattedDate}
+                        </div>
+                        <div className="text-xs font-bold text-slate-600 pt-1 border-t border-slate-50 flex justify-between items-end">
+                          <span className="flex-1 pr-2 line-clamp-1">{serviceNames}</span>
+                          <span className="font-black text-slate-800 text-right whitespace-nowrap">
+                            R$ {appointmentValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderEquipe = () => (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
@@ -781,20 +1060,28 @@ const RelatoriosView: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
-        <div className="p-6 md:p-8 border-b border-slate-50">
+        <div className="p-6 md:p-8 border-b border-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <h3 className="text-base md:text-lg font-black text-slate-800 uppercase tracking-tighter">Performance por Profissional</h3>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-100 px-3 py-1 rounded-full">
+            💡 Dica: Clique em um colaborador para ver detalhes de atendimentos
+          </span>
         </div>
 
         {/* Mobile: cards */}
         <div className="md:hidden divide-y divide-slate-50">
           {teamStats.map(p => (
-            <div key={p.id} className="p-4 hover:bg-slate-50/50 transition-colors">
+            <div 
+              key={p.id} 
+              className="p-4 hover:bg-orange-50/10 active:bg-orange-50/20 transition-all cursor-pointer"
+              onClick={() => setSelectedProfDetails(p)}
+            >
               <div className="flex justify-between items-start mb-3">
                 <div className="flex items-center gap-3">
-                  <img src={p.photo_url || `https://ui-avatars.com/api/?name=${p.name}`} className="w-10 h-10 rounded-full object-cover shadow-sm" alt="" />
+                  <img src={p.photo_url || `https://ui-avatars.com/api/?name=${p.name}`} className="w-10 h-10 rounded-full object-cover shadow-sm animate-in fade-in" alt="" />
                   <div>
                     <p className="text-sm font-black text-slate-800">{p.name}</p>
                     <p className="text-[10px] text-slate-400 font-bold uppercase">{p.count} atendimentos</p>
+                    <span className="inline-block text-[9px] font-black uppercase text-orange-500 mt-1">Ver todos &rarr;</span>
                   </div>
                 </div>
                 <div className="text-right">
@@ -828,15 +1115,20 @@ const RelatoriosView: React.FC = () => {
                 <TableHeader>Projetado</TableHeader>
                 <TableHeader>Ticket Médio</TableHeader>
                 <TableHeader>Comissão Est.</TableHeader>
+                <TableHeader>Ações</TableHeader>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {teamStats.map(p => (
-                <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                <tr 
+                  key={p.id} 
+                  className="hover:bg-orange-50/10 transition-colors cursor-pointer"
+                  onClick={() => setSelectedProfDetails(p)}
+                >
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      <img src={p.photo_url || `https://ui-avatars.com/api/?name=${p.name}`} className="w-8 h-8 rounded-full object-cover" alt="" />
-                      <span>{p.name}</span>
+                      <img src={p.photo_url || `https://ui-avatars.com/api/?name=${p.name}`} className="w-8 h-8 rounded-full object-cover animate-in fade-in" alt="" />
+                      <span className="font-extrabold">{p.name}</span>
                     </div>
                   </TableCell>
                   <TableCell>{p.count}</TableCell>
@@ -844,6 +1136,17 @@ const RelatoriosView: React.FC = () => {
                   <TableCell className="text-blue-600">R$ {p.projectedRevenue.toLocaleString('pt-BR')}</TableCell>
                   <TableCell>R$ {p.ticket.toFixed(2)}</TableCell>
                   <TableCell className="text-rose-600">R$ {p.commission.toLocaleString('pt-BR')}</TableCell>
+                  <TableCell>
+                    <button 
+                      className="px-3 py-1.5 bg-orange-50 text-orange-600 hover:bg-orange-100 hover:text-orange-700 font-black text-[10px] uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedProfDetails(p);
+                      }}
+                    >
+                      Detalhamento
+                    </button>
+                  </TableCell>
                 </tr>
               ))}
             </tbody>
@@ -941,6 +1244,9 @@ const RelatoriosView: React.FC = () => {
           )}
         </div>
       </main>
+
+      {/* Detail Modal for selected professional appointments */}
+      {renderDetailModal()}
     </div>
   );
 };
