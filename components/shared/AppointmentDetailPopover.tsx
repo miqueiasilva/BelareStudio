@@ -216,7 +216,12 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (popoverRef.current && !popoverRef.current.contains(target)) {
+        // Ignora se estiver clicando dentro do popover de alteração de status
+        const isStatusClick = document.querySelector('.status-update-popover')?.contains(target);
+        if (isStatusClick) return;
+
         if (!isCheckoutOpen) onClose();
       }
     };

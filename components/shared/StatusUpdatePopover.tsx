@@ -84,7 +84,7 @@ const StatusUpdatePopover: React.FC<StatusUpdatePopoverProps> = ({
   return (
     <div
       ref={popoverRef}
-      className="fixed z-50 w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-2 animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-[110] status-update-popover w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-2 animate-in fade-in zoom-in-95 duration-100"
       style={{ top: position.top, left: position.left }}
       onClick={(e) => e.stopPropagation()}
     >

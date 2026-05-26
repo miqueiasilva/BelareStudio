@@ -338,7 +338,10 @@ const RelatoriosView: React.FC = () => {
     const servicesMap = new Map(services.map(s => [s.id, s.preco]));
 
     return availableProfessionals.map(p => {
-      const pAppts = data.appointments.filter((a: any) => a.professional_id === p.id || a.professional?.id === p.id);
+      const pAppts = data.appointments.filter((a: any) => 
+        (a.professional_id === p.id || a.professional?.id === p.id) && 
+        a.status !== 'bloqueado'
+      );
       const pTrans = data.transactions.filter((t: any) => (t.professionalId === p.id || t.professional_id === p.id) && (t.type === 'income' || t.type === 'receita'));
       
       const revenue = pTrans.reduce((acc: number, t: any) => acc + Number(t.amount || 0), 0);
@@ -570,8 +573,11 @@ const RelatoriosView: React.FC = () => {
   const modalAppointments = useMemo(() => {
     if (!selectedProfDetails || !data) return [];
     
-    // 1. Get all appointments for this professional
-    let appts = data.appointments.filter((a: any) => a.professional_id === selectedProfDetails.id || a.professional?.id === selectedProfDetails.id);
+    // 1. Get all appointments for this professional (excluding blocked slots/blocks)
+    let appts = data.appointments.filter((a: any) => 
+      (a.professional_id === selectedProfDetails.id || a.professional?.id === selectedProfDetails.id) &&
+      a.status !== 'bloqueado'
+    );
     
     // 2. Filter by status
     if (modalStatusFilter !== 'todos') {
