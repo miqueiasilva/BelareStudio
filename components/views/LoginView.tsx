@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Loader2, Eye, EyeOff, Mail, Lock, ArrowRight, XCircle, CheckCircle2 } from 'lucide-react';
+import { supabase } from '../../services/supabaseClient';
+import { Loader2, Eye, EyeOff, Mail, Lock, ArrowRight, XCircle, CheckCircle2, RefreshCw, ExternalLink, Trash2, HelpCircle, AlertCircle } from 'lucide-react';
 
 type AuthMode = 'login' | 'register' | 'forgot';
 
@@ -29,6 +30,11 @@ const LoginView: React.FC<LoginViewProps> = ({ onBack }) => {
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [showPassword, setShowPassword] = useState(false);
+    
+    // Troubleshooting States
+    const [showHelp, setShowHelp] = useState(false);
+    const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+    const [connectionError, setConnectionError] = useState<string | null>(null);
 
     const handleModeChange = (newMode: AuthMode) => {
         setError(null);
@@ -36,13 +42,98 @@ const LoginView: React.FC<LoginViewProps> = ({ onBack }) => {
         setMode(newMode);
     };
 
+    const handleTestConnection = async () => {
+        setConnectionStatus('testing');
+        setConnectionError(null);
+        try {
+            const { error } = await supabase.auth.getSession();
+            if (error) throw error;
+            setConnectionStatus('success');
+        } catch (err: any) {
+            console.error('[AUTH_DEBUG] Falha de conexão com Supabase:', err);
+            setConnectionStatus('error');
+            setConnectionError(err.message || 'Sem resposta do banco de dados.');
+        }
+    };
+
+    const handleClearSession = () => {
+        if (confirm("Deseja realmente limpar todos os dados de sessão salvos no seu navegador? Isso removerá credenciais anteriores e recarregará a página.")) {
+            try {
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                const cookies = document.cookie.split(";");
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i];
+                    const eqPos = cookie.indexOf("=");
+                    const name = eqPos > -1 ? cookie.substring(0, eqPos) : cookie;
+                    document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+                }
+                
+                alert("Dados limpos com sucesso! A página será reiniciada.");
+                window.location.reload();
+            } catch (e: any) {
+                setError("Erro ao limpar cookies/localStorage: " + e.message);
+            }
+        }
+    };
+
     const handleGoogleLogin = async () => {
         setError(null);
+        setSuccessMessage(null);
         setIsLoading(true);
-        console.log('[AUTH_DEBUG] Usuário clicou em Login com Google');
+        console.log('[AUTH_DEBUG] Usuário clicou em Login com Google (fluxo popup seguro para iFrame)');
         try {
-            const { error } = await signInWithGoogle();
+            const { data, error } = await supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: `${window.location.origin}/`,
+                    skipBrowserRedirect: true,
+                    flowType: 'pkce'
+                }
+            });
+            
             if (error) throw error;
+            
+            if (data?.url) {
+                console.log('[AUTH_DEBUG] Abrindo URL do Google OAuth:', data.url);
+                const width = 600;
+                const height = 700;
+                const left = window.screen.width / 2 - width / 2;
+                const top = window.screen.height / 2 - height / 2;
+                
+                const authWindow = window.open(
+                    data.url,
+                    'google_oauth_popup',
+                    `width=${width},height=${height},top=${top},left=${left},status=no,resizable=yes,scrollbars=yes`
+                );
+                
+                if (!authWindow) {
+                    throw new Error("O bloqueador de pop-ups do seu navegador impediu a abertura da janela de login do Google. Por favor, permita pop-ups para este site ou clique em 'Não consegue logar? Opções de ajuda' abaixo para abrir o sistema em uma nova aba.");
+                }
+                
+                setSuccessMessage("Verifique a janela pop-up que se abriu para concluir o login do Google.");
+                
+                const interval = setInterval(async () => {
+                    const { data: sessionData } = await supabase.auth.getSession();
+                    if (sessionData?.session?.user) {
+                        console.log('[AUTH_DEBUG] Sessão detectada via polling!');
+                        clearInterval(interval);
+                        setSuccessMessage("Login do Google realizado com sucesso! Atualizando...");
+                        setIsLoading(false);
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 500);
+                    }
+                    if (authWindow.closed) {
+                        clearInterval(interval);
+                        setIsLoading(false);
+                        console.log('[AUTH_DEBUG] Janela de OAuth fechada pelo usuário.');
+                    }
+                }, 1500);
+            } else {
+                throw new Error("Não foi possível gerar a URL de autenticação do Google.");
+            }
         } catch (err: any) {
             console.error('[AUTH_DEBUG] Erro Google OAuth:', err);
             setError(err.message || "Falha na conexão com Google.");
@@ -222,9 +313,9 @@ const LoginView: React.FC<LoginViewProps> = ({ onBack }) => {
 
                 <div className="mt-8 text-center">
                     {mode === 'login' ? (
-                        <p className="text-sm text-slate-500 font-medium">
+                        <p className="text-sm text-slate-500 font-medium font-sans">
                             Não tem conta?{' '}
-                            <button type="button" onClick={() => handleModeChange('register')} className="text-white font-bold hover:underline">
+                            <button type="button" onClick={() => handleModeChange('register')} className="text-white font-bold hover:underline cursor-pointer">
                                 Cadastre-se
                             </button>
                         </p>
@@ -232,12 +323,103 @@ const LoginView: React.FC<LoginViewProps> = ({ onBack }) => {
                         <button 
                             type="button" 
                             onClick={() => handleModeChange('login')} 
-                            className="text-sm text-white font-bold hover:underline inline-flex items-center gap-2"
+                            className="text-sm text-white font-bold hover:underline inline-flex items-center gap-2 cursor-pointer"
                         >
                             Voltar para o Login
                         </button>
                     )}
                 </div>
+
+                {/* Botão de Ajuda de Acesso */}
+                <div className="mt-6 pt-4 border-t border-white/5 text-center">
+                    <button 
+                        type="button" 
+                        onClick={() => setShowHelp(!showHelp)} 
+                        className="text-xs font-bold text-slate-500 hover:text-slate-300 transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                        <HelpCircle size={14} className="text-orange-500" />
+                        <span>Não consegue logar? Opções de ajuda</span>
+                    </button>
+                </div>
+
+                {/* Painel de Ajuda */}
+                {showHelp && (
+                    <div className="mt-4 p-4 rounded-2xl bg-white/5 border border-white/5 space-y-4 text-left animate-in fade-in slide-in-from-top-2 duration-200">
+                        <h3 className="text-xs font-black text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                            <AlertCircle size={14} className="text-orange-500" />
+                            Diagnóstico e Soluções
+                        </h3>
+                        
+                        <div className="space-y-3 text-left">
+                            {/* Solução 1: Nova Aba */}
+                            <div className="space-y-1">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">1. Bloqueio de Cookies (iFrame)</p>
+                                <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
+                                    O iFrame ou navegadores como o Safari podem bloquear cookies e inviabilizar o login com Google ou e-mail. Abrir em uma nova aba resolve 100% desses casos.
+                                </p>
+                                <a 
+                                    href={window.location.href} 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-2 px-3 py-2.5 bg-orange-500/10 hover:bg-orange-500/25 text-orange-400 rounded-xl text-xs font-bold w-full justify-center transition-all mt-1"
+                                >
+                                    <ExternalLink size={14} />
+                                    Abrir Aplicativo em Nova Aba
+                                </a>
+                            </div>
+
+                            {/* Solução 2: Limpar Sessão */}
+                            <div className="space-y-1 pt-2 border-t border-white/5">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">2. Sessão Expirada ou Corrompida</p>
+                                <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
+                                    Se sua sessão anterior expirou ou corrompeu, limpe os dados locais temporários salvos no navegador para recomeçar do zero.
+                                </p>
+                                <button 
+                                    type="button"
+                                    onClick={handleClearSession}
+                                    className="inline-flex items-center gap-2 px-3 py-2.5 bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 rounded-xl text-xs font-bold w-full justify-center transition-all mt-1 cursor-pointer"
+                                >
+                                    <Trash2 size={14} />
+                                    Limpar Sessão e Cache
+                                </button>
+                            </div>
+
+                            {/* Solução 3: Diagnóstico */}
+                            <div className="space-y-1 pt-2 border-t border-white/5">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">3. Conexão com o Banco</p>
+                                <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
+                                    Verifique se a API do banco de dados (Supabase) está ativa e respondendo neste exato momento.
+                                </p>
+                                <div className="flex gap-2 mt-1">
+                                    <button 
+                                        type="button"
+                                        onClick={handleTestConnection}
+                                        disabled={connectionStatus === 'testing'}
+                                        className="inline-flex items-center gap-2 px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold w-full justify-center transition-all cursor-pointer"
+                                    >
+                                        {connectionStatus === 'testing' ? (
+                                            <Loader2 size={14} className="animate-spin" />
+                                        ) : (
+                                            <RefreshCw size={14} />
+                                        )}
+                                        {connectionStatus === 'testing' ? 'Testando...' : 'Testar Conexão'}
+                                    </button>
+                                </div>
+                                {connectionStatus === 'success' && (
+                                    <p className="text-[10px] text-emerald-400 font-bold flex items-center gap-1 mt-1 font-sans">
+                                        ● Banco de dados conectado e operando normalmente!
+                                    </p>
+                                )}
+                                {connectionStatus === 'error' && (
+                                    <div className="text-[10px] text-rose-400 font-bold mt-1 space-y-1 font-sans">
+                                        <p>● Erro de conexão:</p>
+                                        <p className="text-[9px] text-rose-500 font-mono bg-rose-500/5 p-1.5 rounded-lg border border-rose-500/10 leading-normal max-w-full overflow-x-auto">{connectionError}</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 <div className="mt-10 text-center opacity-30">
                     <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">
