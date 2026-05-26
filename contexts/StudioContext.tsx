@@ -161,13 +161,15 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
   }, [setActiveStudioId]);
 
   useEffect(() => {
-    // Safety timeout: force resolve initial loading in max 5 seconds under any network circumstance
+    // Safety timeout: force resolve initial loading in max 7 seconds under any network circumstance
     const safetyTimer = setTimeout(() => {
-      if (loading) {
-        console.warn("[StudioProvider] Segurança de tempo limite acionada após 5s de carregamento inicial.");
-        setLoading(false);
-      }
-    }, 5000);
+      setLoading((prev) => {
+        if (prev) {
+          console.warn("[StudioProvider] Segurança de tempo limite acionada após 7s de carregamento inicial.");
+        }
+        return false;
+      });
+    }, 7000);
 
     refreshStudios(true);
 
