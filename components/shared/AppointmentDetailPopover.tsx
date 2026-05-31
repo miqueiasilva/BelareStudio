@@ -18,7 +18,7 @@ interface AppointmentDetailPopoverProps {
   onEdit: (appointment: LegacyAppointment) => void;
   onDelete: (id: number) => void;
   onUpdateStatus: (appointmentId: number, newStatus: AppointmentStatus) => void;
-  onConvertToCommand?: (appointment: LegacyAppointment) => void;
+  onConvertToCommand?: (appointment: LegacyAppointment, sameDayApptIds?: number[]) => void;
 }
 
 const statusLabels: { [key in AppointmentStatus]: string } = {
@@ -115,7 +115,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
 
         let query = supabase
           .from('appointments')
-          .select('id, date, service_name, professional_name, status')
+          .select('id, date, service_name, professional_name, status, value')
           .eq('studio_id', activeStudioId)
           .gte('date', startOfDay.toISOString())
           .lte('date', endOfDay.toISOString())
@@ -414,13 +414,42 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
             </div>
 
             {canCheckout && (
-              <button
-                onClick={handleFinalize}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-[0.1em] py-5 rounded-[24px] shadow-xl shadow-emerald-100 transition-all active:scale-95 flex items-center justify-center gap-2"
-              >
-                <Receipt size={18} />
-                Finalizar Atendimento
-              </button>
+              sameDayAppointments.filter(app => !['concluido', 'cancelado', 'bloqueado'].includes(app.status)).length > 1 ? (
+                <div className="flex flex-col gap-2 bg-amber-50/50 border border-amber-200 p-3.5 rounded-[24px]">
+                  <p className="text-[10px] font-bold text-amber-800 text-center uppercase tracking-wider mb-1">
+                    Múltiplos agendamentos pendentes hoje!
+                  </p>
+                  <button
+                    onClick={() => {
+                      const pending = sameDayAppointments.filter(app => !['concluido', 'cancelado', 'bloqueado'].includes(app.status));
+                      const ids = pending.map(app => app.id);
+                      if (onConvertToCommand) {
+                        onConvertToCommand(appointment, ids);
+                      } else {
+                        setIsCheckoutOpen(true);
+                      }
+                    }}
+                    className="w-full bg-amber-500 hover:bg-amber-600 text-white font-black text-xs uppercase tracking-[0.05em] py-4 rounded-[20px] shadow-md shadow-amber-100 transition-all active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <Receipt size={16} />
+                    Finalizar Todos Juntos (R$ {sameDayAppointments.filter(app => !['concluido', 'cancelado', 'bloqueado'].includes(app.status)).reduce((sum, item) => sum + Number(item.value || 0), 0).toFixed(2)})
+                  </button>
+                  <button
+                    onClick={handleFinalize}
+                    className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] uppercase tracking-[0.05em] py-2.5 rounded-[16px] transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                  >
+                    Finalizar Apenas Este
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={handleFinalize}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-[0.1em] py-5 rounded-[24px] shadow-xl shadow-emerald-100 transition-all active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <Receipt size={18} />
+                  Finalizar Atendimento
+                </button>
+              )
             )}
 
             {appointment.status === 'concluido' && (

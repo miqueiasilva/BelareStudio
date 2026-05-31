@@ -929,11 +929,35 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         setActiveAppointmentDetail(null);
     };
 
-    const handleConvertToCommand = async (appointment: LegacyAppointment) => {
+    const handleConvertToCommand = async (appointment: LegacyAppointment, sameDayApptIds?: number[]) => {
         if (!activeStudioId) return;
         setIsLoadingData(true);
         try {
+            let apptsToConsolidate = [appointment];
+            let totalAmount = appointment.service?.price || appointment.value || 0;
+
+            if (sameDayApptIds && sameDayApptIds.length > 1) {
+                const { data: fetchedAppts, error: fetchErr } = await supabase
+                    .from('appointments')
+                    .select('id, client_name, service_name, value, professional_id, professional_name, service_id')
+                    .in('id', sameDayApptIds);
+
+                if (!fetchErr && fetchedAppts && fetchedAppts.length > 0) {
+                    apptsToConsolidate = fetchedAppts.map(appt => ({
+                        id: appt.id,
+                        client: { id: appointment.client?.id, nome: appointment.client?.nome || appt.client_name },
+                        professional: { id: appt.professional_id, name: appt.professional_name },
+                        service: { id: appt.service_id, name: appt.service_name, price: Number(appt.value || 0) },
+                        service_name: appt.service_name,
+                        value: Number(appt.value || 0),
+                        professional_id: appt.professional_id
+                    } as any));
+                    totalAmount = apptsToConsolidate.reduce((acc, appt) => acc + Number(appt.value || 0), 0);
+                }
+            }
+
             // 1. Criar a comanda
+            const firstAppt = apptsToConsolidate[0];
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
@@ -942,38 +966,44 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     client_name: appointment.client?.nome || 'Cliente',
                     professional_id: appointment.professional?.id || null,
                     status: 'open',
-                    total_amount: appointment.service?.price || 0
+                    total_amount: totalAmount
                 }])
                 .select()
                 .single();
 
             if (cmdError || !command) throw cmdError || new Error("Falha ao criar comanda");
 
-            // 2. Criar o item da comanda
-            const { error: itemError } = await supabase
+            // 2. Criar os itens da comanda
+            const payloadItems = apptsToConsolidate.map(appt => ({
+                command_id: command.id,
+                appointment_id: appt.id,
+                service_id: appt.service?.id || null,
+                studio_id: activeStudioId, 
+                title: appt.service_name || appt.service?.name || 'Serviço',
+                price: Number(appt.value || appt.service?.price || 0),
+                quantity: 1,
+                professional_id: appt.professional?.id || appt.professional_id || null
+            }));
+
+            const { error: itemsError } = await supabase
                 .from('command_items')
-                .insert([{
-                    command_id: command.id,
-                    appointment_id: appointment.id,
-                    service_id: appointment.service?.id || null,
-                    studio_id: activeStudioId, 
-                    title: appointment.service?.name || 'Serviço',
-                    price: appointment.service?.price || 0,
-                    quantity: 1,
-                    professional_id: appointment.professional?.id || null
-                }]);
+                .insert(payloadItems);
 
-            if (itemError) throw itemError;
+            if (itemsError) throw itemsError;
 
-            // 3. Atualizar status do agendamento
+            // 3. Atualizar status de todos os agendamentos consolidados para 'concluido'
+            const idsList = apptsToConsolidate.map(appt => appt.id);
             const { error: apptUpdateError } = await supabase
                 .from('appointments')
                 .update({ status: 'concluido' })
-                .eq('id', appointment.id);
+                .in('id', idsList);
 
             if (apptUpdateError) throw apptUpdateError;
 
-            setToast({ message: `Comanda gerada com sucesso! Redirecionando... 💳`, type: 'success' });
+            // 4. Atualizar o estado local dos agendamentos
+            setAppointments(prev => prev.map(a => idsList.includes(a.id) ? { ...a, status: 'concluido' } : a));
+
+            setToast({ message: `Comanda consolidada com sucesso! Redirecionando... 💳`, type: 'success' });
             setActiveAppointmentDetail(null);
             
             if (onNavigateToCommand) {
