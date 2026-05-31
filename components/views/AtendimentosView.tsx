@@ -1598,6 +1598,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                     </span>
                                 )}
                             </button>
+                            <button onClick={() => setIsConfigModalOpen(true)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Configurações de Grade">
+                                <SettingsIcon size={18} />
+                            </button>
                             <button onClick={fetchAppointments} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Atualizar">
                                 <RefreshCw size={18} className={isLoadingData ? 'animate-spin' : ''} />
                             </button>
@@ -2297,10 +2300,82 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsConfigModalOpen(false)}></div>
                     <div className="relative w-full max-w-sm bg-white rounded-[32px] shadow-2xl overflow-hidden p-8 animate-in zoom-in-95 duration-200">
-                        <header className="flex justify-between items-center mb-8"><h3 className="font-extrabold text-slate-800">Configuração de Grade</h3><button onClick={() => setIsConfigModalOpen(false)}><X size={20} /></button></header>
-                        <div className="space-y-4">
-                            <label className="text-sm font-black text-slate-700 uppercase">Largura das Colunas: {colWidth}px</label>
-                            <input type="range" min="150" max="450" step="10" value={colWidth} onChange={e => setColWidth(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-500" />
+                        <header className="flex justify-between items-center mb-6">
+                            <div>
+                                <h3 className="font-extrabold text-slate-850 text-base uppercase tracking-tight">Grade de Horários</h3>
+                                <p className="text-[9px] text-slate-400 font-black uppercase tracking-wider mt-0.5">Configuração de visualização</p>
+                            </div>
+                            <button onClick={() => setIsConfigModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors">
+                                <X size={20} />
+                            </button>
+                        </header>
+                        
+                        <div className="space-y-6">
+                            {/* Largura das Colunas */}
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-center">
+                                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                                        Largura das colunas
+                                    </label>
+                                    <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200/50 font-mono">
+                                        {isAutoWidth ? 'Auto' : `${colWidth}px`}
+                                    </span>
+                                </div>
+                                <div className="flex flex-col gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                                    <div className="flex items-center gap-4">
+                                        <input 
+                                            type="range" 
+                                            min="150" 
+                                            max="450" 
+                                            step="10" 
+                                            disabled={isAutoWidth}
+                                            value={colWidth} 
+                                            onChange={e => setColWidth(Number(e.target.value))} 
+                                            className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-500 disabled:opacity-30 disabled:cursor-not-allowed" 
+                                        />
+                                        <label className="flex items-center gap-2 cursor-pointer select-none border-l border-slate-200 pl-4">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={isAutoWidth} 
+                                                onChange={e => setIsAutoWidth(e.target.checked)}
+                                                className="w-4.5 h-4.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500 cursor-pointer"
+                                            />
+                                            <span className="text-xs font-black text-slate-600 uppercase tracking-wide">Auto</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Intervalo de Tempo */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                                    Intervalo de tempo
+                                </label>
+                                <div className="grid grid-cols-4 gap-2 bg-slate-50 p-2 rounded-2xl border border-slate-150">
+                                    {[15, 30, 45, 60].map((slot) => (
+                                        <button 
+                                            key={slot}
+                                            onClick={() => setTimeSlot(slot)}
+                                            className={`py-2 px-1 rounded-xl text-[11px] font-black tracking-tight transition-all border ${
+                                                timeSlot === slot 
+                                                    ? 'bg-white text-orange-600 border-slate-150 shadow-sm' 
+                                                    : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-100'
+                                            }`}
+                                        >
+                                            {slot} min
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-8">
+                            <button 
+                                onClick={() => setIsConfigModalOpen(false)} 
+                                className="w-full bg-slate-800 hover:bg-slate-900 text-white font-black py-4 rounded-2xl shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 text-[10px] uppercase tracking-wider"
+                            >
+                                Confirmar Configuração
+                            </button>
                         </div>
                     </div>
                 </div>
