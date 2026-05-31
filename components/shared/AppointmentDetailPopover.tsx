@@ -244,9 +244,11 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
 
     const timer = setTimeout(handlePositioning, 0);
     document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', handlePositioning);
     return () => {
       clearTimeout(timer);
       document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', handlePositioning);
     };
   }, [onClose, targetElement, isCheckoutOpen]);
 
@@ -276,11 +278,11 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     <>
       <div
         ref={popoverRef}
-        className={`fixed z-[100] w-80 bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-slate-200 flex flex-col transition-all duration-200 ${isCheckoutOpen ? 'opacity-0 pointer-events-none scale-95' : 'scale-100'}`}
+        className={`fixed z-[100] w-80 max-h-[calc(100vh-140px)] bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-slate-200 flex flex-col transition-all duration-200 ${isCheckoutOpen ? 'opacity-0 pointer-events-none scale-95' : 'scale-100'}`}
         style={{ top: position.top, left: position.left, opacity: isCheckoutOpen ? 0 : position.opacity }}
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center p-3 border-b border-slate-100 bg-slate-50/50">
+        <header className="flex items-center p-3 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
           <div className="flex-1 flex items-center gap-1.5">
             <button
               onClick={() => { onEdit(appointment); onClose(); }}
@@ -314,7 +316,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
           </button>
         </header>
 
-        <main className="p-6 space-y-4">
+        <main className="p-6 space-y-4 overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
           <div>
             <h3 className="font-black text-xl text-slate-800 leading-tight flex flex-col gap-1">
               <span>{appointment.client?.nome || 'Horário Bloqueado'}</span>
