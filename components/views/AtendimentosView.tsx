@@ -314,6 +314,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         }
     };
 
+    const [isMobile, setIsMobile] = useState(false);
+    useEffect(() => {
+        const handleResize = () => {
+            setIsMobile(window.innerWidth < 768);
+        };
+        handleResize();
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [colWidth, setColWidth] = useState(220);
     const [isAutoWidth, setIsAutoWidth] = useState(false);
@@ -1961,8 +1971,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         </div>
                     </div>
                 ) : periodType === 'Mês' ? (
-                    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-200">
-                        <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm p-4 sm:p-6">
+                    <div className="p-2 sm:p-6 max-w-7xl mx-auto space-y-4 sm:space-y-6 animate-in fade-in duration-200">
+                        <div className="bg-white rounded-3xl sm:rounded-[32px] border border-slate-200 shadow-sm p-3.5 sm:p-6">
                             {/* Titulo do Mês/Ano */}
                             <div className="text-center font-black text-xl text-slate-800 mb-6 flex flex-col items-center justify-center">
                                 <span className="capitalize tracking-tight text-slate-900 text-lg sm:text-xl">
@@ -1987,7 +1997,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
                             {/* Grade de dias do mês */}
                              <div 
-                                className="grid gap-2 sm:gap-2.5"
+                                className="grid gap-1.5 sm:gap-2.5"
                                 style={{ gridTemplateColumns: `repeat(${enabledDays.filter(Boolean).length}, minmax(0, 1fr))` }}
                             >
                                 {(() => {
@@ -2011,27 +2021,6 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                         }));
 
                                     const dummySkip = true;
-                                    if (!dummySkip) {
-                                    const firstDayIdx = firstDay.getDay(); 
-                                    const totalDays = new Date(year, month + 1, 0).getDate();
-                                    
-                                    const cells = [];
-
-                                    // Dias do mês anterior
-                                    const prevMonthEnd = new Date(year, month, 0).getDate();
-                                    for (let i = firstDayIdx - 1; i >= 0; i--) {
-                                        const dayNum = prevMonthEnd - i;
-                                        const dateObj = new Date(year, month - 1, dayNum);
-                                        cells.push({ dayNum, dateObj, isCurrentMonth: false });
-                                    }
-
-                                    // Dias do mês atual
-                                    for (let i = 1; i <= totalDays; i++) {
-                                        const dateObj = new Date(year, month, i);
-                                        cells.push({ dayNum: i, dateObj, isCurrentMonth: true });
-                                    }
-
-}
 
                                     return cells.map((cell, idx) => {
                                         const isToday = isSameDay(cell.dateObj, new Date());
@@ -2047,6 +2036,64 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                         const hasMore = sortedAppts.length > LIMIT_COUNT;
                                         const itemsToRender = hasMore ? sortedAppts.slice(0, LIMIT_COUNT - 1) : sortedAppts;
 
+                                        if (isMobile) {
+                                            // Mobile layout: Compact touch-optimized cells without overflowing appointments text
+                                            return (
+                                                <div
+                                                    key={idx}
+                                                    onClick={() => {
+                                                        setCurrentDate(cell.dateObj);
+                                                    }}
+                                                    onDoubleClick={() => {
+                                                        setCurrentDate(cell.dateObj);
+                                                        setPeriodType('Dia');
+                                                    }}
+                                                    className={`aspect-square flex flex-col justify-between items-center p-1 sm:p-2 bg-white border rounded-xl hover:ring-2 hover:ring-orange-100 relative group/cell cursor-pointer transition-all duration-200 ${
+                                                        cell.isCurrentMonth 
+                                                            ? 'border-slate-200' 
+                                                            : 'border-slate-100 opacity-40 bg-slate-50/[0.22]'
+                                                    } ${
+                                                        isSelected && cell.isCurrentMonth
+                                                            ? 'ring-2 ring-orange-400 border-orange-400 bg-orange-50/[0.04] scale-[1.03] z-[10] shadow-sm'
+                                                            : ''
+                                                    }`}
+                                                >
+                                                    {/* Row for day number */}
+                                                    <div className="flex-1 flex items-center justify-center">
+                                                        <span className={`text-xs sm:text-sm font-black tracking-tight flex items-center justify-center ${
+                                                            isToday 
+                                                                ? 'w-5.5 h-5.5 bg-orange-500 text-white rounded-full font-bold shadow-sm shadow-orange-100 flex items-center justify-center text-[10px]' 
+                                                                : cell.isCurrentMonth
+                                                                    ? isSelected ? 'text-orange-600 font-extrabold' : 'text-slate-800'
+                                                                    : 'text-slate-400 font-medium'
+                                                        }`}>
+                                                            {format(cell.dateObj, 'dd')}
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Row for colored dots metrics */}
+                                                    <div className="h-2 flex items-center justify-center gap-0.5 w-full overflow-hidden max-w-[40px] px-0.5">
+                                                        {sortedAppts.slice(0, 3).map((app, index) => {
+                                                            const dotColor = getAppointmentColor(app);
+                                                            return (
+                                                                <span 
+                                                                    key={app.id || index}
+                                                                    className="w-1 h-1 rounded-full shrink-0 animate-in zoom-in-50 duration-200"
+                                                                    style={{ backgroundColor: dotColor }}
+                                                                />
+                                                            );
+                                                        })}
+                                                        {sortedAppts.length > 3 && (
+                                                            <span className="text-[7px] font-black text-slate-400 leading-none shrink-0" style={{ marginTop: '-1px' }}>
+                                                                +
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+
+                                        // Desktop view: original layout
                                         return (
                                             <div
                                                 key={idx}
@@ -2124,6 +2171,123 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                 })()}
                             </div>
                         </div>
+
+                        {/* Seção da Agenda Diária no Mobile */}
+                        {isMobile && (
+                            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-4 space-y-4 animate-in slide-in-from-bottom duration-300">
+                                <header className="flex justify-between items-center pb-2 border-b border-slate-100">
+                                    <div>
+                                        <h4 className="text-xs font-black text-slate-800 uppercase tracking-tight flex items-center gap-1.5">
+                                            <CalendarIcon size={14} className="text-orange-500" />
+                                            {format(currentDate, "EEEE, dd 'de' MMMM", { locale: pt })}
+                                        </h4>
+                                        <p className="text-[9px] text-slate-400 font-black uppercase tracking-wider mt-0.5">
+                                            {filteredAppointments.filter(a => isSameDay(a.start, currentDate)).length} Registros no dia
+                                        </p>
+                                    </div>
+                                    <button 
+                                        onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 active:scale-95 text-white font-black rounded-xl text-[10px] uppercase tracking-wide shadow-md transition-all shrink-0"
+                                    >
+                                        Agendar
+                                    </button>
+                                </header>
+                                
+                                <div className="space-y-3">
+                                    {(() => {
+                                        const dayAppts = filteredAppointments.filter(a => isSameDay(a.start, currentDate));
+                                        
+                                        if (dayAppts.length === 0) {
+                                            return (
+                                                <div className="py-8 text-center flex flex-col items-center justify-center gap-3">
+                                                    <div className="w-12 h-12 bg-slate-50 text-slate-300 rounded-full flex items-center justify-center border border-slate-100">
+                                                        <CalendarDays size={20} />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <p className="text-xs text-slate-500 font-extrabold uppercase tracking-tight pl-2">Nenhum atendimento</p>
+                                                        <p className="text-[10.5px] text-slate-400 font-medium leading-relaxed max-w-[240px] mx-auto">
+                                                            Não há agendamentos para este dia. Toque em "Agendar" para registrar um horário.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+                                        
+                                        const sorted = [...dayAppts].sort((a, b) => a.start.getTime() - b.start.getTime());
+                                        
+                                        return sorted.map((app, index) => {
+                                            const cardColor = getAppointmentColor(app);
+                                            const isBlocked = app.type === 'block';
+                                            
+                                            return (
+                                                <div 
+                                                    key={app.id || index}
+                                                    onClick={() => {
+                                                        if (app.type === 'appointment') {
+                                                            setActiveAppointmentDetail(app);
+                                                        } else if (app.type === 'block') {
+                                                            setModalState({ type: 'block', data: app });
+                                                        }
+                                                    }}
+                                                    className="bg-slate-50/[0.3] hover:bg-slate-50 border border-slate-100 p-3 rounded-2xl shadow-sm cursor-pointer flex justify-between items-center gap-3 border-l-4 transition-all"
+                                                    style={{ borderLeftColor: cardColor }}
+                                                >
+                                                    <div className="flex items-center gap-3 min-w-0">
+                                                        <div className="flex flex-col items-center justify-center px-2 py-1 bg-white border border-slate-200/60 rounded-xl font-mono text-[10.5px] font-black text-slate-600 shrink-0 leading-tight">
+                                                            <span>{format(app.start, 'HH:mm')}</span>
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <div className="flex items-center gap-2">
+                                                                <h5 className="font-extrabold text-slate-800 text-xs truncate leading-tight">
+                                                                    {isBlocked ? 'Horário Bloqueado' : (app.client?.nome || app.client?.apelido || app.client_name || 'Cliente')}
+                                                                </h5>
+                                                                {isBlocked && (
+                                                                    <span className="text-[7.5px] font-black text-rose-500 bg-rose-100/50 border border-rose-100 px-1 py-0.5 rounded uppercase tracking-wider">
+                                                                        Bloqueio
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {!isBlocked && (
+                                                                <div className="flex flex-col text-[10.5px] text-slate-500 mt-0.5 font-semibold">
+                                                                    <span className="text-orange-500 font-extrabold truncate">{app.service_name || app.service?.name}</span>
+                                                                    <span className="text-slate-400 font-medium text-[9.5px] truncate mt-0.5">
+                                                                        {app.professional_name || app.professional?.name}
+                                                                    </span>
+                                                                </div>
+                                                            )}
+                                                            {isBlocked && (
+                                                                <p className="text-[10px] text-slate-400 font-medium leading-tight mt-0.5">{app.notes || 'Sem detalhes'}</p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                                                        {!isBlocked && (
+                                                            <span className="text-[11px] font-black text-slate-750 font-mono">
+                                                                R$ {Number(app.value || app.service?.price || 0).toFixed(2)}
+                                                            </span>
+                                                        )}
+                                                        {!isBlocked && (
+                                                            <span className={`text-[8.5px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg leading-none ${
+                                                                app.status === 'concluido' ? 'bg-emerald-50 text-emerald-600 border border-emerald-110' :
+                                                                ['confirmado', 'confirmado_whatsapp'].includes(app.status) ? 'bg-blue-50 text-blue-600 border border-blue-110' :
+                                                                app.status === 'cancelado' ? 'bg-red-50 text-red-600 border border-red-110' :
+                                                                'bg-amber-50 text-amber-600 border border-amber-110'
+                                                            }`}>
+                                                                {app.status === 'concluido' ? 'Concluído' :
+                                                                 ['confirmado', 'confirmado_whatsapp'].includes(app.status) ? 'Confirmado' :
+                                                                 app.status === 'cancelado' ? 'Cancelado' :
+                                                                 'Agendado'}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        });
+                                    })()}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-6 animate-in fade-in duration-200">
