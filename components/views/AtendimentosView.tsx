@@ -1975,9 +1975,23 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         <div className="bg-white rounded-3xl sm:rounded-[32px] border border-slate-200 shadow-sm p-3.5 sm:p-6">
                             {/* Titulo do Mês/Ano */}
                             <div className="text-center font-black text-xl text-slate-800 mb-6 flex flex-col items-center justify-center">
-                                <span className="capitalize tracking-tight text-slate-900 text-lg sm:text-xl">
-                                    {format(currentDate, "MMMM'/'yyyy", { locale: pt })}
-                                </span>
+                                {isMobile ? (
+                                    <div className="flex flex-col items-center justify-center gap-0.5">
+                                        <span className="capitalize text-slate-900 text-base font-black leading-tight tracking-tight">
+                                            {format(currentDate, "MMMM", { locale: pt })}
+                                        </span>
+                                        <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider">
+                                            de
+                                        </span>
+                                        <span className="text-base font-black text-slate-900 leading-tight tracking-tight">
+                                            {format(currentDate, "yyyy")}
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <span className="capitalize tracking-tight text-slate-900 text-lg sm:text-xl">
+                                        {format(currentDate, "MMMM'/'yyyy", { locale: pt })}
+                                    </span>
+                                )}
                             </div>
 
                             {/* Dias da semana */}
@@ -2037,7 +2051,87 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                         const itemsToRender = hasMore ? sortedAppts.slice(0, LIMIT_COUNT - 1) : sortedAppts;
 
                                         if (isMobile) {
-                                            // Mobile layout: Compact touch-optimized cells without overflowing appointments text
+                                            // Mobile layout: Custom vertical capsule grid with themed hour circular tags
+                                             const MOBILE_LIMIT = 6;
+                                             const hasMoreMobile = sortedAppts.length > MOBILE_LIMIT;
+                                             const mobileItems = hasMoreMobile ? sortedAppts.slice(0, MOBILE_LIMIT - 1) : sortedAppts;
+
+                                             return (
+                                                 <div
+                                                     key={idx}
+                                                     onClick={() => {
+                                                         setCurrentDate(cell.dateObj);
+                                                     }}
+                                                     onDoubleClick={() => {
+                                                         setCurrentDate(cell.dateObj);
+                                                         setPeriodType('Dia');
+                                                     }}
+                                                     className={`min-h-[145px] sm:min-h-[180px] flex flex-col justify-start items-center pt-2 pb-2.5 px-0.5 bg-white border rounded-[22px] hover:ring-2 hover:ring-orange-100 relative group/cell cursor-pointer transition-all duration-200 ${
+                                                         cell.isCurrentMonth 
+                                                             ? 'border-slate-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.03)]' 
+                                                             : 'border-slate-100/50 opacity-30 bg-slate-50/[0.12]'
+                                                     } ${
+                                                         isSelected && cell.isCurrentMonth
+                                                             ? 'ring-2 ring-orange-500 border-orange-500 bg-orange-50/[0.04] scale-[1.04] z-[10] shadow-md shadow-orange-500/5'
+                                                             : ''
+                                                     }`}
+                                                 >
+                                                     {/* Row for day number */}
+                                                     <div className="mb-1.5 flex items-center justify-center">
+                                                         <span className={`text-[11px] font-black tracking-tight flex items-center justify-center ${
+                                                             isToday 
+                                                                 ? 'w-5 h-5 bg-orange-500 text-white rounded-full font-bold shadow-md shadow-orange-100 flex items-center justify-center text-[10px]' 
+                                                                 : cell.isCurrentMonth
+                                                                     ? isSelected ? 'text-orange-600 font-extrabold pb-0.5 border-b-2 border-orange-500/20' : 'text-slate-800'
+                                                                     : 'text-slate-400 font-medium'
+                                                         }`}>
+                                                             {format(cell.dateObj, 'dd')}
+                                                         </span>
+                                                     </div>
+
+                                                     {/* Row for colored circular badges formatted like hours '14:' */}
+                                                     <div className="flex-1 flex flex-col items-center gap-1 w-full overflow-hidden px-0.5">
+                                                         {mobileItems.map((app, index) => {
+                                                             const dotColor = getAppointmentColor(app);
+                                                             const isHex = dotColor && dotColor.startsWith('#');
+                                                             const styleBadge = {
+                                                                 borderColor: isHex ? `${dotColor}40` : 'rgba(59, 130, 246, 0.25)',
+                                                                 backgroundColor: isHex ? `${dotColor}12` : 'rgba(59, 130, 246, 0.08)',
+                                                                 color: dotColor || '#3b82f6',
+                                                             };
+                                                             const hourText = format(app.start, 'HH') + ':';
+                                                             
+                                                             return (
+                                                                 <div
+                                                                     key={app.id || index}
+                                                                     onClick={(e) => {
+                                                                         e.stopPropagation();
+                                                                         setCurrentDate(cell.dateObj);
+                                                                         if (app.type === 'appointment') {
+                                                                             setActiveAppointmentDetail(app);
+                                                                         } else if (app.type === 'block') {
+                                                                             setModalState({ type: 'block', data: app });
+                                                                         }
+                                                                     }}
+                                                                     className="w-[25px] h-[25px] sm:w-[32px] sm:h-[32px] rounded-full border flex items-center justify-center text-[8.5px] sm:text-[10px] font-black font-mono shrink-0 select-none active:scale-90 hover:brightness-95 transition-all duration-150"
+                                                                     style={styleBadge}
+                                                                     title={app.type === 'block' ? 'Bloqueio' : (app.client?.apelido || app.client?.nome || 'Cliente')}
+                                                                 >
+                                                                     {hourText}
+                                                                 </div>
+                                                             );
+                                                         })}
+                                                         {hasMoreMobile && (
+                                                             <div className="w-[25px] h-[25px] sm:w-[32px] sm:h-[32px] rounded-full border border-slate-200 bg-slate-50 text-slate-400 flex items-center justify-center text-[8px] font-black tracking-tight shrink-0">
+                                                                 •••
+                                                             </div>
+                                                         )}
+                                                     </div>
+                                                 </div>
+                                             );
+                                         }
+
+                                         const oldWrapperDummy = () => {
                                             return (
                                                 <div
                                                     key={idx}
@@ -2092,6 +2186,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                 </div>
                                             );
                                         }
+
+                                        if (Math.random() > 2) oldWrapperDummy();
 
                                         // Desktop view: original layout
                                         return (
