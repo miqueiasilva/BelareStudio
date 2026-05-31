@@ -444,6 +444,72 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                                             {selectedDiscount?.id === d.id && <CheckCircle size={16} className="text-emerald-500" />}
                                         </button>
                                     ))}
+
+                                    <div className="border-t border-slate-100 pt-3 mt-1">
+                                        <p className="text-[9px] font-black uppercase text-slate-400 mb-2 tracking-wider">Desconto Personalizado</p>
+                                        <div className="flex gap-2">
+                                            <div className="flex rounded-xl bg-slate-100 p-1">
+                                                <button
+                                                    onClick={() => {
+                                                        const curVal = selectedDiscount?.id === 'custom' ? selectedDiscount.value : 0;
+                                                        setSelectedDiscount({ id: 'custom', name: 'Desconto Manual', type: 'fixed', value: curVal, isCustom: true });
+                                                    }}
+                                                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${
+                                                        selectedDiscount?.id === 'custom' && selectedDiscount.type === 'fixed'
+                                                        ? 'bg-white text-slate-800 shadow-sm'
+                                                        : 'text-slate-500 hover:text-slate-800'
+                                                    }`}
+                                                >
+                                                    R$
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        const curVal = selectedDiscount?.id === 'custom' ? selectedDiscount.value : 0;
+                                                        setSelectedDiscount({ id: 'custom', name: 'Desconto Manual', type: 'percentage', value: curVal, isCustom: true });
+                                                    }}
+                                                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${
+                                                        selectedDiscount?.id === 'custom' && selectedDiscount.type === 'percentage'
+                                                        ? 'bg-white text-slate-800 shadow-sm'
+                                                        : 'text-slate-500 hover:text-slate-800'
+                                                    }`}
+                                                >
+                                                    %
+                                                </button>
+                                            </div>
+                                            <div className="flex-1 relative">
+                                                <input
+                                                    type="number"
+                                                    step="any"
+                                                    placeholder={selectedDiscount?.id === 'custom' && selectedDiscount.type === 'percentage' ? "0%" : "R$ 0,00"}
+                                                    value={selectedDiscount?.id === 'custom' ? (selectedDiscount.value || '') : ''}
+                                                    onChange={(e) => {
+                                                        const val = parseFloat(e.target.value) || 0;
+                                                        const currentType = (selectedDiscount?.id === 'custom' ? selectedDiscount.type : 'fixed');
+                                                        setSelectedDiscount({
+                                                            id: 'custom',
+                                                            name: `Desconto Manual (${currentType === 'percentage' ? '%' : 'R$'})`,
+                                                            type: currentType,
+                                                            value: val,
+                                                            isCustom: true
+                                                        });
+                                                    }}
+                                                    className={`w-full bg-slate-50 border rounded-2xl px-3 py-2 text-xs font-bold text-slate-700 outline-none transition-all ${
+                                                        selectedDiscount?.id === 'custom'
+                                                        ? 'border-emerald-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-50'
+                                                        : 'border-slate-200 focus:border-orange-500 focus:ring-4 focus:ring-orange-50'
+                                                    }`}
+                                                />
+                                                {selectedDiscount?.id === 'custom' && (
+                                                    <button
+                                                        onClick={() => setSelectedDiscount(null)}
+                                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                                    >
+                                                        <X size={14} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}
