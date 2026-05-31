@@ -292,6 +292,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [enabledDays, setEnabledDays] = useState<boolean[]>([true, true, true, true, true, true, true]);
     const [selectedProfessional, setSelectedProfessional] = useState<number | 'all'>('all');
     const [isProfessionalDropdownOpen, setIsProfessionalDropdownOpen] = useState(false);
+    const [isSidebarProfessionalDropdownOpen, setIsSidebarProfessionalDropdownOpen] = useState(false);
     const [isLimitDropdownOpen, setIsLimitDropdownOpen] = useState(false);
     const [isColorDropdownOpen, setIsColorDropdownOpen] = useState(false);
 
@@ -1271,7 +1272,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             // 2. Filtro de Profissional selecionado
             if (selectedProfessional !== 'all') {
-                if (a.professional?.id && String(a.professional.id) !== String(selectedProfessional)) {
+                const profId = a.professional?.id || a.professional_id || a.resource_id;
+                if (profId && String(profId) !== String(selectedProfessional)) {
                     return false;
                 }
             }
@@ -1393,11 +1395,61 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
                     <div className="mb-6 relative">
                         <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2">
+                            Profissional
+                        </label>
+                        
+                        <button 
+                            onClick={() => { setIsSidebarProfessionalDropdownOpen(prev => !prev); setIsLimitDropdownOpen(false); setIsColorDropdownOpen(false); }} 
+                            className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200 text-left text-xs font-bold text-slate-700 transition-all select-none"
+                        >
+                            <span>
+                                {selectedProfessional === 'all' 
+                                    ? 'Todos os Profissionais' 
+                                    : (resources.find(r => String(r.id) === String(selectedProfessional))?.name || 'Profissional')
+                                }
+                            </span>
+                            <ChevronDown size={14} className="text-slate-400" />
+                        </button>
+
+                        {isSidebarProfessionalDropdownOpen && (
+                            <>
+                                <div className="fixed inset-0 z-30" onClick={() => setIsSidebarProfessionalDropdownOpen(false)}></div>
+                                <div className="absolute left-0 mt-1.5 w-full bg-white rounded-2xl border border-slate-100 shadow-xl overflow-hidden py-1.5 z-40 animate-in fade-in slide-in-from-top-2 duration-100 max-h-64 overflow-y-auto custom-scrollbar">
+                                    <button 
+                                        onClick={() => { setSelectedProfessional('all'); setIsSidebarProfessionalDropdownOpen(false); }} 
+                                        className={`w-full text-left px-4.5 py-2 text-xs font-bold transition-colors ${
+                                            selectedProfessional === 'all' 
+                                                ? 'bg-orange-50 text-orange-600' 
+                                                : 'text-slate-600 hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        Todos os Profissionais
+                                    </button>
+                                    {resources.map(p => (
+                                        <button 
+                                            key={p.id}
+                                            onClick={() => { setSelectedProfessional(p.id); setIsSidebarProfessionalDropdownOpen(false); }} 
+                                            className={`w-full text-left px-4.5 py-2 text-xs font-bold transition-colors ${
+                                                String(selectedProfessional) === String(p.id) 
+                                                    ? 'bg-orange-50 text-orange-600' 
+                                                    : 'text-slate-600 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            {p.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    <div className="mb-6 relative">
+                        <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2">
                             Limite de Exibição
                         </label>
                         
                         <button 
-                            onClick={() => { setIsLimitDropdownOpen(prev => !prev); setIsColorDropdownOpen(false); }} 
+                            onClick={() => { setIsLimitDropdownOpen(prev => !prev); setIsColorDropdownOpen(false); setIsSidebarProfessionalDropdownOpen(false); }} 
                             className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200 text-left text-xs font-bold text-slate-700 transition-all select-none"
                         >
                             <span>
@@ -1444,7 +1496,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         </label>
                         
                         <button 
-                            onClick={() => { setIsColorDropdownOpen(prev => !prev); setIsLimitDropdownOpen(false); }} 
+                            onClick={() => { setIsColorDropdownOpen(prev => !prev); setIsLimitDropdownOpen(false); setIsSidebarProfessionalDropdownOpen(false); }} 
                             className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200 text-left text-xs font-bold text-slate-700 transition-all select-none"
                         >
                             <span className="capitalize">
@@ -1702,7 +1754,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                     style={{ minHeight: `${timeSlotsLabels.length * SLOT_PX_HEIGHT}px` }}
                                     onClick={(e) => {
                                         if (e.target === e.currentTarget) {
-                                            const prof = col.type === 'professional' ? (col.data as LegacyProfessional) : resources[0];
+                                            const prof = col.type === 'professional' 
+                                                ? (col.data as LegacyProfessional) 
+                                                : (selectedProfessional === 'all' 
+                                                    ? resources[0] 
+                                                    : (resources.find(r => String(r.id) === String(selectedProfessional)) || resources[0])
+                                                  );
                                             const date = col.type === 'date' ? (col.data as Date) : currentDate;
                                             handleGridClick(e, prof, date);
                                         }
@@ -1711,7 +1768,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                     {timeSlotsLabels.map((_, i) => <div key={i} className="h-20 border-b border-slate-100/50 border-dashed pointer-events-none"></div>)}
                                     
                                     {(() => {
-                                        const prof = col.type === 'professional' ? (col.data as LegacyProfessional) : null;
+                                        const prof = col.type === 'professional' 
+                                            ? (col.data as LegacyProfessional) 
+                                            : (selectedProfessional === 'all' 
+                                                ? null 
+                                                : (resources.find(r => String(r.id) === String(selectedProfessional)) || null)
+                                              );
                                         const colDate = col.type === 'date' ? (col.data as Date) : currentDate;
                                         if (!prof || !prof.work_schedule) return null;
 
@@ -2064,7 +2126,38 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-6 animate-in fade-in duration-200">
                         <div className="flex flex-col gap-4">
                             {(() => {
-                                const monthAppts = appointments.filter(a => isSameMonth(a.start, currentDate));
+                                const monthAppts = appointments.filter(a => {
+                                    if (!isSameMonth(a.start, currentDate)) return false;
+
+                                    // 1. Filtro de Profissional selecionado
+                                    if (selectedProfessional !== 'all') {
+                                        const profId = a.professional?.id || a.professional_id || a.resource_id;
+                                        if (profId && String(profId) !== String(selectedProfessional)) {
+                                            return false;
+                                        }
+                                    }
+
+                                    // 2. Filtro de Dias da Semana (Exclui agendamentos em dias desabilitados)
+                                    const dayOfWeek = a.start.getDay();
+                                    if (!enabledDays[dayOfWeek]) {
+                                        return false;
+                                    }
+
+                                    // 3. Filtro de Modo de Visualização (Status/Andamento/Pagamento)
+                                    if (viewMode === 'andamento') {
+                                        const activeStatuses: AppointmentStatus[] = [
+                                            'agendado', 'confirmado', 'confirmado_whatsapp', 
+                                            'chegou', 'em_atendimento', 'em_espera'
+                                        ];
+                                        return activeStatuses.includes(a.status);
+                                    }
+
+                                    if (viewMode === 'pagamento') {
+                                        return a.status === 'concluido';
+                                    }
+
+                                    return true;
+                                });
                                 
                                 if (monthAppts.length === 0) {
                                     return (
