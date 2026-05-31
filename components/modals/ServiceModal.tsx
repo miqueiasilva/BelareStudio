@@ -22,8 +22,8 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, dbCategories, onCl
         ativo: true
     });
 
-    const [hours, setHours] = useState(0);
-    const [minutes, setMinutes] = useState(30);
+    const [hours, setHours] = useState<number | ''>(0);
+    const [minutes, setMinutes] = useState<number | ''>(30);
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
@@ -32,7 +32,7 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, dbCategories, onCl
                 ...formData,
                 ...service,
                 nome: service.nome || '',
-                preco: Number(service.preco) || 0,
+                preco: service.preco !== undefined && service.preco !== null ? Number(service.preco) : 0,
                 categoria: (service as any).categoria || '',
                 category_id: (service as any).category_id || '',
                 descricao: (service as any).descricao || '',
@@ -40,7 +40,7 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, dbCategories, onCl
                 ativo: service.ativo ?? true
             });
             
-            if (service.duracao_min) {
+            if (service.duracao_min !== undefined) {
                 setHours(Math.floor(service.duracao_min / 60));
                 setMinutes(service.duracao_min % 60);
             }
@@ -66,6 +66,7 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, dbCategories, onCl
         // Payload garantindo tanto nome quanto ID da categoria para compatibilidade
         const payload = { 
             ...formData, 
+            preco: formData.preco === '' ? 0 : Number(formData.preco),
             duracao_min: totalMinutes,
             category_id: formData.category_id || null,
             categoria: formData.categoria || 'Sem Categoria'
@@ -174,8 +175,8 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, dbCategories, onCl
                                     required 
                                     type="number" 
                                     step="0.01" 
-                                    value={formData.preco} 
-                                    onChange={e => setFormData({...formData, preco: parseFloat(e.target.value)})} 
+                                    value={formData.preco === '' ? '' : formData.preco} 
+                                    onChange={e => setFormData({...formData, preco: e.target.value === '' ? '' : parseFloat(e.target.value)})} 
                                     className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl pl-12 pr-4 py-3.5 outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all font-black text-slate-800 text-xl" 
                                 />
                             </div>
@@ -189,7 +190,7 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, dbCategories, onCl
                                         type="number"
                                         min="0"
                                         value={hours}
-                                        onChange={(e) => setHours(Math.max(0, parseInt(e.target.value) || 0))}
+                                        onChange={(e) => setHours(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0))}
                                         className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3.5 outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all font-black text-center text-lg text-slate-700"
                                         placeholder="0"
                                     />
@@ -202,7 +203,7 @@ const ServiceModal: React.FC<ServiceModalProps> = ({ service, dbCategories, onCl
                                         min="0"
                                         max="59"
                                         value={minutes}
-                                        onChange={(e) => setMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                                        onChange={(e) => setMinutes(e.target.value === '' ? '' : Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
                                         className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3.5 outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-400 transition-all font-black text-center text-lg text-slate-700"
                                         placeholder="00"
                                     />

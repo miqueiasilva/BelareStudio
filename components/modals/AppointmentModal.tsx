@@ -35,8 +35,10 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     appointment?.service ? [appointment.service] : []
   );
 
-  const [manualPrice, setManualPrice] = useState<number>(0);
-  const [manualDuration, setManualDuration] = useState<number>(0);
+  const [manualPrice, setManualPrice] = useState<number | ''>(0);
+  const [hours, setHours] = useState<number | ''>(0);
+  const [minutes, setMinutes] = useState<number | ''>(0);
+  const manualDuration = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
 
   const [selectionModal, setSelectionModal] = useState<'client' | 'service' | 'professional' | null>(null);
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
@@ -136,11 +138,14 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
       setSelectedServices(initialServices);
       
       if (appointment?.service) {
-          setManualPrice(appointment.service.price);
-          setManualDuration(appointment.service.duration);
+          setManualPrice(appointment.service.price !== undefined && appointment.service.price !== null ? appointment.service.price : 0);
+          const dur = appointment.service.duration || 0;
+          setHours(Math.floor(dur / 60));
+          setMinutes(dur % 60);
       } else {
           setManualPrice(0);
-          setManualDuration(0);
+          setHours(0);
+          setMinutes(0);
       }
 
       setClientEmail(appointment?.client?.email || '');
@@ -158,7 +163,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           const price = selectedServices.reduce((acc, s) => acc + s.price, 0);
           const duration = selectedServices.reduce((acc, s) => acc + s.duration, 0);
           setManualPrice(price);
-          setManualDuration(duration);
+          setHours(Math.floor(duration / 60));
+          setMinutes(duration % 60);
       }
   }, [selectedServices]);
 
@@ -403,8 +409,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
              <button onClick={() => setSelectionModal('service')} disabled={loadingServices || !formData.professional} className="w-full py-2 border border-dashed border-blue-300 rounded-lg text-blue-600 text-sm font-semibold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">{loadingServices ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlusCircle size={16} />}{!formData.professional ? 'Selecione um profissional primeiro' : (loadingServices ? 'Carregando...' : 'Adicionar Serviço')}</button>
           </div>
           <div className="flex items-center gap-4">
-              <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 shadow-sm h-[64px]"><div className="p-1.5 bg-green-50 rounded text-green-600"><DollarSign className="w-4 h-4" /></div><div className="flex flex-col w-full"><span className="text-[10px] text-slate-400 uppercase font-bold tracking-wide">Valor Total</span><input type="number" value={manualPrice} onChange={(e) => setManualPrice(Number(e.target.value))} className="font-bold text-slate-800 bg-transparent outline-none w-full p-0 border-none focus:ring-0 text-sm" /></div></div>
-              <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 shadow-sm h-[64px]"><div className="p-1.5 bg-blue-50 rounded text-blue-600"><Clock className="w-4 h-4" /></div><div className="flex flex-col w-full"><span className="text-[10px] text-slate-400 uppercase font-bold tracking-wide">Duração</span><div className="flex items-center gap-1"><div className="flex items-center gap-0.5"><input type="number" min="0" value={Math.floor(manualDuration / 60)} onChange={(e) => { const h = Math.max(0, parseInt(e.target.value) || 0); const m = manualDuration % 60; setManualDuration(h * 60 + m); }} className="w-7 font-black text-slate-800 bg-transparent outline-none p-0 border-none focus:ring-0 text-sm text-center font-mono" /><span className="text-[9px] font-black text-slate-300 uppercase">h</span></div><span className="font-bold text-slate-200 mx-0.5">:</span><div className="flex items-center gap-0.5"><input type="number" min="0" max="59" value={manualDuration % 60} onChange={(e) => { const h = Math.floor(manualDuration / 60); const m = Math.max(0, Math.min(59, parseInt(e.target.value) || 0)); setManualDuration(h * 60 + m); }} className="w-7 font-black text-slate-800 bg-transparent outline-none p-0 border-none focus:ring-0 text-sm text-center font-mono" /><span className="text-[9px] font-black text-slate-300 uppercase">m</span></div></div></div></div>
+              <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 shadow-sm h-[64px]"><div className="p-1.5 bg-green-50 rounded text-green-600"><DollarSign className="w-4 h-4" /></div><div className="flex flex-col w-full"><span className="text-[10px] text-slate-400 uppercase font-bold tracking-wide">Valor Total</span><input type="number" value={manualPrice === '' ? '' : manualPrice} onFocus={(e) => e.target.select()} onChange={(e) => setManualPrice(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)} className="font-bold text-slate-800 bg-transparent outline-none w-full p-0 border-none focus:ring-0 text-sm" /></div></div>
+              <div className="flex items-center gap-3 flex-1 bg-white p-2 rounded-lg border border-slate-200 shadow-sm h-[64px]"><div className="p-1.5 bg-blue-50 rounded text-blue-600"><Clock className="w-4 h-4" /></div><div className="flex flex-col w-full"><span className="text-[10px] text-slate-400 uppercase font-bold tracking-wide">Duração</span><div className="flex items-center gap-1"><div className="flex items-center gap-0.5"><input type="number" min="0" value={hours === '' ? '' : hours} onFocus={(e) => e.target.select()} onChange={(e) => setHours(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0))} className="w-7 font-black text-slate-800 bg-transparent outline-none p-0 border-none focus:ring-0 text-sm text-center font-mono" placeholder="0" /><span className="text-[9px] font-black text-slate-300 uppercase">h</span></div><span className="font-bold text-slate-200 mx-0.5">:</span><div className="flex items-center gap-0.5"><input type="number" min="0" max="59" value={minutes === '' ? '' : minutes} onFocus={(e) => e.target.select()} onChange={(e) => setMinutes(e.target.value === '' ? '' : Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))} className="w-7 font-black text-slate-800 bg-transparent outline-none p-0 border-none focus:ring-0 text-sm text-center font-mono" placeholder="00" /><span className="text-[9px] font-black text-slate-300 uppercase">m</span></div></div></div></div>
           </div>
           <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Status</label><div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-200"><CheckSquare className="w-5 h-5 text-slate-400" /><select name="status" value={formData.status} onChange={handleChange} className="w-full bg-transparent focus:outline-none text-sm font-medium text-slate-700"><option value="agendado">Agendado</option><option value="confirmado">Confirmado</option><option value="chegou">Cliente Chegou</option><option value="em_atendimento">Em Atendimento</option><option value="concluido">Concluído</option><option value="faltou">Faltou</option><option value="cancelado">Cancelado</option></select></div></div>
           <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">Observações</label><div className="flex items-center gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200"><textarea name="notas" placeholder="Observações..." value={formData.notas || ''} onChange={handleChange} className="w-full bg-transparent focus:outline-none text-sm text-slate-700 resize-none" rows={2} /></div></div>

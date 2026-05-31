@@ -248,8 +248,9 @@ const DiscountSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                     <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Valor</label>
                                     <input 
                                         type="number"
-                                        value={editingRule.value || ''}
-                                        onChange={e => setEditingRule({...editingRule, value: parseFloat(e.target.value) || 0})}
+                                        value={editingRule.value === '' ? '' : (editingRule.value ?? '')}
+                                        onFocus={e => e.target.select()}
+                                        onChange={e => setEditingRule({...editingRule, value: e.target.value === '' ? '' : parseFloat(e.target.value)})}
                                         className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 font-bold text-slate-700 outline-none"
                                         placeholder="0.00"
                                     />
