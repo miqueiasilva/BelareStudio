@@ -105,3 +105,47 @@ CREATE POLICY "allow_auth_select_user_studios" ON user_studios FOR SELECT TO aut
 CREATE POLICY "allow_auth_select_schedule_blocks" ON schedule_blocks FOR SELECT TO authenticated USING (true);
 CREATE POLICY "allow_auth_select_financial_transactions" ON financial_transactions FOR SELECT TO authenticated USING (true);
 CREATE POLICY "allow_auth_select_commands" ON commands FOR SELECT TO authenticated USING (true);
+
+-- Políticas para FINANCIAL_CATEGORIES
+ALTER TABLE public.financial_categories ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "financial_categories_select_by_studio_members" ON financial_categories;
+DROP POLICY IF EXISTS "financial_categories_insert_by_studio_members" ON financial_categories;
+DROP POLICY IF EXISTS "financial_categories_update_by_studio_members" ON financial_categories;
+DROP POLICY IF EXISTS "financial_categories_delete_by_studio_members" ON financial_categories;
+
+CREATE POLICY "financial_categories_select_by_studio_members" ON financial_categories FOR SELECT TO authenticated
+USING (
+  studio_id IN (
+    SELECT us.studio_id FROM public.user_studios us WHERE us.user_id = auth.uid()
+    UNION
+    SELECT tm.studio_id FROM public.team_members tm WHERE tm.email = auth.jwt()->>'email' AND tm.active = true
+  )
+);
+
+CREATE POLICY "financial_categories_insert_by_studio_members" ON financial_categories FOR INSERT TO authenticated
+WITH CHECK (
+  studio_id IN (
+    SELECT us.studio_id FROM public.user_studios us WHERE us.user_id = auth.uid()
+    UNION
+    SELECT tm.studio_id FROM public.team_members tm WHERE tm.email = auth.jwt()->>'email' AND tm.active = true
+  )
+);
+
+CREATE POLICY "financial_categories_update_by_studio_members" ON financial_categories FOR UPDATE TO authenticated
+USING (
+  studio_id IN (
+    SELECT us.studio_id FROM public.user_studios us WHERE us.user_id = auth.uid()
+    UNION
+    SELECT tm.studio_id FROM public.team_members tm WHERE tm.email = auth.jwt()->>'email' AND tm.active = true
+  )
+);
+
+CREATE POLICY "financial_categories_delete_by_studio_members" ON financial_categories FOR DELETE TO authenticated
+USING (
+  studio_id IN (
+    SELECT us.studio_id FROM public.user_studios us WHERE us.user_id = auth.uid()
+    UNION
+    SELECT tm.studio_id FROM public.team_members tm WHERE tm.email = auth.jwt()->>'email' AND tm.active = true
+  )
+);
