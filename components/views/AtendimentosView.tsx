@@ -35,6 +35,45 @@ const getStartOfDay = (d: Date) => {
     return nd;
 };
 
+const weekdaysNames = [
+    'domingo',
+    'segunda-feira',
+    'terça-feira',
+    'quarta-feira',
+    'quinta-feira',
+    'sexta-feira',
+    'sábado'
+];
+
+const getProfessionalColor = (profId: any, resourcesList: LegacyProfessional[]): string => {
+    const defaultColors = [
+        '#f97316', // Orange
+        '#3b82f6', // Blue
+        '#10b981', // Emerald
+        '#8b5cf6', // Purple
+        '#ec4899', // Pink
+        '#14b8a6', // Teal
+        '#f43f5e', // Rose
+        '#a855f7', // Violet
+    ];
+    const index = resourcesList.findIndex(r => String(r.id) === String(profId));
+    if (index === -1) return '#64748b'; // Slate fallback
+    return defaultColors[index % defaultColors.length];
+};
+
+const getStatusColor = (status: string): string => {
+    switch (status) {
+        case 'agendado': return '#f97316'; // Orange / Amber
+        case 'confirmado': case 'confirmado_whatsapp': return '#3b82f6'; // Blue
+        case 'chegou': return '#a855f7'; // Purple
+        case 'em_atendimento': return '#10b981'; // Emerald
+        case 'concluido': return '#10b981'; // Green
+        case 'cancelado': return '#ef4444'; // Red
+        case 'bloqueado': return '#64748b'; // Slate
+        default: return '#3b82f6';
+    }
+};
+
 const isUUID = (str: any): boolean => {
     if (!str) return false;
     if (typeof str === 'number') return true; // Aceita IDs numéricos para compatibilidade
@@ -245,6 +284,35 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
     const [pendingConflict, setPendingConflict] = useState<{ newApp: LegacyAppointment, conflictWith: any } | null>(null);
     const [viewMode, setViewMode] = useState<'profissional' | 'andamento' | 'pagamento'>('profissional');
+
+    // Sidebar states for filters and layout customization
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [maxDisplayCount, setMaxDisplayCount] = useState(8);
+    const [colorModeState, setColorModeState] = useState<'service' | 'professional' | 'status' | 'payment'>('service');
+    const [enabledDays, setEnabledDays] = useState<boolean[]>([true, true, true, true, true, true, true]);
+    const [selectedProfessional, setSelectedProfessional] = useState<number | 'all'>('all');
+    const [isProfessionalDropdownOpen, setIsProfessionalDropdownOpen] = useState(false);
+    const [isLimitDropdownOpen, setIsLimitDropdownOpen] = useState(false);
+    const [isColorDropdownOpen, setIsColorDropdownOpen] = useState(false);
+
+    const getAppointmentColor = (app: any) => {
+        if (app.type === 'block') return '#94a3b8'; // gray
+        
+        switch (colorModeState) {
+            case 'professional':
+                return getProfessionalColor(app.professional?.id, resources);
+            case 'status':
+                return getStatusColor(app.status);
+            case 'payment':
+                if (app.status === 'concluido') return '#10b981'; // Green
+                if (app.status === 'cancelado' || app.status === 'faltou') return '#ef4444'; // Red
+                return '#f59e0b'; // Amber
+            case 'service':
+            default:
+                return app.service?.color || '#3b82f6';
+        }
+    };
+
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [colWidth, setColWidth] = useState(220);
     const [isAutoWidth, setIsAutoWidth] = useState(false);
@@ -363,6 +431,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 // FIX: Used getStartOfDay helper
                 rangeStart = getStartOfDay(addDays(currentDate, diff));
                 rangeEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
+            } else if (periodType === 'Mês') {
+                const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1, 0, 0, 0, 0);
+                const firstDayIdx = firstDay.getDay(); // 0 is Sunday
+                const gridStart = addDays(firstDay, -firstDayIdx);
+                rangeStart = getStartOfDay(gridStart);
+                rangeEnd = endOfDay(addDays(gridStart, 41));
             } else {
                 rangeStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1, 0, 0, 0, 0);
                 rangeEnd = endOfMonth(currentDate);
@@ -1169,10 +1243,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             // FIX: Used getStartOfDay helper
             const weekStart = getStartOfDay(addDays(start, diff));
 
-            return eachDayOfInterval({ start: weekStart, end: endOfWeek(currentDate, { weekStartsOn: 1 }) }).map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date' as const, data: day }));
+            return eachDayOfInterval({ start: weekStart, end: endOfWeek(currentDate, { weekStartsOn: 1 }) })
+                .filter(day => enabledDays[day.getDay()])
+                .map(day => ({ id: day.toISOString(), title: format(day, 'EEE', { locale: pt }), subtitle: format(day, 'dd/MM'), type: 'date' as const, data: day }));
         }
-        return resources.map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional' as const, data: p }));
-    }, [periodType, currentDate, resources]);
+        return resources
+            .filter(p => selectedProfessional === 'all' || String(p.id) === String(selectedProfessional))
+            .map(p => ({ id: p.id, title: p.name, photo: p.avatarUrl, type: 'professional' as const, data: p }));
+    }, [periodType, currentDate, resources, enabledDays, selectedProfessional]);
 
     const filteredAppointments = useMemo(() => {
         const baseList = appointments.filter(a => {
@@ -1191,7 +1269,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
             if (!inPeriod) return false;
 
-            // 2. Filtro de Modo de Visualização (Status)
+            // 2. Filtro de Profissional selecionado
+            if (selectedProfessional !== 'all') {
+                if (a.professional?.id && String(a.professional.id) !== String(selectedProfessional)) {
+                    return false;
+                }
+            }
+
+            // 3. Filtro de Dias da Semana (Exclui agendamentos em dias desabilitados)
+            const dayOfWeek = a.start.getDay();
+            if (!enabledDays[dayOfWeek]) {
+                return false;
+            }
+
+            // 4. Filtro de Modo de Visualização (Status)
             if (viewMode === 'andamento') {
                 // "Andamento" inclui tudo que não está finalizado, cancelado ou bloqueado
                 const activeStatuses: AppointmentStatus[] = [
@@ -1211,7 +1302,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         });
 
         return [...baseList].sort((a, b) => (STATUS_PRIORITY[a.status] || 99) - (STATUS_PRIORITY[b.status] || 99) || a.start.getTime() - b.start.getTime());
-    }, [appointments, periodType, currentDate, viewMode]);
+    }, [appointments, periodType, currentDate, viewMode, selectedProfessional, enabledDays]);
 
     const timeSlotsLabels = useMemo(() => {
         const labels = [];
@@ -1282,10 +1373,162 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     };
 
     return (
-        <div className="flex h-full bg-white relative flex-col font-sans text-left">
+        <div className="flex flex-row h-full w-full bg-white relative font-sans text-left overflow-hidden">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
             
-            <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-30 shadow-sm">
+            {/* CONFIGURATIONS SIDEBAR */}
+            {isSidebarOpen ? (
+                <aside className="w-64 border-r border-slate-200 bg-white p-6 flex flex-col justify-start select-none h-full overflow-y-auto shrink-0 z-20 animate-in slide-in-from-left duration-200">
+                    <div className="flex items-center justify-between mb-8">
+                        <h3 className="font-extrabold text-slate-850 text-[11px] tracking-widest uppercase">
+                            Filtros e Configurações
+                        </h3>
+                        <button 
+                            onClick={() => setIsSidebarOpen(false)} 
+                            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
+                        >
+                            <ChevronLeft size={18} />
+                        </button>
+                    </div>
+
+                    <div className="mb-6 relative">
+                        <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2">
+                            Limite de Exibição
+                        </label>
+                        
+                        <button 
+                            onClick={() => { setIsLimitDropdownOpen(prev => !prev); setIsColorDropdownOpen(false); }} 
+                            className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200 text-left text-xs font-bold text-slate-700 transition-all select-none"
+                        >
+                            <span>
+                                {maxDisplayCount === 100 
+                                    ? 'Todos' 
+                                    : maxDisplayCount === 1 
+                                        ? 'Até 1 Atendimento' 
+                                        : `Até ${maxDisplayCount} Atendimentos`
+                                }
+                            </span>
+                            <ChevronDown size={14} className="text-slate-400" />
+                        </button>
+
+                        {isLimitDropdownOpen && (
+                            <>
+                                <div className="fixed inset-0 z-30" onClick={() => setIsLimitDropdownOpen(false)}></div>
+                                <div className="absolute left-0 mt-1.5 w-full bg-white rounded-2xl border border-slate-100 shadow-xl overflow-hidden py-1.5 z-40 animate-in fade-in slide-in-from-top-2 duration-100 max-h-64 overflow-y-auto custom-scrollbar">
+                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 100].map(val => (
+                                        <button 
+                                            key={val}
+                                            onClick={() => { setMaxDisplayCount(val); setIsLimitDropdownOpen(false); }} 
+                                            className={`w-full text-left px-4.5 py-2 text-xs font-bold transition-colors ${
+                                                maxDisplayCount === val 
+                                                    ? 'bg-orange-50 text-orange-600' 
+                                                    : 'text-slate-600 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            {val === 100 
+                                                ? 'Todos' 
+                                                : val === 1 
+                                                    ? 'Até 1 Atendimento' 
+                                                    : `Até ${val} Atendimentos`
+                                            }
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    <div className="mb-6 relative">
+                        <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2">
+                            Cores dos agendamentos
+                        </label>
+                        
+                        <button 
+                            onClick={() => { setIsColorDropdownOpen(prev => !prev); setIsLimitDropdownOpen(false); }} 
+                            className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200 text-left text-xs font-bold text-slate-700 transition-all select-none"
+                        >
+                            <span className="capitalize">
+                                {colorModeState === 'service' && 'Por Serviço'}
+                                {colorModeState === 'professional' && 'Por Profissional'}
+                                {colorModeState === 'status' && 'Por Andamento'}
+                                {colorModeState === 'payment' && 'Por Pagamento'}
+                            </span>
+                            <ChevronDown size={14} className="text-slate-400" />
+                        </button>
+
+                        {isColorDropdownOpen && (
+                            <>
+                                <div className="fixed inset-0 z-30" onClick={() => setIsColorDropdownOpen(false)}></div>
+                                <div className="absolute left-0 mt-1.5 w-full bg-white rounded-2xl border border-slate-100 shadow-xl overflow-hidden py-1.5 z-40 animate-in fade-in slide-in-from-top-2 duration-100">
+                                    {[
+                                        { key: 'service', label: 'Por Serviço' },
+                                        { key: 'professional', label: 'Por Profissional' },
+                                        { key: 'status', label: 'Por Andamento' },
+                                        { key: 'payment', label: 'Por Pagamento' }
+                                    ].map(item => (
+                                        <button 
+                                            key={item.key}
+                                            onClick={() => { setColorModeState(item.key as any); setIsColorDropdownOpen(false); }} 
+                                            className={`w-full text-left px-4.5 py-2 text-xs font-bold transition-colors ${
+                                                colorModeState === item.key 
+                                                    ? 'bg-orange-50 text-orange-600' 
+                                                    : 'text-slate-600 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            {item.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    <div className="border-t border-slate-100 pt-6">
+                        <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">
+                            Dias da Semana
+                        </label>
+                        
+                        <div className="space-y-1">
+                            {weekdaysNames.map((name, index) => (
+                                <button
+                                    key={name}
+                                    onClick={() => {
+                                        const updated = [...enabledDays];
+                                        updated[index] = !updated[index];
+                                        if (updated.some(Boolean)) {
+                                            setEnabledDays(updated);
+                                        }
+                                    }}
+                                    className="flex items-center gap-3 w-full py-1.5 hover:bg-slate-50 rounded-lg px-2 transition-colors text-left"
+                                >
+                                    <div className={`w-4.5 h-4.5 flex items-center justify-center rounded border transition-all ${
+                                        enabledDays[index] 
+                                            ? 'bg-slate-800 border-slate-800 text-white shadow-sm' 
+                                            : 'border-slate-300 bg-white'
+                                    }`}>
+                                        {enabledDays[index] && <Check size={11} strokeWidth={4} />}
+                                    </div>
+                                    <span className="text-[11px] font-black text-slate-600 uppercase tracking-wide capitalize">
+                                        {name}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </aside>
+            ) : (
+                <button 
+                    onClick={() => setIsSidebarOpen(true)} 
+                    className="fixed bottom-6 left-6 p-3 bg-white hover:bg-slate-50 border border-slate-200 shadow-xl rounded-full text-slate-600 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2 z-[999]"
+                    title="Abrir Filtros"
+                >
+                    <SlidersHorizontal size={20} className="text-orange-500" />
+                    <span className="text-xs font-bold pr-1 text-slate-700">Configurações</span>
+                </button>
+            )}
+
+            <div className="flex-1 flex flex-col h-full overflow-hidden">
+                <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-30 shadow-sm">
                 <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4">
                     <div className="flex items-center gap-4">
                         <div className="flex items-center gap-3">
@@ -1314,24 +1557,29 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         </div>
                     </div>
                     <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
-                        <button onClick={() => setIsConfigModalOpen(true)} className="p-2 rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-50 transition-all"><SlidersHorizontal size={20} /></button>
+                        <button onClick={() => setIsSidebarOpen(prev => !prev)} className="p-2 rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-50 transition-all" title="Alternar Painel de Filtros"><SlidersHorizontal size={20} /></button>
                         <button onClick={() => setIsPeriodModalOpen(true)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50">{periodType} <ChevronDown size={16} /></button>
                         <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all active:scale-95">Agendar</button>
                     </div>
                 </div>
                 <div className="flex items-center gap-4">
-                    <button onClick={() => setCurrentDate(new Date())} className="text-sm font-bold bg-slate-100 px-4 py-2 rounded-lg hover:bg-slate-200 transition-colors">HOJE</button>
-                    <div className="flex items-center gap-1">
-                        <button onClick={() => handleDateChange(-1)} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronLeft size={20} /></button>
-                        <button onClick={() => handleDateChange(1)} className="p-2 hover:bg-slate-100 rounded-full text-slate-500"><ChevronRight size={20} /></button>
+                    <button 
+                        onClick={() => setCurrentDate(new Date())} 
+                        className="p-2 hover:bg-slate-100 rounded-xl text-slate-600 transition-colors cursor-pointer"
+                        title="Ir para Hoje"
+                    >
+                        <CalendarIcon size={22} className="text-slate-600" />
+                    </button>
+                    <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-2xl p-1 shadow-sm">
+                        <button onClick={() => handleDateChange(-1)} className="p-1.5 hover:bg-white active:scale-95 transition-all rounded-xl text-slate-600"><ChevronLeft size={18} /></button>
+                        <button onClick={() => handleDateChange(1)} className="p-1.5 hover:bg-white active:scale-95 transition-all rounded-xl text-slate-600"><ChevronRight size={18} /></button>
                     </div>
                     <div className="relative">
                         <button 
                             onClick={() => dateInputRef.current?.showPicker()} 
-                            className="text-orange-500 hover:text-orange-600 font-bold text-lg capitalize tracking-tight flex items-center gap-2 hover:bg-orange-50 px-3.5 py-1.5 rounded-2xl transition-all active:scale-95 cursor-pointer select-none border border-transparent hover:border-orange-100 shadow-sm md:shadow-none bg-white md:bg-transparent"
+                            className="text-slate-750 hover:text-slate-900 font-extrabold text-base capitalize tracking-tight flex items-center gap-1.5 hover:bg-slate-50 px-3 py-1.5 rounded-2xl transition-all active:scale-95 cursor-pointer select-none"
                             title="Escolher outra data"
                         >
-                            <CalendarIcon size={18} className="text-orange-400" />
                             <span>
                                 {['Mês', 'Lista'].includes(periodType) 
                                     ? format(currentDate, "MMMM 'de' yyyy", { locale: pt }) 
@@ -1350,6 +1598,52 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                 }
                             }}
                         />
+                    </div>
+
+                    {/* Professional selector dropdown exactly matching screenshot */}
+                    <div className="relative">
+                        <button 
+                            onClick={() => setIsProfessionalDropdownOpen(prev => !prev)} 
+                            className="text-slate-800 hover:text-orange-600 font-bold text-base tracking-tight flex items-center gap-1 py-1.5 px-3 hover:bg-slate-50 rounded-2xl cursor-pointer select-none transition-colors"
+                        >
+                            <span>
+                                {selectedProfessional === 'all' 
+                                    ? 'Todos os Profissionais' 
+                                    : (resources.find(r => String(r.id) === String(selectedProfessional))?.name || 'Profissional')
+                                }
+                            </span>
+                            <ChevronDown size={14} className="text-slate-400" />
+                        </button>
+                        
+                        {isProfessionalDropdownOpen && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setIsProfessionalDropdownOpen(false)}></div>
+                                <div className="absolute left-0 mt-2 w-64 bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden py-3 z-50 animate-in fade-in slide-in-from-top-3 duration-150">
+                                    <div className="px-5 py-2 text-[11px] font-extrabold uppercase tracking-widest text-slate-400 border-b border-slate-50 mb-1">
+                                        Visualização da agenda
+                                    </div>
+                                    
+                                    <button 
+                                        onClick={() => { setSelectedProfessional('all'); setIsProfessionalDropdownOpen(false); }} 
+                                        className="w-full flex items-center justify-between px-5 py-2.5 text-sm font-bold text-slate-700 hover:bg-orange-50/50 hover:text-orange-600 transition-colors text-left"
+                                    >
+                                        <span>Todos os Profissionais</span>
+                                        {selectedProfessional === 'all' && <Check size={16} className="text-orange-600" strokeWidth={3} />}
+                                    </button>
+                                    
+                                    {resources.map(p => (
+                                        <button 
+                                            key={p.id}
+                                            onClick={() => { setSelectedProfessional(p.id); setIsProfessionalDropdownOpen(false); }} 
+                                            className="w-full flex items-center justify-between px-5 py-2.5 text-sm font-bold text-slate-700 hover:bg-orange-50/50 hover:text-orange-600 transition-colors text-left"
+                                        >
+                                            <span className="truncate">{p.name}</span>
+                                            {String(selectedProfessional) === String(p.id) && <Check size={16} className="text-orange-600" strokeWidth={3} />}
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             </header>
@@ -1511,7 +1805,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                         return colApps.map(app => {
                                             const durationMinutes = (app.end.getTime() - app.start.getTime()) / 60000;
                                             const isShort = durationMinutes <= 25;
-                                            const cardColor = app.type === 'block' ? '#f87171' : (app.service.color || '#3b82f6');
+                                            const cardColor = getAppointmentColor(app);
                                             const layout = layoutMap.get(app.id) || { width: '100%', left: '0px', zIndex: 20, isOverlapping: false };
                                             
                                             return (
@@ -1594,7 +1888,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                     )}
                                                 </div>
                                             );
-                                        });
+                                                         });
                                     })()}
                                 </div>
                             ))}
@@ -1603,23 +1897,56 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     </div>
                 ) : periodType === 'Mês' ? (
                     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-200">
-                        <div className="bg-white rounded-[32px] border border-slate-205 shadow-sm p-4 sm:p-6">
+                        <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm p-4 sm:p-6">
+                            {/* Titulo do Mês/Ano */}
+                            <div className="text-center font-black text-xl text-slate-800 mb-6 flex flex-col items-center justify-center">
+                                <span className="capitalize tracking-tight text-slate-900 text-lg sm:text-xl">
+                                    {format(currentDate, "MMMM'/'yyyy", { locale: pt })}
+                                </span>
+                            </div>
+
                             {/* Dias da semana */}
-                            <div className="grid grid-cols-7 gap-1 sm:gap-2 text-center border-b border-slate-100 pb-3 mb-3">
-                                {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(day => (
-                                    <span key={day} className="text-[10px] sm:text-xs font-black uppercase text-slate-400 tracking-wider">
-                                        {day}
-                                    </span>
-                                ))}
+                            <div 
+                                className="grid gap-1 sm:gap-2 text-center border-b border-slate-100 pb-3 mb-3"
+                                style={{ gridTemplateColumns: `repeat(${enabledDays.filter(Boolean).length}, minmax(0, 1fr))` }}
+                            >
+                                {['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
+                                    .filter((_, idx) => enabledDays[idx])
+                                    .map(day => (
+                                        <span key={day} className="text-[11px] font-extrabold text-slate-500 lowercase tracking-wide">
+                                            {day}
+                                        </span>
+                                    ))
+                                }
                             </div>
 
                             {/* Grade de dias do mês */}
-                            <div className="grid grid-cols-7 gap-1.5 sm:gap-2.5">
+                             <div 
+                                className="grid gap-2 sm:gap-2.5"
+                                style={{ gridTemplateColumns: `repeat(${enabledDays.filter(Boolean).length}, minmax(0, 1fr))` }}
+                            >
                                 {(() => {
                                     const year = currentDate.getFullYear();
                                     const month = currentDate.getMonth();
 
                                     const firstDay = new Date(year, month, 1);
+                                    const lastDay = new Date(year, month + 1, 0);
+
+                                    const calendarStart = getStartOfDay(addDays(firstDay, -firstDay.getDay()));
+                                    const calendarEnd = addDays(lastDay, 6 - lastDay.getDay());
+
+                                    const allPossibleDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+                                    
+                                    const cells = allPossibleDays
+                                        .filter(day => enabledDays[day.getDay()])
+                                        .map(day => ({
+                                            dayNum: day.getDate(),
+                                            dateObj: day,
+                                            isCurrentMonth: day.getMonth() === month
+                                        }));
+
+                                    const dummySkip = true;
+                                    if (!dummySkip) {
                                     const firstDayIdx = firstDay.getDay(); 
                                     const totalDays = new Date(year, month + 1, 0).getDate();
                                     
@@ -1639,76 +1966,94 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                         cells.push({ dayNum: i, dateObj, isCurrentMonth: true });
                                     }
 
-                                    // Dias do próximo mês para fechar 42 células (6 linhas completas)
-                                    const remaining = 42 - cells.length;
-                                    for (let i = 1; i <= remaining; i++) {
-                                        const dateObj = new Date(year, month + 1, i);
-                                        cells.push({ dayNum: i, dateObj, isCurrentMonth: false });
-                                    }
+}
 
                                     return cells.map((cell, idx) => {
                                         const isToday = isSameDay(cell.dateObj, new Date());
                                         const isSelected = isSameDay(cell.dateObj, currentDate);
                                         
                                         // Busca agendamentos deste dia específico
-                                        const dayAppts = appointments.filter(a => isSameDay(a.start, cell.dateObj));
-                                        const appts = dayAppts.filter(a => a.type === 'appointment');
-                                        const apptsCount = appts.length;
+                                        const dayAppts = filteredAppointments.filter(a => isSameDay(a.start, cell.dateObj));
+                                        
+                                        // Ordena por horário de início
+                                        const sortedAppts = [...dayAppts].sort((a, b) => a.start.getTime() - b.start.getTime());
+
+                                        const LIMIT_COUNT = maxDisplayCount;
+                                        const hasMore = sortedAppts.length > LIMIT_COUNT;
+                                        const itemsToRender = hasMore ? sortedAppts.slice(0, LIMIT_COUNT - 1) : sortedAppts;
 
                                         return (
-                                            <button
+                                            <div
                                                 key={idx}
                                                 onClick={() => {
                                                     setCurrentDate(cell.dateObj);
                                                     setPeriodType('Dia');
                                                 }}
-                                                className={`min-h-[85px] sm:min-h-[110px] bg-white border rounded-2xl p-2 text-left transition-all duration-200 flex flex-col justify-between hover:ring-2 hover:ring-orange-100 hover:border-orange-300 relative group/cell ${
+                                                className={`min-h-[175px] sm:min-h-[230px] bg-white border rounded-2xl p-2 flex flex-col justify-start hover:ring-2 hover:ring-orange-100 hover:border-orange-300 relative group/cell cursor-pointer transition-all duration-200 ${
                                                     cell.isCurrentMonth 
-                                                        ? 'border-slate-100 text-slate-800' 
-                                                        : 'border-slate-50/50 text-slate-300 bg-slate-50/[0.15]'
+                                                        ? 'border-slate-200 text-slate-805' 
+                                                        : 'border-slate-100 text-slate-350 bg-slate-50/[0.22]'
                                                 } ${
                                                     isSelected && cell.isCurrentMonth
                                                         ? 'ring-2 ring-orange-400 border-orange-400 bg-orange-50/[0.01]'
                                                         : ''
                                                 }`}
                                             >
-                                                <div className="flex justify-between items-center w-full">
-                                                    <span className={`text-[10px] sm:text-xs font-black tracking-tight ${
+                                                {/* Cabeçalho do dia */}
+                                                <div className="flex justify-center items-center py-1 bg-transparent w-full pointer-events-none mb-2">
+                                                    <span className={`text-[11px] sm:text-xs font-black tracking-tight flex items-center justify-center ${
                                                         isToday 
-                                                            ? 'w-5 h-5 sm:w-6 sm:h-6 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold shadow-sm shadow-orange-100' 
-                                                            : cell.isCurrentMonth ? 'text-slate-700' : 'text-slate-300'
+                                                            ? 'w-6 h-6 bg-orange-500 text-white rounded-full font-bold shadow-sm shadow-orange-100 text-xs' 
+                                                            : cell.isCurrentMonth ? 'text-slate-800' : 'text-slate-400'
                                                     }`}>
-                                                        {cell.dayNum}
+                                                        {format(cell.dateObj, 'dd')}
                                                     </span>
-                                                    
-                                                    {apptsCount > 0 && (
-                                                        <span className="text-[8px] sm:text-[10px] bg-orange-100 text-orange-600 font-extrabold px-1 sm:px-1.5 py-0.5 rounded-lg leading-none">
-                                                            {apptsCount}
-                                                        </span>
-                                                    )}
                                                 </div>
 
-                                                <div className="space-y-0.5 mt-1 sm:mt-2 w-full flex-grow overflow-hidden max-h-[36px] sm:max-h-[58px]">
-                                                    {dayAppts.slice(0, 2).map((app, index) => {
-                                                        const cardColor = app.type === 'block' ? '#f87171' : (app.service?.color || '#3b82f6');
+                                                {/* Lista vertical de agendamentos */}
+                                                <div className="space-y-1 w-full flex-grow flex flex-col justify-start overflow-hidden">
+                                                    {itemsToRender.map((app, index) => {
+                                                        const cardColor = getAppointmentColor(app);
+                                                        const itemStyle = app.type === 'block'
+                                                            ? { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0', color: '#1e293b' }
+                                                            : { backgroundColor: `${cardColor}20`, borderColor: `${cardColor}40`, color: '#0f172a' };
+
                                                         return (
                                                             <div 
                                                                 key={app.id || index}
-                                                                className="text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded-[4px] sm:rounded-[6px] truncate border-l-2 leading-tight"
-                                                                style={{ borderLeftColor: cardColor, backgroundColor: `${cardColor}10`, color: '#334155' }}
+                                                                ref={(el) => { if (el && app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} 
+                                                                onClick={(e) => { 
+                                                                    e.stopPropagation(); 
+                                                                    if (app.type === 'appointment') {
+                                                                        setActiveAppointmentDetail(app); 
+                                                                    } else if (app.type === 'block') {
+                                                                        setModalState({ type: 'block', data: app });
+                                                                    }
+                                                                }} 
+                                                                className="text-[9.5px] sm:text-[10px] md:text-[10.5px] font-bold px-1.5 py-1 rounded-lg border truncate cursor-pointer hover:brightness-95 active:scale-95 transition-all flex items-center gap-1 select-none w-full"
+                                                                style={itemStyle}
+                                                                title={app.type === 'block' ? 'Bloqueio' : (app.client?.apelido || app.client?.nome || 'Cliente')}
                                                             >
-                                                                <span className="hidden sm:inline font-black text-[8px] opacity-70 mr-1">{format(app.start, 'HH:mm')}</span>
-                                                                {app.type === 'block' ? 'Bloqueio' : (app.client?.apelido || app.client?.nome || 'Bloqueado')}
+                                                                <span className="font-extrabold opacity-80 shrink-0 select-none">
+                                                                    {format(app.start, 'HH:mm')}
+                                                                </span>
+                                                                <span className="truncate select-none">
+                                                                    {app.type === 'block' 
+                                                                        ? (app.notes || 'Bloqueio') 
+                                                                        : `${app.client?.apelido || app.client?.nome || 'Cliente'}${app.service?.name ? `, ${app.service.name}` : ''}`
+                                                                    }
+                                                                </span>
                                                             </div>
                                                         );
                                                     })}
-                                                    {dayAppts.length > 2 && (
-                                                        <div className="text-[7px] sm:text-[8px] font-extrabold text-slate-400 uppercase tracking-widest pl-1 leading-none">
-                                                            + {dayAppts.length - 2} mais
+                                                    
+                                                    {hasMore && (
+                                                        <div className="flex items-center justify-center py-0.5 text-slate-400 font-extrabold text-[12px] leading-none select-none">
+                                                            •••
                                                         </div>
                                                     )}
                                                 </div>
-                                            </button>
+                                            </div>
                                         );
                                     });
                                 })()}
@@ -1756,7 +2101,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                             </h4>
                                             <div className="space-y-2">
                                                 {dayApps.map(app => {
-                                                    const cardColor = app.type === 'block' ? '#f87171' : (app.service?.color || '#3b82f6');
+                                                    const cardColor = getAppointmentColor(app);
                                                     const isBlocked = app.type === 'block';
 
                                                     return (
@@ -1973,6 +2318,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     </div>
                 </>
             )}
+            </div>
             
             <JaciBotPanel isOpen={isJaciBotOpen} onClose={() => setIsJaciBotOpen(false)} />
             <div className="fixed bottom-8 right-8 z-[60]"><button onClick={() => setIsJaciBotOpen(true)} className="w-16 h-16 bg-orange-500 rounded-3xl shadow-2xl flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all"><MessageSquare className="w-8 h-8" /></button></div>
