@@ -2115,7 +2115,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                              const clientName = app.type === 'block'
                                                                  ? 'BLO'
                                                                  : (app.client?.apelido || app.client?.nome || app.client_name || 'CLI');
-                                                             const initials = clientName.trim().substring(0, 3).toUpperCase();
+                                                             const initials = clientName.trim().substring(0, 4).toUpperCase();
                                                              const profNameInput = app.professional?.name || app.professional_name || '';
                                                               const isBlockType = app.type === 'block';
                                                               const profInitials = profNameInput ? profNameInput.trim().substring(0, 3).toUpperCase() : (isBlockType ? 'BLO' : 'OUT');
