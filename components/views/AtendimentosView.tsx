@@ -483,7 +483,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 professional: { id: row.professional_id },
                 service: { name: row.reason, color: '#fca5a5' },
                 status: 'bloqueado',
-                type: 'block'
+                type: 'block',
+                originTable: 'schedule_blocks'
             }));
 
             // Exibe os agendamentos imediatamente para NUNCA ficar em branco
@@ -652,6 +653,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
             notas: cleanNotes, origin: row.origin || 'interno',
             type: row.type || 'appointment',
+            originTable: row.type === 'block' ? 'appointments' : undefined,
             services: services.length > 0 ? services : undefined,
             client: { 
                 id: row.client_id, 
@@ -960,8 +962,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         }
     };
 
-    const handleDeleteBlock = async (e: React.MouseEvent, blockId: string | number) => {
-        e.stopPropagation();
+    const handleDeleteBlock = async (e: React.MouseEvent | null, blockId: string | number) => {
+        if (e) e.stopPropagation();
         
         const isConfirmed = await confirm({
             title: 'Remover Bloqueio',
@@ -973,13 +975,22 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
         if (!isConfirmed) return;
 
+        const blockObj = appointments.find(a => a.id === blockId && a.type === 'block');
+        const isFromScheduleBlocksTable = blockObj && (blockObj as any).originTable === 'schedule_blocks';
+
         try {
-            const { error } = await supabase.from('schedule_blocks').delete().eq('id', blockId);
-            if (error) throw error;
+            if (isFromScheduleBlocksTable) {
+                const { error } = await supabase.from('schedule_blocks').delete().eq('id', blockId);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase.from('appointments').delete().eq('id', blockId);
+                if (error) throw error;
+            }
             setAppointments(prev => prev.filter(a => a.id !== blockId));
-            toast.success('Horário liberado!');
+            setToast({ message: 'Horário liberado!', type: 'success' });
         } catch (e: any) {
-            toast.error('Erro ao remover bloqueio.');
+            console.error('Erro ao remover bloqueio:', e);
+            setToast({ message: 'Erro ao remover bloqueio.', type: 'error' });
         }
     };
 
@@ -1110,6 +1121,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         if (!appointment) {
             console.error("❌ Agendamento não encontrado no estado local.");
             setToast({ message: "Erro: Agendamento não encontrado.", type: 'error' });
+            return;
+        }
+
+        if (appointment.type === 'block') {
+            await handleDeleteBlock(null, id);
             return;
         }
 
