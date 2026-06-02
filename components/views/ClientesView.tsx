@@ -315,15 +315,37 @@ const ClientesView: React.FC = () => {
     if (!activeStudioId) return;
     const loadingToastId = toast.loading("Buscando todos os clientes para exportação...");
     try {
-      const { data, error } = await supabase
-        .from('clients')
-        .select('nome, whatsapp, telefone')
-        .eq('studio_id', activeStudioId)
-        .order('nome', { ascending: true });
+      let allClients: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
 
-      if (error) throw error;
+      while (hasMore) {
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
 
-      if (!data || data.length === 0) {
+        const { data, error } = await supabase
+          .from('clients')
+          .select('nome, whatsapp, telefone')
+          .eq('studio_id', activeStudioId)
+          .order('nome', { ascending: true })
+          .range(from, to);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allClients = [...allClients, ...data];
+          if (data.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+
+      if (allClients.length === 0) {
         toast.dismiss(loadingToastId);
         toast.error("Nenhum cliente cadastrado para exportar.");
         return;
@@ -333,7 +355,7 @@ const ClientesView: React.FC = () => {
       let csvContent = "\uFEFF";
       csvContent += "Nome;Telefone/WhatsApp\n";
 
-      data.forEach(client => {
+      allClients.forEach(client => {
         const nome = client.nome ? client.nome.replace(/;/g, ',').replace(/\r?\n|\r/g, ' ').trim() : '';
         const contato = (client.whatsapp || client.telefone || '').replace(/;/g, ',').replace(/\r?\n|\r/g, ' ').trim();
         csvContent += `${nome};${contato}\n`;
@@ -349,7 +371,7 @@ const ClientesView: React.FC = () => {
       document.body.removeChild(link);
       
       toast.dismiss(loadingToastId);
-      toast.success(`${data.length} clientes exportados com sucesso!`);
+      toast.success(`${allClients.length} clientes exportados com sucesso!`);
     } catch (err: any) {
       console.error("Erro ao exportar clientes:", err);
       toast.dismiss(loadingToastId);
