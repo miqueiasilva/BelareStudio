@@ -3,7 +3,7 @@ import {
   UserPlus, Search, Phone, Trash2, Users, Loader2, 
   ChevronRight, FileSpreadsheet, MessageCircle, PhoneCall,
   LayoutGrid, List, PlusCircle, RefreshCw, Clock, Sparkles, Send,
-  AlertCircle
+  AlertCircle, Download
 } from 'lucide-react';
 import { Client } from '../../types';
 import ClientProfile from './ClientProfile'; 
@@ -311,6 +311,52 @@ const ClientesView: React.FC = () => {
     }
   };
 
+  const handleExportClients = async () => {
+    if (!activeStudioId) return;
+    const loadingToastId = toast.loading("Buscando todos os clientes para exportação...");
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('nome, whatsapp, telefone')
+        .eq('studio_id', activeStudioId)
+        .order('nome', { ascending: true });
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        toast.dismiss(loadingToastId);
+        toast.error("Nenhum cliente cadastrado para exportar.");
+        return;
+      }
+
+      // Generate CSV content with UTF-8 BOM for Excel import compatibility
+      let csvContent = "\uFEFF";
+      csvContent += "Nome;Telefone/WhatsApp\n";
+
+      data.forEach(client => {
+        const nome = client.nome ? client.nome.replace(/;/g, ',').replace(/\r?\n|\r/g, ' ').trim() : '';
+        const contato = (client.whatsapp || client.telefone || '').replace(/;/g, ',').replace(/\r?\n|\r/g, ' ').trim();
+        csvContent += `${nome};${contato}\n`;
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `clientes_belare.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      toast.dismiss(loadingToastId);
+      toast.success(`${data.length} clientes exportados com sucesso!`);
+    } catch (err: any) {
+      console.error("Erro ao exportar clientes:", err);
+      toast.dismiss(loadingToastId);
+      toast.error("Falha ao exportar clientes.");
+    }
+  };
+
   const getAvatarColor = (name: string) => {
     const colors = ['bg-blue-500', 'bg-purple-500', 'bg-emerald-500', 'bg-orange-500', 'bg-rose-500'];
     return colors[name.length % colors.length];
@@ -328,7 +374,8 @@ const ClientesView: React.FC = () => {
           </p>
         </div>
         <div className="flex gap-2">
-            <button onClick={() => setIsImportModalOpen(true)} className="p-3 bg-white border border-slate-200 text-slate-600 rounded-2xl hover:bg-slate-50 shadow-sm"><FileSpreadsheet size={20} /></button>
+            <button onClick={handleExportClients} className="p-3 bg-white border border-slate-200 text-slate-600 rounded-2xl hover:bg-slate-50 shadow-sm" title="Exportar Clientes para CSV"><Download size={20} /></button>
+            <button onClick={() => setIsImportModalOpen(true)} className="p-3 bg-white border border-slate-200 text-slate-600 rounded-2xl hover:bg-slate-50 shadow-sm" title="Importar Clientes"><FileSpreadsheet size={20} /></button>
             <button onClick={() => setSelectedClient({ nome: '', consent: true, studio_id: activeStudioId } as any)} className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-2xl font-black flex items-center gap-2 shadow-lg">
               <UserPlus size={20} /> <span className="hidden sm:inline">Novo</span>
             </button>

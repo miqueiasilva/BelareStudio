@@ -2099,7 +2099,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                  backgroundColor: isHex ? `${dotColor}12` : 'rgba(59, 130, 246, 0.08)',
                                                                  color: dotColor || '#3b82f6',
                                                              };
-                                                             const hourText = format(app.start, 'HH') + ':';
+                                                             
+                                                             const clientName = app.type === 'block'
+                                                                 ? 'BLO'
+                                                                 : (app.client?.apelido || app.client?.nome || app.client_name || 'CLI');
+                                                             const initials = clientName.trim().substring(0, 3).toUpperCase();
+                                                             const displayText = `${format(app.start, 'HH')}:${initials}`;
                                                              
                                                              return (
                                                                  <div
@@ -2113,16 +2118,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                              setModalState({ type: 'block', data: app });
                                                                          }
                                                                      }}
-                                                                     className="w-[25px] h-[25px] sm:w-[32px] sm:h-[32px] rounded-full border flex items-center justify-center text-[8.5px] sm:text-[10px] font-black font-mono shrink-0 select-none active:scale-90 hover:brightness-95 transition-all duration-150"
+                                                                     className="w-[94%] sm:w-[90%] max-w-[46px] sm:max-w-[56px] h-[17px] sm:h-[22px] rounded-full border flex items-center justify-center text-[7px] sm:text-[9px] font-extrabold font-mono shrink-0 select-none active:scale-90 hover:brightness-95 transition-all duration-150 px-0.5 tracking-tight"
                                                                      style={styleBadge}
                                                                      title={app.type === 'block' ? 'Bloqueio' : (app.client?.apelido || app.client?.nome || 'Cliente')}
                                                                  >
-                                                                     {hourText}
+                                                                     {displayText}
                                                                  </div>
                                                              );
                                                          })}
                                                          {hasMoreMobile && (
-                                                             <div className="w-[25px] h-[25px] sm:w-[32px] sm:h-[32px] rounded-full border border-slate-200 bg-slate-50 text-slate-400 flex items-center justify-center text-[8px] font-black tracking-tight shrink-0">
+                                                             <div className="w-[94%] sm:w-[90%] max-w-[46px] sm:max-w-[56px] h-[17px] sm:h-[22px] rounded-full border border-slate-200 bg-slate-50 text-slate-400 flex items-center justify-center text-[7px] sm:text-[9px] font-black tracking-tight shrink-0">
                                                                  •••
                                                              </div>
                                                          )}
