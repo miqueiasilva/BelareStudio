@@ -1,11 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
     CreditCard, Plus, Trash2, Save, X, Loader2, 
     Smartphone, Banknote, ArrowLeft, CheckCircle2, AlertCircle, Info,
     ChevronDown, CreditCard as CardIcon, Percent, Layers
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
+import { useStudio } from '../../contexts/StudioContext';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import toast from 'react-hot-toast';
 import { useConfirm } from '../../utils/useConfirm';
@@ -28,6 +29,7 @@ const CARD_BRANDS = ['VISA', 'MASTER', 'ELO', 'HIPER', 'AMEX', 'OUTRAS'];
 const INSTALLMENT_OPTIONS = Array.from({ length: 11 }, (_, i) => i + 2); // 2x até 12x
 
 const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+    const { activeStudioId } = useStudio();
     const { confirm, ConfirmDialogComponent } = useConfirm();
     const [methods, setMethods] = useState<PaymentMethod[]>([]);
     const [loading, setLoading] = useState(true);
@@ -35,12 +37,14 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [isSaving, setIsSaving] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    const fetchMethods = async () => {
+    const fetchMethods = useCallback(async () => {
+        if (!activeStudioId) return;
         setLoading(true);
         try {
             const { data, error } = await supabase
                 .from('payment_methods_config')
                 .select('*')
+                .eq('studio_id', activeStudioId)
                 .order('name');
             
             if (error) throw error;
@@ -53,15 +57,23 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [activeStudioId]);
 
-    useEffect(() => { fetchMethods(); }, []);
+    useEffect(() => {
+        if (activeStudioId) {
+            fetchMethods();
+        }
+    }, [activeStudioId, fetchMethods]);
 
     const handleSaveMethod = async () => {
         if (!editingMethod) return;
+        if (!activeStudioId) {
+            setToast({ message: "Nenhuma empresa/estúdio ativo.", type: 'error' });
+            return;
+        }
 
         if (!editingMethod.name.trim() || !editingMethod.type) {
-            toast.error("Preencha o nome e o tipo do método.");
+            setToast({ message: "Preencha o nome e o tipo do método.", type: 'error' });
             return;
         }
 
@@ -76,6 +88,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             }
 
             const payload: any = {
+                studio_id: activeStudioId,
                 name: editingMethod.name,
                 type: editingMethod.type,
                 brand: (editingMethod.type === 'credit' || editingMethod.type === 'debit') ? editingMethod.brand : null,
@@ -103,7 +116,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             fetchMethods();
         } catch (err: any) {
             console.error("Erro ao salvar:", err);
-            setToast({ message: 'Erro ao salvar: ' + err.message, type: 'error' });
+            setToast({ message: 'Erro ao salvar: ' + (err.message || err.details || JSON.stringify(err)), type: 'error' });
         } finally {
             setIsSaving(false);
         }
