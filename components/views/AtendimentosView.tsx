@@ -2119,7 +2119,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                              const profNameInput = app.professional?.name || app.professional_name || '';
                                                               const isBlockType = app.type === 'block';
                                                               const profInitials = profNameInput ? profNameInput.trim().substring(0, 3).toUpperCase() : (isBlockType ? 'BLO' : 'OUT');
-                                                              const displayText = `${format(app.start, 'HH:mm')} ${profInitials}`;
+                                                              const displayText = `${format(app.start, 'HH:mm')} ${initials}`;
                                                              
                                                              return (
                                                                  <div
