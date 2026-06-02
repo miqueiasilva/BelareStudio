@@ -459,7 +459,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments')
-                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origin')
+                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origin, type')
                     .eq('studio_id', activeStudioId)
                     .gte('date', startStr)
                     .lte('date', endStr)
@@ -1886,14 +1886,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                             return (
                                                 <div 
                                                     key={app.id} 
-                                                    ref={(el) => { if (el && app.type === 'appointment') appointmentRefs.current.set(app.id, el); }} 
+                                                    ref={(el) => { if (el) appointmentRefs.current.set(app.id, el); }} 
                                                     onClick={(e) => { 
                                                         e.stopPropagation(); 
-                                                        if (app.type === 'appointment') {
-                                                            setActiveAppointmentDetail(app); 
-                                                        } else if (app.type === 'block') {
-                                                            setModalState({ type: 'block', data: app });
-                                                        }
+                                                        setActiveAppointmentDetail(app); 
                                                     }} 
                                                     className={`rounded-none shadow-sm border-l-4 p-1.5 cursor-pointer hover:brightness-95 hover:shadow-md transition-all overflow-hidden flex flex-col group/card !m-0 border-r border-b border-slate-200/50 ${
                                                         layout.isOverlapping ? 'hover:scale-[1.01] hover:z-50' : ''

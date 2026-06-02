@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { LegacyAppointment, AppointmentStatus } from '../../types';
 import { 
     Calendar, DollarSign, Edit, Trash2, 
-    User, MoreVertical, X, CheckCircle2, Receipt, MessageCircle
+    User, MoreVertical, X, CheckCircle2, Receipt, MessageCircle, AlignLeft
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -319,14 +319,18 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
         <main className="p-6 space-y-4 overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
           <div>
             <h3 className="font-black text-xl text-slate-800 leading-tight flex flex-col gap-1">
-              <span>{appointment.client?.nome || 'Horário Bloqueado'}</span>
-              {appointment.client?.apelido && (
+              <span>{appointment.type === 'block' ? (appointment.notas || 'Bloqueio de Horário') : (appointment.client?.nome || 'Horário Bloqueado')}</span>
+              {appointment.client?.apelido && appointment.type !== 'block' && (
                 <span className="text-xs font-black text-orange-600 bg-orange-50 border border-orange-100 rounded-lg px-2 py-0.5 w-fit uppercase tracking-tight">
                   "{appointment.client.apelido}"
                 </span>
               )}
             </h3>
-            {appointment.services && appointment.services.length > 0 ? (
+            {appointment.type === 'block' ? (
+              <p className="text-[10px] font-black text-rose-500 bg-rose-50 border border-rose-100 rounded-lg px-2.5 py-1 w-fit uppercase tracking-wider mt-2">
+                BLOQUEADO / INDISPONÍVEL
+              </p>
+            ) : appointment.services && appointment.services.length > 0 ? (
               <div className="mt-3 space-y-2 max-h-36 overflow-y-auto pr-1">
                 <p className="text-[9px] font-extrabold uppercase text-slate-400 tracking-wider">Procedimentos Marcados:</p>
                 {appointment.services.map((s, idx) => (
@@ -391,13 +395,34 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                 <span className="text-slate-400">{format(appointment.start, "HH:mm")} às {format(appointment.end, "HH:mm")}</span>
               </div>
             </div>
-            <div className="flex items-center gap-3 text-xs font-bold text-slate-600">
-              <div className="p-2 bg-emerald-50 rounded-lg"><DollarSign size={14} className="text-emerald-500" /></div>
-              <div>
-                <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider leading-none mb-0.5">Valor Total</p>
-                <span className="text-emerald-600 font-black text-lg">R$ {appointment.service.price.toFixed(2)}</span>
+            {appointment.type !== 'block' && (
+              <div className="flex items-center gap-3 text-xs font-bold text-slate-600">
+                <div className="p-2 bg-emerald-50 rounded-lg"><DollarSign size={14} className="text-emerald-500" /></div>
+                <div>
+                  <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider leading-none mb-0.5">Valor Total</p>
+                  <span className="text-emerald-600 font-black text-lg">R$ {appointment.service.price.toFixed(2)}</span>
+                </div>
               </div>
-            </div>
+            )}
+            {appointment.notas ? (
+              <div className="flex items-start gap-3 text-xs font-bold text-slate-600">
+                <div className="p-2 bg-rose-50 rounded-lg"><AlignLeft size={14} className="text-rose-500" /></div>
+                <div>
+                  <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider leading-none mb-1">
+                    {appointment.type === 'block' ? 'Motivo do Bloqueio' : 'Observações'}
+                  </p>
+                  <span className="text-slate-700 font-medium whitespace-pre-wrap">{appointment.notas}</span>
+                </div>
+              </div>
+            ) : appointment.type === 'block' ? (
+              <div className="flex items-start gap-3 text-xs font-bold text-slate-600">
+                <div className="p-2 bg-rose-50 rounded-lg"><AlignLeft size={14} className="text-rose-500" /></div>
+                <div>
+                  <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider leading-none mb-1">Motivo do Bloqueio</p>
+                  <span className="text-slate-400 italic font-medium">Sem detalhes informados</span>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="border-t border-slate-100 pt-5 flex flex-col gap-3">
