@@ -37,7 +37,7 @@ const BlockTimeModal: React.FC<BlockTimeModalProps> = ({
     date: format(appointment?.start || startTime || new Date(), 'yyyy-MM-dd'),
     startTime: format(appointment?.start || startTime || new Date(), 'HH:mm'),
     endTime: format(appointment?.end || addMinutes(appointment?.start || startTime || new Date(), 60), 'HH:mm'),
-    notes: appointment?.notas || '',
+    notes: appointment?.notas || (appointment?.service?.name !== 'Indisponível' ? appointment?.service?.name : '') || '',
     repeat: false
   });
 

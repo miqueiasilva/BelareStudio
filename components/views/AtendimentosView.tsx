@@ -1927,7 +1927,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                 {format(app.start, 'HH:mm')} - {format(app.end, 'HH:mm')}
                                                             </p>
                                                             <p className="text-xs font-bold text-slate-800 truncate leading-tight">
-                                                                {app.type === 'block' ? 'INDISPONÍVEL' : (app.client?.apelido || app.client?.nome || 'Bloqueado')}
+                                                                {app.type === 'block' ? (app.notas || (app.service?.name !== 'Indisponível' ? app.service?.name : '') || 'INDISPONÍVEL') : (app.client?.apelido || app.client?.nome || 'Bloqueado')}
                                                             </p>
                                                         </div>
                                                         {!isShort && (
@@ -1945,7 +1945,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                     </div>
                                                                 ) : (
                                                                     <p className="text-[10px] text-slate-500 truncate leading-none opacity-80">
-                                                                        {app.service.name}
+                                                                        {app.type === 'block' ? 'Horário Bloqueado' : app.service.name}
                                                                     </p>
                                                                 )}
                                                             </div>
@@ -2120,7 +2120,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                      }}
                                                                      className="w-[94%] sm:w-[90%] max-w-[46px] sm:max-w-[56px] h-[17px] sm:h-[22px] rounded-full border flex items-center justify-center text-[7px] sm:text-[9px] font-extrabold font-mono shrink-0 select-none active:scale-90 hover:brightness-95 transition-all duration-150 px-0.5 tracking-tight"
                                                                      style={styleBadge}
-                                                                     title={app.type === 'block' ? 'Bloqueio' : (app.client?.apelido || app.client?.nome || 'Cliente')}
+                                                                     title={app.type === 'block' ? `Bloqueio: ${app.notas || (app.service?.name !== 'Indisponível' ? app.service?.name : '') || 'Indisponível'}` : (app.client?.apelido || app.client?.nome || 'Cliente')}
                                                                  >
                                                                      {displayText}
                                                                  </div>
@@ -2245,14 +2245,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                 }} 
                                                                 className="text-[9.5px] sm:text-[10px] md:text-[10.5px] font-bold px-1.5 py-1 rounded-lg border truncate cursor-pointer hover:brightness-95 active:scale-95 transition-all flex items-center gap-1 select-none w-full"
                                                                 style={itemStyle}
-                                                                title={app.type === 'block' ? 'Bloqueio' : (app.client?.apelido || app.client?.nome || 'Cliente')}
+                                                                title={app.type === 'block' ? `Bloqueio: ${app.notas || (app.service?.name !== 'Indisponível' ? app.service?.name : '') || 'Indisponível'}` : (app.client?.apelido || app.client?.nome || 'Cliente')}
                                                             >
                                                                 <span className="font-extrabold opacity-80 shrink-0 select-none">
                                                                     {format(app.start, 'HH:mm')}
                                                                 </span>
                                                                 <span className="truncate select-none">
                                                                     {app.type === 'block' 
-                                                                        ? (app.notes || 'Bloqueio') 
+                                                                        ? (app.notas || (app.service?.name !== 'Indisponível' ? app.service?.name : '') || 'Bloqueio') 
                                                                         : `${app.client?.apelido || app.client?.nome || 'Cliente'}${app.service?.name ? `, ${app.service.name}` : ''}`
                                                                     }
                                                                 </span>
@@ -2340,7 +2340,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                         <div className="min-w-0">
                                                             <div className="flex items-center gap-2">
                                                                 <h5 className="font-extrabold text-slate-800 text-xs truncate leading-tight">
-                                                                    {isBlocked ? 'Horário Bloqueado' : (app.client?.nome || app.client?.apelido || app.client_name || 'Cliente')}
+                                                                    {isBlocked ? (app.notas || (app.service?.name !== 'Indisponível' ? app.service?.name : '') || 'Horário Bloqueado') : (app.client?.nome || app.client?.apelido || app.client_name || 'Cliente')}
                                                                 </h5>
                                                                 {isBlocked && (
                                                                     <span className="text-[7.5px] font-black text-rose-500 bg-rose-100/50 border border-rose-100 px-1 py-0.5 rounded uppercase tracking-wider">
@@ -2357,7 +2357,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                 </div>
                                                             )}
                                                             {isBlocked && (
-                                                                <p className="text-[10px] text-slate-400 font-medium leading-tight mt-0.5">{app.notes || 'Sem detalhes'}</p>
+                                                                <p className="text-[10px] text-slate-400 font-medium leading-tight mt-0.5">{app.notas || (app.service?.name !== 'Indisponível' ? app.service?.name : '') || 'Sem detalhes'}</p>
                                                             )}
                                                         </div>
                                                     </div>
@@ -2488,7 +2488,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                 <div className="min-w-0">
                                                                     <div className="flex items-center gap-2">
                                                                         <h5 className="font-extrabold text-slate-800 text-sm truncate leading-tight">
-                                                                            {isBlocked ? 'Horário Bloqueado' : (app.client?.apelido || app.client?.nome || 'Bloqueado')}
+                                                                            {isBlocked ? (app.notas || (app.service?.name !== 'Indisponível' ? app.service?.name : '') || 'Horário Bloqueado') : (app.client?.apelido || app.client?.nome || 'Bloqueado')}
                                                                         </h5>
                                                                         {app.type === 'block' && (
                                                                             <span className="text-[8px] font-black text-rose-500 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-lg uppercase tracking-wider">
@@ -2507,7 +2507,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                         </div>
                                                                     )}
                                                                     {isBlocked && (
-                                                                        <p className="text-xs text-slate-400 font-bold mt-0.5">Motivo: {app.service?.name}</p>
+                                                                        <p className="text-xs text-slate-400 font-bold mt-0.5">Motivo: {app.notas || (app.service?.name !== 'Indisponível' ? app.service?.name : '') || 'Sem detalhes'}</p>
                                                                     )}
                                                                 </div>
                                                             </div>
