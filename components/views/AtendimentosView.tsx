@@ -2116,7 +2116,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                  ? 'BLO'
                                                                  : (app.client?.apelido || app.client?.nome || app.client_name || 'CLI');
                                                              const initials = clientName.trim().substring(0, 3).toUpperCase();
-                                                             const displayText = `${format(app.start, 'HH')}:${initials}`;
+                                                             const profNameInput = app.professional?.name || app.professional_name || '';
+                                                              const isBlockType = app.type === 'block';
+                                                              const profInitials = profNameInput ? profNameInput.trim().substring(0, 3).toUpperCase() : (isBlockType ? 'BLO' : 'OUT');
+                                                              const displayText = `${format(app.start, 'HH:mm')} ${profInitials}`;
                                                              
                                                              return (
                                                                  <div
@@ -2130,7 +2133,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                              setModalState({ type: 'block', data: app });
                                                                          }
                                                                      }}
-                                                                     className="w-[94%] sm:w-[90%] max-w-[46px] sm:max-w-[56px] h-[17px] sm:h-[22px] rounded-full border flex items-center justify-center text-[7px] sm:text-[9px] font-extrabold font-mono shrink-0 select-none active:scale-90 hover:brightness-95 transition-all duration-150 px-0.5 tracking-tight"
+                                                                     className="w-[98%] sm:w-[92%] max-w-[48px] sm:max-w-[58px] h-[17px] sm:h-[22px] rounded-full border flex items-center justify-center text-[6px] sm:text-[8px] font-black font-mono shrink-0 select-none active:scale-90 hover:brightness-95 transition-all duration-150 px-0.5 tracking-tighter"
                                                                      style={styleBadge}
                                                                      title={app.type === 'block' ? `Bloqueio: ${app.notas || (app.service?.name !== 'Indisponível' ? app.service?.name : '') || 'Indisponível'}` : (app.client?.apelido || app.client?.nome || 'Cliente')}
                                                                  >
@@ -2139,7 +2142,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                              );
                                                          })}
                                                          {hasMoreMobile && (
-                                                             <div className="w-[94%] sm:w-[90%] max-w-[46px] sm:max-w-[56px] h-[17px] sm:h-[22px] rounded-full border border-slate-200 bg-slate-50 text-slate-400 flex items-center justify-center text-[7px] sm:text-[9px] font-black tracking-tight shrink-0">
+                                                             <div className="w-[98%] sm:w-[92%] max-w-[48px] sm:max-w-[58px] h-[17px] sm:h-[22px] rounded-full border border-slate-200 bg-slate-50 text-slate-400 flex items-center justify-center text-[6px] sm:text-[8px] font-black tracking-tighter shrink-0">
                                                                  •••
                                                              </div>
                                                          )}
