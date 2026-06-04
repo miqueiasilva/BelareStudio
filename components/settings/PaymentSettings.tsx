@@ -28,6 +28,13 @@ interface PaymentMethod {
 const CARD_BRANDS = ['VISA', 'MASTER', 'ELO', 'HIPER', 'AMEX', 'OUTRAS'];
 const INSTALLMENT_OPTIONS = Array.from({ length: 11 }, (_, i) => i + 2); // 2x até 12x
 
+const parseSafeFloat = (val: any): number => {
+    if (val === undefined || val === null || val === '') return 0;
+    const clean = String(val).replace(',', '.');
+    const parsed = parseFloat(clean);
+    return isNaN(parsed) ? 0 : parsed;
+};
+
 const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const { activeStudioId } = useStudio();
     const { confirm, ConfirmDialogComponent } = useConfirm();
@@ -83,7 +90,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             if (editingMethod.type === 'credit' && editingMethod.allow_installments) {
                 for (let i = 2; i <= editingMethod.max_installments; i++) {
                     const rateValue = editingMethod.installment_rates[i.toString()];
-                    finalRates[i.toString()] = parseFloat(String(rateValue || 0));
+                    finalRates[i.toString()] = parseSafeFloat(rateValue);
                 }
             }
 
@@ -92,8 +99,8 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 name: editingMethod.name,
                 type: editingMethod.type,
                 brand: (editingMethod.type === 'credit' || editingMethod.type === 'debit') ? editingMethod.brand : null,
-                rate_cash: parseFloat(String(editingMethod.rate_cash || 0)),
-                rate_installment_12x: editingMethod.type === 'credit' ? parseFloat(String(editingMethod.rate_installment_12x || 0)) : 0,
+                rate_cash: parseSafeFloat(editingMethod.rate_cash),
+                rate_installment_12x: editingMethod.type === 'credit' ? parseSafeFloat(editingMethod.rate_installment_12x) : 0,
                 is_active: editingMethod.is_active,
                 allow_installments: editingMethod.type === 'credit' ? editingMethod.allow_installments : false,
                 max_installments: (editingMethod.type === 'credit' && editingMethod.allow_installments) ? parseInt(String(editingMethod.max_installments)) : 1,
@@ -324,8 +331,8 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                         <div className="relative">
                                             <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
                                             <input 
-                                                type="number" 
-                                                step="0.01" 
+                                                type="text" 
+                                                inputMode="decimal"
                                                 value={editingMethod.rate_cash || ''}
                                                 placeholder="0.00"
                                                 onChange={e => setEditingMethod({...editingMethod, rate_cash: e.target.value})}
@@ -340,8 +347,8 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                             <div className="relative">
                                                 <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
                                                 <input 
-                                                    type="number" 
-                                                    step="0.01" 
+                                                    type="text" 
+                                                    inputMode="decimal"
                                                     value={editingMethod.rate_installment_12x || ''}
                                                     placeholder="0.00"
                                                     onChange={e => setEditingMethod({...editingMethod, rate_installment_12x: e.target.value})}
@@ -377,8 +384,8 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                                 <div key={n} className="flex flex-col gap-1.5">
                                                     <label className="text-[10px] font-black text-slate-500 uppercase ml-1">{n}x (%)</label>
                                                     <input 
-                                                        type="number" 
-                                                        step="0.01"
+                                                        type="text" 
+                                                        inputMode="decimal"
                                                         value={editingMethod.installment_rates[n.toString()] || ''}
                                                         onChange={e => handleRateChange(n, e.target.value)}
                                                         className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 font-bold text-slate-700 outline-none"
