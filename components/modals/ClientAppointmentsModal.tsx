@@ -15,7 +15,12 @@ interface ClientAppointmentsModalProps {
 
 const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ studioId, onClose }) => {
     const [step, setStep] = useState<'identify' | 'list'>('identify');
-    const [phone, setPhone] = useState('');
+    const [phone, setPhone] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('belare_client_phone') || '';
+        }
+        return '';
+    });
     const [loading, setLoading] = useState(false);
     const [appointments, setAppointments] = useState<any[]>([]);
     const [policyHours, setPolicyHours] = useState(2); // Default 2h
@@ -36,6 +41,39 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ studi
             }
         };
         fetchPolicy();
+    }, [studioId]);
+
+    // Busca automática ao abrir se houver telefone salvo no localStorage
+    useEffect(() => {
+        const autoFetch = async () => {
+            if (typeof window === 'undefined') return;
+            const savedPhone = localStorage.getItem('belare_client_phone');
+            if (savedPhone && savedPhone.replace(/\D/g, '').length >= 10) {
+                setLoading(true);
+                try {
+                    const clean = savedPhone.replace(/\D/g, '');
+                    const query = supabase
+                        .from('appointments')
+                        .select('*')
+                        .eq('client_whatsapp', clean);
+                    
+                    if (studioId) {
+                        query.eq('studio_id', studioId);
+                    }
+
+                    const { data, error } = await query.order('date', { ascending: true });
+                    if (!error && data) {
+                        setAppointments(data);
+                        setStep('list');
+                    }
+                } catch (err) {
+                    console.error("Erro no autoFetch:", err);
+                } finally {
+                    setLoading(false);
+                }
+            }
+        };
+        autoFetch();
     }, [studioId]);
 
     const handleSearch = async (e: React.FormEvent) => {

@@ -172,7 +172,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     }
 
     const dateStr = format(appointment.start, "EEEE, dd/MM", { locale: pt });
-    const fallbackLink = `${window.location.origin}/#/public-preview/${activeStudioId}`;
+    const fallbackLink = `${window.location.origin}/#/public-preview?sid=${activeStudioId}&apid=${appointment.id}`;
 
     const template = reminderTemplate || 
       'Olá, {cliente}! 😊\n\n' +
@@ -181,7 +181,8 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
       '⏰ *{horario}*\n' +
       '✂️ *{servico}*\n' +
       (profName ? '👩🎨 Com: *{profissional}*\n' : '') +
-      '\nConseguimos confirmar sua presença? Responda aqui mesmo! ✅\n\n' +
+      '\nPor favor, confirme sua presença clicando no link abaixo: 👇\n' +
+      '{link_confirmacao}\n\n' +
       '⚠️ Caso precise cancelar ou reagendar, avise com pelo menos 24h de antecedência.\n\n' +
       'Te esperamos! 💜\n' +
       '*{empresa}*';

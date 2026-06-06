@@ -15,6 +15,7 @@ DROP POLICY IF EXISTS "allow_public_insert_appointments" ON appointments;
 DROP POLICY IF EXISTS "allow_auth_select_appointments" ON appointments;
 DROP POLICY IF EXISTS "allow_auth_update_appointments" ON appointments;
 DROP POLICY IF EXISTS "allow_auth_delete_appointments" ON appointments;
+DROP POLICY IF EXISTS "allow_anon_update_appointments" ON appointments;
 
 -- Permitir que membros do estúdio (via user_studios ou team_members) gerenciem agendamentos
 CREATE POLICY "appointments_select_by_studio_members" ON appointments FOR SELECT TO authenticated
@@ -57,6 +58,8 @@ USING (
 CREATE POLICY "allow_public_select_appointments" ON appointments FOR SELECT TO public USING (true);
 -- Permitir inserção pública para agendamento online
 CREATE POLICY "allow_anon_insert_appointments" ON appointments FOR INSERT TO public WITH CHECK (true);
+-- Permitir atualização pública de agendamento (para alteração de status/cancelamento e confirmação pelo próprio cliente via link)
+CREATE POLICY "allow_anon_update_appointments" ON appointments FOR UPDATE TO public WITH CHECK (true);
 
 -- Políticas para CLIENTS
 DROP POLICY IF EXISTS "allow_public_insert_clients" ON clients;

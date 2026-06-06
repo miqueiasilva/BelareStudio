@@ -141,6 +141,36 @@ const PublicBookingPreview: React.FC = () => {
     const [isLoadingSlots, setIsLoadingSlots] = useState(false);
     const [isFinalizing, setIsFinalizing] = useState(false);
     const [bookingSuccess, setBookingSuccess] = useState(false);
+    const [clientActiveAppointments, setClientActiveAppointments] = useState<any[]>([]);
+
+    // Client self-confirmation flow
+    const [confirmingAppointment, setConfirmingAppointment] = useState<any>(null);
+    const [confirmingStatus, setConfirmingStatus] = useState<'pending' | 'success' | 'error' | 'loading'>('pending');
+
+    const handleConfirmBookingSelf = async () => {
+        if (!confirmingAppointment) return;
+        setConfirmingStatus('loading');
+        try {
+            const { error } = await supabase
+                .from('appointments')
+                .update({ 
+                    status: 'confirmado_whatsapp',
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', confirmingAppointment.id);
+
+            if (error) throw error;
+            
+            setConfirmingStatus('success');
+            setConfirmingAppointment({
+                ...confirmingAppointment,
+                status: 'confirmado_whatsapp'
+            });
+        } catch (e: any) {
+            console.error("Erro ao confirmar agendamento:", e);
+            setConfirmingStatus('error');
+        }
+    };
 
     // Form Data
     const [clientName, setClientName] = useState('');
@@ -154,20 +184,38 @@ const PublicBookingPreview: React.FC = () => {
         const fetchRulesAndData = async () => {
             setLoading(true);
             try {
-                // Tenta buscar sid ou slug da URL (#/public-preview?sid=ID ou #/public-preview?s=slug)
+                // Tenta buscar sid, slug ou apid da URL (#/public-preview?sid=ID ou #/public-preview?s=slug)
                 const hashParts = window.location.hash.split('?');
                 const params = new URLSearchParams(hashParts[1] || '');
                 const sid = params.get('sid');
                 const slug = params.get('s');
+                const apid = params.get('apid');
 
-                if (!sid && !slug) {
+                let targetStudioId = sid;
+                let activeAppointment = null;
+
+                if (apid) {
+                    const { data: appt, error: apptErr } = await supabase
+                        .from('appointments')
+                        .select('*')
+                        .eq('id', apid)
+                        .maybeSingle();
+                    if (apptErr) {
+                        console.error('Erro ao buscar agendamento:', apptErr);
+                    } else if (appt) {
+                        activeAppointment = appt;
+                        targetStudioId = targetStudioId || appt.studio_id;
+                    }
+                }
+
+                if (!targetStudioId && !slug) {
                     throw new Error('Link de agendamento incompleto. O identificador do estúdio (sid) está ausente.');
                 }
 
                 let query = supabase.from('studio_settings').select('*');
                 
-                if (sid) {
-                    query = query.or(`id.eq.${sid},studio_id.eq.${sid}`);
+                if (targetStudioId) {
+                    query = query.or(`id.eq.${targetStudioId},studio_id.eq.${targetStudioId}`);
                 } else if (slug) {
                     query = query.eq('slug', slug);
                 } else {
@@ -181,8 +229,17 @@ const PublicBookingPreview: React.FC = () => {
                 }
 
                 if (studioData) {
-                    const studioId = sid || studioData.studio_id || studioData.id;
+                    const studioId = targetStudioId || studioData.studio_id || studioData.id;
                     
+                    if (activeAppointment) {
+                        setConfirmingAppointment(activeAppointment);
+                        if (['confirmado_whatsapp', 'confirmado'].includes(activeAppointment.status)) {
+                            setConfirmingStatus('success');
+                        } else {
+                            setConfirmingStatus('pending');
+                        }
+                    }
+
                     // O usuário informou que studio_settings é a tabela correta e contém os dados necessários.
                     setStudio({ 
                         ...studioData,
@@ -239,6 +296,27 @@ const PublicBookingPreview: React.FC = () => {
                             .map(([name]) => name);
                         const topIds = servicesData?.filter(s => sortedNames.includes(s.nome)).map(s => s.id) || [];
                         setPopularServiceIds(topIds);
+                    }
+
+                    // Se o cliente já tiver agendamentos associados a este dispositivo
+                    if (typeof window !== 'undefined') {
+                        const savedPhone = localStorage.getItem('belare_client_phone');
+                        if (savedPhone) {
+                            const clean = savedPhone.replace(/\D/g, '');
+                            const todayStr = new Date().toISOString();
+                            const { data: activeAppts, error: activeErr } = await supabase
+                                .from('appointments')
+                                .select('*')
+                                .eq('client_whatsapp', clean)
+                                .eq('studio_id', studioId)
+                                .gte('date', todayStr)
+                                .neq('status', 'cancelado')
+                                .order('date', { ascending: true });
+
+                            if (!activeErr && activeAppts) {
+                                setClientActiveAppointments(activeAppts);
+                            }
+                        }
                     }
                 } else {
                     throw new Error('Estúdio não encontrado ou link inválido.');
@@ -580,6 +658,10 @@ const PublicBookingPreview: React.FC = () => {
                 }
             }
 
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('belare_client_phone', cleanPhone);
+                localStorage.setItem('belare_client_name', clientName);
+            }
             setBookingSuccess(true);
         } catch (e: any) {
             console.error('Erro completo:', JSON.stringify(e));
@@ -627,6 +709,166 @@ const PublicBookingPreview: React.FC = () => {
             <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">Sincronizando com BelareStudio...</p>
         </div>
     );
+
+    if (confirmingAppointment) {
+        return (
+            <div className="min-h-screen bg-slate-50 font-sans flex flex-col items-center justify-center p-4 relative text-left">
+                {user && (
+                    <button 
+                        onClick={() => window.location.hash = '#/'}
+                        className="fixed top-4 left-4 z-[60] bg-white/90 backdrop-blur-sm hover:bg-white text-slate-800 px-5 py-2.5 rounded-full shadow-2xl border border-slate-100 flex items-center gap-2 transition-all duration-300 font-black text-xs uppercase tracking-widest group"
+                    >
+                        <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform text-orange-500" />
+                        Voltar ao Painel
+                    </button>
+                )}
+
+                <div className="w-full max-w-md bg-white rounded-[40px] border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.06)] overflow-hidden">
+                    {/* Header do Estúdio */}
+                    <div className="relative h-32 bg-orange-500 bg-cover bg-center" style={{ backgroundImage: `url(${studio?.cover_url || DEFAULT_COVER})` }}>
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent"></div>
+                        <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-16 h-16 rounded-[20px] overflow-hidden border-4 border-white bg-white shadow-lg flex items-center justify-center">
+                            <img src={studio?.logo_url || DEFAULT_LOGO} className="w-full h-full object-cover" alt="Logo" />
+                        </div>
+                    </div>
+
+                    <div className="pt-12 px-6 pb-8 flex flex-col items-center text-center">
+                        <span className="text-[10px] font-black uppercase text-orange-500 tracking-[0.25em] bg-orange-50 px-3 py-1 rounded-full mb-4">
+                            Confirmação de Agenda
+                        </span>
+                        <h2 className="text-xl font-black text-slate-800 tracking-tight leading-tight">
+                            Olá, {confirmingAppointment.client_name || 'Cliente'}! 😊
+                        </h2>
+                        <p className="text-xs font-bold text-slate-400 mt-1 max-w-[80%] mx-auto">
+                            Por favor, confirme ou gerencie o seu horário no estúdio:
+                        </p>
+
+                        {/* Card com detalhes do Agendamento */}
+                        <div className="w-full bg-slate-50 border border-slate-105 rounded-3xl p-5 mt-6 text-left space-y-4">
+                            <div className="flex items-start gap-3">
+                                <Scissors size={18} className="text-orange-500 mt-1 flex-shrink-0" />
+                                <div>
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Serviço</span>
+                                    <span className="font-extrabold text-slate-700 text-sm leading-snug block">{confirmingAppointment.service_name}</span>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 border-t border-slate-205/60 pt-4">
+                                <div className="flex items-start gap-3">
+                                    <Calendar size={18} className="text-orange-500 mt-1 flex-shrink-0" />
+                                    <div>
+                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Data</span>
+                                        <span className="font-black text-slate-700 text-sm">
+                                            {format(new Date(confirmingAppointment.date), 'dd/MM/yyyy')}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-start gap-3">
+                                    <Clock size={18} className="text-orange-500 mt-1 flex-shrink-0" />
+                                    <div>
+                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Horário</span>
+                                        <span className="font-black text-slate-700 text-sm">
+                                            {format(new Date(confirmingAppointment.date), 'HH:mm')} ou às {format(new Date(confirmingAppointment.date), 'HH:mm')}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 border-t border-slate-205/60 pt-4">
+                                <div className="flex items-start gap-3">
+                                    <User size={18} className="text-orange-500 mt-1 flex-shrink-0" />
+                                    <div>
+                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Profissional</span>
+                                        <span className="font-extrabold text-slate-700 text-sm truncate block">{confirmingAppointment.professional_name || 'Profissional'}</span>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-start gap-3">
+                                    <span className="text-orange-500 font-extrabold text-lg mt-0.5 flex-shrink-0">R$</span>
+                                    <div>
+                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Valor Total</span>
+                                        <span className="font-black text-slate-700 text-sm">
+                                            {Number(confirmingAppointment.value || 0).toFixed(2)}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Status Widget */}
+                        <div className="w-full mt-6">
+                            {confirmingStatus === 'success' ? (
+                                <div className="bg-emerald-50 border border-emerald-100 rounded-3xl p-5 flex flex-col items-center text-center space-y-2 animate-in zoom-in-95 duration-300">
+                                    <div className="bg-emerald-100 text-emerald-600 p-2 rounded-full">
+                                        <Check className="w-6 h-6 animate-bounce" strokeWidth={3} />
+                                    </div>
+                                    <h4 className="font-extrabold text-slate-800 text-sm">Presença Confirmada!</h4>
+                                    <p className="text-[10px] font-bold text-slate-400 leading-normal max-w-[85%]">
+                                        Seu estúdio já recebeu sua confirmação. Te esperamos no horário marcado! ✨
+                                    </p>
+                                </div>
+                            ) : confirmingStatus === 'loading' ? (
+                                <div className="bg-orange-50/50 border border-orange-100 rounded-3xl p-6 flex flex-col items-center justify-center space-y-3">
+                                    <Loader2 className="animate-spin text-orange-500 w-8 h-8" />
+                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Salvando Confirmação...</p>
+                                </div>
+                            ) : confirmingStatus === 'error' ? (
+                                <div className="bg-rose-50 border border-rose-100 rounded-3xl p-4 text-center text-rose-600 font-bold text-xs">
+                                    Houve um erro ao salvar a confirmação. Por favor, tente novamente ou fale com o estúdio.
+                                    <button 
+                                        onClick={handleConfirmBookingSelf}
+                                        className="mt-3 w-full bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl font-bold transition-all text-xs"
+                                    >
+                                        Tentar Novamente
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <button
+                                        onClick={handleConfirmBookingSelf}
+                                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 px-6 rounded-2xl font-black text-sm uppercase tracking-wider shadow-lg shadow-emerald-100 hover:shadow-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-2"
+                                    >
+                                        <Check size={18} strokeWidth={3} />
+                                        Confirmar Presença
+                                    </button>
+
+                                    <button
+                                        onClick={() => {
+                                            const phone = studio?.whatsapp?.replace(/\D/g, '') || studio?.phone?.replace(/\D/g, '');
+                                            const text = encodeURIComponent(`Olá! Gostaria de reagendar ou tirar dúvidas sobre meu agendamento no dia ${format(new Date(confirmingAppointment.date), 'dd/MM/yyyy')} às ${format(new Date(confirmingAppointment.date), 'HH:mm')} (${confirmingAppointment.service_name})`);
+                                            window.open(phone ? `https://wa.me/55${phone}?text=${text}` : `https://wa.me/?text=${text}`, '_blank');
+                                        }}
+                                        className="w-full bg-white hover:bg-slate-50 border-2 border-slate-200 text-slate-500 py-3.5 px-6 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all"
+                                    >
+                                        Preciso Alterar / Reagendar
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Informações do Estúdio de Rodapé */}
+                        <div className="mt-8 border-t border-slate-100 pt-6 w-full text-center">
+                            <p className="text-xs font-black text-slate-700 uppercase">{studio?.studio_name || studio?.business_name}</p>
+                            {studio?.address && (
+                                <span className="text-[10px] font-medium text-slate-400 mt-1 block px-4 leading-normal">
+                                    {studio.address}
+                                </span>
+                            )}
+                            {(studio?.whatsapp || studio?.phone) && (
+                                <span className="text-[10px] font-black text-orange-500 mt-2 block hover:underline cursor-pointer" onClick={() => {
+                                    const rawVal = studio.whatsapp || studio.phone;
+                                    window.open(`https://wa.me/55${rawVal.replace(/\D/g, '')}`, '_blank');
+                                }}>
+                                    Fale conosco: {studio.whatsapp || studio.phone}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans relative pb-40 text-left">
@@ -686,6 +928,75 @@ const PublicBookingPreview: React.FC = () => {
                         </span>
                     </div>
                 </div>
+
+                {clientActiveAppointments.length > 0 && (
+                    <div className="mt-8 bg-gradient-to-tr from-slate-900 to-slate-800 border border-slate-800 rounded-[32px] p-6 text-left shadow-[0_15px_40px_rgba(30,41,59,0.15)] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 animate-in slide-in-from-bottom-4 duration-300">
+                        <div className="flex items-start gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-orange-500/15 border border-orange-500/10 text-orange-400 flex items-center justify-center flex-shrink-0">
+                                <Calendar size={22} className="animate-pulse" />
+                            </div>
+                            <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[9px] font-black uppercase text-orange-400 tracking-wider bg-orange-500/10 border border-orange-500/10 px-2.5 py-0.5 rounded-full block w-fit">
+                                        Horário Agendado
+                                    </span>
+                                </div>
+                                <h4 className="font-extrabold text-white text-sm mt-1.5 leading-snug">
+                                    {clientActiveAppointments[0].service_name}
+                                </h4>
+                                <p className="text-[11px] text-slate-400 font-bold mt-1 uppercase tracking-tight">
+                                    com {clientActiveAppointments[0].professional_name}
+                                </p>
+                                <p className="text-xs text-slate-300 font-medium mt-1">
+                                    {format(new Date(clientActiveAppointments[0].date), "eeee, dd 'de' MMMM 'às' HH:mm", { locale: pt })}
+                                </p>
+                                
+                                {['confirmado', 'confirmado_whatsapp'].includes(clientActiveAppointments[0].status) ? (
+                                    <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest flex items-center gap-1 mt-2.5 bg-emerald-500/10 border border-emerald-500/10 px-2 py-0.5 rounded-full w-fit">
+                                        <Check size={10} strokeWidth={3} /> Presença Confirmada!
+                                    </span>
+                                ) : (
+                                    <span className="text-[9px] font-black text-amber-400 uppercase tracking-widest flex items-center gap-1 mt-2.5 bg-amber-500/10 border border-amber-500/10 px-2 py-0.5 rounded-full w-fit animate-pulse">
+                                        ⚠️ Aguardando sua Confirmação
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row md:flex-col lg:flex-row gap-2 justify-end items-stretch">
+                            {!['confirmado', 'confirmado_whatsapp'].includes(clientActiveAppointments[0].status) && (
+                                <button
+                                    onClick={async (e) => {
+                                        e.stopPropagation();
+                                        try {
+                                            const { error } = await supabase
+                                                .from('appointments')
+                                                .update({ status: 'confirmado_whatsapp', updated_at: new Date().toISOString() })
+                                                .eq('id', clientActiveAppointments[0].id);
+                                            if (error) throw error;
+                                            
+                                            setClientActiveAppointments(prev => 
+                                                prev.map(a => a.id === clientActiveAppointments[0].id ? { ...a, status: 'confirmado_whatsapp' } : a)
+                                            );
+                                        } catch (err) {
+                                            alert("Não foi possível salvar a confirmação. Tente atualizar a página.");
+                                        }
+                                    }}
+                                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-5 py-3 rounded-2xl transition-all shadow-md shadow-emerald-900/10 active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer uppercase tracking-wider"
+                                >
+                                    <Check size={14} strokeWidth={3} />
+                                    Confirmar Presença
+                                </button>
+                            )}
+                            <button
+                                onClick={() => setIsClientAppsOpen(true)}
+                                className="bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700/60 text-slate-300 text-xs font-black px-5 py-3 rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer uppercase tracking-wider"
+                            >
+                                Ver Tudo / Cancelar
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 <div className="mt-12 space-y-4 text-left">
                     <div className="flex items-center justify-between px-2 mb-6">
