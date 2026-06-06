@@ -4,7 +4,7 @@ import Card from '../shared/Card';
 import JaciBotAssistant from '../shared/JaciBotAssistant';
 import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import { getDashboardInsight } from '../../services/geminiService';
-import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3, Zap, UserCircle, Sparkles } from 'lucide-react';
+import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3, Zap, UserCircle, Sparkles, Pencil } from 'lucide-react';
 // FIX: Grouping date-fns imports and removing problematic members startOfDay, subDays, startOfMonth.
 import { 
     format, addDays, endOfDay, endOfMonth
@@ -13,6 +13,7 @@ import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
+import toast from 'react-hot-toast';
 
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -60,6 +61,34 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const [isLoading, setIsLoading] = useState(true);
     const [appointments, setAppointments] = useState<any[]>([]);
     const [financialGoal, setFinancialGoal] = useState(0);
+    const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
+    const [tempGoal, setTempGoal] = useState('');
+    const [isSavingGoal, setIsSavingGoal] = useState(false);
+
+    const handleSaveGoal = async (val: number) => {
+        if (!activeStudioId) return;
+        setIsSavingGoal(true);
+        try {
+            const { error } = await supabase
+                .from('studio_settings')
+                .upsert({
+                    id: activeStudioId,
+                    revenue_goal: val,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'id' });
+
+            if (error) throw error;
+            setFinancialGoal(val);
+            toast.success("Meta faturamento atualizada com sucesso!");
+            setIsGoalModalOpen(false);
+        } catch (err: any) {
+            console.error("Erro ao salvar meta financeira:", err);
+            toast.error("Erro ao salvar meta financeira: " + (err.message || 'tente novamente'));
+        } finally {
+            setIsSavingGoal(false);
+        }
+    };
+
     const [monthRevenueTotal, setMonthRevenueTotal] = useState(0);
     const [last24hReminders, setLast24hReminders] = useState(0);
     
@@ -307,15 +336,21 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 <StatCard title="Ticket Médio" value={formatCurrency(kpis.revenue / (kpis.completed || 1))} icon={TrendingUp} colorClass="bg-purple-500" subtext="Por cliente" />
                 <StatCard title="Lembretes Jaci IA" value={`${last24hReminders} ${last24hReminders === 1 ? 'disparo' : 'disparos'}`} icon={Sparkles} colorClass="bg-orange-500" subtext="Últimas 24 horas" />
                 
-                <div className="bg-slate-900 p-6 rounded-[32px] text-white flex flex-col justify-between shadow-2xl relative overflow-hidden group h-full">
+                <div 
+                    onClick={() => { setTempGoal(financialGoal ? financialGoal.toString() : ''); setIsGoalModalOpen(true); }}
+                    className="bg-slate-900 p-6 rounded-[32px] text-white flex flex-col justify-between shadow-2xl relative overflow-hidden group h-full cursor-pointer hover:bg-slate-800 transition-all active:scale-98 border border-white/5"
+                    title="Clique para editar a meta mensal"
+                >
                     <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
                         <Zap size={120} />
                     </div>
                     <div className="flex justify-between items-start z-10 font-bold">
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-400">FOCO NA META</p>
-                        <Zap size={14} className="text-orange-400" />
+                        <div className="flex items-center gap-1 bg-orange-500/20 border border-orange-500/10 px-2.5 py-0.5 rounded-full text-orange-400 text-[8px] tracking-wider uppercase font-black">
+                            <Pencil size={8} /> Alterar
+                        </div>
                     </div>
-                    <div className="mt-4 z-10">
+                    <div className="mt-4 z-10 text-left">
                         <div className="flex items-end justify-between mb-3">
                             <h3 className="text-3xl font-black tracking-tighter">{goalMetrics.progress.toFixed(0)}%</h3>
                             <span className="text-[10px] font-bold text-slate-400 mb-1">ALVO: {goalMetrics.display}</span>
@@ -323,6 +358,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         <div className="w-full h-2.5 bg-white/10 rounded-full overflow-hidden mb-1">
                             <div className="h-full bg-gradient-to-r from-orange-600 to-orange-400 transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(249,115,22,0.5)]" style={{ width: `${goalMetrics.visual}%` }} />
                         </div>
+                        <p className="text-[8px] text-slate-500 font-bold uppercase mt-1 tracking-wider text-right">Toque para configurar</p>
                     </div>
                 </div>
             </div>
@@ -357,6 +393,58 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     </div>
                 </div>
             </div>
+
+            {isGoalModalOpen && (
+                <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div 
+                        className="bg-white rounded-[32px] p-8 max-w-sm w-full border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.15)] animate-in zoom-in-95 duration-200 relative overflow-hidden text-center"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="w-12 h-12 rounded-2xl bg-orange-500/10 text-orange-500 flex items-center justify-center mx-auto mb-4 border border-orange-500/5">
+                            <Zap size={22} className="animate-pulse" />
+                        </div>
+                        <h3 className="font-black text-slate-800 uppercase tracking-tighter text-lg leading-tight">Meta de Faturamento</h3>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1 mb-6">Defina o objetivo financeiro mensal do estúdio</p>
+                        
+                        <div className="relative mb-6">
+                            <span className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 font-black text-sm">R$</span>
+                            <input 
+                                type="number" 
+                                value={tempGoal} 
+                                onChange={e => {
+                                    const val = e.target.value;
+                                    if (val === '' || parseFloat(val) >= 0) {
+                                        setTempGoal(val);
+                                    }
+                                }}
+                                placeholder="5000"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-5 py-4 font-black text-slate-700 text-lg outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-500/30 transition-all shadow-inner text-left"
+                                autoFocus
+                            />
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => setIsGoalModalOpen(false)} 
+                                disabled={isSavingGoal}
+                                className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold rounded-2xl text-[10px] uppercase tracking-widest transition-all active:scale-95"
+                            >
+                                Cancelar
+                            </button>
+                            <button 
+                                onClick={async () => {
+                                    const val = parseFloat(tempGoal) || 0;
+                                    await handleSaveGoal(val);
+                                }} 
+                                disabled={isSavingGoal}
+                                className="flex-1 py-4 bg-slate-800 hover:bg-slate-900 text-white font-black rounded-2xl text-[10px] uppercase tracking-widest transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
+                            >
+                                {isSavingGoal ? <Loader2 size={16} className="animate-spin text-white" /> : 'Salvar Meta'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

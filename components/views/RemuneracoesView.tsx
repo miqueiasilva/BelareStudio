@@ -5,7 +5,7 @@ import {
     Wallet, ChevronDown, ChevronUp, Download, CheckCircle, 
     Loader2, User, TrendingUp,
     DollarSign, Info, Calculator, Percent, Layers, ShieldCheck,
-    FileText
+    FileText, Calendar, Filter, ShieldAlert
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
@@ -19,6 +19,21 @@ const RemuneracoesView: React.FC = () => {
   const { user } = useAuth();
   const isAdmin = user?.papel === 'admin' || user?.papel === 'gestor';
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [filterType, setFilterType] = useState<'monthly' | 'custom'>('monthly');
+  const [startDate, setStartDate] = useState(() => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}-01`;
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const today = new Date();
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    const y = lastDay.getFullYear();
+    const m = String(lastDay.getMonth() + 1).padStart(2, '0');
+    const d = String(lastDay.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  });
   const [expandedId, setExpandedId] = useState<string | number | null>(null);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [commandItems, setCommandItems] = useState<any[]>([]);
@@ -38,8 +53,18 @@ const RemuneracoesView: React.FC = () => {
     setIsLoading(true);
 
     try {
-        const start = format(getStartOfMonth(currentDate), "yyyy-MM-dd'T'00:00:00");
-        const end = format(endOfMonth(currentDate), "yyyy-MM-dd'T'23:59:59");
+        let start = '';
+        let end = '';
+
+        if (filterType === 'monthly') {
+            start = format(getStartOfMonth(currentDate), "yyyy-MM-dd'T'00:00:00");
+            end = format(endOfMonth(currentDate), "yyyy-MM-dd'T'23:59:59");
+        } else {
+            const sDate = startDate || format(getStartOfMonth(new Date()), "yyyy-MM-dd");
+            const eDate = endDate || format(new Date(), "yyyy-MM-dd");
+            start = `${sDate}T00:00:00`;
+            end = `${eDate}T23:59:59`;
+        }
 
         const [teamRes, itemsRes] = await Promise.all([
             // FIX 1: Filtra apenas membros ATIVOS — remove "Geral/Studio" e inativos
@@ -56,7 +81,9 @@ const RemuneracoesView: React.FC = () => {
                 .select(`
                     id, title, price, quantity, professional_id,
                     commands!inner(
-                        id, closed_at, status, payment_method, payment_data
+                        id, closed_at, status, payment_method, payment_data,
+                        client_name,
+                        clients:client_id(nome, name)
                     )
                 `)
                 .eq('studio_id', activeStudioId)
@@ -98,7 +125,7 @@ const RemuneracoesView: React.FC = () => {
     } finally {
         if (isMounted.current) setIsLoading(false);
     }
-  }, [activeStudioId, currentDate]);
+  }, [activeStudioId, currentDate, filterType, startDate, endDate, isAdmin, user?.email]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -201,7 +228,7 @@ const RemuneracoesView: React.FC = () => {
             </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4 w-full xl:w-auto">
+        <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-4 w-full xl:w-auto">
             <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <button 
                     onClick={() => setCalculationBase('bruto')}
@@ -217,11 +244,47 @@ const RemuneracoesView: React.FC = () => {
                 </button>
             </div>
 
-            <div className="flex items-center bg-white rounded-2xl border border-slate-200 p-1 shadow-sm">
-                <button onClick={() => setCurrentDate(prev => addMonths(prev, -1))} className="p-2 hover:bg-slate-50 text-slate-400 rounded-xl"><ChevronDown className="w-4 h-4 rotate-90" /></button>
-                <div className="px-4 font-black text-slate-700 min-w-[140px] text-center capitalize text-xs">{format(currentDate, 'MMMM yyyy', { locale: pt })}</div>
-                <button onClick={() => setCurrentDate(prev => addMonths(prev, 1))} className="p-2 hover:bg-slate-50 text-slate-400 rounded-xl"><ChevronDown className="w-4 h-4 -rotate-90" /></button>
+            <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <button 
+                    onClick={() => setFilterType('monthly')}
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-1.5 ${filterType === 'monthly' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                >
+                    Mensal
+                </button>
+                <button 
+                    onClick={() => setFilterType('custom')}
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-1.5 ${filterType === 'custom' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                >
+                    Personalizado
+                </button>
             </div>
+
+            {filterType === 'monthly' ? (
+                <div className="flex items-center bg-white rounded-2xl border border-slate-200 p-1 shadow-sm">
+                    <button onClick={() => setCurrentDate(prev => addMonths(prev, -1))} className="p-2 hover:bg-slate-50 text-slate-400 rounded-xl"><ChevronDown className="w-4 h-4 rotate-90" /></button>
+                    <div className="px-4 font-black text-slate-700 min-w-[140px] text-center capitalize text-xs">{format(currentDate, 'MMMM yyyy', { locale: pt })}</div>
+                    <button onClick={() => setCurrentDate(prev => addMonths(prev, 1))} className="p-2 hover:bg-slate-50 text-slate-400 rounded-xl"><ChevronDown className="w-4 h-4 -rotate-90" /></button>
+                </div>
+            ) : (
+                <div className="flex items-center gap-2 bg-white rounded-2xl border border-slate-200 p-1.5 shadow-sm">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider pl-2 flex items-center gap-1">
+                        <Calendar size={12} className="text-orange-500" /> Período:
+                    </span>
+                    <input 
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="bg-slate-50 border border-slate-100 rounded-xl px-2 py-1 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-500/30 transition-all"
+                    />
+                    <span className="text-[10px] font-bold text-slate-400 px-0.5">a</span>
+                    <input 
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="bg-slate-50 border border-slate-100 rounded-xl px-2 py-1 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-500/30 transition-all"
+                    />
+                </div>
+            )}
         </div>
       </header>
 
@@ -252,6 +315,16 @@ const RemuneracoesView: React.FC = () => {
           </div>
         </div>
       )}
+
+      <div className="bg-emerald-500/10 border border-emerald-500/15 rounded-2xl p-4 mb-6 flex items-start gap-4 text-emerald-800 animate-in fade-in-30 slide-in-from-top-2 duration-300">
+          <ShieldCheck size={20} className="text-emerald-600 mt-0.5 flex-shrink-0" />
+          <div className="text-left">
+              <p className="text-xs font-black uppercase tracking-wider text-emerald-700">Auditagem & Segurança Financeira</p>
+              <p className="text-[11px] text-emerald-600/90 mt-1 font-medium leading-relaxed">
+                  Os valores exibidos abaixo são calculados <strong>exclusivamente a partir de comandas baixadas e liquidadas como pagas</strong> no balcão de vendas. Comandas abertas, suspensas ou canceladas são completamente desconsideradas. Caso você estorne ou reabra uma comanda, os números são atualizados em tempo real.
+              </p>
+          </div>
+      </div>
 
       <div className="space-y-4">
         {payroll.map((item) => (
@@ -332,7 +405,10 @@ const RemuneracoesView: React.FC = () => {
                                                 <tr key={it.id} className="hover:bg-slate-50 transition-colors group">
                                                     <td className="px-8 py-4">
                                                         <p className="font-bold text-slate-700 group-hover:text-orange-600 transition-colors">{it.title}</p>
-                                                        <div className="flex items-center gap-2 mt-0.5">
+                                                        <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                                                            <span className="text-[10px] font-black text-slate-600 bg-slate-100 px-2 py-0.5 rounded-lg uppercase tracking-wide flex items-center gap-1">
+                                                                👤 {it.commands?.clients?.nome || it.commands?.clients?.name || it.commands?.client_name || "CONSUMIDOR FINAL"}
+                                                            </span>
                                                             <p className="text-[9px] text-slate-400 font-black uppercase">CMD #{String(it.commands?.id).substring(0, 8).toUpperCase()}</p>
                                                             <span className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded font-black uppercase">{method}</span>
                                                             {calculationBase === 'liquido' && taxRate > 0 && (
