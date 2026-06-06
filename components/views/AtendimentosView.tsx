@@ -1597,11 +1597,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             ) : (
                 <button 
                     onClick={() => setIsSidebarOpen(true)} 
-                    className="fixed bottom-6 left-6 p-3 bg-white hover:bg-slate-50 border border-slate-200 shadow-xl rounded-full text-slate-600 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2 z-[999]"
+                    className="absolute bottom-6 left-6 p-3 bg-white hover:bg-slate-50 border border-slate-200 shadow-xl rounded-full text-slate-600 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2 z-30"
                     title="Abrir Filtros"
                 >
                     <SlidersHorizontal size={20} className="text-orange-500" />
-                    <span className="text-xs font-bold pr-1 text-slate-700">Configurações</span>
+                    <span className="text-xs font-bold pr-1 text-slate-700">Filtros e Grade</span>
                 </button>
             )}
 
