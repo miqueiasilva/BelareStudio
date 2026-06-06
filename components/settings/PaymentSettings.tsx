@@ -16,6 +16,7 @@ interface PaymentMethod {
     id?: number;
     name: string;
     type: 'credit' | 'debit' | 'pix' | 'money';
+    method_type?: 'credit' | 'debit' | 'pix' | 'money';
     brand?: string;
     rate_cash: number | string; 
     rate_installment_12x: number | string; // Restaurada propriedade específica do schema
@@ -57,6 +58,8 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             if (error) throw error;
             if (data) setMethods(data.map(m => ({
                 ...m,
+                type: m.type || m.method_type,
+                method_type: m.method_type || m.type,
                 installment_rates: m.installment_rates || {}
             })));
         } catch (err: any) {
@@ -98,6 +101,7 @@ const PaymentSettings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 studio_id: activeStudioId,
                 name: editingMethod.name,
                 type: editingMethod.type,
+                method_type: editingMethod.type,
                 brand: (editingMethod.type === 'credit' || editingMethod.type === 'debit') ? editingMethod.brand : null,
                 rate_cash: parseSafeFloat(editingMethod.rate_cash),
                 rate_installment_12x: editingMethod.type === 'credit' ? parseSafeFloat(editingMethod.rate_installment_12x) : 0,
