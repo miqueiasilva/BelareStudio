@@ -2,12 +2,13 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
     Receipt, Clock, User, Landmark, DollarSign,
     X, ShoppingCart, Percent, CheckCircle2, Loader2,
-    Scissors, ShoppingBag, Landmark as BankIcon
+    Scissors, ShoppingBag, Landmark as BankIcon, RotateCcw
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import Card from '../shared/Card';
+import toast from 'react-hot-toast';
 
 interface PaidCommandDetailViewProps {
     commandId: string;
@@ -19,6 +20,69 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
     const [items, setItems] = useState<any[]>([]);
     const [payments, setPayments] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isReopening, setIsReopening] = useState(false);
+
+    const handleReopen = async () => {
+        const confirmMsg = "Deseja realmente estornar o pagamento desta comanda?\n\nIsso irá:\n" +
+            "1. Excluir o lançamento financeiro associado.\n" +
+            "2. Retornar a comanda para status 'Em Atendimento' (aberta).\n" +
+            "3. Manter todos os serviços e produtos na comanda para você apenas alterar a forma de pagamento.\n" +
+            "4. Colocar o agendamento correspondente de volta como pendente.";
+        
+        if (!window.confirm(confirmMsg)) {
+            return;
+        }
+
+        setIsReopening(true);
+        try {
+            // 1. Excluir a transação financeira vinculada à comanda
+            const { error: errorDelFT } = await supabase
+                .from('financial_transactions')
+                .delete()
+                .eq('command_id', commandId);
+
+            if (errorDelFT) {
+                console.error("Erro ao excluir transação financeira:", errorDelFT);
+            }
+
+            // 2. Reverter status do agendamento se houver
+            const appointmentId = items.find(i => i.appointment_id)?.appointment_id;
+            if (appointmentId) {
+                const { error: errorAppt } = await supabase
+                    .from('appointments')
+                    .update({ status: 'confirmado' })
+                    .eq('id', appointmentId);
+                
+                if (errorAppt) {
+                    console.error("Erro ao reverter status do agendamento:", errorAppt);
+                }
+            }
+
+            // 3. Atualizar a comanda para status 'open' e limpar dados de pagamento
+            const { error: errorCmd } = await supabase
+                .from('commands')
+                .update({
+                    status: 'open',
+                    closed_at: null,
+                    paid_at: null,
+                    payment_method: null,
+                    discount_amount: 0,
+                    discount_info: null,
+                    payment_data: null
+                })
+                .eq('id', commandId);
+
+            if (errorCmd) throw errorCmd;
+
+            toast.success("Pagamento estornado! Comanda reaberta com sucesso no Balcão.");
+            onClose();
+        } catch (err: any) {
+            console.error("Erro ao reabrir comanda:", err);
+            toast.error("Erro ao estornar pagamento: " + (err.message || 'tente novamente'));
+        } finally {
+            setIsReopening(false);
+        }
+    };
 
     const loadData = useCallback(async () => {
         if (!commandId) return;
@@ -193,8 +257,25 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                     </div>
                 </div>
 
-                <footer className="p-6 bg-slate-50 border-t border-slate-100">
-                    <button onClick={onClose} className="w-full py-4 bg-slate-800 text-white font-black rounded-2xl shadow-xl hover:bg-slate-900 transition-all uppercase text-xs">Fechar Detalhamento</button>
+                <footer className="p-6 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row gap-3">
+                    <button 
+                        onClick={handleReopen} 
+                        disabled={isReopening}
+                        className="flex-1 py-4 bg-rose-50 hover:bg-rose-100 active:bg-rose-250 text-rose-600 font-black rounded-2xl transition-all uppercase text-xs flex items-center justify-center gap-2 border border-rose-200"
+                    >
+                        {isReopening ? (
+                            <Loader2 className="animate-spin text-rose-500" size={16} />
+                        ) : (
+                            <RotateCcw size={16} strokeWidth={3} />
+                        )}
+                        Estornar e Reabrir
+                    </button>
+                    <button 
+                        onClick={onClose} 
+                        className="flex-1 py-4 bg-slate-800 text-white font-black rounded-2xl shadow-xl hover:bg-slate-900 transition-all uppercase text-xs"
+                    >
+                        Fechar Detalhamento
+                    </button>
                 </footer>
             </div>
         </div>
