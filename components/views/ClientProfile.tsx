@@ -8,7 +8,7 @@ import {
     Camera, Loader2, FileText, Activity, AlertCircle, Maximize2,
     Trash2, PenTool, Eraser, Check, Image as ImageIcon, Instagram,
     Navigation, Smile, FilePlus, ChevronDown, HeartPulse, ShieldCheck,
-    DollarSign, Share2, ClipboardCheck
+    DollarSign, Share2, ClipboardCheck, Users
 } from 'lucide-react';
 import Card from '../shared/Card';
 import ToggleSwitch from '../shared/ToggleSwitch';
