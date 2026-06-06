@@ -72,10 +72,10 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
             const { error } = await supabase
                 .from('studio_settings')
                 .upsert({
-                    id: activeStudioId,
+                    studio_id: activeStudioId,
                     revenue_goal: val,
                     updated_at: new Date().toISOString()
-                }, { onConflict: 'id' });
+                }, { onConflict: 'studio_id' });
 
             if (error) throw error;
             setFinancialGoal(val);
@@ -222,7 +222,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 const { data: settings, error: settingsError } = await supabase
                     .from('studio_settings')
                     .select('revenue_goal')
-                    .eq('id', activeStudioId) // Supondo que id do studio_settings seja o activeStudioId
+                    .eq('studio_id', activeStudioId)
                     .maybeSingle();
                 
                 if (settingsError) throw settingsError;
