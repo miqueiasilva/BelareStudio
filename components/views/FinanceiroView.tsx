@@ -41,6 +41,35 @@ const getStartOfDay = (d: Date) => {
 // FIX: Manual replacement for startOfMonth
 const getStartOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
 
+// Helper to parse dates safely preserving UTC midnight as local midnight (avoiding 1-day-off errors)
+const parseSafeDate = (dateVal: any): Date => {
+    if (!dateVal) return new Date();
+    const d = dateVal instanceof Date ? dateVal : new Date(dateVal);
+    if (typeof dateVal === 'string' && (dateVal.endsWith('T00:00:00.000Z') || dateVal.includes('T00:00:00') || dateVal.endsWith('00:00:00+00'))) {
+        const parts = dateVal.split('T')[0].split('-');
+        if (parts.length === 3) {
+            return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 12, 0, 0, 0);
+        }
+    }
+    return d;
+};
+
+const parseLocalStartOfDay = (dateStr: string) => {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+        return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 0, 0, 0, 0);
+    }
+    return new Date(dateStr);
+};
+
+const parseLocalEndOfDay = (dateStr: string) => {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+        return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 23, 59, 59, 999);
+    }
+    return new Date(dateStr);
+};
+
 interface FinanceiroViewProps {
     transactions: FinancialTransaction[];
     onAddTransaction: (t: FinancialTransaction) => void;
@@ -102,18 +131,23 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
         try {
             let start, end;
             if (filterPeriod === 'hoje') {
-                // FIX: Used getStartOfDay helper
-                start = getStartOfDay(new Date());
-                end = endOfDay(new Date());
+                const todayStr = format(new Date(), 'yyyy-MM-dd');
+                start = parseLocalStartOfDay(todayStr);
+                end = parseLocalEndOfDay(todayStr);
             } else if (filterPeriod === 'mes') {
-                // FIX: Used getStartOfMonth helper
-                start = getStartOfMonth(new Date());
-                end = endOfMonth(new Date());
+                const today = new Date();
+                start = new Date(today.getFullYear(), today.getMonth(), 1, 0, 0, 0, 0);
+                end = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
             } else {
-                // FIX: Used getStartOfDay helper
-                start = getStartOfDay(new Date(startDate));
-                end = endOfDay(new Date(endDate));
+                start = parseLocalStartOfDay(startDate);
+                end = parseLocalEndOfDay(endDate);
             }
+
+            // Fetch with a 1-day padding on both sides to be extremely safe against database timezone mismatches
+            const startDb = new Date(start);
+            startDb.setDate(startDb.getDate() - 1);
+            const endDb = new Date(end);
+            endDb.setDate(endDb.getDate() + 1);
 
             // 1. Buscar Lançamentos Reais da Tabela Base
             // IMPORTANTE: payment_method em snake_case
@@ -122,8 +156,8 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                     .from('financial_transactions')
                     .select('id,description,amount,net_value,type,category,date,payment_method,status,studio_id,source')
                     .eq('studio_id', activeStudioId)
-                    .gte('date', start.toISOString())
-                    .lte('date', end.toISOString())
+                    .gte('date', startDb.toISOString())
+                    .lte('date', endDb.toISOString())
                     .neq('status', 'cancelado')
                     .order('date', { ascending: false }),
                 supabase
@@ -175,12 +209,20 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                 }
             });
 
-            setDbTransactions(transRes.data || []);
+            // Parse dates safely and filter strictly inside the local start/end boundaries
+            const rawTransactions = transRes.data || [];
+            const currentTrans = rawTransactions.map((t: any) => ({
+                ...t,
+                parsedDate: parseSafeDate(t.date)
+            })).filter((t: any) => {
+                return t.parsedDate >= start && t.parsedDate <= end;
+            });
+
+            setDbTransactions(currentTrans);
             setDbCategories(mergedCustom);
             setProjections(appsRes.data || []);
 
             // 2. Cálculo Manual dos Indicadores
-            const currentTrans = transRes.data || [];
             const gross = currentTrans
                 .filter(t => t.type === 'income' || t.type === 'receita')
                 .reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -241,8 +283,8 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
         }).sort((a, b) => b.value - a.value).slice(0, 5);
 
         // FIX: Used helpers
-        const rangeStart = filterPeriod === 'hoje' ? getStartOfDay(new Date()) : (filterPeriod === 'custom' ? new Date(startDate) : getStartOfMonth(new Date()));
-        const rangeEnd = filterPeriod === 'hoje' ? endOfDay(new Date()) : (filterPeriod === 'custom' ? endOfDay(new Date(endDate)) : endOfMonth(new Date()));
+        const rangeStart = filterPeriod === 'hoje' ? parseLocalStartOfDay(format(new Date(), 'yyyy-MM-dd')) : (filterPeriod === 'custom' ? parseLocalStartOfDay(startDate) : new Date(new Date().getFullYear(), new Date().getMonth(), 1, 0, 0, 0, 0));
+        const rangeEnd = filterPeriod === 'hoje' ? parseLocalEndOfDay(format(new Date(), 'yyyy-MM-dd')) : (filterPeriod === 'custom' ? parseLocalEndOfDay(endDate) : new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 59, 999));
         
         const daysInPeriod = eachDayOfInterval({
             start: rangeStart,
@@ -251,7 +293,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
 
         const chartData = daysInPeriod.map(day => {
             const dayStr = format(day, 'yyyy-MM-dd');
-            const dayTrans = dbTransactions.filter(t => format(new Date(t.date), 'yyyy-MM-dd') === dayStr);
+            const dayTrans = dbTransactions.filter(t => format(t.parsedDate || parseSafeDate(t.date), 'yyyy-MM-dd') === dayStr);
             const dayProj = projections.filter(p => format(new Date(p.date), 'yyyy-MM-dd') === dayStr);
             
             const income = dayTrans.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -275,7 +317,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
 
     const handleExportExcel = () => {
         const dataToExport = bi.filtered.map(t => ({
-            Data: format(new Date(t.date), 'dd/MM/yyyy HH:mm'),
+            Data: format(t.parsedDate || parseSafeDate(t.date), 'dd/MM/yyyy HH:mm'),
             Descrição: t.description,
             Categoria: t.category || 'Geral',
             Tipo: t.type === 'income' ? 'Entrada' : 'Saída',
@@ -298,7 +340,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
         doc.text(`Período: ${startDate} até ${endDate}`, 14, 30);
 
         const tableData = bi.filtered.map(t => [
-            format(new Date(t.date), 'dd/MM/yy'),
+            format(t.parsedDate || parseSafeDate(t.date), 'dd/MM/yy'),
             t.description,
             t.category || 'Geral',
             t.payment_method || 'Outro',
@@ -604,7 +646,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                                             <span className="text-[10px] font-black text-slate-400 uppercase">{t.payment_method?.replace('_', ' ') || 'Processamento'}</span>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-[10px] text-slate-400">{format(new Date(t.date), 'dd/MM/yy HH:mm')}</span>
+                                            <span className="text-[10px] text-slate-400">{format(t.parsedDate || parseSafeDate(t.date), 'dd/MM/yy HH:mm')}</span>
                                             <button onClick={() => handleDelete(t.id)} className="p-1.5 text-slate-300 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100">
                                                 <Trash2 size={14} />
                                             </button>
@@ -635,8 +677,8 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
                                         bi.filtered.map(t => (
                                             <tr key={t.id} className="hover:bg-orange-50/20 transition-colors group">
                                                 <td className="px-8 py-5">
-                                                    <p className="text-xs font-bold text-slate-700">{format(new Date(t.date), 'dd/MM/yy')}</p>
-                                                    <p className="text-[10px] text-slate-400 font-medium">{format(new Date(t.date), 'HH:mm')}</p>
+                                                    <p className="text-xs font-bold text-slate-700">{format(t.parsedDate || parseSafeDate(t.date), 'dd/MM/yy')}</p>
+                                                    <p className="text-[10px] text-slate-400 font-medium">{format(t.parsedDate || parseSafeDate(t.date), 'HH:mm')}</p>
                                                 </td>
                                                 <td className="px-8 py-5">
                                                     <p className="text-sm font-black text-slate-700 truncate max-w-xs">{t.description}</p>

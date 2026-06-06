@@ -111,9 +111,21 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
           status: 'pago' as const
       };
 
+      const getParsedLocalDate = (dateVal?: string) => {
+          const s = dateVal || new Date().toISOString().split('T')[0];
+          const parts = s.split('-');
+          if (parts.length === 3) {
+              const year = parseInt(parts[0], 10);
+              const month = parseInt(parts[1], 10) - 1;
+              const day = parseInt(parts[2], 10);
+              return new Date(year, month, day, 12, 0, 0, 0);
+          }
+          return new Date(s);
+      };
+
       if (launchType !== 'unico') {
           const transactions: any[] = [];
-          const startDate = new Date(formData.date || new Date().toISOString().split('T')[0]);
+          const startDate = getParsedLocalDate(formData.date);
           
           for (let i = 1; i <= quantity; i++) {
               const nextDate = new Date(startDate);
@@ -140,7 +152,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
       } else {
           onSave({
               ...baseTransaction,
-              date: new Date(formData.date || new Date().toISOString().split('T')[0]),
+              date: getParsedLocalDate(formData.date),
           } as FinancialTransaction);
       }
   };
