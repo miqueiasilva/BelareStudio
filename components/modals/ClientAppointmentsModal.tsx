@@ -142,6 +142,28 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ studi
         }
     };
 
+    const handleConfirmAppointmentSelf = async (id: number) => {
+        setLoading(true);
+        try {
+            const { error } = await supabase
+                .from('appointments')
+                .update({ 
+                    status: 'confirmado_whatsapp',
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', id);
+
+            if (error) throw error;
+            
+            setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: 'confirmado_whatsapp' } : a));
+            alert("Presença confirmada com sucesso! ✨");
+        } catch (e) {
+            alert("Erro ao confirmar presença.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const filteredList = appointments.filter(app => {
         const isPast = !isAfter(new Date(app.date), new Date());
         return activeTab === 'next' ? !isPast && app.status !== 'cancelado' : isPast || app.status === 'cancelado';
@@ -217,43 +239,79 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ studi
                                         Nenhum agendamento encontrado nesta categoria.
                                     </div>
                                 ) : (
-                                    filteredList.map(app => (
-                                        <div key={app.id} className="bg-white border border-slate-100 rounded-3xl p-4 shadow-sm hover:shadow-md transition-all flex gap-4 items-center">
-                                            {/* Data Badge */}
-                                            <div className="flex-shrink-0 w-14 h-14 bg-slate-50 rounded-2xl flex flex-col items-center justify-center border border-slate-100">
-                                                <span className="text-[10px] font-black text-slate-400 uppercase leading-none">{format(new Date(app.date), 'MMM', { locale: pt })}</span>
-                                                <span className="text-xl font-black text-slate-800 leading-none">{format(new Date(app.date), 'dd')}</span>
-                                            </div>
+                                    filteredList.map(app => {
+                                        const appHoursAhead = (new Date(app.date).getTime() - new Date().getTime()) / 3600000;
+                                        const isConfirmed = ['confirmado', 'confirmado_whatsapp'].includes(app.status);
+                                        const canConfirm = !isConfirmed && appHoursAhead <= 29 && appHoursAhead >= -1;
+                                        
+                                        return (
+                                            <div key={app.id} className="bg-white border border-slate-100 rounded-3xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                                                <div className="flex gap-4 items-center min-w-0 w-full sm:w-auto">
+                                                    {/* Data Badge */}
+                                                    <div className="flex-shrink-0 w-14 h-14 bg-slate-50 rounded-2xl flex flex-col items-center justify-center border border-slate-100">
+                                                        <span className="text-[10px] font-black text-slate-400 uppercase leading-none">{format(new Date(app.date), 'MMM', { locale: pt })}</span>
+                                                        <span className="text-xl font-black text-slate-800 leading-none">{format(new Date(app.date), 'dd')}</span>
+                                                    </div>
 
-                                            {/* Info */}
-                                            <div className="flex-1 min-w-0">
-                                                <h4 className="font-bold text-slate-800 text-sm truncate">{app.service_name}</h4>
-                                                <div className="flex items-center gap-3 text-slate-400 text-[10px] font-bold uppercase mt-0.5">
-                                                    <span className="flex items-center gap-1"><Clock size={10} /> {format(new Date(app.date), 'HH:mm')}</span>
-                                                    <span className="flex items-center gap-1"><Scissors size={10} /> {app.professional_name}</span>
+                                                    {/* Info */}
+                                                    <div className="flex-1 min-w-0 text-left">
+                                                        <h4 className="font-bold text-slate-800 text-sm truncate">{app.service_name}</h4>
+                                                        <div className="flex flex-wrap items-center gap-3 text-slate-400 text-[10px] font-bold uppercase mt-1">
+                                                            <span className="flex items-center gap-1"><Clock size={10} /> {format(new Date(app.date), 'HH:mm')}</span>
+                                                            <span className="flex items-center gap-1"><Scissors size={10} /> {app.professional_name}</span>
+                                                        </div>
+                                                        {/* Status badge */}
+                                                        <div className="mt-1.5 flex items-center gap-2">
+                                                            {isConfirmed ? (
+                                                                <span className="text-[8px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase tracking-wider border border-emerald-100">
+                                                                    ✓ Presença Confirmada
+                                                                </span>
+                                                            ) : app.status === 'cancelado' ? (
+                                                                <span className="text-[8px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full uppercase tracking-wider border border-rose-100">
+                                                                    Cancelado
+                                                                </span>
+                                                            ) : appHoursAhead <= 29 && appHoursAhead >= -1 ? (
+                                                                <span className="text-[8px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full uppercase tracking-wider border border-amber-100 animate-pulse">
+                                                                    ⚠️ Confirmar Presença (Hoje/Amanhã)
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-[8px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full uppercase tracking-wider border border-blue-100">
+                                                                    ✓ Horário Marcado
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Ações */}
+                                                <div className="flex items-center gap-2 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-3 sm:pt-0 mt-3 sm:mt-0">
+                                                    {activeTab === 'next' && canConfirm && (
+                                                        <button 
+                                                            onClick={() => handleConfirmAppointmentSelf(app.id)}
+                                                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer"
+                                                        >
+                                                            <CheckCircle2 size={12} />
+                                                            Confirmar
+                                                        </button>
+                                                    )}
+                                                    
+                                                    {activeTab === 'next' ? (
+                                                        <button 
+                                                            onClick={() => handleCancelAppointment(app)}
+                                                            className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all border border-transparent hover:border-rose-100 cursor-pointer"
+                                                            title="Cancelar Horário"
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </button>
+                                                    ) : (
+                                                        <span className="text-[9px] font-black px-2 py-1 bg-slate-100 text-slate-400 rounded-lg uppercase tracking-tighter">
+                                                            {app.status === 'concluido' ? 'Concluído' : app.status}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
-
-                                            {/* Status / Ação */}
-                                            <div className="flex-shrink-0">
-                                                {activeTab === 'next' ? (
-                                                    <button 
-                                                        onClick={() => handleCancelAppointment(app)}
-                                                        className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all border border-transparent hover:border-rose-100"
-                                                        title="Cancelar Horário"
-                                                    >
-                                                        <Trash2 size={18} />
-                                                    </button>
-                                                ) : (
-                                                    <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-tighter ${
-                                                        app.status === 'concluido' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400'
-                                                    }`}>
-                                                        {app.status}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))
+                                        );
+                                    })
                                 )}
                             </div>
 

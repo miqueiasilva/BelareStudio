@@ -543,7 +543,7 @@ const PublicBookingPreview: React.FC = () => {
                 date: appointmentDate.toISOString(),
                 start_at: appointmentDate.toISOString(),
                 end_at: endDateTime.toISOString(),
-                status: 'pendente',
+                status: 'agendado',
                 origin: 'online'
             };
             console.log('🚀 [DEBUG] PAYLOAD DO INSERT (appointments):', JSON.stringify(payload, null, 2));
@@ -951,43 +951,68 @@ const PublicBookingPreview: React.FC = () => {
                                     {format(new Date(clientActiveAppointments[0].date), "eeee, dd 'de' MMMM 'às' HH:mm", { locale: pt })}
                                 </p>
                                 
-                                {['confirmado', 'confirmado_whatsapp'].includes(clientActiveAppointments[0].status) ? (
-                                    <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest flex items-center gap-1 mt-2.5 bg-emerald-500/10 border border-emerald-500/10 px-2 py-0.5 rounded-full w-fit">
-                                        <Check size={10} strokeWidth={3} /> Presença Confirmada!
-                                    </span>
-                                ) : (
-                                    <span className="text-[9px] font-black text-amber-400 uppercase tracking-widest flex items-center gap-1 mt-2.5 bg-amber-500/10 border border-amber-500/10 px-2 py-0.5 rounded-full w-fit animate-pulse">
-                                        ⚠️ Aguardando sua Confirmação
-                                    </span>
-                                )}
+                                {(() => {
+                                    const apptDate = new Date(clientActiveAppointments[0].date);
+                                    const hoursAhead = (apptDate.getTime() - new Date().getTime()) / 3600000;
+                                    const isConfirmed = ['confirmado', 'confirmado_whatsapp'].includes(clientActiveAppointments[0].status);
+                                    
+                                    if (isConfirmed) {
+                                        return (
+                                            <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest flex items-center gap-1 mt-2.5 bg-emerald-500/10 border border-emerald-500/10 px-2.5 py-1 rounded-full w-fit">
+                                                <Check size={10} strokeWidth={3} /> Presença Confirmada!
+                                            </span>
+                                        );
+                                    } else if (hoursAhead <= 29) {
+                                        return (
+                                            <span className="text-[9px] font-black text-amber-400 uppercase tracking-widest flex items-center gap-1 mt-2.5 bg-amber-500/10 border border-amber-500/10 px-2.5 py-1 rounded-full w-fit animate-pulse">
+                                                ⚠️ Reconfirmar Presença (Hoje/Amanhã)
+                                            </span>
+                                        );
+                                    } else {
+                                        return (
+                                            <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-1 mt-2.5 bg-blue-500/10 border border-blue-500/10 px-2.5 py-1 rounded-full w-fit">
+                                                ✓ Horário Marcado!
+                                            </span>
+                                        );
+                                    }
+                                })()}
                             </div>
                         </div>
 
                         <div className="flex flex-col sm:flex-row md:flex-col lg:flex-row gap-2 justify-end items-stretch">
-                            {!['confirmado', 'confirmado_whatsapp'].includes(clientActiveAppointments[0].status) && (
-                                <button
-                                    onClick={async (e) => {
-                                        e.stopPropagation();
-                                        try {
-                                            const { error } = await supabase
-                                                .from('appointments')
-                                                .update({ status: 'confirmado_whatsapp', updated_at: new Date().toISOString() })
-                                                .eq('id', clientActiveAppointments[0].id);
-                                            if (error) throw error;
-                                            
-                                            setClientActiveAppointments(prev => 
-                                                prev.map(a => a.id === clientActiveAppointments[0].id ? { ...a, status: 'confirmado_whatsapp' } : a)
-                                            );
-                                        } catch (err) {
-                                            alert("Não foi possível salvar a confirmação. Tente atualizar a página.");
-                                        }
-                                    }}
-                                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-5 py-3 rounded-2xl transition-all shadow-md shadow-emerald-900/10 active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer uppercase tracking-wider"
-                                >
-                                    <Check size={14} strokeWidth={3} />
-                                    Confirmar Presença
-                                </button>
-                            )}
+                            {(() => {
+                                const apptDate = new Date(clientActiveAppointments[0].date);
+                                const hoursAhead = (apptDate.getTime() - new Date().getTime()) / 3600000;
+                                const isConfirmed = ['confirmado', 'confirmado_whatsapp'].includes(clientActiveAppointments[0].status);
+                                
+                                if (!isConfirmed && hoursAhead <= 29) {
+                                    return (
+                                        <button
+                                            onClick={async (e) => {
+                                                e.stopPropagation();
+                                                try {
+                                                    const { error } = await supabase
+                                                        .from('appointments')
+                                                        .update({ status: 'confirmado_whatsapp', updated_at: new Date().toISOString() })
+                                                        .eq('id', clientActiveAppointments[0].id);
+                                                    if (error) throw error;
+                                                    
+                                                    setClientActiveAppointments(prev => 
+                                                        prev.map(a => a.id === clientActiveAppointments[0].id ? { ...a, status: 'confirmado_whatsapp' } : a)
+                                                    );
+                                                } catch (err) {
+                                                    alert("Não foi possível salvar a confirmação. Tente atualizar a página.");
+                                                }
+                                            }}
+                                            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-5 py-3 rounded-2xl transition-all shadow-md shadow-emerald-900/10 active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer uppercase tracking-wider animate-pulse"
+                                        >
+                                            <Check size={14} strokeWidth={3} />
+                                            Confirmar Presença
+                                        </button>
+                                    );
+                                }
+                                return null;
+                            })()}
                             <button
                                 onClick={() => setIsClientAppsOpen(true)}
                                 className="bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700/60 text-slate-300 text-xs font-black px-5 py-3 rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer uppercase tracking-wider"
