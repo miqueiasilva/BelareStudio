@@ -2,7 +2,7 @@
 import React from 'react';
 import { 
     Store, Palette, Banknote, CalendarX, CreditCard, 
-    Tag, Armchair, ChevronRight, Home, LayoutGrid, Sparkles
+    Tag, Armchair, ChevronRight, Home, LayoutGrid, Sparkles, Scale
 } from 'lucide-react';
 
 interface SettingsItem {
@@ -39,6 +39,15 @@ const SettingsHub: React.FC<SettingsHubProps> = ({ onNavigate, onTopLevelNavigat
             iconColor: 'text-orange-600',
             iconBg: 'bg-orange-50',
             action: () => onNavigate('billing')
+        },
+        { 
+            id: 'fiscal', 
+            icon: Scale, 
+            label: 'Regime Fiscal & Notas', 
+            description: 'Configurar emissor nacional de notas fiscais, MEI e leis do nicho', 
+            iconColor: 'text-blue-600',
+            iconBg: 'bg-blue-50',
+            action: () => onNavigate('fiscal')
         },
         { 
             id: 'payments', 

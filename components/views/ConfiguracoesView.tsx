@@ -12,9 +12,10 @@ import BillingSettings from '../settings/BillingSettings';
 import FinancialCategoriesSettings from '../settings/FinancialCategoriesSettings';
 import ThemeSettings from '../settings/ThemeSettings';
 import DiscountSettings from '../settings/DiscountSettings';
+import FiscalSettings from '../settings/FiscalSettings';
 
 const ConfiguracoesView: React.FC = () => {
-    const [subView, setSubView] = useState<'hub' | 'profile' | 'payments' | 'theme' | 'resources' | 'discounts' | 'blocks' | 'financial_categories' | 'billing'>('hub');
+    const [subView, setSubView] = useState<'hub' | 'profile' | 'payments' | 'theme' | 'resources' | 'discounts' | 'blocks' | 'financial_categories' | 'billing' | 'fiscal'>('hub');
     
     // Função para renderizar o conteúdo dinâmico
     const renderSubView = () => {
@@ -34,6 +35,8 @@ const ConfiguracoesView: React.FC = () => {
                 return <BillingSettings onBack={() => setSubView('hub')} />;
             case 'payments':
                 return <PaymentSettings onBack={() => setSubView('hub')} />;
+            case 'fiscal':
+                return <FiscalSettings onBack={() => setSubView('hub')} />;
             case 'blocks':
                 return <BlocksSettings onBack={() => setSubView('hub')} />;
             case 'resources':
