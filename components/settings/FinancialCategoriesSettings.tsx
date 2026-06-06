@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
     ArrowLeft, Plus, Edit2, Trash2, Tag, 
@@ -12,6 +11,17 @@ import toast from 'react-hot-toast';
 interface FinancialCategoriesSettingsProps {
     onBack: () => void;
 }
+
+const DEFAULT_SYSTEM_CATEGORIES: Omit<FinancialCategory, 'id' | 'studio_id'>[] = [
+    { name: 'Serviço', type: 'income', dre_line: 'Receita Bruta', active: true },
+    { name: 'Venda de Produtos', type: 'income', dre_line: 'Receita Bruta', active: true },
+    { name: 'Aluguel', type: 'expense', dre_line: 'Despesa Operacional', active: true },
+    { name: 'Água/Luz/Internet', type: 'expense', dre_line: 'Despesa Operacional', active: true },
+    { name: 'Produtos e Insumos', type: 'expense', dre_line: 'Custo Direto', active: true },
+    { name: 'Marketing', type: 'expense', dre_line: 'Despesa Operacional', active: true },
+    { name: 'Comissões', type: 'expense', dre_line: 'Custo Direto', active: true },
+    { name: 'Outros', type: 'expense', dre_line: 'Despesa Operacional', active: true },
+];
 
 const FinancialCategoriesSettings: React.FC<FinancialCategoriesSettingsProps> = ({ onBack }) => {
     const { activeStudioId } = useStudio();
@@ -31,14 +41,53 @@ const FinancialCategoriesSettings: React.FC<FinancialCategoriesSettingsProps> = 
         if (!activeStudioId) return;
         setLoading(true);
         try {
-            const { data, error } = await supabase
+            // 1. Fetch from Supabase
+            const { data: dbData, error } = await supabase
                 .from('financial_categories')
                 .select('*')
                 .eq('studio_id', activeStudioId)
                 .order('name', { ascending: true });
 
-            if (error) throw error;
-            setCategories(data || []);
+            if (error) {
+                console.warn('[Categories] Falha ao carregar categorias do Supabase (tentando local):', error);
+            }
+            const dbList = dbData || [];
+
+            // 2. Fetch local storage custom categories
+            const localCustomStr = localStorage.getItem(`bela_custom_categories_${activeStudioId}`);
+            const localCustomList: FinancialCategory[] = localCustomStr ? JSON.parse(localCustomStr) : [];
+
+            // Combine db and local custom, ensuring no duplicate names (by lowercase comparison)
+            const mergedList = [...dbList];
+            localCustomList.forEach(lc => {
+                if (!mergedList.some(m => m.name.toLowerCase() === lc.name.toLowerCase() && m.type === lc.type)) {
+                    mergedList.push(lc);
+                }
+            });
+
+            // 3. Merging defaults
+            const localDeletedDefaultsStr = localStorage.getItem(`bela_deleted_defaults_${activeStudioId}`);
+            const deletedDefaults: string[] = localDeletedDefaultsStr ? JSON.parse(localDeletedDefaultsStr) : [];
+
+            const finalCategories = [...mergedList];
+            DEFAULT_SYSTEM_CATEGORIES.forEach(sc => {
+                const defId = `default-${sc.name.toLowerCase().replace(/\s+/g, '-')}`;
+                if (!deletedDefaults.includes(defId)) {
+                    // Check if already exist in DB or local custom list
+                    if (!finalCategories.some(c => c.name.toLowerCase() === sc.name.toLowerCase() && c.type === sc.type)) {
+                        finalCategories.push({
+                            id: defId,
+                            studio_id: activeStudioId,
+                            ...sc
+                        });
+                    }
+                }
+            });
+
+            // Sort alphabetically
+            finalCategories.sort((a, b) => a.name.localeCompare(b.name));
+
+            setCategories(finalCategories);
         } catch (error) {
             console.error('Erro ao buscar categorias:', error);
             toast.error('Erro ao carregar categorias.');
@@ -77,26 +126,74 @@ const FinancialCategoriesSettings: React.FC<FinancialCategoriesSettingsProps> = 
                 studio_id: activeStudioId
             };
 
-            if (editingCategory) {
-                const { error } = await supabase
-                    .from('financial_categories')
-                    .update(payload)
-                    .eq('id', editingCategory.id);
-                if (error) throw error;
-                toast.success('Categoria atualizada!');
-            } else {
-                const { error } = await supabase
-                    .from('financial_categories')
-                    .insert([payload]);
-                if (error) throw error;
-                toast.success('Categoria criada!');
+            let supabaseSuccess = false;
+            const isDefault = editingCategory && editingCategory.id.startsWith('default-');
+            const isLocal = editingCategory && editingCategory.id.startsWith('local-');
+
+            // Attempt saving to Supabase first (only if it's not a virtual default/local entry)
+            if (editingCategory && !isDefault && !isLocal) {
+                try {
+                    const { error } = await supabase
+                        .from('financial_categories')
+                        .update(payload)
+                        .eq('id', editingCategory.id);
+                    if (error) throw error;
+                    supabaseSuccess = true;
+                    toast.success('Categoria atualizada no banco!');
+                } catch (dbError: any) {
+                    console.warn("Falha de RLS/Supabase ao salvar categoria (aplicando fallback local):", dbError);
+                }
+            } else if (!editingCategory) {
+                try {
+                    const { error } = await supabase
+                        .from('financial_categories')
+                        .insert([payload]);
+                    if (error) throw error;
+                    supabaseSuccess = true;
+                    toast.success('Categoria criada com sucesso no banco!');
+                } catch (dbError: any) {
+                    console.warn("Falha de RLS/Supabase ao criar categoria (aplicando fallback local):", dbError);
+                }
+            }
+
+            // Sync fallback to local storage
+            if (!supabaseSuccess) {
+                const localCustomStr = localStorage.getItem(`bela_custom_categories_${activeStudioId}`);
+                let localCustomList: FinancialCategory[] = localCustomStr ? JSON.parse(localCustomStr) : [];
+
+                if (editingCategory) {
+                    // Remove both previous ID references
+                    localCustomList = localCustomList.filter(lc => lc.id !== editingCategory.id);
+                    
+                    const updatedCategory: FinancialCategory = {
+                        ...editingCategory,
+                        ...formData,
+                        id: editingCategory.id, // Keep the same virtual or real ID
+                        studio_id: activeStudioId
+                    } as FinancialCategory;
+                    
+                    localCustomList.push(updatedCategory);
+                    localStorage.setItem(`bela_custom_categories_${activeStudioId}`, JSON.stringify(localCustomList));
+                    toast.success('Categoria editada localmente!');
+                } else {
+                    // Create brand new local category
+                    const newCategory: FinancialCategory = {
+                        ...formData,
+                        id: `local-${Date.now()}`,
+                        studio_id: activeStudioId
+                    } as FinancialCategory;
+                    
+                    localCustomList.push(newCategory);
+                    localStorage.setItem(`bela_custom_categories_${activeStudioId}`, JSON.stringify(localCustomList));
+                    toast.success('Categoria salva localmente com sucesso!');
+                }
             }
 
             setIsModalOpen(false);
             fetchCategories();
-        } catch (error) {
+        } catch (error: any) {
             console.error('Erro ao salvar categoria:', error);
-            toast.error('Erro ao salvar categoria.');
+            toast.error(`Erro ao salvar categoria: ${error.message || 'Erro inesperado'}`);
         }
     };
 
@@ -104,11 +201,39 @@ const FinancialCategoriesSettings: React.FC<FinancialCategoriesSettingsProps> = 
         if (!confirm('Tem certeza que deseja excluir esta categoria?')) return;
 
         try {
-            const { error } = await supabase
-                .from('financial_categories')
-                .delete()
-                .eq('id', id);
-            if (error) throw error;
+            const isDefault = id.startsWith('default-');
+            const isLocal = id.startsWith('local-');
+
+            if (!isDefault && !isLocal) {
+                try {
+                    const { error } = await supabase
+                        .from('financial_categories')
+                        .delete()
+                        .eq('id', id);
+                    if (error) throw error;
+                } catch (dbError) {
+                    console.warn("Não foi possível apagar do Supabase (removendo local apenas):", dbError);
+                }
+            }
+
+            // Delete from local custom storage
+            const localCustomStr = localStorage.getItem(`bela_custom_categories_${activeStudioId}`);
+            if (localCustomStr) {
+                let localCustomList: FinancialCategory[] = JSON.parse(localCustomStr);
+                localCustomList = localCustomList.filter(lc => lc.id !== id);
+                localStorage.setItem(`bela_custom_categories_${activeStudioId}`, JSON.stringify(localCustomList));
+            }
+
+            // If deleting a default, store to deleted defaults list so it doesn't pop up again
+            if (isDefault) {
+                const localDeletedDefaultsStr = localStorage.getItem(`bela_deleted_defaults_${activeStudioId}`);
+                const deletedDefaults: string[] = localDeletedDefaultsStr ? JSON.parse(localDeletedDefaultsStr) : [];
+                if (!deletedDefaults.includes(id)) {
+                    deletedDefaults.push(id);
+                    localStorage.setItem(`bela_deleted_defaults_${activeStudioId}`, JSON.stringify(deletedDefaults));
+                }
+            }
+
             toast.success('Categoria excluída!');
             fetchCategories();
         } catch (error) {
@@ -119,11 +244,48 @@ const FinancialCategoriesSettings: React.FC<FinancialCategoriesSettingsProps> = 
 
     const toggleStatus = async (category: FinancialCategory) => {
         try {
-            const { error } = await supabase
-                .from('financial_categories')
-                .update({ active: !category.active })
-                .eq('id', category.id);
-            if (error) throw error;
+            const updatedActive = !category.active;
+            const isDefault = category.id.startsWith('default-');
+            const isLocal = category.id.startsWith('local-');
+            let supabaseSuccess = false;
+
+            if (!isDefault && !isLocal) {
+                try {
+                    const { error } = await supabase
+                        .from('financial_categories')
+                        .update({ active: updatedActive })
+                        .eq('id', category.id);
+                    if (error) throw error;
+                    supabaseSuccess = true;
+                } catch (dbError) {
+                    console.warn("Não foi possível alterar status no Supabase, aplicando localmente:", dbError);
+                }
+            }
+
+            // Update in local storage
+            const localCustomStr = localStorage.getItem(`bela_custom_categories_${activeStudioId}`);
+            let localCustomList: FinancialCategory[] = localCustomStr ? JSON.parse(localCustomStr) : [];
+
+            if (isLocal) {
+                localCustomList = localCustomList.map(lc => {
+                    if (lc.id === category.id) {
+                        return { ...lc, active: updatedActive };
+                    }
+                    return lc;
+                });
+                localStorage.setItem(`bela_custom_categories_${activeStudioId}`, JSON.stringify(localCustomList));
+            } else if (isDefault || !supabaseSuccess) {
+                // If it is default or if database write failed, push to localCustomList as an override map
+                localCustomList = localCustomList.filter(lc => lc.name.toLowerCase() !== category.name.toLowerCase() || lc.type !== category.type);
+                localCustomList.push({
+                    ...category,
+                    active: updatedActive,
+                    studio_id: activeStudioId
+                });
+                localStorage.setItem(`bela_custom_categories_${activeStudioId}`, JSON.stringify(localCustomList));
+            }
+
+            toast.success('Status da categoria atualizado!');
             fetchCategories();
         } catch (error) {
             console.error('Erro ao alterar status:', error);
@@ -202,9 +364,17 @@ const FinancialCategoriesSettings: React.FC<FinancialCategoriesSettingsProps> = 
                                             <Tag size={20} />
                                         </div>
                                         <div>
-                                            <h4 className={`font-bold text-sm ${category.active ? 'text-slate-700' : 'text-slate-400 line-through'}`}>
-                                                {category.name}
-                                            </h4>
+                                            <div className="flex items-center gap-2">
+                                                <h4 className={`font-bold text-sm ${category.active ? 'text-slate-700' : 'text-slate-400 line-through'}`}>
+                                                    {category.name}
+                                                </h4>
+                                                {category.id.startsWith('default-') && (
+                                                    <span className="text-[8px] font-black uppercase text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md">Sistema</span>
+                                                )}
+                                                {category.id.startsWith('local-') && (
+                                                    <span className="text-[8px] font-black uppercase text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded-md">Local</span>
+                                                )}
+                                            </div>
                                             <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${getDreLineBadge(category.dre_line)}`}>
                                                 {category.dre_line}
                                             </span>

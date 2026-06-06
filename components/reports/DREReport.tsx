@@ -61,8 +61,50 @@ const DREReport: React.FC = () => {
             if (catRes.error) throw catRes.error;
             if (cmdRes.error) throw cmdRes.error;
 
+            const dbList = catRes.data || [];
+            
+            // Local custom categories
+            const localCustomStr = localStorage.getItem(`bela_custom_categories_${activeStudioId}`);
+            const localCustomList: any[] = localCustomStr ? JSON.parse(localCustomStr) : [];
+            
+            const mergedCustom = [...dbList];
+            localCustomList.forEach(lc => {
+                if (!mergedCustom.some(mc => mc.name.toLowerCase() === lc.name.toLowerCase())) {
+                    mergedCustom.push(lc);
+                }
+            });
+
+            // Default system categories
+            const DEFAULT_SYSTEM_CATEGORIES_OBJECTS = [
+                { name: 'Serviço', type: 'income', dre_line: 'Receita Bruta', active: true },
+                { name: 'Venda de Produtos', type: 'income', dre_line: 'Receita Bruta', active: true },
+                { name: 'Aluguel', type: 'expense', dre_line: 'Despesa Operacional', active: true },
+                { name: 'Água/Luz/Internet', type: 'expense', dre_line: 'Despesa Operacional', active: true },
+                { name: 'Produtos e Insumos', type: 'expense', dre_line: 'Custo Direto', active: true },
+                { name: 'Marketing', type: 'expense', dre_line: 'Despesa Operacional', active: true },
+                { name: 'Comissões', type: 'expense', dre_line: 'Custo Direto', active: true },
+                { name: 'Outros', type: 'expense', dre_line: 'Despesa Operacional', active: true },
+            ];
+
+            const localDeletedDefaultsStr = localStorage.getItem(`bela_deleted_defaults_${activeStudioId}`);
+            const deletedDefaults: string[] = localDeletedDefaultsStr ? JSON.parse(localDeletedDefaultsStr) : [];
+
+            DEFAULT_SYSTEM_CATEGORIES_OBJECTS.forEach(sc => {
+                const defId = `default-${sc.name.toLowerCase().replace(/\s+/g, '-')}`;
+                if (!deletedDefaults.includes(defId) && !mergedCustom.some(mc => mc.name.toLowerCase() === sc.name.toLowerCase())) {
+                    const customOverride = localCustomList.find(lc => lc.name.toLowerCase() === sc.name.toLowerCase());
+                    if (!customOverride || customOverride.active) {
+                        mergedCustom.push({
+                            id: defId,
+                            studio_id: activeStudioId,
+                            ...sc
+                        });
+                    }
+                }
+            });
+
             setTransactions(transRes.data || []);
-            setCategories(catRes.data || []);
+            setCategories(mergedCustom);
             setCommands(cmdRes.data || []);
         } catch (error) {
             console.error("Erro ao buscar dados da DRE:", error);

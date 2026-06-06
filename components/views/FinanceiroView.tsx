@@ -144,8 +144,39 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({ transactions: propsTran
             if (catRes.error) throw catRes.error;
             if (appsRes.error) throw appsRes.error;
 
+            const dbList = catRes.data || [];
+            
+            // Local custom categories
+            const localCustomStr = localStorage.getItem(`bela_custom_categories_${activeStudioId}`);
+            const localCustomList: any[] = localCustomStr ? JSON.parse(localCustomStr) : [];
+            
+            const mergedCustom = [...dbList];
+            localCustomList.forEach(lc => {
+                if (lc.active && !mergedCustom.some(mc => mc.name.toLowerCase() === lc.name.toLowerCase())) {
+                    mergedCustom.push({ name: lc.name });
+                }
+            });
+
+            // Default system categories
+            const DEFAULT_SYSTEM_CATEGORIES_NAMES = [
+                'Serviço', 'Venda de Produtos', 'Aluguel', 'Água/Luz/Internet', 'Produtos e Insumos', 'Marketing', 'Comissões', 'Outros'
+            ];
+
+            const localDeletedDefaultsStr = localStorage.getItem(`bela_deleted_defaults_${activeStudioId}`);
+            const deletedDefaults: string[] = localDeletedDefaultsStr ? JSON.parse(localDeletedDefaultsStr) : [];
+
+            DEFAULT_SYSTEM_CATEGORIES_NAMES.forEach(defName => {
+                const defId = `default-${defName.toLowerCase().replace(/\s+/g, '-')}`;
+                if (!deletedDefaults.includes(defId) && !mergedCustom.some(mc => mc.name.toLowerCase() === defName.toLowerCase())) {
+                    const customOverride = localCustomList.find(lc => lc.name.toLowerCase() === defName.toLowerCase());
+                    if (!customOverride || customOverride.active) {
+                        mergedCustom.push({ name: defName });
+                    }
+                }
+            });
+
             setDbTransactions(transRes.data || []);
-            setDbCategories(catRes.data || []);
+            setDbCategories(mergedCustom);
             setProjections(appsRes.data || []);
 
             // 2. Cálculo Manual dos Indicadores

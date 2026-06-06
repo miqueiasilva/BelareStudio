@@ -38,8 +38,45 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
         .eq('active', true)
         .order('name', { ascending: true });
 
-      if (error) throw error;
-      setDbCategories(data || []);
+      const list = (data || []).map(c => c.name);
+
+      // Load local custom categories
+      const localCustomStr = localStorage.getItem(`bela_custom_categories_${activeStudioId}`);
+      if (localCustomStr) {
+        const localCustomList = JSON.parse(localCustomStr);
+        localCustomList.forEach((lc: any) => {
+          const lcType = lc.type === 'income' ? 'receita' : 'despesa';
+          if (lcType === type && lc.active && !list.some((existing: string) => existing.toLowerCase() === lc.name.toLowerCase())) {
+            list.push(lc.name);
+          }
+        });
+      }
+
+      // Merge defaults
+      const defaults = type === 'receita' 
+        ? ['Serviço', 'Venda de Produtos'] 
+        : ['Aluguel', 'Água/Luz/Internet', 'Produtos e Insumos', 'Marketing', 'Comissões', 'Outros'];
+
+      // Filter out deleted defaults
+      const localDeletedDefaultsStr = localStorage.getItem(`bela_deleted_defaults_${activeStudioId}`);
+      const deletedDefaults: string[] = localDeletedDefaultsStr ? JSON.parse(localDeletedDefaultsStr) : [];
+
+      defaults.forEach(defName => {
+        const defId = `default-${defName.toLowerCase().replace(/\s+/g, '-')}`;
+        if (!deletedDefaults.includes(defId) && !list.some((existing: string) => existing.toLowerCase() === defName.toLowerCase())) {
+          // Verify if default was deactivated in local custom
+          const localCustomList = localCustomStr ? JSON.parse(localCustomStr) : [];
+          const customOverride = localCustomList.find((lc: any) => lc.name.toLowerCase() === defName.toLowerCase());
+          if (!customOverride || customOverride.active) {
+            list.push(defName);
+          }
+        }
+      });
+
+      // Sort alphabetically
+      list.sort((a, b) => a.localeCompare(b));
+
+      setDbCategories(list.map(name => ({ name })));
     } catch (error) {
       console.error('Erro ao buscar categorias:', error);
     } finally {
@@ -51,18 +88,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ onClose, onSa
     fetchCategories();
   }, [fetchCategories]);
 
-  const activeCategories = (() => {
-    const list = dbCategories.map(c => c.name);
-    if (type === 'receita') {
-      if (!list.includes('Serviço')) list.push('Serviço');
-      if (!list.includes('Venda de Produtos')) list.push('Venda de Produtos');
-    } else {
-      if (list.length === 0) {
-        return ['Aluguel', 'Água/Luz/Internet', 'Produtos e Insumos', 'Marketing', 'Comissões', 'Outros'];
-      }
-    }
-    return list;
-  })();
+  const activeCategories = dbCategories.map(c => c.name);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
       const { name, value } = e.target;
