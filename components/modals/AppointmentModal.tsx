@@ -350,6 +350,7 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
 
   const handleSelectProfessional = (professional: LegacyProfessional) => {
+    if (!professional) return;
     if (formData.professional?.id !== professional.id) {
         setSelectedServices([]);
         setManualPrice(0);
@@ -445,8 +446,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           )}
         </footer>
         {selectionModal === 'client' && (<ClientSearchModal onClose={() => setSelectionModal(null)} onSelect={handleSelectClient} onNewClient={() => { setSelectionModal(null); setIsClientModalOpen(true); }} />)}
-        {selectionModal === 'service' && (<SelectionModal title={formData.professional ? `Serviços de ${formData.professional.name}` : "Selecione o Serviço"} items={filteredServicesToSelect} onClose={() => setSelectionModal(null)} onSelect={(item) => handleAddService(dbServices.find(s=>s.id === item.id)!)} searchPlaceholder="Buscar Serviço..." renderItemIcon={() => <Tag size={20}/>} />)}
-        {selectionModal === 'professional' && (<SelectionModal title="Selecione o Profissional" items={dbProfessionals} onClose={() => setSelectionModal(null)} onSelect={(item) => handleSelectProfessional(dbProfessionals.find(p => p.id === item.id)!)} searchPlaceholder="Buscar Profissional..." renderItemIcon={() => <Briefcase size={20}/>} />)}
+        {selectionModal === 'service' && (<SelectionModal title={formData.professional ? `Serviços de ${formData.professional.name}` : "Selecione o Serviço"} items={filteredServicesToSelect} onClose={() => setSelectionModal(null)} onSelect={(item) => { const foundService = dbServices.find(s => String(s.id) === String(item.id)) || (item as LegacyService); handleAddService(foundService); }} searchPlaceholder="Buscar Serviço..." renderItemIcon={() => <Tag size={20}/>} />)}
+        {selectionModal === 'professional' && (<SelectionModal title="Selecione o Profissional" items={dbProfessionals} onClose={() => setSelectionModal(null)} onSelect={(item) => { const foundProf = dbProfessionals.find(p => String(p.id) === String(item.id)) || (item as LegacyProfessional); handleSelectProfessional(foundProf); }} searchPlaceholder="Buscar Profissional..." renderItemIcon={() => <Briefcase size={20}/>} />)}
         {isClientModalOpen && (<ClientModal client={null} onClose={() => setIsClientModalOpen(false)} onSave={handlePersistAndSelectClient} />)}
       </div>
     </div>
