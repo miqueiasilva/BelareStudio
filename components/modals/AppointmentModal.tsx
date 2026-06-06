@@ -354,7 +354,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
     if (formData.professional?.id !== professional.id) {
         setSelectedServices([]);
         setManualPrice(0);
-        setManualDuration(0);
+        setHours(0);
+        setMinutes(0);
     }
     setFormData(prev => ({ ...prev, professional }));
     setSelectionModal(null);
