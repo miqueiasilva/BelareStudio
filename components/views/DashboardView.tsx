@@ -4,7 +4,7 @@ import Card from '../shared/Card';
 import JaciBotAssistant from '../shared/JaciBotAssistant';
 import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import { getDashboardInsight } from '../../services/geminiService';
-import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3, Zap, UserCircle, Sparkles, Pencil } from 'lucide-react';
+import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3, Zap, UserCircle, Sparkles, Pencil, Wallet } from 'lucide-react';
 // FIX: Grouping date-fns imports and removing problematic members startOfDay, subDays, startOfMonth.
 import { 
     format, addDays, endOfDay, endOfMonth
@@ -90,6 +90,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     };
 
     const [monthRevenueTotal, setMonthRevenueTotal] = useState(0);
+    const [monthCommissionsTotal, setMonthCommissionsTotal] = useState(0);
     const [last24hReminders, setLast24hReminders] = useState(0);
     
     // Filtro de Período
@@ -219,6 +220,49 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 const totalMonthRev = monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0;
                 if (mounted) setMonthRevenueTotal(totalMonthRev);
 
+                // Fetch and calculate total commissions for the current month
+                try {
+                    const [teamRes, itemsRes] = await Promise.all([
+                        supabase.from('team_members')
+                            .select('id, commission_rate, commission_percent')
+                            .eq('studio_id', activeStudioId)
+                            .eq('active', true),
+                        supabase.from('command_items')
+                            .select(`
+                                price, quantity, professional_id,
+                                commands!inner(closed_at, status)
+                            `)
+                            .eq('studio_id', activeStudioId)
+                            .in('commands.status', ['pago', 'paid'])
+                            .not('commands.closed_at', 'is', null)
+                            .gte('commands.closed_at', startMonthStr)
+                            .lte('commands.closed_at', endMonthStr)
+                    ]);
+
+                    if (!teamRes.error && !itemsRes.error && teamRes.data && itemsRes.data) {
+                        const members = teamRes.data;
+                        const items = itemsRes.data;
+                        
+                        const ratesMap = new Map();
+                        members.forEach(m => {
+                            const rate = Number(m.commission_rate ?? m.commission_percent ?? 0);
+                            ratesMap.set(String(m.id), rate);
+                        });
+
+                        let calculatedCommissions = 0;
+                        items.forEach(item => {
+                            const profId = String(item.professional_id);
+                            const rate = ratesMap.get(profId) || 0;
+                            const itemPrice = Number(item.price || 0) * Number(item.quantity || 1);
+                            calculatedCommissions += itemPrice * (rate / 100);
+                        });
+                        
+                        if (mounted) setMonthCommissionsTotal(calculatedCommissions);
+                    }
+                } catch (commError) {
+                    console.error("Erro ao calcular comissões no dashboard:", commError);
+                }
+
                 const { data: settings, error: settingsError } = await supabase
                     .from('studio_settings')
                     .select('revenue_goal')
@@ -329,13 +373,39 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 </div>
             </header>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 lg:gap-6 mb-10">
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4 lg:gap-6 mb-10">
                 <StatCard title="Faturamento" value={formatCurrency(kpis.revenue)} icon={DollarSign} colorClass="bg-emerald-500" subtext={dateRange.label} trend={12} />
                 <StatCard title="Agendados" value={kpis.scheduled} icon={Calendar} colorClass="bg-blue-500" subtext={dateRange.label} trend={8} />
                 <StatCard title="Online" value={kpis.onlineCount} icon={Globe} colorClass="bg-orange-500" subtext={`${kpis.onlineRate.toFixed(1)}% do total`} trend={22} />
                 <StatCard title="Ticket Médio" value={formatCurrency(kpis.revenue / (kpis.completed || 1))} icon={TrendingUp} colorClass="bg-purple-500" subtext="Por cliente" />
                 <StatCard title="Lembretes Jaci IA" value={`${last24hReminders} ${last24hReminders === 1 ? 'disparo' : 'disparos'}`} icon={Sparkles} colorClass="bg-orange-500" subtext="Últimas 24 horas" />
                 
+                {/* Visual Widget: Month commissions with link to Remuneracoes module */}
+                <div 
+                    onClick={() => onNavigate('remuneracoes')}
+                    className="bg-white p-5 rounded-[32px] border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-[0_20px_50px_rgba(249,115,22,0.08)] hover:border-orange-200 transition-all hover:-translate-y-1 cursor-pointer text-left h-full group relative overflow-hidden"
+                    title="Ver detalhamento de remunerações"
+                >
+                    <div className="absolute -right-2 -bottom-2 opacity-[0.03] text-orange-500 group-hover:scale-110 transition-transform">
+                        <Wallet size={90} />
+                    </div>
+                    <div className="flex items-start justify-between mb-4">
+                        <div className="p-3 bg-orange-50 text-orange-500 rounded-xl flex-shrink-0 shadow-sm transition-transform group-hover:scale-110">
+                            <Wallet className="w-5 h-5" />
+                        </div>
+                        <div className="flex items-center gap-1 bg-orange-50 text-orange-600 text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded-full">
+                            <Zap size={8} className="animate-pulse" /> Ver tudo
+                        </div>
+                    </div>
+                    <div className="min-w-0 z-10">
+                        <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-1">Comissões do Mês</p>
+                        <h3 className="text-2xl font-black text-orange-600 tracking-tighter truncate">{formatCurrency(monthCommissionsTotal)}</h3>
+                        <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider group-hover:text-orange-500 transition-colors">
+                            Remunerações →
+                        </p>
+                    </div>
+                </div>
+
                 <div 
                     onClick={() => { setTempGoal(financialGoal ? financialGoal.toString() : ''); setIsGoalModalOpen(true); }}
                     className="bg-slate-900 p-6 rounded-[32px] text-white flex flex-col justify-between shadow-2xl relative overflow-hidden group h-full cursor-pointer hover:bg-slate-800 transition-all active:scale-98 border border-white/5"
