@@ -1,8 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, User, Phone, Mail, Calendar, Tag, Plus, Save, Loader2, Instagram, MapPin, Briefcase, CreditCard, Share2, Home } from 'lucide-react';
+import { X, User, Phone, Mail, Calendar, Tag, Plus, Save, Loader2, Instagram, MapPin, Briefcase, CreditCard, Share2, Home, ShieldAlert, Users } from 'lucide-react';
 import { Client } from '../../types';
 import toast from 'react-hot-toast';
+import { useStudio } from '../../contexts/StudioContext';
+import { supabase } from '../../services/supabaseClient';
 
 interface ClientModalProps {
   client?: Client | null;
@@ -35,6 +37,10 @@ const SmileIcon = ({ size, className }: any) => (
 );
 
 const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) => {
+  const { activeStudioId } = useStudio();
+  const [duplicateCandidate, setDuplicateCandidate] = useState<Client | null>(null);
+  const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
+
   const [formData, setFormData] = useState<any>({
     nome: '',
     apelido: '',
@@ -102,6 +108,62 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
         return;
     }
 
+    // Checking for duplicates (skip if checking an edit)
+    if (!client?.id && activeStudioId) {
+        setIsSaving(true);
+        try {
+            const cleanPhone = formData.whatsapp ? String(formData.whatsapp).replace(/\D/g, '') : '';
+            
+            // 1. Check exact name match
+            const { data: nameMatches } = await supabase
+                .from('clients')
+                .select('*')
+                .eq('studio_id', activeStudioId)
+                .ilike('nome', formData.nome.trim());
+
+            if (nameMatches && nameMatches.length > 0) {
+                setDuplicateCandidate(nameMatches[0]);
+                setShowDuplicateWarning(true);
+                setIsSaving(false);
+                return;
+            }
+
+            // 2. Check smart phone match
+            if (cleanPhone.length >= 8) {
+                const { data: clients } = await supabase
+                    .from('clients')
+                    .select('*')
+                    .eq('studio_id', activeStudioId);
+                
+                if (clients) {
+                    const formatForCompare = (p: string) => {
+                        let c = p.replace(/\D/g, '');
+                        if (c.startsWith('55')) c = c.slice(2);
+                        if (c.startsWith('0')) c = c.slice(1);
+                        return c;
+                    };
+                    const targetClean = formatForCompare(cleanPhone);
+                    const found = clients.find(c => {
+                        const ph = c.whatsapp || c.telefone;
+                        if (!ph) return false;
+                        return formatForCompare(ph) === targetClean;
+                    });
+                    
+                    if (found) {
+                        setDuplicateCandidate(found);
+                        setShowDuplicateWarning(true);
+                        setIsSaving(false);
+                        return;
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Erro ao verificar duplicatas:", err);
+        } finally {
+            setIsSaving(false);
+        }
+    }
+
     setIsSaving(true);
     try {
         const sanitizedWhatsapp = formData.whatsapp ? String(formData.whatsapp).replace(/\D/g, '') : null;
@@ -122,6 +184,64 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
     } catch (err) {
         console.error("Erro crítico no salvamento:", err);
         toast.error("Ocorreu um erro ao salvar os dados.");
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
+  const handleConfirmMerge = async () => {
+    if (!duplicateCandidate) return;
+    setShowDuplicateWarning(false);
+    setIsSaving(true);
+    try {
+        const sanitizedWhatsapp = formData.whatsapp ? String(formData.whatsapp).replace(/\D/g, '') : null;
+        
+        // Combine current input into the existing duplicate record, keeping the old database id
+        const mergedData = { ...duplicateCandidate };
+        Object.entries(formData).forEach(([key, val]) => {
+            if (val !== '' && val !== null && val !== undefined) {
+                mergedData[key] = val;
+            }
+        });
+
+        const savedClient: Client = {
+            ...mergedData,
+            whatsapp: sanitizedWhatsapp || duplicateCandidate.whatsapp,
+            telefone: sanitizedWhatsapp || duplicateCandidate.telefone,
+            id: duplicateCandidate.id,
+        };
+
+        // This will update the existing record under duplicateCandidate.id
+        await onSave(savedClient);
+    } catch (err) {
+        console.error("Erro de persistência na unificação:", err);
+        toast.error("Não foi possível mesclar estes dados.");
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
+  const handleSaveAnyway = async () => {
+    setShowDuplicateWarning(false);
+    setIsSaving(true);
+    try {
+        const sanitizedWhatsapp = formData.whatsapp ? String(formData.whatsapp).replace(/\D/g, '') : null;
+        const cleanedData = Object.entries(formData).reduce((acc: any, [key, value]) => {
+            acc[key] = (value === '' || value === undefined) ? null : value;
+            return acc;
+        }, {});
+
+        const savedClient: Client = {
+            ...cleanedData,
+            whatsapp: sanitizedWhatsapp,
+            telefone: sanitizedWhatsapp,
+            id: client?.id || undefined,
+        };
+        
+        await onSave(savedClient);
+    } catch (err) {
+        console.error("Erro salvando duplicado:", err);
+        toast.error("Erro ao salvar cadastro.");
     } finally {
         setIsSaving(false);
     }
@@ -197,6 +317,61 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
           </button>
         </footer>
       </div>
+
+      {showDuplicateWarning && duplicateCandidate && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[200] p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[32px] p-6 shadow-2xl max-w-md w-full border border-orange-100 text-left animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 text-orange-600 mb-4">
+              <div className="p-3 bg-orange-50 rounded-2xl flex-shrink-0">
+                <ShieldAlert size={24} />
+              </div>
+              <div>
+                <h3 className="font-black text-slate-800 text-base">Cadastro Duplicado!</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Nome ou Telefone já existente</p>
+              </div>
+            </div>
+            
+            <p className="text-slate-600 text-xs font-semibold leading-relaxed mb-4">
+              Encontramos um cliente já registrado no sistema com dados correspondentes:
+            </p>
+            
+            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-orange-100 text-orange-600 font-black rounded-xl flex items-center justify-center text-sm flex-shrink-0">
+                  {duplicateCandidate.nome[0].toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-xs font-extrabold text-slate-700">{duplicateCandidate.nome}</p>
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                    Contato: {duplicateCandidate.whatsapp || duplicateCandidate.telefone || 'Não preenchido'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <button 
+                onClick={handleConfirmMerge}
+                className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white text-xs font-black rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2"
+              >
+                <Users size={16} /> Unificar com existente
+              </button>
+              <button 
+                onClick={handleSaveAnyway}
+                className="w-full py-3 bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 text-xs font-bold rounded-2xl transition-all"
+              >
+                Salvar separado (Duplicar)
+              </button>
+              <button 
+                onClick={() => setShowDuplicateWarning(false)}
+                className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-500 text-xs font-bold rounded-2xl transition-all"
+              >
+                Voltar e Corrigir dados
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

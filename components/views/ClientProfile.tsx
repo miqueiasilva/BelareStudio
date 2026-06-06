@@ -20,6 +20,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useConfirm } from '../../utils/useConfirm';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
+import { UnificarModal } from '../modals/UnificarModal';
 
 // --- Funções Auxiliares Obrigatórias ---
 const dataURLtoBlob = (dataURL: string) => {
@@ -191,6 +192,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
     const [isSaving, setIsSaving] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<'geral' | 'anamnese' | 'fotos' | 'historico'>('geral');
     const [zoomImage, setZoomImage] = useState<string | null>(null);
     
@@ -760,7 +762,20 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                     <button onClick={onClose} className="p-2 -ml-2 text-slate-400 hover:text-slate-600 transition-colors"><ArrowLeft size={24} /></button>
                     <div className="flex gap-2">
                         {!isEditing ? (
-                            <button onClick={() => setIsEditing(true)} className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition-all flex items-center gap-2"><Edit2 size={18} /> Editar Perfil</button>
+                            <div className="flex gap-2">
+                                {!isNew && (
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setIsMergeModalOpen(true)} 
+                                        className="px-4 py-2.5 bg-white border border-slate-200 text-orange-600 font-bold rounded-xl hover:bg-orange-50 transition-all flex items-center gap-2"
+                                        title="Mesclar este cadastro com outro duplicado"
+                                    >
+                                        <Users size={18} />
+                                        <span className="hidden sm:inline">Unificar Cadastro</span>
+                                    </button>
+                                )}
+                                <button onClick={() => setIsEditing(true)} className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition-all flex items-center gap-2"><Edit2 size={18} /> Editar Perfil</button>
+                            </div>
                         ) : (
                             <div className="flex gap-2">
                                 <button onClick={() => !isNew ? setIsEditing(false) : onClose()} className="px-4 py-2.5 text-slate-500 font-bold text-sm">Cancelar</button>
@@ -1125,6 +1140,16 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                 </div>
             </main>
             {zoomImage && <div className="fixed inset-0 z-[200] bg-slate-900/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300"><button onClick={() => setZoomImage(null)} className="absolute top-6 right-6 p-3 bg-white/10 text-white rounded-full hover:bg-white/20"><X size={32}/></button><img src={zoomImage} className="max-w-full max-h-[90vh] rounded-[40px] shadow-2xl object-contain animate-in zoom-in-95 duration-500" alt="Zoom" /></div>}
+            {isMergeModalOpen && (
+                <UnificarModal 
+                    currentClient={client} 
+                    onClose={() => setIsMergeModalOpen(false)} 
+                    onMergeSuccess={async () => {
+                        setIsMergeModalOpen(false);
+                        onClose(); // Close Profile, as the merged client is updated or deleted
+                    }} 
+                />
+            )}
             <ConfirmDialogComponent />
         </div>
     );
