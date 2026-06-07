@@ -59,8 +59,8 @@ export const hasAccess = (role: UserRole | string | undefined, view: ViewState, 
         };
 
         const requiredPermission = permissionMap[view];
-        if (requiredPermission && granularPermissions[requiredPermission]) {
-            return true;
+        if (requiredPermission && granularPermissions[requiredPermission] !== undefined) {
+            return !!granularPermissions[requiredPermission];
         }
     }
 
