@@ -177,7 +177,7 @@ const AppContent: React.FC = () => {
   };
 
   const renderView = () => {
-    if (!hasAccess(userRole, currentView)) return <DashboardView onNavigate={setCurrentView} />;
+    if (!hasAccess(userRole, currentView, user?.permissions)) return <DashboardView onNavigate={setCurrentView} />;
 
     return (
       <Suspense fallback={<ViewLoader />}>
