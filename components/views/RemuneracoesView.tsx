@@ -11,6 +11,8 @@ import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Toast, { ToastType } from '../shared/Toast';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const getStartOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
 
@@ -202,6 +204,129 @@ const RemuneracoesView: React.FC = () => {
       const paymentData = item.commands?.payment_data;
       if (!paymentData) return 0;
       return Number(paymentData.tax_rate ?? 0);
+  };
+
+  const exportIndividualStatement = (item: any) => {
+    try {
+      const doc = new jsPDF() as any;
+      const dateStr = format(new Date(), "dd/MM/yyyy HH:mm");
+      const periodStr = filterType === 'monthly' 
+          ? format(currentDate, 'MMMM yyyy', { locale: pt })
+          : `Período: ${startDate} a ${endDate}`;
+
+      // Logo/Header styling
+      doc.setFontSize(22);
+      doc.setTextColor(30, 41, 59); // slate-800
+      doc.text("BelaStudio", 14, 20);
+      
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184); // slate-400
+      doc.text("GESTÃO INTELIGENTE DE BELEZA & ESTÉTICA", 14, 25);
+      
+      // Horizontal bar
+      doc.setDrawColor(241, 245, 249);
+      doc.line(14, 28, 196, 28);
+
+      // Title
+      doc.setFontSize(13);
+      doc.setTextColor(30, 41, 59);
+      doc.text("EXTRATO INDIVIDUAL DE COMISSÃO", 14, 38);
+
+      // Info metadata
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139); // slate-500
+      doc.text(`Profissional: ${item.member.name}`, 14, 46);
+      doc.text(`Taxa de Comissão: ${item.rate}%`, 14, 52);
+      doc.text(`Referência: ${periodStr}`, 14, 58);
+      doc.text(`Data de Emissão: ${dateStr}`, 14, 64);
+
+      // Repasse Liquido and total production box
+      doc.setFillColor(248, 250, 252); // slate-50
+      doc.roundedRect(14, 70, 182, 22, 4, 4, 'F');
+      
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`PRODUÇÃO TOTAL (${calculationBase.toUpperCase()})`, 20, 78);
+      doc.text("REPASSE LÍQUIDO A RECEBER", 120, 78);
+      
+      doc.setFontSize(12);
+      doc.setTextColor(30, 41, 59);
+      doc.text(formatBRL(item.totalBase), 20, 86);
+      doc.setTextColor(234, 88, 12); // orange-600
+      doc.text(formatBRL(item.commissionValue), 120, 86);
+
+      // Items list table
+      doc.setFontSize(10);
+      doc.setTextColor(30, 41, 59);
+      doc.text("Detalhamento de Serviços Prestados", 14, 102);
+
+      const tableRows = item.items.map((it: any) => {
+          const rawVal = Number(it.price || 0) * Number(it.quantity || 1);
+          const taxRate = getTaxRate(it);
+          const base = calculationBase === 'liquido'
+              ? rawVal * (1 - (taxRate / 100))
+              : rawVal;
+          const comm = base * (item.rate / 100);
+          const formattedBase = formatBRL(base);
+          const formattedComm = formatBRL(comm);
+          const closedAt = it.commands?.closed_at 
+              ? format(new Date(it.commands.closed_at), 'dd/MM/yyyy HH:mm') 
+              : '---';
+          const clientName = it.commands?.clients?.nome || it.commands?.clients?.name || it.commands?.client_name || "CONSUMIDOR FINAL";
+          const method = it.commands?.payment_method 
+              ?? it.commands?.payment_data?.method 
+              ?? 'misto';
+          const desc = `${it.title}\nCliente: ${clientName} | Cmd: #${String(it.commands?.id).substring(0,8).toUpperCase()} | ${method.toUpperCase()}${taxRate > 0 && calculationBase === 'liquido' ? ` (-${taxRate}%)` : ''}`;
+          
+          return [
+              closedAt,
+              desc,
+              formattedBase,
+              formattedComm
+          ];
+      });
+
+      autoTable(doc, {
+          startY: 107,
+          head: [['Data/Hora', 'Serviço & Detalhes', 'Base Cálculo', `Comissão (${item.rate}%)`]],
+          body: tableRows,
+          theme: 'striped',
+          headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
+          columnStyles: {
+              0: { cellWidth: 32 },
+              1: { cellWidth: 85 },
+              2: { cellWidth: 32, halign: 'right' },
+              3: { cellWidth: 33, halign: 'right' }
+          },
+          styles: { fontSize: 8, cellPadding: 4, overflow: 'linebreak' }
+      });
+
+      // Signature area at the bottom of the page
+      let finalY = (doc as any).lastAutoTable.finalY + 25;
+      
+      // If we go off-page, add new page
+      if (finalY > 260) {
+          doc.addPage();
+          finalY = 40;
+      }
+
+      doc.setDrawColor(203, 213, 225); // slate-300
+      doc.line(14, finalY, 90, finalY);
+      doc.line(110, finalY, 186, finalY);
+      
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text("Assinatura do Profissional", 14, finalY + 5);
+      doc.text("Assinatura do Gestor", 110, finalY + 5);
+
+      // Save document
+      const normalizedName = item.member.name.toLowerCase().replace(/\s+/g, '_');
+      doc.save(`extrato_${normalizedName}_${format(new Date(), "yyyyMMdd")}.pdf`);
+      setToast({ message: "Extrato exportado com sucesso!", type: 'success' });
+    } catch (err: any) {
+      console.error("Erro ao exportar PDF:", err);
+      setToast({ message: "Erro ao gerar PDF do extrato.", type: 'danger' });
+    }
   };
 
   if (isLoading) return (
@@ -438,7 +563,10 @@ const RemuneracoesView: React.FC = () => {
                         )}
 
                         <div className="flex flex-col sm:flex-row justify-end items-center gap-4">
-                            <button className="w-full sm:w-auto text-xs font-black text-slate-400 uppercase tracking-widest hover:text-slate-800 transition-colors flex items-center justify-center gap-2">
+                            <button 
+                                onClick={() => exportIndividualStatement(item)}
+                                className="w-full sm:w-auto text-xs font-black text-slate-400 uppercase tracking-widest hover:text-slate-800 transition-colors flex items-center justify-center gap-2"
+                            >
                                 <Download size={14} /> Exportar Extrato Individual
                             </button>
                             <button 
