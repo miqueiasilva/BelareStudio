@@ -30,10 +30,11 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
 
   const fetchProfile = React.useCallback(async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
+      const emailQuery = (authUser.email || '').trim();
       const queryPromise = supabase
         .from('team_members')
         .select('access_level, role, photo_url, name, permissions')
-        .eq('email', authUser.email)
+        .ilike('email', emailQuery)
         .maybeSingle();
 
       const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) => 

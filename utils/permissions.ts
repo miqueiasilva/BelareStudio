@@ -18,7 +18,8 @@ const ROLE_PERMISSIONS: Record<UserRole, (ViewState | '*')[]> = {
         'servicos', 
         'produtos',
         'whatsapp',
-        'marketing'
+        'marketing',
+        'remuneracoes'
     ],
     
     // Profissional (Staff): Foco total na jornada do cliente e lançamentos de consumo
@@ -31,7 +32,8 @@ const ROLE_PERMISSIONS: Record<UserRole, (ViewState | '*')[]> = {
         'whatsapp',
         'comandas', 
         'vendas',
-        'marketing'
+        'marketing',
+        'remuneracoes'
     ]
 };
 
@@ -44,7 +46,16 @@ export const hasAccess = (role: UserRole | string | undefined, view: ViewState, 
     if (normalizedRole === 'admin' || normalizedRole === 'gestor') return true;
 
     // Se houver permissões granulares, elas podem sobrescrever as travas do papel
-    if (granularPermissions) {
+    let permissionsObj = granularPermissions;
+    if (typeof granularPermissions === 'string') {
+        try {
+            permissionsObj = JSON.parse(granularPermissions);
+        } catch (e) {
+            permissionsObj = {};
+        }
+    }
+
+    if (permissionsObj) {
         // Mapeamento de ViewState para chaves de permissão
         const permissionMap: Record<string, string> = {
             'financeiro': 'view_finance',
@@ -59,8 +70,9 @@ export const hasAccess = (role: UserRole | string | undefined, view: ViewState, 
         };
 
         const requiredPermission = permissionMap[view];
-        if (requiredPermission && granularPermissions[requiredPermission] !== undefined) {
-            return !!granularPermissions[requiredPermission];
+        if (requiredPermission && permissionsObj[requiredPermission] !== undefined) {
+            const val = permissionsObj[requiredPermission];
+            return val === true || val === 'true';
         }
     }
 

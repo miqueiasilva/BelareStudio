@@ -79,7 +79,15 @@ const EquipeView: React.FC = () => {
                         {filtered.map(p => (
                             <div key={p.id} onClick={() => setSelectedProf(p)} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm cursor-pointer hover:border-orange-200 transition-all flex items-center gap-4">
                                 <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center overflow-hidden">{p.photo_url ? <img src={p.photo_url} className="w-full h-full object-cover" /> : <UserIcon className="text-slate-300" />}</div>
-                                <div className="flex-1 min-w-0"><h3 className="font-black text-slate-800 truncate">{p.name}</h3><p className="text-[10px] text-slate-400 font-bold uppercase">{p.role}</p></div>
+                                <div className="flex-1 min-w-0">
+                                    <h3 className="font-black text-slate-800 truncate">{p.name}</h3>
+                                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase">{p.role}</p>
+                                        <span className="text-[8px] font-black bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded border border-orange-100 uppercase tracking-widest">
+                                            {Number(p.commission_rate ?? p.commission_percent ?? 30)}%
+                                        </span>
+                                    </div>
+                                </div>
                                 <ToggleSwitch on={p.active} onClick={e => handleToggleActive(e, p.id, p.active)} />
                             </div>
                         ))}
