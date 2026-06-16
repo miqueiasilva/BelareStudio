@@ -107,7 +107,98 @@ CREATE POLICY "allow_public_select_studio_settings" ON studio_settings FOR SELEC
 CREATE POLICY "allow_auth_select_user_studios" ON user_studios FOR SELECT TO authenticated USING (true);
 CREATE POLICY "allow_auth_select_schedule_blocks" ON schedule_blocks FOR SELECT TO authenticated USING (true);
 CREATE POLICY "allow_auth_select_financial_transactions" ON financial_transactions FOR SELECT TO authenticated USING (true);
-CREATE POLICY "allow_auth_select_commands" ON commands FOR SELECT TO authenticated USING (true);
+
+-- ==========================================
+-- POLÍTICAS PARA COMMANDS & COMMAND_ITEMS
+-- ==========================================
+
+ALTER TABLE public.commands ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "allow_auth_select_commands" ON commands;
+DROP POLICY IF EXISTS "commands_select_by_studio_members" ON commands;
+DROP POLICY IF EXISTS "commands_insert_by_studio_members" ON commands;
+DROP POLICY IF EXISTS "commands_update_by_studio_members" ON commands;
+DROP POLICY IF EXISTS "commands_delete_by_studio_members" ON commands;
+
+CREATE POLICY "commands_select_by_studio_members" ON commands FOR SELECT TO authenticated
+USING (
+  studio_id IN (
+    SELECT us.studio_id FROM public.user_studios us WHERE us.user_id = auth.uid()
+    UNION
+    SELECT tm.studio_id FROM public.team_members tm WHERE tm.email = auth.jwt()->>'email' AND tm.active = true
+  )
+);
+
+CREATE POLICY "commands_insert_by_studio_members" ON commands FOR INSERT TO authenticated
+WITH CHECK (
+  studio_id IN (
+    SELECT us.studio_id FROM public.user_studios us WHERE us.user_id = auth.uid()
+    UNION
+    SELECT tm.studio_id FROM public.team_members tm WHERE tm.email = auth.jwt()->>'email' AND tm.active = true
+  )
+);
+
+CREATE POLICY "commands_update_by_studio_members" ON commands FOR UPDATE TO authenticated
+USING (
+  studio_id IN (
+    SELECT us.studio_id FROM public.user_studios us WHERE us.user_id = auth.uid()
+    UNION
+    SELECT tm.studio_id FROM public.team_members tm WHERE tm.email = auth.jwt()->>'email' AND tm.active = true
+  )
+);
+
+CREATE POLICY "commands_delete_by_studio_members" ON commands FOR DELETE TO authenticated
+USING (
+  studio_id IN (
+    SELECT us.studio_id FROM public.user_studios us WHERE us.user_id = auth.uid()
+    UNION
+    SELECT tm.studio_id FROM public.team_members tm WHERE tm.email = auth.jwt()->>'email' AND tm.active = true
+  )
+);
+
+-- Políticas para COMMAND_ITEMS
+ALTER TABLE public.command_items ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "command_items_select_by_studio_members" ON command_items;
+DROP POLICY IF EXISTS "command_items_insert_by_studio_members" ON command_items;
+DROP POLICY IF EXISTS "command_items_update_by_studio_members" ON command_items;
+DROP POLICY IF EXISTS "command_items_delete_by_studio_members" ON command_items;
+
+CREATE POLICY "command_items_select_by_studio_members" ON command_items FOR SELECT TO authenticated
+USING (
+  studio_id IN (
+    SELECT us.studio_id FROM public.user_studios us WHERE us.user_id = auth.uid()
+    UNION
+    SELECT tm.studio_id FROM public.team_members tm WHERE tm.email = auth.jwt()->>'email' AND tm.active = true
+  )
+);
+
+CREATE POLICY "command_items_insert_by_studio_members" ON command_items FOR INSERT TO authenticated
+WITH CHECK (
+  studio_id IN (
+    SELECT us.studio_id FROM public.user_studios us WHERE us.user_id = auth.uid()
+    UNION
+    SELECT tm.studio_id FROM public.team_members tm WHERE tm.email = auth.jwt()->>'email' AND tm.active = true
+  )
+);
+
+CREATE POLICY "command_items_update_by_studio_members" ON command_items FOR UPDATE TO authenticated
+USING (
+  studio_id IN (
+    SELECT us.studio_id FROM public.user_studios us WHERE us.user_id = auth.uid()
+    UNION
+    SELECT tm.studio_id FROM public.team_members tm WHERE tm.email = auth.jwt()->>'email' AND tm.active = true
+  )
+);
+
+CREATE POLICY "command_items_delete_by_studio_members" ON command_items FOR DELETE TO authenticated
+USING (
+  studio_id IN (
+    SELECT us.studio_id FROM public.user_studios us WHERE us.user_id = auth.uid()
+    UNION
+    SELECT tm.studio_id FROM public.team_members tm WHERE tm.email = auth.jwt()->>'email' AND tm.active = true
+  )
+);
 
 -- Políticas para FINANCIAL_CATEGORIES
 ALTER TABLE public.financial_categories ENABLE ROW LEVEL SECURITY;
