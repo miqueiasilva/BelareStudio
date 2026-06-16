@@ -338,16 +338,38 @@ const RelatoriosView: React.FC = () => {
     const servicesMap = new Map(services.map(s => [s.id, s.preco]));
 
     return availableProfessionals.map(p => {
-      const pAppts = data.appointments.filter((a: any) => 
-        (a.professional_id === p.id || a.professional?.id === p.id) && 
-        a.status !== 'bloqueado'
-      );
-      const pTrans = data.transactions.filter((t: any) => (t.professionalId === p.id || t.professional_id === p.id) && (t.type === 'income' || t.type === 'receita'));
+      const pAppts = data.appointments.filter((a: any) => {
+        const aProfId = String(a.professional_id || a.professional?.id || '').trim();
+        const pId = String(p.id || '').trim();
+        return aProfId === pId && a.status !== 'bloqueado';
+      });
+
+      const pTrans = data.transactions.filter((t: any) => {
+        const tProfId = String(t.professionalId || t.professional_id || '').trim();
+        const pId = String(p.id || '').trim();
+        return tProfId === pId && (t.type === 'income' || t.type === 'receita');
+      });
       
-      const revenue = pTrans.reduce((acc: number, t: any) => acc + Number(t.amount || 0), 0);
+      // Calculate revenue (Realizado) from completed (concluido) appointments
+      const completedRevenue = pAppts.filter((a: any) => {
+        const s = String(a.status || '').toLowerCase().trim();
+        return s === 'concluido';
+      }).reduce((acc: number, a: any) => {
+        const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
+        const valFromServices = svcIds.reduce((sum: number, id: any) => sum + (servicesMap.get(id) || 0), 0);
+        return acc + (a.value || a.price || valFromServices || 0);
+      }, 0);
+
+      // Support transactional income directly mapped to this professional (direct product sales, etc.)
+      const transRevenue = pTrans.reduce((acc: number, t: any) => acc + Number(t.amount || 0), 0);
+      
+      const revenue = Math.max(completedRevenue, transRevenue);
       
       // Calculate projected revenue for this professional based on their appointments
-      const projectedRevenue = pAppts.filter((a: any) => a.status !== 'cancelado').reduce((acc: number, a: any) => {
+      const projectedRevenue = pAppts.filter((a: any) => {
+        const s = String(a.status || '').toLowerCase().trim();
+        return s !== 'cancelado';
+      }).reduce((acc: number, a: any) => {
         const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
         const valFromServices = svcIds.reduce((sum: number, id: any) => sum + (servicesMap.get(id) || 0), 0);
         return acc + (a.value || a.price || valFromServices || 0);
@@ -355,7 +377,8 @@ const RelatoriosView: React.FC = () => {
 
       const count = pAppts.length;
       const ticket = count > 0 ? revenue / count : 0;
-      const commission = revenue * (Number(p.commission_rate || 30) / 100);
+      const rate = Number(p.commission_rate ?? p.commission_percent ?? 30);
+      const commission = revenue * (rate / 100);
 
       return {
         ...p,
@@ -574,20 +597,25 @@ const RelatoriosView: React.FC = () => {
     if (!selectedProfDetails || !data) return [];
     
     // 1. Get all appointments for this professional (excluding blocked slots/blocks)
-    let appts = data.appointments.filter((a: any) => 
-      (a.professional_id === selectedProfDetails.id || a.professional?.id === selectedProfDetails.id) &&
-      a.status !== 'bloqueado'
-    );
+    let appts = data.appointments.filter((a: any) => {
+      const aProfId = String(a.professional_id || a.professional?.id || '').trim();
+      const sProfId = String(selectedProfDetails.id || '').trim();
+      return aProfId === sProfId && a.status !== 'bloqueado';
+    });
     
     // 2. Filter by status
     if (modalStatusFilter !== 'todos') {
-      if (modalStatusFilter === 'concluidos') {
-        appts = appts.filter((a: any) => a.status === 'concluido');
-      } else if (modalStatusFilter === 'pendentes') {
-        appts = appts.filter((a: any) => a.status !== 'concluido' && a.status !== 'cancelado');
-      } else if (modalStatusFilter === 'cancelados') {
-        appts = appts.filter((a: any) => a.status === 'cancelado');
-      }
+      appts = appts.filter((a: any) => {
+        const s = String(a.status || '').toLowerCase().trim();
+        if (modalStatusFilter === 'concluidos') {
+          return s === 'concluido';
+        } else if (modalStatusFilter === 'pendentes') {
+          return s !== 'concluido' && s !== 'cancelado';
+        } else if (modalStatusFilter === 'cancelados') {
+          return s === 'cancelado';
+        }
+        return true;
+      });
     }
     
     // 3. Filter by search query (client name or service name)
