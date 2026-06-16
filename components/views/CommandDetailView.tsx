@@ -232,13 +232,15 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                 // Mesmo com erro no update, tentamos seguir pois o RPC pode ter funcionado
             }
 
-            // FIX: Atualizar Agendamento vinculado (se houver) para 'concluido'
-            const appointmentId = command.command_items?.find((i: any) => i.appointment_id)?.appointment_id;
-            if (appointmentId) {
+            // FIX: Atualizar todos os Agendamentos vinculados para 'concluido'
+            const appointmentIds = command.command_items
+                ?.map((i: any) => i.appointment_id)
+                .filter(Boolean) || [];
+            if (appointmentIds.length > 0) {
                 await supabase
                     .from('appointments')
                     .update({ status: 'concluido' })
-                    .eq('id', appointmentId);
+                    .in('id', appointmentIds);
             }
 
             setToast({ message: 'Pagamento confirmado! ✅', type: 'success' });

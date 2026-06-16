@@ -160,8 +160,8 @@ const RelatoriosView: React.FC = () => {
         start = subMonths(new Date(), 12);
         break;
       case 'custom':
-        start = new Date(customStartDate);
-        end = new Date(customEndDate);
+        start = startOfDay(parseISO(customStartDate));
+        end = endOfDay(parseISO(customEndDate));
         break;
     }
     
@@ -609,10 +609,12 @@ const RelatoriosView: React.FC = () => {
         const s = String(a.status || '').toLowerCase().trim();
         if (modalStatusFilter === 'concluidos') {
           return s === 'concluido';
-        } else if (modalStatusFilter === 'pendentes') {
-          return s !== 'concluido' && s !== 'cancelado';
+        } else if (modalStatusFilter === 'confirmados') {
+          return s === 'confirmado' || s === 'confirmado_whatsapp';
         } else if (modalStatusFilter === 'cancelados') {
           return s === 'cancelado';
+        } else if (modalStatusFilter === 'pendentes') {
+          return s !== 'concluido' && s !== 'cancelado' && s !== 'confirmado' && s !== 'confirmado_whatsapp';
         }
         return true;
       });
@@ -1159,8 +1161,9 @@ const RelatoriosView: React.FC = () => {
               {[
                 { id: 'todos', label: 'Todos' },
                 { id: 'concluidos', label: 'Concluídos' },
-                { id: 'pendentes', label: 'Não Finalizados' },
+                { id: 'confirmados', label: 'Confirmados' },
                 { id: 'cancelados', label: 'Cancelados' },
+                { id: 'pendentes', label: 'Não Finalizados' },
               ].map((st) => (
                 <button
                   key={st.id}
