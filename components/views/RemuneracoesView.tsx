@@ -39,12 +39,20 @@ const RemuneracoesView: React.FC = () => {
   const [expandedId, setExpandedId] = useState<string | number | null>(null);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [commandItems, setCommandItems] = useState<any[]>([]);
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [dataSource, setDataSource] = useState<'appointments' | 'commands'>('appointments');
   const [isLoading, setIsLoading] = useState(true);
   const [calculationBase, setCalculationBase] = useState<'bruto' | 'liquido'>('bruto');
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
   
   const isMounted = useRef(true);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  const isSafeUUID = (id: any): boolean => {
+    if (!id) return false;
+    const sid = String(id).trim();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sid);
+  };
 
   const fetchData = useCallback(async () => {
     if (!isMounted.current || !activeStudioId) return;
@@ -68,7 +76,7 @@ const RemuneracoesView: React.FC = () => {
             end = `${eDate}T23:59:59`;
         }
 
-        const [teamRes, itemsRes] = await Promise.all([
+        const [teamRes, itemsRes, apptsRes] = await Promise.all([
             // FIX 1: Filtra apenas membros ATIVOS — remove "Geral/Studio" e inativos
             supabase.from('team_members')
                 .select('id, name, photo_url, commission_rate, commission_percent, email, role, access_level')
@@ -94,10 +102,23 @@ const RemuneracoesView: React.FC = () => {
                 .gte('commands.closed_at', start)
                 .lte('commands.closed_at', end)
                 .abortSignal(abortControllerRef.current.signal),
+
+            // BUSCA AGENDAMENTOS CONCLUÍDOS COMO FONTE DE DADOS AUTOMÁTICA
+            supabase.from('appointments')
+                .select(`
+                    id, date, status, value, price, client_name, client_id, service_name, services_ids, service_id,
+                    professional_id, professional_name
+                `)
+                .eq('studio_id', activeStudioId)
+                .eq('status', 'concluido')
+                .gte('date', start)
+                .lte('date', end)
+                .abortSignal(abortControllerRef.current.signal),
         ]);
 
         if (teamRes.error) throw teamRes.error;
         if (itemsRes.error) throw itemsRes.error;
+        if (apptsRes.error) throw apptsRes.error;
 
         if (isMounted.current) {
             // FIX 4: Exclui o gestor (commission_rate = 0 E commission_percent = 0)
@@ -117,7 +138,17 @@ const RemuneracoesView: React.FC = () => {
                     m.email?.toLowerCase().trim() === user?.email?.toLowerCase().trim()
                 );
             setTeamMembers(filtered);
-            setCommandItems(itemsRes.data || []);
+            const cmdItems = itemsRes.data || [];
+            const apptsData = apptsRes.data || [];
+            setCommandItems(cmdItems);
+            setAppointments(apptsData);
+
+            // Se não tem comandas mas tem agendamentos, define como padrão
+            if (cmdItems.length === 0 && apptsData.length > 0) {
+                setDataSource('appointments');
+            } else if (cmdItems.length > 0 && apptsData.length === 0) {
+                setDataSource('commands');
+            }
         }
     } catch (e: any) {
         const isAbortError = e.name === 'AbortError' || e.message?.includes('aborted');
@@ -141,46 +172,81 @@ const RemuneracoesView: React.FC = () => {
   const payroll = useMemo(() => {
     return teamMembers.map(member => {
       const memberIdStr = String(member.id);
-      
-      const myItems = commandItems.filter(item => 
-          String(item.professional_id) === memberIdStr
-      );
-      
-      const totalBase = myItems.reduce((acc, item) => {
-          const rawPrice = Number(item.price || 0) * Number(item.quantity || 1);
-          
-          if (calculationBase === 'liquido') {
-              // FIX 5: Usa payment_data.tax_rate que já está salvo na comanda
-              // Isso é muito mais preciso do que tentar mapear payment_methods_config
-              const paymentData = item.commands?.payment_data;
-              let taxRate = 0;
-
-              if (paymentData) {
-                  // payment_data é JSONB: {"tax_rate": 1.37, "net_value": 98.63, "gross_value": 100}
-                  taxRate = Number(paymentData.tax_rate ?? 0);
-              }
-
-              const discountMultiplier = 1 - (taxRate / 100);
-              return acc + (rawPrice * discountMultiplier);
-          }
-          return acc + rawPrice;
-      }, 0);
-
-      // FIX 6: commission_rate é o campo correto no banco — commission_percent é legado/zerado
+      const mName = String(member.name || '').trim();
       const rate = Number(member.commission_rate ?? member.commission_percent ?? 0);
-      const commissionValue = totalBase * (rate / 100);
-      
-      return { 
-          member, 
-          items: myItems, 
-          totalBase, 
-          commissionValue, 
-          count: myItems.length, 
-          rate 
-      };
+
+      if (dataSource === 'appointments') {
+          // Cálculo detalhado com base nos agendamentos concluídos
+          const myAppts = appointments.filter(appt => {
+              const aProfId = String(appt.professional_id || '').trim();
+              const aProfName = String(appt.professional_name || '').trim();
+              
+              if (isSafeUUID(aProfId) && isSafeUUID(memberIdStr)) {
+                  return aProfId === memberIdStr;
+              }
+              return aProfName.toLowerCase() === mName.toLowerCase();
+          });
+
+          const totalBase = myAppts.reduce((acc, appt) => {
+              const rawPrice = Number(appt.value || appt.price || 0);
+              return acc + rawPrice;
+          }, 0);
+
+          const commissionValue = totalBase * (rate / 100);
+
+          return {
+              member,
+              items: myAppts.map(appt => ({
+                  id: appt.id,
+                  title: appt.service_name || 'Serviço',
+                  price: appt.value || appt.price || 0,
+                  quantity: 1,
+                  type: 'appointment',
+                  date: appt.date,
+                  client_name: appt.client_name || 'Cliente',
+                  professional_id: appt.professional_id
+              })),
+              totalBase,
+              commissionValue,
+              count: myAppts.length,
+              rate
+          };
+      } else {
+          // Cálculo tradicional baseado em comandas de venda
+          const myItems = commandItems.filter(item => 
+              String(item.professional_id) === memberIdStr
+          );
+          
+          const totalBase = myItems.reduce((acc, item) => {
+              const rawPrice = Number(item.price || 0) * Number(item.quantity || 1);
+              
+              if (calculationBase === 'liquido') {
+                  const paymentData = item.commands?.payment_data;
+                  let taxRate = 0;
+
+                  if (paymentData) {
+                      taxRate = Number(paymentData.tax_rate ?? 0);
+                  }
+
+                  const discountMultiplier = 1 - (taxRate / 100);
+                  return acc + (rawPrice * discountMultiplier);
+              }
+              return acc + rawPrice;
+          }, 0);
+
+          const commissionValue = totalBase * (rate / 100);
+          
+          return { 
+              member, 
+              items: myItems, 
+              totalBase, 
+              commissionValue, 
+              count: myItems.length, 
+              rate 
+          };
+      }
     })
-    // FIX 7: Oculta membros sem nenhum serviço E sem comissão definida (ex: gestor)
-    // But permite que profissionais apareçam mesmo sem produção
+    // Oculta membros sem produção e sem contrato se não forem profissionais designados
     .filter(item => 
         item.count > 0 || 
         item.rate > 0 || 
@@ -188,7 +254,7 @@ const RemuneracoesView: React.FC = () => {
         item.member.role?.toLowerCase()?.includes('profissional')
     )
     .sort((a, b) => b.totalBase - a.totalBase);
-  }, [teamMembers, commandItems, calculationBase]);
+  }, [teamMembers, commandItems, appointments, dataSource, calculationBase]);
 
   const totals = useMemo(() => {
     return payroll.reduce((acc, curr) => ({
@@ -261,22 +327,33 @@ const RemuneracoesView: React.FC = () => {
       doc.text("Detalhamento de Serviços Prestados", 14, 102);
 
       const tableRows = item.items.map((it: any) => {
+          const isAppt = it.type === 'appointment';
           const rawVal = Number(it.price || 0) * Number(it.quantity || 1);
-          const taxRate = getTaxRate(it);
-          const base = calculationBase === 'liquido'
+          const taxRate = isAppt ? 0 : getTaxRate(it);
+          const base = (calculationBase === 'liquido' && !isAppt)
               ? rawVal * (1 - (taxRate / 100))
               : rawVal;
           const comm = base * (item.rate / 100);
           const formattedBase = formatBRL(base);
           const formattedComm = formatBRL(comm);
-          const closedAt = it.commands?.closed_at 
-              ? format(new Date(it.commands.closed_at), 'dd/MM/yyyy HH:mm') 
-              : '---';
-          const clientName = it.commands?.clients?.nome || it.commands?.clients?.name || it.commands?.client_name || "CONSUMIDOR FINAL";
-          const method = it.commands?.payment_method 
-              ?? it.commands?.payment_data?.method 
-              ?? 'misto';
-          const desc = `${it.title}\nCliente: ${clientName} | Cmd: #${String(it.commands?.id).substring(0,8).toUpperCase()} | ${method.toUpperCase()}${taxRate > 0 && calculationBase === 'liquido' ? ` (-${taxRate}%)` : ''}`;
+          
+          const closedAt = isAppt
+              ? (it.date ? format(new Date(it.date), 'dd/MM/yyyy HH:mm') : '---')
+              : (it.commands?.closed_at ? format(new Date(it.commands.closed_at), 'dd/MM/yyyy HH:mm') : '---');
+              
+          const clientName = isAppt
+              ? it.client_name
+              : (it.commands?.clients?.nome || it.commands?.clients?.name || it.commands?.client_name || "CONSUMIDOR FINAL");
+              
+          const method = isAppt
+              ? 'Agenda'
+              : (it.commands?.payment_method ?? it.commands?.payment_data?.method ?? 'misto');
+              
+          const identifier = isAppt
+              ? `AGD #${String(it.id).substring(0,8).toUpperCase()}`
+              : `CMD #${String(it.commands?.id).substring(0,8).toUpperCase()}`;
+              
+          const desc = `${it.title}\nCliente: ${clientName} | ${identifier} | ${method.toUpperCase()}${taxRate > 0 && calculationBase === 'liquido' ? ` (-${taxRate}%)` : ''}`;
           
           return [
               closedAt,
@@ -349,25 +426,44 @@ const RemuneracoesView: React.FC = () => {
                 Remunerações
             </h1>
             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
-                Baseado em Comandas Liquidadas
+                Baseado em {dataSource === 'appointments' ? 'Agendamentos da Agenda' : 'Comandas do Caixa'}
             </p>
         </div>
 
         <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-4 w-full xl:w-auto">
             <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <button 
-                    onClick={() => setCalculationBase('bruto')}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${calculationBase === 'bruto' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                    onClick={() => setDataSource('appointments')}
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${dataSource === 'appointments' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                    title="Exibe a produção a partir dos agendamentos concluídos diretamente na AgendaScheduler"
                 >
-                    <Layers size={14} /> Base Bruta
+                    <Calendar size={14} /> Agendamentos
                 </button>
                 <button 
-                    onClick={() => setCalculationBase('liquido')}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${calculationBase === 'liquido' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                    onClick={() => setDataSource('commands')}
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${dataSource === 'commands' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                    title="Exibe a produção a partir de fechamentos de comandas de caixa"
                 >
-                    <ShieldCheck size={14} /> Base Líquida
+                    <Layers size={14} /> Comandas
                 </button>
             </div>
+
+            {dataSource === 'commands' && (
+                <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <button 
+                        onClick={() => setCalculationBase('bruto')}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${calculationBase === 'bruto' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                    >
+                        <Layers size={14} /> Base Bruta
+                    </button>
+                    <button 
+                        onClick={() => setCalculationBase('liquido')}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${calculationBase === 'liquido' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                    >
+                        <ShieldCheck size={14} /> Base Líquida
+                    </button>
+                </div>
+            )}
 
             <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <button 
@@ -444,9 +540,17 @@ const RemuneracoesView: React.FC = () => {
       <div className="bg-emerald-500/10 border border-emerald-500/15 rounded-2xl p-4 mb-6 flex items-start gap-4 text-emerald-800 animate-in fade-in-30 slide-in-from-top-2 duration-300">
           <ShieldCheck size={20} className="text-emerald-600 mt-0.5 flex-shrink-0" />
           <div className="text-left">
-              <p className="text-xs font-black uppercase tracking-wider text-emerald-700">Auditagem & Segurança Financeira</p>
+              <p className="text-xs font-black uppercase tracking-wider text-emerald-700">Segurança de Fontes de Dados</p>
               <p className="text-[11px] text-emerald-600/90 mt-1 font-medium leading-relaxed">
-                  Os valores exibidos abaixo são calculados <strong>exclusivamente a partir de comandas baixadas e liquidadas como pagas</strong> no balcão de vendas. Comandas abertas, suspensas ou canceladas são completamente desconsideradas. Caso você estorne ou reabra uma comanda, os números são atualizados em tempo real.
+                  {dataSource === 'appointments' ? (
+                      <>
+                          Você está visualizando as comissões calculadas a partir de <strong>agendamentos finalizados diretamente com o status "Concluído"</strong> na Agenda. Ideal para agilizar os fechamentos operacionais do estúdio de forma 100% automatizada.
+                      </>
+                  ) : (
+                      <>
+                          Você está visualizando as comissões calculadas a partir de <strong>comandas de faturamento salvas e liquidadas como pagas</strong> no caixa de vendas. Se estornar ou reabrir uma comanda do caixa, os números são recalculados na hora.
+                      </>
+                  )}
               </p>
           </div>
       </div>
@@ -516,15 +620,28 @@ const RemuneracoesView: React.FC = () => {
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {item.items.map((it: any) => {
+                                            const isAppt = it.type === 'appointment';
                                             const rawVal = Number(it.price || 0) * Number(it.quantity || 1);
-                                            const taxRate = getTaxRate(it);
-                                            const base = calculationBase === 'liquido'
+                                            const taxRate = isAppt ? 0 : getTaxRate(it);
+                                            const base = (calculationBase === 'liquido' && !isAppt)
                                                 ? rawVal * (1 - (taxRate / 100))
                                                 : rawVal;
                                             const comm = base * (item.rate / 100);
-                                            const method = it.commands?.payment_method 
-                                                ?? it.commands?.payment_data?.method 
-                                                ?? 'misto';
+                                            const method = isAppt 
+                                                ? 'Agenda' 
+                                                : (it.commands?.payment_method ?? it.commands?.payment_data?.method ?? 'misto');
+                                            
+                                            const clientDisplay = isAppt 
+                                                ? it.client_name 
+                                                : (it.commands?.clients?.nome || it.commands?.clients?.name || it.commands?.client_name || "CONSUMIDOR FINAL");
+                                            
+                                            const dateDisplay = isAppt 
+                                                ? (it.date ? format(new Date(it.date), 'dd/MM HH:mm') : '---')
+                                                : (it.commands?.closed_at ? format(new Date(it.commands.closed_at), 'dd/MM HH:mm') : '---');
+                                            
+                                            const identifier = isAppt 
+                                                ? `AGD #${String(it.id).substring(0, 8).toUpperCase()}` 
+                                                : `CMD #${String(it.commands?.id).substring(0, 8).toUpperCase()}`;
                                                 
                                             return (
                                                 <tr key={it.id} className="hover:bg-slate-50 transition-colors group">
@@ -532,17 +649,17 @@ const RemuneracoesView: React.FC = () => {
                                                         <p className="font-bold text-slate-700 group-hover:text-orange-600 transition-colors">{it.title}</p>
                                                         <div className="flex flex-wrap items-center gap-2 mt-1.5">
                                                             <span className="text-[10px] font-black text-slate-600 bg-slate-100 px-2 py-0.5 rounded-lg uppercase tracking-wide flex items-center gap-1">
-                                                                👤 {it.commands?.clients?.nome || it.commands?.clients?.name || it.commands?.client_name || "CONSUMIDOR FINAL"}
+                                                                👤 {clientDisplay}
                                                             </span>
-                                                            <p className="text-[9px] text-slate-400 font-black uppercase">CMD #{String(it.commands?.id).substring(0, 8).toUpperCase()}</p>
+                                                            <p className="text-[9px] text-slate-400 font-black uppercase">{identifier}</p>
                                                             <span className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded font-black uppercase">{method}</span>
-                                                            {calculationBase === 'liquido' && taxRate > 0 && (
+                                                            {!isAppt && calculationBase === 'liquido' && taxRate > 0 && (
                                                                 <span className="text-[9px] text-rose-400 font-bold uppercase">(-{taxRate}%)</span>
                                                             )}
                                                         </div>
                                                     </td>
                                                     <td className="px-8 py-4 text-slate-400 text-xs font-medium">
-                                                        {it.commands?.closed_at ? format(new Date(it.commands.closed_at), 'dd/MM HH:mm') : '---'}
+                                                        {dateDisplay}
                                                     </td>
                                                     <td className="px-8 py-4 text-right text-slate-500 font-mono text-xs">
                                                         {formatBRL(base)}
@@ -558,7 +675,12 @@ const RemuneracoesView: React.FC = () => {
                             </div>
                         ) : (
                             <div className="p-10 text-center bg-white rounded-[24px] border border-dashed border-slate-200 mb-8">
-                                <p className="text-slate-400 text-sm font-bold uppercase tracking-tighter">Nenhum serviço liquidado por este profissional.</p>
+                                <p className="text-slate-400 text-sm font-bold uppercase tracking-tighter">
+                                    {dataSource === 'appointments' 
+                                        ? "Nenhum agendamento com status 'Concluído' neste período."
+                                        : "Nenhuma comanda liquidada para este profissional."
+                                    }
+                                </p>
                             </div>
                         )}
 
@@ -587,7 +709,10 @@ const RemuneracoesView: React.FC = () => {
                 <Calculator size={48} className="mx-auto text-slate-100 mb-6" />
                 <h4 className="font-black text-slate-800 text-lg">Sem produção no período</h4>
                 <p className="text-slate-400 text-sm mt-2 max-w-xs mx-auto leading-relaxed font-medium">
-                    Não encontramos serviços liquidados em comandas para o mês selecionado.
+                    {dataSource === 'appointments'
+                        ? "Não encontramos agendamentos com status 'Concluído' para o período selecionado."
+                        : "Não encontramos serviços liquidados em comandas para o período selecionado."
+                    }
                 </p>
             </div>
         )}

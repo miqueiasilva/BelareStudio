@@ -4,6 +4,7 @@ import {
     Smartphone, Loader2, Calendar
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
+import { useStudio } from '../../contexts/StudioContext';
 import Toast, { ToastType } from '../shared/Toast';
 
 const formatCurrency = (value: number) => {
@@ -39,6 +40,7 @@ interface CheckoutModalProps {
 }
 
 const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointment, onSuccess }) => {
+    const { activeStudioId } = useStudio();
     const [isLoading, setIsLoading] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
@@ -141,7 +143,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             
             // 1. REGISTRO DO PAGAMENTO (PRIMEIRO)
             const { data: transaction, error: rpcError } = await supabase.rpc('register_payment_transaction', {
-                p_studio_id: (window as any).activeStudioId || null,
+                p_studio_id: activeStudioId || null,
                 p_professional_id: profId,
                 p_description: `Atendimento - ${appointment.client_name} - ${appointment.service_name}`,
                 p_amount: Number(appointment.price || 0),
@@ -164,7 +166,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
             const { data: command, error: cmdError } = await supabase
                 .from('commands')
                 .insert([{
-                    studio_id: (window as any).activeStudioId || null,
+                    studio_id: activeStudioId || null,
                     client_id: appointment.client_id || null,
                     client_name: appointment.client_name || 'Cliente',
                     professional_id: profId,
@@ -190,7 +192,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
                 await supabase.from('command_items').insert([{
                     command_id: command.id,
                     appointment_id: appointment.id,
-                    studio_id: (window as any).activeStudioId || null,
+                    studio_id: activeStudioId || null,
                     title: appointment.service_name,
                     price: appointment.price,
                     quantity: 1,
