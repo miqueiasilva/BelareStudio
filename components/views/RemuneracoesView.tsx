@@ -106,7 +106,7 @@ const RemuneracoesView: React.FC = () => {
             // BUSCA AGENDAMENTOS CONCLUÍDOS COMO FONTE DE DADOS AUTOMÁTICA
             supabase.from('appointments')
                 .select(`
-                    id, date, status, value, client_name, client_id, service_name, services_ids, service_id,
+                    id, date, status, value, client_name, client_id, service_name, service_id,
                     professional_id, professional_name
                 `)
                 .eq('studio_id', activeStudioId)
