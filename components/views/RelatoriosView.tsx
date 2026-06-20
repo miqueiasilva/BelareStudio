@@ -131,6 +131,10 @@ const RelatoriosView: React.FC = () => {
   const [modalSearch, setModalSearch] = useState('');
   const [modalStatusFilter, setModalStatusFilter] = useState('todos');
 
+  // Serviços & Categorias states
+  const [serviceStatusFilter, setServiceStatusFilter] = useState<'only_completed' | 'all_active'>('only_completed');
+  const [serviceSearchQuery, setServiceSearchQuery] = useState('');
+
   // --- Data Fetching ---
 
   const getDates = useCallback(() => {
@@ -185,7 +189,7 @@ const RelatoriosView: React.FC = () => {
         supabase.from('appointments').select('*').eq('studio_id', activeStudioId).gte('date', start.toISOString()).lte('date', end.toISOString()),
         supabase.from('team_members').select('*').eq('studio_id', activeStudioId),
         supabase.from('financial_categories').select('name').eq('studio_id', activeStudioId).eq('active', true),
-        supabase.from('services').select('id, preco, nome').eq('studio_id', activeStudioId)
+        supabase.from('services').select('id, preco, nome, categoria').eq('studio_id', activeStudioId)
       ]);
 
       // Fetch upcoming appointments for projection (next 30 days)
@@ -301,30 +305,111 @@ const RelatoriosView: React.FC = () => {
 
   const exportToCSV = (tabName: string) => {
     if (!data) return;
-    const ws = XLSX.utils.json_to_sheet(data.transactions);
+    
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, tabName);
+    
+    if (tabName === 'servicos') {
+      const servicesData = serviceStats.services.map((s, index) => ({
+        'Ranking': index + 1,
+        'Serviço': s.name,
+        'Categoria': s.category,
+        'Atendimentos': s.quantity,
+        'Faturamento (R$)': Number(s.revenue.toFixed(2)),
+        'Participação (%)': Number(s.percentage.toFixed(2))
+      }));
+      
+      const categoriesData = serviceStats.categories.map((c, index) => ({
+        'Ranking': index + 1,
+        'Categoria': c.name,
+        'Atendimentos': c.quantity,
+        'Faturamento (R$)': Number(c.revenue.toFixed(2)),
+        'Participação (%)': Number(c.percentage.toFixed(2))
+      }));
+      
+      const wsServices = XLSX.utils.json_to_sheet(servicesData);
+      const wsCategories = XLSX.utils.json_to_sheet(categoriesData);
+      
+      XLSX.utils.book_append_sheet(wb, wsServices, "Serviços");
+      XLSX.utils.book_append_sheet(wb, wsCategories, "Categorias");
+    } else {
+      const ws = XLSX.utils.json_to_sheet(data.transactions);
+      XLSX.utils.book_append_sheet(wb, ws, tabName);
+    }
+    
     XLSX.writeFile(wb, `Relatorio_${tabName}_${format(new Date(), 'dd-MM-yyyy')}.xlsx`);
-    toast.success("CSV exportado com sucesso!");
+    toast.success("Excel exportado com sucesso!");
   };
 
   const exportToPDF = (tabName: string) => {
-    const doc = new jsPDF();
-    doc.text(`Relatório de ${tabName}`, 14, 15);
-    doc.text(`Período: ${format(getDates().start, 'dd/MM/yyyy')} - ${format(getDates().end, 'dd/MM/yyyy')}`, 14, 25);
+    const doc = new jsPDF() as any;
     
-    const tableData = data.transactions.map((t: any) => [
-      format(parseISO(t.date), 'dd/MM/yyyy'),
-      t.description || t.category || 'Sem descrição',
-      t.type === 'income' ? 'Receita' : 'Despesa',
-      `R$ ${Number(t.amount).toLocaleString('pt-BR')}`
-    ]);
+    if (tabName === 'servicos') {
+      doc.setFontSize(16);
+      doc.text("Relatorio de Faturamento por Servicos & Categorias", 14, 15);
+      doc.setFontSize(10);
+      doc.text(`Periodo: ${format(getDates().start, 'dd/MM/yyyy')} - ${format(getDates().end, 'dd/MM/yyyy')}`, 14, 23);
+      doc.text(`Faturamento Total de Servicos: R$ ${serviceStats.totalRevenue.toLocaleString('pt-BR')}`, 14, 29);
+      doc.text(`Total de Atendimentos Realizados: ${serviceStats.totalQuantity}`, 14, 35);
+      
+      doc.setFontSize(12);
+      doc.text("Faturamento por Categoria", 14, 45);
+      
+      const categoryRows = serviceStats.categories.map((c, index) => [
+        `#${index + 1}`,
+        c.name,
+        String(c.quantity),
+        `R$ ${Number(c.revenue).toLocaleString('pt-BR')}`,
+        `${c.percentage.toFixed(1)}%`
+      ]);
+      
+      autoTable(doc, {
+        head: [['Posição', 'Categoria', 'Atendimentos', 'Faturamento', 'Porcentagem']],
+        body: categoryRows,
+        startY: 49,
+        theme: 'striped',
+        styles: { fontSize: 9 }
+      });
+      
+      const finalY = (doc as any).lastAutoTable.finalY + 10;
+      doc.setFontSize(12);
+      doc.text("Ranking de Servicos", 14, finalY);
+      
+      const serviceRows = serviceStats.services.map((s, index) => [
+        `#${index + 1}`,
+        s.name,
+        s.category,
+        String(s.quantity),
+        `R$ ${Number(s.revenue).toLocaleString('pt-BR')}`,
+        `${s.percentage.toFixed(1)}%`
+      ]);
+      
+      autoTable(doc, {
+        head: [['Posição', 'Serviço', 'Categoria', 'Atendimentos', 'Faturamento', 'Porcentagem']],
+        body: serviceRows,
+        startY: finalY + 4,
+        theme: 'striped',
+        styles: { fontSize: 8 }
+      });
+      
+    } else {
+      doc.setFontSize(16);
+      doc.text(`Relatorio de ${tabName}`, 14, 15);
+      doc.setFontSize(10);
+      doc.text(`Periodo: ${format(getDates().start, 'dd/MM/yyyy')} - ${format(getDates().end, 'dd/MM/yyyy')}`, 14, 25);
+      
+      const tableData = data.transactions.map((t: any) => [
+        format(parseISO(t.date), 'dd/MM/yyyy'),
+        t.description || t.category || 'Sem descricao',
+        t.type === 'income' ? 'Receita' : 'Despesa',
+        `R$ ${Number(t.amount).toLocaleString('pt-BR')}`
+      ]);
 
-    autoTable(doc, {
-      head: [['Data', 'Descrição', 'Tipo', 'Valor']],
-      body: tableData,
-      startY: 35
-    });
+      autoTable(doc, {
+        head: [['Data', 'Descricao', 'Tipo', 'Valor']],
+        body: tableData,
+        startY: 35
+      });
+    }
 
     doc.save(`Relatorio_${tabName}_${format(new Date(), 'dd-MM-yyyy')}.pdf`);
     toast.success("PDF exportado com sucesso!");
@@ -390,6 +475,126 @@ const RelatoriosView: React.FC = () => {
       };
     }).sort((a: any, b: any) => b.revenue - a.revenue);
   }, [data, availableProfessionals, services]);
+
+  const serviceStats = useMemo(() => {
+    if (!data?.appointments || !services) {
+      return { 
+        services: [], 
+        categories: [], 
+        totalRevenue: 0, 
+        totalQuantity: 0, 
+        topCategory: null, 
+        topService: null 
+      };
+    }
+    
+    const statsMap: { [id_or_name: string]: { id: number | string; name: string; category: string; quantity: number; revenue: number } } = {};
+    const categoryStatsMap: { [catName: string]: { name: string; quantity: number; revenue: number } } = {};
+
+    let totalServiceRevenue = 0;
+    let totalServiceQuantity = 0;
+
+    // Base with all active services so everything displays properly with 0 if no scheduling
+    services.forEach((s: any) => {
+      statsMap[s.id] = {
+        id: s.id,
+        name: s.nome,
+        category: s.categoria || 'Sem Categoria',
+        quantity: 0,
+        revenue: 0
+      };
+    });
+
+    const servicesMap = new Map(services.map(s => [s.id, s]));
+
+    data.appointments.forEach((a: any) => {
+      if (a.type === 'block' || a.status === 'cancelado') return;
+      
+      // Filter for status toggle
+      if (serviceStatusFilter === 'only_completed' && a.status !== 'concluido') return;
+
+      const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
+
+      if (svcIds && svcIds.length > 0) {
+        const sumPrices = svcIds.reduce((sum: number, id: any) => {
+          const s = servicesMap.get(id);
+          return sum + (s?.preco || 0);
+        }, 0);
+
+        const appointmentValue = a.value || a.price || sumPrices || 0;
+
+        svcIds.forEach((id: any) => {
+          const s = servicesMap.get(id);
+          const sPrice = s?.preco || 0;
+          const sId = s?.id || id;
+          const sName = s?.nome || a.service_name || `Serviço #${id}`;
+          const sCat = s?.categoria || 'Sem Categoria';
+
+          const attributedVal = sumPrices > 0 ? (sPrice / sumPrices) * appointmentValue : appointmentValue / svcIds.length;
+
+          if (!statsMap[sId]) {
+            statsMap[sId] = { id: sId, name: sName, category: sCat, quantity: 0, revenue: 0 };
+          }
+
+          statsMap[sId].quantity += 1;
+          statsMap[sId].revenue += attributedVal;
+          totalServiceRevenue += attributedVal;
+          totalServiceQuantity += 1;
+
+          if (!categoryStatsMap[sCat]) {
+            categoryStatsMap[sCat] = { name: sCat, quantity: 0, revenue: 0 };
+          }
+          categoryStatsMap[sCat].quantity += 1;
+          categoryStatsMap[sCat].revenue += attributedVal;
+        });
+      } else {
+        const sName = a.service_name || 'Serviço Não Cadastrado';
+        const sCat = 'Sem Categoria';
+        const val = a.value || a.price || 0;
+
+        if (!statsMap[sName]) {
+          statsMap[sName] = { id: sName, name: sName, category: sCat, quantity: 0, revenue: 0 };
+        }
+
+        statsMap[sName].quantity += 1;
+        statsMap[sName].revenue += val;
+        totalServiceRevenue += val;
+        totalServiceQuantity += 1;
+
+        if (!categoryStatsMap[sCat]) {
+          categoryStatsMap[sCat] = { name: sCat, quantity: 0, revenue: 0 };
+        }
+        categoryStatsMap[sCat].quantity += 1;
+        categoryStatsMap[sCat].revenue += val;
+      }
+    });
+
+    const servicesList = Object.values(statsMap)
+      .map(s => ({
+        ...s,
+        percentage: totalServiceRevenue > 0 ? (s.revenue / totalServiceRevenue) * 100 : 0
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    const categoriesList = Object.values(categoryStatsMap)
+      .map(c => ({
+        ...c,
+        percentage: totalServiceRevenue > 0 ? (c.revenue / totalServiceRevenue) * 100 : 0
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    const topCategory = categoriesList.length > 0 ? categoriesList[0] : null;
+    const topService = servicesList.length > 0 ? (servicesList.filter(s => s.revenue > 0)[0] || servicesList[0]) : null;
+
+    return {
+      services: servicesList,
+      categories: categoriesList,
+      totalRevenue: totalServiceRevenue,
+      totalQuantity: totalServiceQuantity,
+      topCategory,
+      topService
+    };
+  }, [data, services, serviceStatusFilter]);
 
   const handleCloseModal = () => {
     setSelectedProfDetails(null);
@@ -1070,6 +1275,299 @@ const RelatoriosView: React.FC = () => {
     );
   };
 
+  const renderServicos = () => {
+    // Filter services based on serviceSearchQuery
+    const filteredServices = serviceStats.services.filter(s => {
+      const q = serviceSearchQuery.toLowerCase().trim();
+      return s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q);
+    });
+
+    const COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4', '#14b8a6', '#6366f1', '#f43f5e', '#a855f7'];
+
+    // Slices for Pie Chart - categories with revenue > 0
+    const pieData = serviceStats.categories
+      .filter(c => c.revenue > 0)
+      .map(c => ({
+        name: c.name,
+        value: Number(c.revenue.toFixed(2)),
+        percentage: c.percentage
+      }));
+
+    // Data for bar chart: top 8 services with revenue > 0
+    const barData = serviceStats.services
+      .filter(s => s.revenue > 0)
+      .slice(0, 8)
+      .map(s => ({
+        name: s.name.length > 18 ? s.name.substring(0, 16) + '...' : s.name,
+        fullName: s.name,
+        'Faturamento': Number(s.revenue.toFixed(2))
+      }));
+
+    return (
+      <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
+        
+        {/* Sub-header Controls specific to Services view */}
+        <div className="bg-white p-4 md:p-6 rounded-[24px] md:rounded-[32px] border border-slate-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none self-center">Base de Cálculo:</span>
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                onClick={() => setServiceStatusFilter('only_completed')}
+                className={`px-3 py-1.5 text-[9px] md:text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${serviceStatusFilter === 'only_completed' ? 'bg-white shadow-sm text-slate-900 border border-slate-200/50' : 'text-slate-400 hover:text-slate-700'}`}
+              >
+                Concluídos (Real)
+              </button>
+              <button
+                onClick={() => setServiceStatusFilter('all_active')}
+                className={`px-3 py-1.5 text-[9px] md:text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${serviceStatusFilter === 'all_active' ? 'bg-white shadow-sm text-slate-900 border border-slate-200/50' : 'text-slate-400 hover:text-slate-700'}`}
+              >
+                Ativos (Previsão)
+              </button>
+            </div>
+          </div>
+          
+          <div className="relative w-full md:w-64">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+              <Search size={16} />
+            </div>
+            <input
+              type="text"
+              placeholder="Pesquisar serviço ou categoria..."
+              value={serviceSearchQuery}
+              onChange={e => setServiceSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500 placeholder-slate-400"
+            />
+            {serviceSearchQuery && (
+              <button onClick={() => setServiceSearchQuery('')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Highlight KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+          <KPICard 
+            title="Receita de Serviços" 
+            value={`R$ ${serviceStats.totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} 
+            color="bg-emerald-500" 
+            icon={Coins} 
+            loading={isLoading} 
+          />
+          <KPICard 
+            title="Total de Serviços" 
+            value={serviceStats.totalQuantity} 
+            subtext="Atendimentos contabilizados" 
+            color="bg-blue-500" 
+            icon={Scissors} 
+            loading={isLoading} 
+          />
+          <KPICard 
+            title="Categoria Líder" 
+            value={serviceStats.topCategory ? serviceStats.topCategory.name : 'N/A'} 
+            subtext={serviceStats.topCategory ? `R$ ${serviceStats.topCategory.revenue.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} (${serviceStats.topCategory.percentage.toFixed(1)}%)` : 'Sem registros'} 
+            color="bg-indigo-500" 
+            icon={Layers} 
+            loading={isLoading} 
+          />
+          <KPICard 
+            title="Serviço Campeão" 
+            value={serviceStats.topService ? serviceStats.topService.name : 'N/A'} 
+            subtext={serviceStats.topService ? `R$ ${serviceStats.topService.revenue.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} (${serviceStats.topService.percentage.toFixed(1)}%)` : 'Sem registros'} 
+            color="bg-orange-500" 
+            icon={Zap} 
+            loading={isLoading} 
+          />
+        </div>
+
+        {/* Charts Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Pie Chart: Categories */}
+          <div className="bg-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm">
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight mb-6">FATURAMENTO POR CATEGORIA (%)</h3>
+            {pieData.length > 0 ? (
+              <div className="h-80 flex flex-col md:flex-row items-center justify-center gap-4">
+                <div className="w-full md:w-1/2 h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={90}
+                        paddingAngle={4}
+                        dataKey="value"
+                      >
+                        {pieData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        formatter={(value: any) => [`R$ ${Number(value).toLocaleString('pt-BR')}`, 'Faturamento']}
+                        contentStyle={{ borderRadius: '16px', border: '1px solid #f1f5f9', fontWeight: 'bold' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="w-full md:w-1/2 overflow-y-auto max-h-64 space-y-1.5 pr-2 custom-scrollbar">
+                  {pieData.map((entry, index) => (
+                    <div key={entry.name} className="flex items-center justify-between text-xs font-bold text-slate-600 p-2 rounded-xl hover:bg-slate-50 transition-colors">
+                      <div className="flex items-center gap-2 truncate">
+                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                        <span className="truncate">{entry.name}</span>
+                      </div>
+                      <span className="shrink-0 font-black text-slate-800 ml-2">
+                        {entry.percentage.toFixed(1)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="h-80 flex items-center justify-center"><EmptyState /></div>
+            )}
+          </div>
+
+          {/* Bar Chart: Services */}
+          <div className="bg-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm">
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight mb-6">TOP 8 SERVIÇOS MAIS FATURADOS</h3>
+            {barData.length > 0 ? (
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={barData} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} fontWeight="bold" tickLine={false} axisLine={false} />
+                    <YAxis 
+                      stroke="#94a3b8" 
+                      fontSize={9} 
+                      fontWeight="bold" 
+                      tickLine={false} 
+                      axisLine={false}
+                      tickFormatter={(value) => `R$ ${value}`}
+                    />
+                    <Tooltip 
+                      formatter={(value: any) => [`R$ ${Number(value).toLocaleString('pt-BR')}`, 'Faturamento']}
+                      contentStyle={{ borderRadius: '16px', border: '1px solid #f1f5f9', fontWeight: 'bold' }}
+                    />
+                    <Bar dataKey="Faturamento" radius={[8, 8, 0, 0]}>
+                      {barData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="h-80 flex items-center justify-center"><EmptyState /></div>
+            )}
+          </div>
+        </div>
+
+        {/* Detailed Lists */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          {/* Left / Column 1: Categories Breakdown List */}
+          <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden lg:col-span-1 h-fit">
+            <div className="p-6 md:p-8 border-b border-slate-50 flex items-center justify-between">
+              <h3 className="font-black text-slate-800 text-sm uppercase">Faturamento de Categorias</h3>
+              <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-black uppercase">
+                {serviceStats.categories.length} Grupos
+              </span>
+            </div>
+            <div className="divide-y divide-slate-50 max-h-[500px] overflow-y-auto custom-scrollbar">
+              {serviceStats.categories.length > 0 ? serviceStats.categories.map((c, index) => (
+                <div key={c.name} className="p-4 md:p-5 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
+                  <div className="flex items-center gap-3 truncate pr-2">
+                    <span className={`w-6 h-6 rounded-lg text-[10px] font-black flex items-center justify-center border ${index === 0 ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                      {index + 1}
+                    </span>
+                    <div className="truncate">
+                      <p className="text-xs font-black text-slate-800 truncate">{c.name}</p>
+                      <p className="text-[9px] text-slate-400 font-bold uppercase">{c.quantity} atendimentos</p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs font-black text-slate-800">R$ {c.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className="text-[9px] text-emerald-600 font-black tracking-widest">{c.percentage.toFixed(1)}%</p>
+                  </div>
+                </div>
+              )) : (
+                <div className="py-12"><EmptyState /></div>
+              )}
+            </div>
+          </div>
+
+          {/* Right / Column 2 & 3: Ranking of Services */}
+          <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden lg:col-span-2">
+            <div className="p-6 md:p-8 border-b border-slate-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h3 className="font-black text-slate-800 text-sm uppercase">Ranking de Serviços</h3>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Ordenado por volume total faturado no período</p>
+              </div>
+              <span className="px-3.5 py-1 bg-orange-50 text-orange-600 rounded-full text-[9px] md:text-[10px] font-black uppercase tracking-wider">
+                {filteredServices.filter(s => s.revenue > 0).length} de {filteredServices.length} Ativos com Faturamento
+              </span>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto max-h-[500px] overflow-y-auto custom-scrollbar">
+              <table className="w-full text-left">
+                <thead className="sticky top-0 bg-white z-10 border-b border-slate-100">
+                  <tr className="bg-slate-50/50">
+                    <TableHeader>Rank</TableHeader>
+                    <TableHeader>Serviço</TableHeader>
+                    <TableHeader>Categoria</TableHeader>
+                    <TableHeader className="text-center">Qtd</TableHeader>
+                    <TableHeader className="text-right">Faturamento</TableHeader>
+                    <TableHeader className="text-right">Part.</TableHeader>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {filteredServices.length > 0 ? filteredServices.map((s, index) => (
+                    <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
+                      <TableCell className="w-16">
+                        <span className={`w-6 h-6 rounded-lg text-[10px] font-black flex items-center justify-center border ${index === 0 ? 'bg-orange-50 border-orange-200 text-orange-600 shadow-sm' : index === 1 ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : index === 2 ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                          {index + 1}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="font-black text-slate-850 block leading-tight">{s.name}</span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="px-2 py-0.5 bg-slate-100 rounded text-[9px] font-extrabold text-slate-500 uppercase tracking-wide">
+                          {s.category}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center font-mono">
+                        {s.quantity}
+                      </TableCell>
+                      <TableCell className="text-right font-black text-slate-800">
+                        R$ {s.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${s.revenue > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                          {s.percentage.toFixed(1)}%
+                        </span>
+                      </TableCell>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={6} className="py-20">
+                        <EmptyState message="Nenhum serviço correspondente encontrado." />
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    );
+  };
+
   const renderDetailModal = () => {
     if (!selectedProfDetails) return null;
 
@@ -1449,6 +1947,7 @@ const RelatoriosView: React.FC = () => {
             {[
               { id: 'executivo', label: 'Estratégico', icon: LayoutDashboard },
               { id: 'financeiro', label: 'Financeiro', icon: Wallet },
+              { id: 'servicos', label: 'Serviços', icon: Scissors },
               { id: 'agenda', label: 'Operação', icon: Calendar },
               { id: 'clientes', label: 'Clientes', icon: Users },
               { id: 'equipe', label: 'Time', icon: Briefcase },
@@ -1486,6 +1985,7 @@ const RelatoriosView: React.FC = () => {
             <>
               {activeTab === 'executivo' && renderExecutivo()}
               {activeTab === 'financeiro' && renderFinanceiro()}
+              {activeTab === 'servicos' && renderServicos()}
               {activeTab === 'agenda' && renderAgenda()}
               {activeTab === 'clientes' && renderClientes()}
               {activeTab === 'equipe' && renderEquipe()}
