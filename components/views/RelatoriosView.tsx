@@ -51,6 +51,67 @@ const EmptyState = ({ message = "Nenhum dado encontrado para o período selecion
   </div>
 );
 
+const getServicesForAppointment = (a: any, servicesList: any[]) => {
+  const servicesMap = new Map((servicesList || []).map(s => [String(s.id), s]));
+  const servicesByNameMap = new Map();
+  (servicesList || []).forEach(s => {
+    if (s.nome) {
+      servicesByNameMap.set(s.nome.trim().toLowerCase(), s);
+    }
+  });
+
+  let parsedSvcs: any[] = [];
+  if (a.notes && a.notes.includes('---SERVICES_JSON---')) {
+    const servicesMatch = a.notes.match(/---SERVICES_JSON---[\r\n\s]*([\s\S]*?)[\r\n\s]*---END_SERVICES_JSON---/);
+    if (servicesMatch?.[1]) {
+      try {
+        parsedSvcs = JSON.parse(servicesMatch[1]);
+      } catch (e) {
+        console.error("Error parsing services JSON in helper:", e);
+      }
+    }
+  }
+
+  const resolvedServices: any[] = [];
+
+  if (Array.isArray(parsedSvcs) && parsedSvcs.length > 0) {
+    parsedSvcs.forEach((ps: any) => {
+      let found = servicesMap.get(String(ps.id || ''));
+      if (!found && ps.name) {
+        found = servicesByNameMap.get(ps.name.trim().toLowerCase());
+      }
+      if (found) {
+        resolvedServices.push(found);
+      } else {
+        resolvedServices.push({
+          id: ps.id || 0,
+          nome: ps.name || 'Serviço',
+          preco: Number(ps.price || ps.preco || 0),
+          categoria: 'Sem Categoria'
+        });
+      }
+    });
+  } else {
+    let found = a.service_id ? servicesMap.get(String(a.service_id)) : null;
+    if (!found && a.service_name) {
+      found = servicesByNameMap.get(a.service_name.trim().toLowerCase());
+    }
+
+    if (found) {
+      resolvedServices.push(found);
+    } else {
+      resolvedServices.push({
+        id: a.service_id || 0,
+        nome: a.service_name || 'Serviço não cadastrado',
+        preco: Number(a.value || a.price || 0),
+        categoria: 'Sem Categoria'
+      });
+    }
+  }
+
+  return resolvedServices;
+};
+
 const KPICard = ({ title, value, subtext, icon: Icon, color, trend, loading }: any) => {
   if (loading) return <Skeleton className="h-32" />;
   
@@ -228,8 +289,8 @@ const RelatoriosView: React.FC = () => {
         
         // potential value calculation
         const potentialIncome = appointments.filter(a => a.status !== 'cancelado').reduce((acc, a) => {
-            const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
-            const valFromServices = svcIds.reduce((sum: number, id: any) => sum + (servicesMap.get(id) || 0), 0);
+            const resolved = getServicesForAppointment(a, servicesRes.data || []);
+            const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
             return acc + (a.value || a.price || valFromServices || 0);
         }, 0);
 
@@ -244,8 +305,8 @@ const RelatoriosView: React.FC = () => {
       
       const upcomingFiltered = upcomingAppts || [];
       const projectedIncome = upcomingFiltered.reduce((acc, a) => {
-          const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
-          const valFromServices = svcIds.reduce((sum: number, id: any) => sum + (servicesMap.get(id) || 0), 0);
+          const resolved = getServicesForAppointment(a, servicesRes.data || []);
+          const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
           return acc + (a.value || a.price || valFromServices || 0);
       }, 0);
       setUpcomingData({ projectedIncome, count: upcomingFiltered.length });
@@ -440,8 +501,8 @@ const RelatoriosView: React.FC = () => {
         const s = String(a.status || '').toLowerCase().trim();
         return s === 'concluido';
       }).reduce((acc: number, a: any) => {
-        const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
-        const valFromServices = svcIds.reduce((sum: number, id: any) => sum + (servicesMap.get(id) || 0), 0);
+        const resolved = getServicesForAppointment(a, services);
+        const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
         return acc + (a.value || a.price || valFromServices || 0);
       }, 0);
 
@@ -455,8 +516,8 @@ const RelatoriosView: React.FC = () => {
         const s = String(a.status || '').toLowerCase().trim();
         return s !== 'cancelado';
       }).reduce((acc: number, a: any) => {
-        const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
-        const valFromServices = svcIds.reduce((sum: number, id: any) => sum + (servicesMap.get(id) || 0), 0);
+        const resolved = getServicesForAppointment(a, services);
+        const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
         return acc + (a.value || a.price || valFromServices || 0);
       }, 0);
 
@@ -513,24 +574,19 @@ const RelatoriosView: React.FC = () => {
       // Filter for status toggle
       if (serviceStatusFilter === 'only_completed' && a.status !== 'concluido') return;
 
-      const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
+      const resolved = getServicesForAppointment(a, services);
 
-      if (svcIds && svcIds.length > 0) {
-        const sumPrices = svcIds.reduce((sum: number, id: any) => {
-          const s = servicesMap.get(id);
-          return sum + (s?.preco || 0);
-        }, 0);
-
+      if (resolved.length > 0) {
+        const sumPrices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
         const appointmentValue = a.value || a.price || sumPrices || 0;
 
-        svcIds.forEach((id: any) => {
-          const s = servicesMap.get(id);
-          const sPrice = s?.preco || 0;
-          const sId = s?.id || id;
-          const sName = s?.nome || a.service_name || `Serviço #${id}`;
-          const sCat = s?.categoria || 'Sem Categoria';
+        resolved.forEach((s: any) => {
+          const sPrice = s.preco || 0;
+          const sId = s.id || s.nome;
+          const sName = s.nome;
+          const sCat = s.categoria || 'Sem Categoria';
 
-          const attributedVal = sumPrices > 0 ? (sPrice / sumPrices) * appointmentValue : appointmentValue / svcIds.length;
+          const attributedVal = sumPrices > 0 ? (sPrice / sumPrices) * appointmentValue : appointmentValue / resolved.length;
 
           if (!statsMap[sId]) {
             statsMap[sId] = { id: sId, name: sName, category: sCat, quantity: 0, revenue: 0 };
@@ -547,25 +603,6 @@ const RelatoriosView: React.FC = () => {
           categoryStatsMap[sCat].quantity += 1;
           categoryStatsMap[sCat].revenue += attributedVal;
         });
-      } else {
-        const sName = a.service_name || 'Serviço Não Cadastrado';
-        const sCat = 'Sem Categoria';
-        const val = a.value || a.price || 0;
-
-        if (!statsMap[sName]) {
-          statsMap[sName] = { id: sName, name: sName, category: sCat, quantity: 0, revenue: 0 };
-        }
-
-        statsMap[sName].quantity += 1;
-        statsMap[sName].revenue += val;
-        totalServiceRevenue += val;
-        totalServiceQuantity += 1;
-
-        if (!categoryStatsMap[sCat]) {
-          categoryStatsMap[sCat] = { name: sCat, quantity: 0, revenue: 0 };
-        }
-        categoryStatsMap[sCat].quantity += 1;
-        categoryStatsMap[sCat].revenue += val;
       }
     });
 
@@ -617,16 +654,10 @@ const RelatoriosView: React.FC = () => {
       const parsedDate = typeof a.date === 'string' ? parseISO(a.date) : new Date(a.date);
       const formattedDate = format(parsedDate, "dd/MM/yyyy HH:mm");
       
-      const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
-      const serviceNames = svcIds.map((id: any) => {
-        const s = services.find((srv: any) => srv.id === id);
-        return s?.nome || '';
-      }).filter(Boolean).join(', ') || a.service_name || 'Serviço';
+      const resolved = getServicesForAppointment(a, services);
+      const serviceNames = resolved.map((s: any) => s.nome).filter(Boolean).join(', ') || 'Serviço';
       
-      const valFromServices = svcIds.reduce((sum: number, id: any) => {
-        const s = services.find((srv: any) => srv.id === id);
-        return sum + (s?.preco || 0);
-      }, 0);
+      const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
       const appointmentValue = a.value || a.price || valFromServices || 0;
       const statusLabel = statusMeta[a.status]?.label || a.status || 'Agendado';
       
@@ -742,16 +773,10 @@ const RelatoriosView: React.FC = () => {
       const parsedDate = typeof a.date === 'string' ? parseISO(a.date) : new Date(a.date);
       const formattedDate = format(parsedDate, "dd/MM/yyyy HH:mm");
       
-      const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
-      const serviceNames = svcIds.map((id: any) => {
-        const s = services.find((srv: any) => srv.id === id);
-        return s?.nome || '';
-      }).filter(Boolean).join(', ') || a.service_name || 'Serviço';
+      const resolved = getServicesForAppointment(a, services);
+      const serviceNames = resolved.map((s: any) => s.nome).filter(Boolean).join(', ') || 'Serviço';
       
-      const valFromServices = svcIds.reduce((sum: number, id: any) => {
-        const s = services.find((srv: any) => srv.id === id);
-        return sum + (s?.preco || 0);
-      }, 0);
+      const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
       const appointmentValue = a.value || a.price || valFromServices || 0;
       const statusLabel = statusMeta[a.status]?.label || a.status || 'Agendado';
 
@@ -832,11 +857,8 @@ const RelatoriosView: React.FC = () => {
         const clientName = (a.client_name || a.client?.nome || '').toLowerCase();
         
         // resolve service names
-        const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
-        const serviceNames = (svcIds.map((id: any) => {
-          const s = services.find((srv: any) => srv.id === id);
-          return s?.nome || '';
-        }).join(' ') + ' ' + (a.service_name || '')).toLowerCase();
+        const resolved = getServicesForAppointment(a, services);
+        const serviceNames = (resolved.map((s: any) => s.nome).join(' ')).toLowerCase();
         
         return clientName.includes(q) || serviceNames.includes(q);
       });
@@ -1700,16 +1722,10 @@ const RelatoriosView: React.FC = () => {
                         const parsedDate = typeof a.date === 'string' ? parseISO(a.date) : new Date(a.date);
                         const formattedDate = format(parsedDate, "dd 'de' MMM 'às' HH:mm", { locale: pt });
                         
-                        const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
-                        const serviceNames = svcIds.map((id: any) => {
-                          const s = services.find((srv: any) => srv.id === id);
-                          return s?.nome || '';
-                        }).filter(Boolean).join(', ') || a.service_name || 'Serviço';
+                        const resolved = getServicesForAppointment(a, services);
+                        const serviceNames = resolved.map((s: any) => s.nome).filter(Boolean).join(', ') || 'Serviço';
                         
-                        const valFromServices = svcIds.reduce((sum: number, id: any) => {
-                          const s = services.find((srv: any) => srv.id === id);
-                          return sum + (s?.preco || 0);
-                        }, 0);
+                        const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
                         const appointmentValue = a.value || a.price || valFromServices || 0;
                         
                         const st = statusMeta[a.status] || { label: a.status || 'Agendado', bg: 'bg-amber-50 text-amber-700 border border-amber-200', text: 'text-amber-700' };
@@ -1752,16 +1768,10 @@ const RelatoriosView: React.FC = () => {
                     const parsedDate = typeof a.date === 'string' ? parseISO(a.date) : new Date(a.date);
                     const formattedDate = format(parsedDate, "dd 'de' MMM 'às' HH:mm", { locale: pt });
                     
-                    const svcIds = a.services_ids || (a.service_id ? [a.service_id] : []);
-                    const serviceNames = svcIds.map((id: any) => {
-                      const s = services.find((srv: any) => srv.id === id);
-                      return s?.nome || '';
-                    }).filter(Boolean).join(', ') || a.service_name || 'Serviço';
+                    const resolved = getServicesForAppointment(a, services);
+                    const serviceNames = resolved.map((s: any) => s.nome).filter(Boolean).join(', ') || 'Serviço';
                     
-                    const valFromServices = svcIds.reduce((sum: number, id: any) => {
-                      const s = services.find((srv: any) => srv.id === id);
-                      return sum + (s?.preco || 0);
-                    }, 0);
+                    const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
                     const appointmentValue = a.value || a.price || valFromServices || 0;
                     
                     const st = statusMeta[a.status] || { label: a.status || 'Agendado', bg: 'bg-amber-50 text-amber-700 border border-amber-200', text: 'text-amber-700' };

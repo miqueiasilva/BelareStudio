@@ -461,7 +461,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const [apptRes, blocksRes] = await Promise.all([
                 supabase
                     .from('appointments')
-                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origin, type')
+                    .select('id, date, duration, status, notes, client_id, client_name, professional_id, professional_name, service_name, value, service_color, resource_id, origin, type, service_id')
                     .eq('studio_id', activeStudioId)
                     .gte('date', startStr)
                     .lte('date', endStr)
@@ -726,7 +726,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 consent: true 
             },
             professional: prof || teamMembersList[0] || { id: 0, name: row.professional_name, avatarUrl: '' },
-            service: { id: 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : (row.service_color || '#3b82f6') }
+            service: { id: row.service_id || 0, name: row.service_name, price: Number(row.value), duration: dur, color: row.status === 'bloqueado' ? '#64748b' : (row.service_color || '#3b82f6') }
         } as LegacyAppointment;
     };
 
@@ -847,6 +847,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 client_id: app.client?.id ? app.client.id : null,
                 client_name: app.client?.nome || 'Cliente', 
                 professional_name: app.professional.name, 
+                service_id: app.service?.id || null,
                 service_name: app.service.name, 
                 value: Number(app.service.price) || 0, 
                 duration: duration, 
