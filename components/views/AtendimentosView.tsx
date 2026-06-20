@@ -64,7 +64,8 @@ const getProfessionalColor = (profId: any, resourcesList: LegacyProfessional[]):
 const getStatusColor = (status: string): string => {
     switch (status) {
         case 'agendado': return '#f97316'; // Orange / Amber
-        case 'confirmado': case 'confirmado_whatsapp': return '#3b82f6'; // Blue
+        case 'confirmado': return '#3b82f6'; // Blue
+        case 'confirmado_whatsapp': return '#10b981'; // Emerald Green
         case 'chegou': return '#a855f7'; // Purple
         case 'em_atendimento': return '#10b981'; // Emerald
         case 'concluido': return '#10b981'; // Green
@@ -1993,9 +1994,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                         )}
                                                         {app.status === 'concluido' && <DollarSign size={10} className="text-emerald-600 font-bold" strokeWidth={3} />}
                                                         {app.status === 'confirmado_whatsapp' && (
-                                                            <div className="flex items-center gap-0.5 bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full border border-emerald-200 scale-90 leading-none shadow-sm" title="Confirmado pelo Cliente via Link">
-                                                                <MessageSquare size={9} className="text-emerald-500 fill-emerald-100" strokeWidth={2.5} />
-                                                                <span className="text-[8px] font-black uppercase tracking-tighter text-emerald-600">Link Ok</span>
+                                                            <div className="flex items-center gap-1 bg-emerald-500 text-white px-2 py-0.5 rounded-full border border-emerald-600 scale-90 leading-none shadow-sm shrink-0" title="Confirmado pelo Cliente via Link Público">
+                                                                <MessageSquare size={8} className="fill-white" strokeWidth={2} />
+                                                                <span className="text-[7.5px] sm:text-[8.5px] font-black uppercase tracking-wider text-white">Confirmado p/ Cliente</span>
                                                             </div>
                                                         )}
                                                         {app.status === 'confirmado' && <CheckCircle size={10} className="text-blue-600" strokeWidth={3} title="Confirmado Manualmente" />}
@@ -2010,6 +2011,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                             <p className="text-xs font-bold text-slate-800 truncate leading-tight">
                                                                 {app.type === 'block' ? (app.notas || (app.service?.name !== 'Indisponível' ? app.service?.name : '') || 'INDISPONÍVEL') : (app.client?.apelido || app.client?.nome || 'Bloqueado')}
                                                             </p>
+                                                            {app.status === 'confirmado_whatsapp' && !isShort && (
+                                                                <div className="mt-1 inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide leading-none" title="Confirmado pelo Cliente via Link">
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                                    <span>Confirmado pelo Cliente</span>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         {!isShort && (
                                                             <div className="mt-auto opacity-90 leading-none">
