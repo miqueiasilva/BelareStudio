@@ -584,6 +584,7 @@ const RelatoriosView: React.FC = () => {
         'Categoria': c.name,
         'Atendimentos': c.quantity,
         'Faturamento (R$)': Number(c.revenue.toFixed(2)),
+        'Ticket Médio (R$)': Number((c.quantity > 0 ? c.revenue / c.quantity : 0).toFixed(2)),
         'Participação (%)': Number(c.percentage.toFixed(2))
       }));
       
@@ -592,87 +593,450 @@ const RelatoriosView: React.FC = () => {
       
       XLSX.utils.book_append_sheet(wb, wsServices, "Serviços");
       XLSX.utils.book_append_sheet(wb, wsCategories, "Categorias");
+    } else if (tabName === 'executivo') {
+      const kpis = [
+        { 'Métrica': 'Período Inicial', 'Valor': format(getDates().start, 'dd/MM/yyyy') },
+        { 'Métrica': 'Período Final', 'Valor': format(getDates().end, 'dd/MM/yyyy') },
+        { 'Métrica': 'Faturamento Realizado (Pago - R$)', 'Valor': Number((data.income || 0).toFixed(2)) },
+        { 'Métrica': 'Faturamento Projetado (Agenda/Comandas - R$)', 'Valor': Number((data.potentialIncome || 0).toFixed(2)) },
+        { 'Métrica': 'Despesas Totais (R$)', 'Valor': Number((data.expense || 0).toFixed(2)) },
+        { 'Métrica': 'Lucro Líquido Realizado (R$)', 'Valor': Number((data.profit || 0).toFixed(2)) },
+        { 'Métrica': 'Margem de Lucro (%)', 'Valor': `${(data.margin || 0).toFixed(2)}%` },
+        { 'Métrica': 'Ticket Médio (R$)', 'Valor': Number((data.ticketMedio || 0).toFixed(2)) },
+        { 'Métrica': 'Total de Agendamentos', 'Valor': data.totalAppts || 0 },
+        { 'Métrica': 'Agendamentos Concluídos', 'Valor': data.completedAppts || 0 },
+        { 'Métrica': 'Agendamentos via Canal Online', 'Valor': data.onlineAppts || 0 },
+        { 'Métrica': 'Taxa de Agendamento Online (%)', 'Valor': `${(data.onlineRate || 0).toFixed(2)}%` },
+        { 'Métrica': 'Projeção (Próximos 30 dias - R$)', 'Valor': Number((upcomingData.projectedIncome || 0).toFixed(2)) }
+      ];
+      const wsKpis = XLSX.utils.json_to_sheet(kpis);
+      XLSX.utils.book_append_sheet(wb, wsKpis, "Faturamento & KPIs");
+
+      const transData = (data.transactions || []).map((t: any) => ({
+        'Data': t.date ? format(parseISO(t.date), 'dd/MM/yyyy') : '',
+        'Descrição': t.description || 'Sem descrição',
+        'Tipo': t.type === 'income' ? 'Receita' : 'Despesa',
+        'Categoria': t.category || 'Sem categoria',
+        'Valor (R$)': Number((t.amount || 0).toFixed(2)),
+        'Status': t.status || 'pago'
+      }));
+      const wsTrans = XLSX.utils.json_to_sheet(transData);
+      XLSX.utils.book_append_sheet(wb, wsTrans, "Fluxo de Caixa");
+
+      const apptsData = (data.appointments || []).map((a: any) => ({
+        'Data': a.date ? format(parseISO(a.date), 'dd/MM/yyyy') : '',
+        'Hora': a.date ? format(parseISO(a.date), 'HH:mm') : '',
+        'Cliente': a.client_name || 'Sem cliente',
+        'Profissional': a.professional_name || 'Sem profissional',
+        'Serviço': a.service_name || 'Sem serviço',
+        'Valor (R$)': Number((a.value || a.price || 0).toFixed(2)),
+        'Status': a.status || 'confirmado',
+        'Origem': a.origin || 'interno'
+      }));
+      const wsAppts = XLSX.utils.json_to_sheet(apptsData);
+      XLSX.utils.book_append_sheet(wb, wsAppts, "Agendamentos");
+
+    } else if (tabName === 'financeiro') {
+      const summary = [
+        { 'Métrica': 'Faturamento Realizado (Pago - R$)', 'Valor': Number((data.income || 0).toFixed(2)) },
+        { 'Métrica': 'Despesas Totais (R$)', 'Valor': Number((data.expense || 0).toFixed(2)) },
+        { 'Métrica': 'Lucro Líquido Realizado (R$)', 'Valor': Number((data.profit || 0).toFixed(2)) },
+        { 'Métrica': 'Margem Líquida (%)', 'Valor': `${(data.margin || 0).toFixed(2)}%` }
+      ];
+      const wsSum = XLSX.utils.json_to_sheet(summary);
+      XLSX.utils.book_append_sheet(wb, wsSum, "Resumo");
+
+      const transData = (data.transactions || []).map((t: any) => ({
+        'Data': t.date ? format(parseISO(t.date), 'dd/MM/yyyy') : '',
+        'Descrição': t.description || 'Sem descrição',
+        'Categoria': t.category || 'Sem categoria',
+        'Tipo': t.type === 'income' ? 'Receita' : 'Despesa',
+        'Valor (R$)': Number((t.amount || 0).toFixed(2)),
+        'Status': t.status || 'pago',
+        'Método de Pagamento': t.payment_method || 'Não inf.'
+      }));
+      const wsTrans = XLSX.utils.json_to_sheet(transData);
+      XLSX.utils.book_append_sheet(wb, wsTrans, "Transações Detalhadas");
+
+    } else if (tabName === 'agenda') {
+      const summary = [
+        { 'Métrica': 'Total de Atendimentos', 'Valor': data.totalAppts || 0 },
+        { 'Métrica': 'Agendamentos via Canal Online', 'Valor': data.onlineAppts || 0 },
+        { 'Métrica': 'Agendamentos Manuais (Internos)', 'Valor': (data.totalAppts || 0) - (data.onlineAppts || 0) },
+        { 'Métrica': 'Taxa de Ocupação/Margem (%)', 'Valor': `${(data.margin || 0).toFixed(2)}%` }
+      ];
+      const wsSum = XLSX.utils.json_to_sheet(summary);
+      XLSX.utils.book_append_sheet(wb, wsSum, "Métricas da Agenda");
+
+      const apptsData = (data.appointments || []).map((a: any) => ({
+        'Data': a.date ? format(parseISO(a.date), 'dd/MM/yyyy') : '',
+        'Hora': a.date ? format(parseISO(a.date), 'HH:mm') : '',
+        'Cliente': a.client_name || 'Sem cliente',
+        'Profissional': a.professional_name || 'Sem profissional',
+        'Serviço': a.service_name || 'Sem serviço',
+        'Valor (R$)': Number((a.value || a.price || 0).toFixed(2)),
+        'Status': a.status || 'confirmado',
+        'Origem': a.origin || 'interno'
+      }));
+      const wsAppts = XLSX.utils.json_to_sheet(apptsData);
+      XLSX.utils.book_append_sheet(wb, wsAppts, "Lista de Atendimentos");
+
+    } else if (tabName === 'clientes') {
+      const clientsWithOrigin = (data.appointments || []).reduce((acc: any[], app: any) => {
+        if (!app.client_id) return acc;
+        const existing = acc.find(c => c.id === app.client_id);
+        if (existing) {
+          existing.visits += 1;
+          existing.totalSpent += Number(app.value || 0);
+          if (app.origin === 'online' || app.origin === 'link') {
+            existing.isOnline = true;
+          }
+        } else {
+          acc.push({
+            id: app.client_id,
+            name: app.client_name,
+            visits: 1,
+            totalSpent: Number(app.value || 0),
+            lastVisit: app.date,
+            isOnline: app.origin === 'online' || app.origin === 'link'
+          });
+        }
+        return acc;
+      }, []).sort((a: any, b: any) => b.totalSpent - a.totalSpent);
+
+      const clientsData = clientsWithOrigin.map((c: any, index: number) => ({
+        'Rank LTV': index + 1,
+        'Cliente': c.name || 'Sem nome',
+        'ID': c.id,
+        'Nº de Visitas (no período)': c.visits,
+        'Faturamento Gerado LTV (R$)': Number((c.totalSpent || 0).toFixed(2)),
+        'Último Atendimento': c.lastVisit ? format(parseISO(c.lastVisit), 'dd/MM/yyyy') : '',
+        'Agendou Online?': c.isOnline ? 'Sim' : 'Não'
+      }));
+
+      const wsClients = XLSX.utils.json_to_sheet(clientsData);
+      XLSX.utils.book_append_sheet(wb, wsClients, "Ranking LTV Clientes");
+
+    } else if (tabName === 'equipe') {
+      const teamData = teamStats.map((p: any, index: number) => ({
+        'Rank': index + 1,
+        'Colaborador': p.name,
+        'E-mail': p.email || 'Não informado',
+        'Cargo/Especialidade': p.role || 'Profissional',
+        'Atendimentos Realizados': p.count,
+        'Faturamento Realizado Pago (R$)': Number((p.revenue || 0).toFixed(2)),
+        'Faturamento Projetado (R$)': Number((p.projectedRevenue || 0).toFixed(2)),
+        'Ticket Médio Individual (R$)': Number((p.ticket || 0).toFixed(2)),
+        'Comissão Gerada (R$)': Number((p.commission || 0).toFixed(2))
+      }));
+      const wsTeam = XLSX.utils.json_to_sheet(teamData);
+      XLSX.utils.book_append_sheet(wb, wsTeam, "Performance Individual");
+
     } else {
       const ws = XLSX.utils.json_to_sheet(data.transactions);
       XLSX.utils.book_append_sheet(wb, ws, tabName);
     }
     
-    XLSX.writeFile(wb, `Relatorio_${tabName}_${format(new Date(), 'dd-MM-yyyy')}.xlsx`);
+    const formattedTabName = tabName.charAt(0).toUpperCase() + tabName.slice(1);
+    XLSX.writeFile(wb, `Relatorio_Faturamento_${formattedTabName}_${format(new Date(), 'dd-MM-yyyy')}.xlsx`);
     toast.success("Excel exportado com sucesso!");
   };
 
   const exportToPDF = (tabName: string) => {
     const doc = new jsPDF() as any;
+    const formattedTabName = tabName.charAt(0).toUpperCase() + tabName.slice(1);
+    const dateRangeStr = `Período: ${format(getDates().start, 'dd/MM/yyyy')} - ${format(getDates().end, 'dd/MM/yyyy')}`;
+    
+    // Header styling
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(22);
+    doc.setTextColor(249, 115, 22); // Orange primary
+    doc.text("BelareStudio - BI Inteligente", 14, 20);
+    
+    doc.setFontSize(14);
+    doc.setTextColor(30, 41, 59); // Slate-800
+    doc.text(`Relatório de Faturamento: ${formattedTabName}`, 14, 28);
+    
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(148, 163, 184); // Slate-400
+    doc.text(`${dateRangeStr}  |  Gerado em ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 34);
+    
+    doc.setDrawColor(241, 245, 249);
+    doc.line(14, 38, 196, 38);
     
     if (tabName === 'servicos') {
-      doc.setFontSize(16);
-      doc.text("Relatorio de Faturamento por Servicos & Categorias", 14, 15);
-      doc.setFontSize(10);
-      doc.text(`Periodo: ${format(getDates().start, 'dd/MM/yyyy')} - ${format(getDates().end, 'dd/MM/yyyy')}`, 14, 23);
-      doc.text(`Faturamento Total de Servicos: R$ ${serviceStats.totalRevenue.toLocaleString('pt-BR')}`, 14, 29);
-      doc.text(`Total de Atendimentos Realizados: ${serviceStats.totalQuantity}`, 14, 35);
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(30, 41, 59);
+      doc.text(`Faturamento Total de Serviços: R$ ${serviceStats.totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 46);
+      doc.text(`Total de Atendimentos Realizados: ${serviceStats.totalQuantity}`, 14, 52);
       
       doc.setFontSize(12);
-      doc.text("Faturamento por Categoria", 14, 45);
+      doc.text("Faturamento por Categoria", 14, 62);
       
       const categoryRows = serviceStats.categories.map((c, index) => [
         `#${index + 1}`,
         c.name,
         String(c.quantity),
-        `R$ ${Number(c.revenue).toLocaleString('pt-BR')}`,
+        `R$ ${Number(c.revenue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+        `R$ ${(c.quantity > 0 ? c.revenue / c.quantity : 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         `${c.percentage.toFixed(1)}%`
       ]);
       
       autoTable(doc, {
-        head: [['Posição', 'Categoria', 'Atendimentos', 'Faturamento', 'Porcentagem']],
+        head: [['Posição', 'Categoria', 'Atendimentos', 'Faturamento', 'Ticket Médio', 'Participação']],
         body: categoryRows,
-        startY: 49,
+        startY: 66,
         theme: 'striped',
+        headStyles: { fillColor: [30, 41, 59] },
         styles: { fontSize: 9 }
       });
       
-      const finalY = (doc as any).lastAutoTable.finalY + 10;
+      const finalY = (doc as any).lastAutoTable.finalY + 12;
       doc.setFontSize(12);
-      doc.text("Ranking de Servicos", 14, finalY);
+      doc.text("Ranking de Serviços", 14, finalY);
       
       const serviceRows = serviceStats.services.map((s, index) => [
         `#${index + 1}`,
         s.name,
         s.category,
         String(s.quantity),
-        `R$ ${Number(s.revenue).toLocaleString('pt-BR')}`,
+        `R$ ${Number(s.revenue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
         `${s.percentage.toFixed(1)}%`
       ]);
       
       autoTable(doc, {
-        head: [['Posição', 'Serviço', 'Categoria', 'Atendimentos', 'Faturamento', 'Porcentagem']],
+        head: [['Posição', 'Serviço', 'Categoria', 'Atendimentos', 'Faturamento', 'Participação']],
         body: serviceRows,
         startY: finalY + 4,
         theme: 'striped',
+        headStyles: { fillColor: [249, 115, 22] },
         styles: { fontSize: 8 }
       });
       
+    } else if (tabName === 'executivo') {
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(30, 41, 59);
+      doc.text("Resumo Estratégico do Período", 14, 46);
+
+      const kpiRows = [
+        ['Faturamento Realizado (Pago)', `R$ ${(data.income || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Porcentagem de Margem', `${(data.margin || 0).toFixed(2)}%`],
+        ['Faturamento Projetado (Agenda/Comandas)', `R$ ${(data.potentialIncome || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Ticket Médio', `R$ ${(data.ticketMedio || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['Despesas Totais do Período', `R$ ${(data.expense || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Total de Atendimentos', String(data.totalAppts || 0)],
+        ['Lucro Líquido Realizado', `R$ ${(data.profit || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Atendimentos Concluídos', String(data.completedAppts || 0)],
+        ['Agendamentos Online', String(data.onlineAppts || 0), 'Taxa Online', `${(data.onlineRate || 0).toFixed(1)}%`],
+        ['Projeção Futura (Próximos 30 dias)', `R$ ${(upcomingData.projectedIncome || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Atendimentos Projetados', String(upcomingData.count || 0)]
+      ];
+
+      autoTable(doc, {
+        head: [['Métrica Financeira', 'Valor', 'Métrica de Operação', 'Valor']],
+        body: kpiRows,
+        startY: 50,
+        theme: 'grid',
+        headStyles: { fillColor: [30, 41, 59] },
+        styles: { fontSize: 9 }
+      });
+
+      const nextY = (doc as any).lastAutoTable.finalY + 12;
+      doc.setFontSize(12);
+      doc.text("Últimas Transações Financeiras", 14, nextY);
+
+      const transRows = (data.transactions || []).slice(0, 15).map((t: any) => [
+        t.date ? format(parseISO(t.date), 'dd/MM/yyyy') : '',
+        t.description || 'Sem descrição',
+        t.category || 'Sem categoria',
+        t.type === 'income' ? 'Receita' : 'Despesa',
+        `R$ ${(t.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+      ]);
+
+      autoTable(doc, {
+        head: [['Data', 'Descrição', 'Categoria', 'Tipo', 'Valor']],
+        body: transRows,
+        startY: nextY + 4,
+        theme: 'striped',
+        headStyles: { fillColor: [249, 115, 22] },
+        styles: { fontSize: 8 }
+      });
+
+    } else if (tabName === 'financeiro') {
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(30, 41, 59);
+      doc.text("Resumo Financeiro", 14, 46);
+
+      const finKpis = [
+        ['Faturamento Realizado (Receitas)', `R$ ${(data.income || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['Custos / Despesas Totais', `R$ ${(data.expense || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['Lucro Líquido Realizado', `R$ ${(data.profit || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['Margem Líquida (%)', `${(data.margin || 0).toFixed(2)}%`]
+      ];
+
+      autoTable(doc, {
+        head: [['Métrica Financeira', 'Valor']],
+        body: finKpis,
+        startY: 50,
+        theme: 'grid',
+        headStyles: { fillColor: [30, 41, 59] },
+        styles: { fontSize: 9, fontStyle: 'bold' }
+      });
+
+      const finalFinY = (doc as any).lastAutoTable.finalY + 12;
+      doc.setFontSize(12);
+      doc.text("Faturamento Relacionado - fluxo de Transações", 14, finalFinY);
+
+      const transRows = (data.transactions || []).map((t: any) => [
+        t.date ? format(parseISO(t.date), 'dd/MM/yyyy') : '',
+        t.description || 'Sem descrição',
+        t.category || 'Sem categoria',
+        t.type === 'income' ? 'Receita' : 'Despesa',
+        t.payment_method || 'Não inf.',
+        `R$ ${(t.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+      ]);
+
+      autoTable(doc, {
+        head: [['Data', 'Descrição', 'Categoria', 'Tipo', 'Atendimento/Método', 'Valor']],
+        body: transRows,
+        startY: finalFinY + 4,
+        theme: 'striped',
+        headStyles: { fillColor: [249, 115, 22] },
+        styles: { fontSize: 8 }
+      });
+
+    } else if (tabName === 'agenda') {
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(30, 41, 59);
+      doc.text("Métricas de Agendamento", 14, 46);
+
+      const agendaKpis = [
+        ['Total de Atendimentos', String(data.totalAppts || 0), 'Agendamentos Online (Link)', String(data.onlineAppts || 0)],
+        ['Taxa de Ocupação', `${(data.margin || 0).toFixed(1)}%`, 'Agendamentos Manuais', String((data.totalAppts || 0) - (data.onlineAppts || 0))]
+      ];
+
+      autoTable(doc, {
+        head: [['Operação', 'Quantidade', 'Canal de Aquisição', 'Quantidade']],
+        body: agendaKpis,
+        startY: 50,
+        theme: 'grid',
+        headStyles: { fillColor: [30, 41, 59] },
+        styles: { fontSize: 9 }
+      });
+
+      const finalAgendaY = (doc as any).lastAutoTable.finalY + 12;
+      doc.setFontSize(12);
+      doc.text("Lista de Atendimentos Detalhada", 14, finalAgendaY);
+
+      const apptsRows = (data.appointments || []).map((a: any) => [
+        a.date ? format(parseISO(a.date), 'dd/MM/yyyy HH:mm') : '',
+        a.client_name || 'Sem cliente',
+        a.professional_name || 'Sem profissional',
+        a.service_name || 'Sem serviço',
+        a.origin || 'interno',
+        `R$ ${(a.value || a.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+        a.status || 'agendado'
+      ]);
+
+      autoTable(doc, {
+        head: [['Data/Hora', 'Cliente', 'Colaborador', 'Serviço', 'Origem', 'Valor', 'Status']],
+        body: apptsRows,
+        startY: finalAgendaY + 4,
+        theme: 'striped',
+        headStyles: { fillColor: [249, 115, 22] },
+        styles: { fontSize: 8 }
+      });
+
+    } else if (tabName === 'clientes') {
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(30, 41, 59);
+      doc.text("LTV e Fidelidade de Clientes", 14, 46);
+
+      const clientsWithOrigin = (data.appointments || []).reduce((acc: any[], app: any) => {
+        if (!app.client_id) return acc;
+        const existing = acc.find(c => c.id === app.client_id);
+        if (existing) {
+          existing.visits += 1;
+          existing.totalSpent += Number(app.value || 0);
+          if (app.origin === 'online' || app.origin === 'link') {
+            existing.isOnline = true;
+          }
+        } else {
+          acc.push({
+            id: app.client_id,
+            name: app.client_name,
+            visits: 1,
+            totalSpent: Number(app.value || 0),
+            lastVisit: app.date,
+            isOnline: app.origin === 'online' || app.origin === 'link'
+          });
+        }
+        return acc;
+      }, []).sort((a: any, b: any) => b.totalSpent - a.totalSpent);
+
+      const clientRows = clientsWithOrigin.map((c: any, index: number) => [
+        `#${index + 1}`,
+        c.name || 'Sem nome',
+        String(c.visits),
+        `R$ ${(c.totalSpent || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+        c.lastVisit ? format(parseISO(c.lastVisit), 'dd/MM/yyyy') : '',
+        c.isOnline ? 'Sim' : 'Não'
+      ]);
+
+      autoTable(doc, {
+        head: [['Rank', 'Cliente', 'Visitas no Período', 'LTV no Período', 'Último Atendimento', 'Agendou Online?']],
+        body: clientRows,
+        startY: 50,
+        theme: 'striped',
+        headStyles: { fillColor: [30, 41, 59] },
+        styles: { fontSize: 9 }
+      });
+
+    } else if (tabName === 'equipe') {
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(30, 41, 59);
+      doc.text("Performance por Colaborador", 14, 46);
+
+      const teamRows = teamStats.map((p: any, index: number) => [
+        `#${index + 1}`,
+        p.name,
+        String(p.count),
+        `R$ ${(p.revenue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+        `R$ ${(p.projectedRevenue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+        `R$ ${(p.ticket || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+        `R$ ${(p.commission || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+      ]);
+
+      autoTable(doc, {
+        head: [['Rank', 'Colaborador', 'Atendimentos', 'Faturamento Realizado', 'Faturamento Projetado', 'Ticket Médio', 'Comissão Estimada']],
+        body: teamRows,
+        startY: 50,
+        theme: 'striped',
+        headStyles: { fillColor: [30, 41, 59] },
+        styles: { fontSize: 8 }
+      });
+
     } else {
-      doc.setFontSize(16);
-      doc.text(`Relatorio de ${tabName}`, 14, 15);
-      doc.setFontSize(10);
-      doc.text(`Periodo: ${format(getDates().start, 'dd/MM/yyyy')} - ${format(getDates().end, 'dd/MM/yyyy')}`, 14, 25);
+      doc.setFontSize(14);
+      doc.text(`Relatório de ${formattedTabName}`, 14, 45);
       
       const tableData = data.transactions.map((t: any) => [
         format(parseISO(t.date), 'dd/MM/yyyy'),
-        t.description || t.category || 'Sem descricao',
+        t.description || t.category || 'Sem descrição',
         t.type === 'income' ? 'Receita' : 'Despesa',
         `R$ ${Number(t.amount).toLocaleString('pt-BR')}`
       ]);
 
       autoTable(doc, {
-        head: [['Data', 'Descricao', 'Tipo', 'Valor']],
+        head: [['Data', 'Descrição', 'Tipo', 'Valor']],
         body: tableData,
-        startY: 35
+        startY: 55
       });
     }
 
-    doc.save(`Relatorio_${tabName}_${format(new Date(), 'dd-MM-yyyy')}.pdf`);
+    doc.save(`Relatorio_Faturamento_${formattedTabName}_${format(new Date(), 'dd-MM-yyyy')}.pdf`);
     toast.success("PDF exportado com sucesso!");
   };
 
@@ -1522,6 +1886,13 @@ const RelatoriosView: React.FC = () => {
       return s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q);
     });
 
+    const categoriesByTicketMedio = [...serviceStats.categories]
+      .map(c => ({
+        ...c,
+        ticketMedio: c.quantity > 0 ? c.revenue / c.quantity : 0
+      }))
+      .sort((a, b) => b.ticketMedio - a.ticketMedio);
+
     const COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4', '#14b8a6', '#6366f1', '#f43f5e', '#a855f7'];
 
     // Slices for Pie Chart - categories with revenue > 0
@@ -1705,10 +2076,10 @@ const RelatoriosView: React.FC = () => {
         </div>
 
         {/* Detailed Lists */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-8">
           
           {/* Left / Column 1: Categories Breakdown List */}
-          <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden lg:col-span-1 h-fit">
+          <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden lg:col-span-1 xl:col-span-1 h-fit">
             <div className="p-6 md:p-8 border-b border-slate-50 flex items-center justify-between">
               <h3 className="font-black text-slate-800 text-sm uppercase">Faturamento de Categorias</h3>
               <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-black uppercase">
@@ -1738,8 +2109,42 @@ const RelatoriosView: React.FC = () => {
             </div>
           </div>
 
-          {/* Right / Column 2 & 3: Ranking of Services */}
-          <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden lg:col-span-2">
+          {/* Center / Column 2: Ticket Médio por Categoria List */}
+          <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden lg:col-span-1 xl:col-span-1 h-fit animate-in fade-in duration-300">
+            <div className="p-6 md:p-8 border-b border-slate-50 flex items-center justify-between">
+              <div>
+                <h3 className="font-black text-slate-800 text-sm uppercase">Ticket Médio</h3>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Por categoria de serviço</p>
+              </div>
+              <span className="p-1 px-2.5 bg-indigo-50 text-indigo-600 rounded-full text-[9px] font-black uppercase tracking-wider">
+                Consumo
+              </span>
+            </div>
+            <div className="divide-y divide-slate-50 max-h-[500px] overflow-y-auto custom-scrollbar">
+              {categoriesByTicketMedio.length > 0 ? categoriesByTicketMedio.map((c, index) => (
+                <div key={c.name} className="p-4 md:p-5 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
+                  <div className="flex items-center gap-3 truncate pr-2">
+                    <span className={`w-6 h-6 rounded-lg text-[10px] font-black flex items-center justify-center border ${index === 0 ? 'bg-indigo-50 border-indigo-200 text-indigo-600 shadow-sm' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                      {index + 1}
+                    </span>
+                    <div className="truncate">
+                      <p className="text-xs font-black text-slate-800 truncate">{c.name}</p>
+                      <p className="text-[9px] text-slate-400 font-bold uppercase">{c.quantity} serviços</p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs font-black text-indigo-600">R$ {c.ticketMedio.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className="text-[9px] text-slate-400 font-bold">valor médio</p>
+                  </div>
+                </div>
+              )) : (
+                <div className="py-12"><EmptyState /></div>
+              )}
+            </div>
+          </div>
+
+          {/* Right / Column 3 & 4: Ranking of Services */}
+          <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden lg:col-span-2 xl:col-span-2">
             <div className="p-6 md:p-8 border-b border-slate-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
                 <h3 className="font-black text-slate-800 text-sm uppercase">Ranking de Serviços</h3>
