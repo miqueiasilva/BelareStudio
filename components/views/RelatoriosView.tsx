@@ -51,6 +51,39 @@ const EmptyState = ({ message = "Nenhum dado encontrado para o período selecion
   </div>
 );
 
+const guessCategory = (name: string, existingCategory?: string): string => {
+  if (existingCategory && existingCategory !== 'Sem Categoria' && existingCategory.trim() !== '') {
+    return existingCategory;
+  }
+  const n = (name || '').toLowerCase();
+  if (n.includes('design') || n.includes('henna') || n.includes('sobrancelha') || n.includes('brow') || n.includes('micropigmentação') || n.includes('micro')) {
+    return 'Sobrancelhas';
+  }
+  if (n.includes('cílios') || n.includes('cilios') || n.includes('lash') || n.includes('fio a fio') || n.includes('olhar')) {
+    return 'Cílios & Olhar';
+  }
+  if (n.includes('epilação') || n.includes('epilacao')) {
+    return 'Epilação Facial';
+  }
+  if (n.includes('depilação') || n.includes('depilacao')) {
+    if (n.includes('masc')) return 'Depilação Masculina';
+    return 'Depilação Feminina';
+  }
+  if (n.includes('pele') || n.includes('facial') || n.includes('corporal') || n.includes('limpeza') || n.includes('estética') || n.includes('estetica')) {
+    return 'Estética Facial & Corporal';
+  }
+  if (n.includes('massagem') || n.includes('bem-estar') || n.includes('terapia') || n.includes('relax')) {
+    return 'Massagem & Bem-Estar';
+  }
+  if (n.includes('lábio') || n.includes('labial') || n.includes('labio')) {
+    return 'Lábios';
+  }
+  if (n.includes('curso') || n.includes('especialização') || n.includes('especializacao') || n.includes('aula')) {
+    return 'Cursos';
+  }
+  return 'Sobrancelhas'; // fallback beauty/salon default if not matched
+};
+
 const getServicesForAppointment = (a: any, servicesList: any[]) => {
   const servicesMap = new Map((servicesList || []).map(s => [String(s.id), s]));
   const servicesByNameMap = new Map();
@@ -81,13 +114,16 @@ const getServicesForAppointment = (a: any, servicesList: any[]) => {
         found = servicesByNameMap.get(ps.name.trim().toLowerCase());
       }
       if (found) {
-        resolvedServices.push(found);
+        resolvedServices.push({
+          ...found,
+          categoria: guessCategory(found.nome, found.categoria)
+        });
       } else {
         resolvedServices.push({
           id: ps.id || 0,
           nome: ps.name || 'Serviço',
           preco: Number(ps.price || ps.preco || 0),
-          categoria: 'Sem Categoria'
+          categoria: guessCategory(ps.name || 'Serviço')
         });
       }
     });
@@ -98,13 +134,16 @@ const getServicesForAppointment = (a: any, servicesList: any[]) => {
     }
 
     if (found) {
-      resolvedServices.push(found);
+      resolvedServices.push({
+        ...found,
+        categoria: guessCategory(found.nome, found.categoria)
+      });
     } else {
       resolvedServices.push({
         id: a.service_id || 0,
         nome: a.service_name || 'Serviço não cadastrado',
         preco: Number(a.value || a.price || 0),
-        categoria: 'Sem Categoria'
+        categoria: guessCategory(a.service_name || 'Serviço não cadastrado')
       });
     }
   }
@@ -176,9 +215,9 @@ const RelatoriosView: React.FC = () => {
   const [customEndDate, setCustomEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   
   // Data States
-  const [data, setData] = useState<any>(null);
-  const [previousData, setPreviousData] = useState<any>(null);
-  const [upcomingData, setUpcomingData] = useState<any>(null);
+  const [rawReceivedData, setRawReceivedData] = useState<any>(null);
+  const [rawPreviousData, setRawPreviousData] = useState<any>(null);
+  const [rawUpcomingData, setRawUpcomingData] = useState<any[]>([]);
   
   // Filters
   const [selectedProfessionals, setSelectedProfessionals] = useState<string[]>([]);
@@ -186,6 +225,151 @@ const RelatoriosView: React.FC = () => {
   const [availableProfessionals, setAvailableProfessionals] = useState<any[]>([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const [services, setServices] = useState<any[]>([]);
+
+  // Derived filtered data states based on selected professional filter
+  const displayData = useMemo(() => {
+    if (!rawReceivedData) return null;
+    if (selectedProfessionals.length === 0) return rawReceivedData;
+    
+    const profId = String(selectedProfessionals[0]).trim();
+    
+    const appointments = rawReceivedData.appointments.filter((a: any) => {
+      const aProfId = String(a.professional_id || a.professional?.id || '').trim();
+      return aProfId === profId;
+    });
+
+    const transactions = rawReceivedData.transactions.filter((t: any) => {
+      const tProfId = String(t.professionalId || t.professional_id || '').trim();
+      if (tProfId) {
+        return tProfId === profId;
+      }
+      if (t.appointment_id) {
+        const matchingAppt = rawReceivedData.appointments.find((a: any) => String(a.id) === String(t.appointment_id));
+        if (matchingAppt) {
+          const aProfId = String(matchingAppt.professional_id || matchingAppt.professional?.id || '').trim();
+          return aProfId === profId;
+        }
+      }
+      return false;
+    });
+
+    const income = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
+    const expense = transactions.filter(t => t.type === 'expense' || t.type === 'despesa').reduce((acc, t) => acc + Number(t.amount || 0), 0);
+    const totalAppts = appointments.length;
+    const completedAppts = appointments.filter(a => a.status === 'concluido').length;
+    const ticketMedio = completedAppts > 0 ? income / completedAppts : 0;
+    const profit = income - expense;
+    const margin = income > 0 ? (profit / income) * 100 : 0;
+    
+    const potentialIncome = appointments.filter(a => a.status !== 'cancelado').reduce((acc, a) => {
+      const resolved = getServicesForAppointment(a, services);
+      const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
+      return acc + (a.value || a.price || valFromServices || 0);
+    }, 0);
+
+    const onlineAppts = appointments.filter(a => (a.origin === 'online' || a.origin === 'link') && a.status !== 'cancelado').length;
+    const onlineRate = totalAppts > 0 ? (onlineAppts / totalAppts) * 100 : 0;
+
+    return {
+      ...rawReceivedData,
+      income,
+      expense,
+      totalAppts,
+      completedAppts,
+      ticketMedio,
+      profit,
+      margin,
+      onlineAppts,
+      onlineRate,
+      transactions,
+      appointments,
+      potentialIncome
+    };
+  }, [rawReceivedData, selectedProfessionals, services]);
+
+  const displayPreviousData = useMemo(() => {
+    if (!rawPreviousData) return null;
+    if (selectedProfessionals.length === 0) return rawPreviousData;
+    
+    const profId = String(selectedProfessionals[0]).trim();
+    
+    const appointments = rawPreviousData.appointments.filter((a: any) => {
+      const aProfId = String(a.professional_id || a.professional?.id || '').trim();
+      return aProfId === profId;
+    });
+
+    const transactions = rawPreviousData.transactions.filter((t: any) => {
+      const tProfId = String(t.professionalId || t.professional_id || '').trim();
+      if (tProfId) {
+        return tProfId === profId;
+      }
+      if (t.appointment_id) {
+        const matchingAppt = rawPreviousData.appointments.find((a: any) => String(a.id) === String(t.appointment_id));
+        if (matchingAppt) {
+          const aProfId = String(matchingAppt.professional_id || matchingAppt.professional?.id || '').trim();
+          return aProfId === profId;
+        }
+      }
+      return false;
+    });
+
+    const income = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
+    const expense = transactions.filter(t => t.type === 'expense' || t.type === 'despesa').reduce((acc, t) => acc + Number(t.amount || 0), 0);
+    const totalAppts = appointments.length;
+    const completedAppts = appointments.filter(a => a.status === 'concluido').length;
+    const ticketMedio = completedAppts > 0 ? income / completedAppts : 0;
+    const profit = income - expense;
+    const margin = income > 0 ? (profit / income) * 100 : 0;
+    
+    const potentialIncome = appointments.filter(a => a.status !== 'cancelado').reduce((acc, a) => {
+      const resolved = getServicesForAppointment(a, services);
+      const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
+      return acc + (a.value || a.price || valFromServices || 0);
+    }, 0);
+
+    const onlineAppts = appointments.filter(a => (a.origin === 'online' || a.origin === 'link') && a.status !== 'cancelado').length;
+    const onlineRate = totalAppts > 0 ? (onlineAppts / totalAppts) * 100 : 0;
+
+    return {
+      ...rawPreviousData,
+      income,
+      expense,
+      totalAppts,
+      completedAppts,
+      ticketMedio,
+      profit,
+      margin,
+      onlineAppts,
+      onlineRate,
+      transactions,
+      appointments,
+      potentialIncome
+    };
+  }, [rawPreviousData, selectedProfessionals, services]);
+
+  const upcomingData = useMemo(() => {
+    if (!rawUpcomingData) return { projectedIncome: 0, count: 0 };
+    
+    let filtered = rawUpcomingData;
+    if (selectedProfessionals.length > 0) {
+      const profId = String(selectedProfessionals[0]).trim();
+      filtered = rawUpcomingData.filter((a: any) => {
+        const aProfId = String(a.professional_id || a.professional?.id || '').trim();
+        return aProfId === profId;
+      });
+    }
+
+    const projectedIncome = filtered.reduce((acc: number, a: any) => {
+      const resolved = getServicesForAppointment(a, services);
+      const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
+      return acc + (a.value || a.price || valFromServices || 0);
+    }, 0);
+
+    return { projectedIncome, count: filtered.length };
+  }, [rawUpcomingData, selectedProfessionals, services]);
+
+  const data = displayData;
+  const previousData = displayPreviousData;
 
   // Detalhamento de Equipe states
   const [selectedProfDetails, setSelectedProfDetails] = useState<any | null>(null);
@@ -300,16 +484,10 @@ const RelatoriosView: React.FC = () => {
         return { income, expense, totalAppts, completedAppts, ticketMedio, profit, margin, onlineAppts, onlineRate, transactions, appointments, potentialIncome };
       };
 
-      setData(process(transRes.data || [], apptsRes.data || []));
-      setPreviousData(process(prevTransRes.data || [], prevApptsRes.data || []));
+      setRawReceivedData(process(transRes.data || [], apptsRes.data || []));
+      setRawPreviousData(process(prevTransRes.data || [], prevApptsRes.data || []));
       
-      const upcomingFiltered = upcomingAppts || [];
-      const projectedIncome = upcomingFiltered.reduce((acc, a) => {
-          const resolved = getServicesForAppointment(a, servicesRes.data || []);
-          const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
-          return acc + (a.value || a.price || valFromServices || 0);
-      }, 0);
-      setUpcomingData({ projectedIncome, count: upcomingFiltered.length });
+      setRawUpcomingData(upcomingAppts || []);
       
     } catch (err) {
       console.error("Erro ao buscar dados do BI:", err);
@@ -345,13 +523,35 @@ const RelatoriosView: React.FC = () => {
       return { name: format(day, 'dd/MM'), valor: dayIncome };
     });
 
-    // Revenue by Category
+    // Revenue by Category (Service Categories)
     const catMap: any = {};
-    data.transactions.filter((t: any) => t.type === 'income' || t.type === 'receita').forEach((t: any) => {
-      const cat = t.category || 'Outros';
-      catMap[cat] = (catMap[cat] || 0) + Number(t.amount || 0);
+    data.appointments.forEach((a: any) => {
+      if (a.type === 'block' || a.status === 'cancelado') return;
+      const resolved = getServicesForAppointment(a, services);
+      if (resolved.length > 0) {
+        const sumPrices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
+        const appointmentValue = a.value || a.price || sumPrices || 0;
+        resolved.forEach((s: any) => {
+          const sPrice = s.preco || 0;
+          const sCat = s.categoria || 'Sobrancelhas';
+          const attributedVal = sumPrices > 0 ? (sPrice / sumPrices) * appointmentValue : appointmentValue / resolved.length;
+          catMap[sCat] = (catMap[sCat] || 0) + attributedVal;
+        });
+      }
     });
-    const categoryData = Object.entries(catMap).map(([name, value]) => ({ name, value }));
+
+    // Fallback if no appointments are present but we have transactions
+    if (Object.keys(catMap).length === 0) {
+      data.transactions.filter((t: any) => t.type === 'income' || t.type === 'receita').forEach((t: any) => {
+        const cat = t.category || 'Outros';
+        catMap[cat] = (catMap[cat] || 0) + Number(t.amount || 0);
+      });
+    }
+
+    const categoryData = Object.entries(catMap).map(([name, value]) => ({ 
+      name, 
+      value: Number(Number(value).toFixed(2)) 
+    })).sort((a: any, b: any) => b.value - a.value);
 
     return {
       incomeTrend,
@@ -360,7 +560,7 @@ const RelatoriosView: React.FC = () => {
       evolution,
       categoryData
     };
-  }, [data, previousData, getDates]);
+  }, [data, previousData, getDates, services]);
 
   // --- Export Functions ---
 
@@ -903,13 +1103,31 @@ const RelatoriosView: React.FC = () => {
           </div>
         )}
 
-        <div className="flex items-center justify-between sm:justify-start gap-3">
+        <div className="flex items-center justify-between sm:justify-start gap-4">
           <label className="flex items-center gap-3 cursor-pointer group">
             <div className={`w-10 h-5 rounded-full relative transition-colors ${compareWithPrevious ? 'bg-orange-500' : 'bg-slate-200'}`} onClick={() => setCompareWithPrevious(!compareWithPrevious)}>
               <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${compareWithPrevious ? 'left-6' : 'left-1'}`} />
             </div>
             <span className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase group-hover:text-slate-600 transition-colors">Comparar</span>
           </label>
+
+          {/* Filtro de Profissional */}
+          <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-2xl border border-slate-200">
+            <span className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase">Profissional:</span>
+            <select
+              value={selectedProfessionals[0] || 'all'}
+              onChange={e => {
+                const val = e.target.value;
+                setSelectedProfessionals(val === 'all' ? [] : [val]);
+              }}
+              className="bg-transparent border-none text-[10px] font-bold text-slate-700 outline-none cursor-pointer focus:ring-0 py-0.5"
+            >
+              <option value="all">TODOS</option>
+              {availableProfessionals.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
