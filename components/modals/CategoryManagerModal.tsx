@@ -187,7 +187,7 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ onClose, on
                                         <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color_hex || colors[0] }}></div>
                                         <span className="font-black text-slate-700 text-sm truncate uppercase">{cat.name}</span>
                                     </div>
-                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="flex items-center gap-2 md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-opacity">
                                         <button onClick={() => handleEdit(cat)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl" title="Editar"><Edit2 size={16} /></button>
                                         <button onClick={() => handleDelete(cat.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl" title="Excluir"><Trash2 size={16} /></button>
                                     </div>
