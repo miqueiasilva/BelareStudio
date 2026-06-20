@@ -415,6 +415,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     };
 
     const isMounted = useRef(true);
+    const notifiedConfirmationsRef = useRef<Set<number>>(new Set());
     const appointmentRefs = useRef(new Map<number, HTMLDivElement | null>());
     const gridScrollRef = useRef<HTMLDivElement>(null); 
     const dateInputRef = useRef<HTMLInputElement>(null);
@@ -574,7 +575,69 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         fetchNotifications();
         
         const channel = supabase.channel('agenda-live')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => { if (isMounted.current) fetchAppointments(); })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, (payload: any) => { 
+                if (isMounted.current) {
+                    fetchAppointments();
+                    fetchNotifications();
+
+                    // Check if it's an update where status was recently confirmed via whatsapp/link
+                    if (payload.eventType === 'UPDATE' && payload.new && payload.new.status === 'confirmado_whatsapp') {
+                        const apptId = Number(payload.new.id);
+                        if (!notifiedConfirmationsRef.current.has(apptId)) {
+                            notifiedConfirmationsRef.current.add(apptId);
+                            
+                            const clientName = payload.new.client_name || 'Cliente';
+                            const serviceName = payload.new.service_name || 'Serviço';
+                            
+                            // 1. Live Toaster alert
+                            toast.success(
+                                `✨ Confirmado! ${clientName} confirmou a presença para ${serviceName} via link!`,
+                                { 
+                                    duration: 8000,
+                                    position: 'top-right',
+                                    icon: '💬',
+                                    style: {
+                                        background: '#f0fdf4',
+                                        color: '#166534',
+                                        border: '1px solid #bbf7d0',
+                                        fontWeight: 'bold',
+                                        borderRadius: '16px',
+                                        fontSize: '13px'
+                                    }
+                                }
+                            );
+
+                            // 2. Gentle premium double audio alert
+                            try {
+                                const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                                if (audioCtx.state === 'suspended') {
+                                    audioCtx.resume();
+                                }
+                                const playChime = (delay: number, pitch: number) => {
+                                    setTimeout(() => {
+                                        const osc = audioCtx.createOscillator();
+                                        const gainNode = audioCtx.createGain();
+                                        osc.connect(gainNode);
+                                        gainNode.connect(audioCtx.destination);
+                                        
+                                        osc.type = 'sine';
+                                        osc.frequency.setValueAtTime(pitch, audioCtx.currentTime);
+                                        gainNode.gain.setValueAtTime(0.12, audioCtx.currentTime);
+                                        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
+                                        
+                                        osc.start();
+                                        osc.stop(audioCtx.currentTime + 0.8);
+                                    }, delay);
+                                };
+                                playChime(0, 880); // A5 chime
+                                playChime(150, 1109); // C#6 chime
+                            } catch (e) {
+                                console.log('[Audio Notification] Blocked by browser or unsupported:', e);
+                            }
+                        }
+                    }
+                } 
+            })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, () => { if (isMounted.current) fetchResources(); })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'schedule_blocks' }, () => { if (isMounted.current) fetchAppointments(); })
             .subscribe();
@@ -1929,7 +1992,13 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                             <Globe size={10} className="text-orange-500 animate-pulse" strokeWidth={3} title="Agendamento Online" />
                                                         )}
                                                         {app.status === 'concluido' && <DollarSign size={10} className="text-emerald-600 font-bold" strokeWidth={3} />}
-                                                        {['confirmado', 'confirmado_whatsapp'].includes(app.status) && <CheckCircle size={10} className="text-blue-600" strokeWidth={3} />}
+                                                        {app.status === 'confirmado_whatsapp' && (
+                                                            <div className="flex items-center gap-0.5 bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full border border-emerald-200 scale-90 leading-none shadow-sm" title="Confirmado pelo Cliente via Link">
+                                                                <MessageSquare size={9} className="text-emerald-500 fill-emerald-100" strokeWidth={2.5} />
+                                                                <span className="text-[8px] font-black uppercase tracking-tighter text-emerald-600">Link Ok</span>
+                                                            </div>
+                                                        )}
+                                                        {app.status === 'confirmado' && <CheckCircle size={10} className="text-blue-600" strokeWidth={3} title="Confirmado Manualmente" />}
                                                         {app.type === 'block' && <ShieldAlert size={10} className="text-rose-400" />}
                                                     </div>
 
@@ -2384,14 +2453,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                             </span>
                                                         )}
                                                         {!isBlocked && (
-                                                            <span className={`text-[8.5px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg leading-none ${
+                                                            <span className={`text-[8.5px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg leading-none inline-flex items-center gap-1 ${
                                                                 app.status === 'concluido' ? 'bg-emerald-50 text-emerald-600 border border-emerald-110' :
-                                                                ['confirmado', 'confirmado_whatsapp'].includes(app.status) ? 'bg-blue-50 text-blue-600 border border-blue-110' :
+                                                                app.status === 'confirmado_whatsapp' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' :
+                                                                app.status === 'confirmado' ? 'bg-blue-50 text-blue-600 border border-blue-110' :
                                                                 app.status === 'cancelado' ? 'bg-red-50 text-red-600 border border-red-110' :
                                                                 'bg-amber-50 text-amber-600 border border-amber-110'
                                                             }`}>
+                                                                {app.status === 'confirmado_whatsapp' && <MessageSquare size={8} className="text-emerald-500 fill-emerald-100" />}
                                                                 {app.status === 'concluido' ? 'Concluído' :
-                                                                 ['confirmado', 'confirmado_whatsapp'].includes(app.status) ? 'Confirmado' :
+                                                                 app.status === 'confirmado_whatsapp' ? 'Confirmado via Link' :
+                                                                 app.status === 'confirmado' ? 'Confirmado' :
                                                                  app.status === 'cancelado' ? 'Cancelado' :
                                                                  'Agendado'}
                                                             </span>
@@ -2535,14 +2607,17 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                 )}
 
                                                                 {!isBlocked && (
-                                                                    <span className={`text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-xl leading-none font-bold ${
+                                                                    <span className={`text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-xl leading-none inline-flex items-center gap-1 font-bold ${
                                                                         app.status === 'concluido' ? 'bg-emerald-50 text-emerald-600 border border-emerald-110' :
-                                                                        ['confirmado', 'confirmado_whatsapp'].includes(app.status) ? 'bg-blue-50 text-blue-600 border border-blue-110' :
+                                                                        app.status === 'confirmado_whatsapp' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' :
+                                                                        app.status === 'confirmado' ? 'bg-blue-50 text-blue-600 border border-blue-110' :
                                                                         app.status === 'cancelado' ? 'bg-red-50 text-red-600 border border-red-110' :
                                                                         'bg-amber-50 text-amber-600 border border-amber-110'
                                                                     }`}>
+                                                                        {app.status === 'confirmado_whatsapp' && <MessageSquare size={8} className="text-emerald-500 fill-emerald-100" />}
                                                                         {app.status === 'concluido' ? 'Concluído' :
-                                                                         ['confirmado', 'confirmado_whatsapp'].includes(app.status) ? 'Confirmado' :
+                                                                         app.status === 'confirmado_whatsapp' ? 'Confirmado via Link' :
+                                                                         app.status === 'confirmado' ? 'Confirmado' :
                                                                          app.status === 'cancelado' ? 'Cancelado' :
                                                                          'Agendado'}
                                                                     </span>
@@ -2742,9 +2817,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
                                                         n.status === 'cancelado' 
                                                             ? 'bg-red-50 text-red-500' 
+                                                            : n.status === 'confirmado_whatsapp'
+                                                            ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
                                                             : 'bg-green-50 text-green-600'
                                                     }`}>
-                                                        {n.status === 'cancelado' ? 'Cancelamento' : 'Agendamento'}
+                                                        {n.status === 'cancelado' ? 'Cancelamento' : n.status === 'confirmado_whatsapp' ? 'Confirmado Link' : 'Agendamento'}
                                                     </span>
                                                     <div className="w-2 h-2 bg-orange-400 rounded-full opacity-0 group-hover/notif:opacity-100 transition-opacity" title="Marcar como lida"></div>
                                                 </div>
