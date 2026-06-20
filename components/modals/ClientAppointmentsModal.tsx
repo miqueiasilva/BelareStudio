@@ -4,7 +4,7 @@ import {
     X, Phone, Calendar, Clock, Scissors, AlertCircle, 
     CheckCircle2, ChevronRight, ArrowLeft, Loader2, Trash2 
 } from 'lucide-react';
-import { supabase } from '../../services/supabaseClient';
+import { supabase, supabaseUrl, supabaseAnonKey } from '../../services/supabaseClient';
 import { format, differenceInHours, isAfter } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
@@ -131,6 +131,96 @@ const ClientAppointmentsModal: React.FC<ClientAppointmentsModalProps> = ({ studi
                 .eq('id', app.id);
 
             if (error) throw error;
+
+            // Envia e-mail de cancelamento em segundo plano sem travar a UI
+            (async () => {
+                try {
+                    let clientEmail = app.client_email || null;
+                    if (!clientEmail && app.client_id) {
+                        const { data: cData } = await supabase
+                            .from('clients')
+                            .select('email')
+                            .eq('id', app.client_id)
+                            .maybeSingle();
+                        clientEmail = cData?.email || null;
+                    }
+
+                    let profEmail = null;
+                    const pId = app.professional_id || app.resource_id;
+                    if (pId) {
+                        const { data: pData } = await supabase
+                            .from('team_members')
+                            .select('email')
+                            .eq('id', pId)
+                            .maybeSingle();
+                        profEmail = pData?.email || null;
+                    }
+
+                    const notificationPayload = {
+                        appointment_id: app.id,
+                        studio_id: app.studio_id || studioId,
+                        client_name: app.client_name,
+                        client_email: clientEmail,
+                        client_phone: app.client_whatsapp,
+                        client_whatsapp: app.client_whatsapp,
+                        professional_id: pId,
+                        professional_name: app.professional_name,
+                        professional_email: profEmail,
+                        service_name: app.service_name,
+                        start_at: app.start_at || app.date,
+                        duration: app.duration,
+                        total_amount: app.value || app.price,
+                        notes: reason,
+                        // Compatibilidade legado
+                        date: app.date,
+                        start_time: app.start_time || (app.date ? format(new Date(app.date), 'HH:mm') : ''),
+                        value: app.value || app.price,
+                        notification_type: 'cancellation'
+                    };
+
+                    console.log('📦 Enviando e-mail de cancelamento:', notificationPayload);
+
+                    const invokeFunction = async () => {
+                        try {
+                            const { data, error: funcError } = await supabase.functions.invoke('send-appointment-notification', {
+                                body: notificationPayload
+                            });
+                            if (funcError) return { error: funcError };
+                            return { data };
+                        } catch (err: any) {
+                            try {
+                                let directUrl = '';
+                                if (supabaseUrl.includes('localhost') || supabaseUrl.includes('127.0.0.1')) {
+                                    directUrl = `${supabaseUrl}/functions/v1/send-appointment-notification`;
+                                } else {
+                                    directUrl = `${supabaseUrl.replace('.supabase.co', '.functions.supabase.co')}/send-appointment-notification`;
+                                }
+                                const response = await fetch(directUrl, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'Authorization': `Bearer ${supabaseAnonKey}`,
+                                        'apikey': supabaseAnonKey
+                                    },
+                                    mode: 'cors',
+                                    body: JSON.stringify(notificationPayload)
+                                });
+                                if (!response.ok) {
+                                    return { error: new Error(`HTTP ${response.status}`) };
+                                }
+                                const data = await response.json();
+                                return { data };
+                            } catch (fetchErr: any) {
+                                return { error: fetchErr };
+                            }
+                        }
+                    };
+
+                    await invokeFunction();
+                } catch (notiErr) {
+                    console.error("Erro ao notificar cancelamento por e-mail:", notiErr);
+                }
+            })();
 
             // Atualiza lista local
             setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'cancelado' } : a));
