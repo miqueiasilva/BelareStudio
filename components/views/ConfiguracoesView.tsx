@@ -13,9 +13,10 @@ import FinancialCategoriesSettings from '../settings/FinancialCategoriesSettings
 import ThemeSettings from '../settings/ThemeSettings';
 import DiscountSettings from '../settings/DiscountSettings';
 import FiscalSettings from '../settings/FiscalSettings';
+import SecuritySettings from '../settings/SecuritySettings';
 
 const ConfiguracoesView: React.FC = () => {
-    const [subView, setSubView] = useState<'hub' | 'profile' | 'payments' | 'theme' | 'resources' | 'discounts' | 'blocks' | 'financial_categories' | 'billing' | 'fiscal'>('hub');
+    const [subView, setSubView] = useState<'hub' | 'profile' | 'payments' | 'theme' | 'resources' | 'discounts' | 'blocks' | 'financial_categories' | 'billing' | 'fiscal' | 'security'>('hub');
     
     // Função para renderizar o conteúdo dinâmico
     const renderSubView = () => {
@@ -47,6 +48,8 @@ const ConfiguracoesView: React.FC = () => {
                 return <ThemeSettings onBack={() => setSubView('hub')} />;
             case 'discounts':
                 return <DiscountSettings onBack={() => setSubView('hub')} />;
+            case 'security':
+                return <SecuritySettings onBack={() => setSubView('hub')} />;
             default:
                 return <SettingsHub onNavigate={(v: any) => setSubView(v)} onTopLevelNavigate={() => {}} />;
         }
@@ -62,7 +65,7 @@ const ConfiguracoesView: React.FC = () => {
                     {subView === 'hub' ? 'Configurações' : 'Ajustes Técnicos'}
                 </h1>
                 <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-2 ml-12 leading-none">
-                    {subView === 'hub' ? 'Gestão da sua marca e regras do negócio.' : `Menu / Configurações / ${subView === 'profile' ? 'Perfil' : subView === 'billing' ? 'Plano & Assinatura' : subView}`}
+                    {subView === 'hub' ? 'Gestão da sua marca e regras do negócio.' : `Menu / Configurações / ${subView === 'profile' ? 'Perfil' : subView === 'billing' ? 'Plano & Assinatura' : subView === 'security' ? 'Conformidade LGPD e RLS' : subView}`}
                 </p>
             </header>
 

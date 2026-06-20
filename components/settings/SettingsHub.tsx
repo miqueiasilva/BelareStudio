@@ -2,7 +2,7 @@
 import React from 'react';
 import { 
     Store, Palette, Banknote, CalendarX, CreditCard, 
-    Tag, Armchair, ChevronRight, Home, LayoutGrid, Sparkles, Scale
+    Tag, Armchair, ChevronRight, Home, LayoutGrid, Sparkles, Scale, Shield
 } from 'lucide-react';
 
 interface SettingsItem {
@@ -39,6 +39,15 @@ const SettingsHub: React.FC<SettingsHubProps> = ({ onNavigate, onTopLevelNavigat
             iconColor: 'text-orange-600',
             iconBg: 'bg-orange-50',
             action: () => onNavigate('billing')
+        },
+        { 
+            id: 'security', 
+            icon: Shield, 
+            label: 'Segurança & LGPD', 
+            description: 'Consentimentos de agendamento, direito ao esquecimento e controle Multi-Tenant', 
+            iconColor: 'text-emerald-700',
+            iconBg: 'bg-emerald-50',
+            action: () => onNavigate('security')
         },
         { 
             id: 'fiscal', 
