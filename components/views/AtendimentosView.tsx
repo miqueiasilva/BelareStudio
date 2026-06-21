@@ -35,6 +35,12 @@ const getStartOfDay = (d: Date) => {
     return nd;
 };
 
+const isSafeUUID = (id: any): boolean => {
+    if (!id) return false;
+    const sid = String(id).trim();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sid);
+};
+
 const weekdaysNames = [
     'domingo',
     'segunda-feira',
@@ -1125,7 +1131,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     studio_id: activeStudioId,
                     client_id: appointment.client?.id || null,
                     client_name: appointment.client?.nome || 'Cliente',
-                    professional_id: appointment.professional?.id || null,
+                    professional_id: isSafeUUID(appointment.professional?.id) ? appointment.professional?.id : null,
                     status: 'open',
                     total_amount: totalAmount
                 }])
@@ -1135,16 +1141,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             if (cmdError || !command) throw cmdError || new Error("Falha ao criar comanda");
 
             // 2. Criar os itens da comanda
-            const payloadItems = apptsToConsolidate.map(appt => ({
-                command_id: command.id,
-                appointment_id: appt.id,
-                service_id: appt.service?.id || null,
-                studio_id: activeStudioId, 
-                title: appt.service_name || appt.service?.name || 'Serviço',
-                price: Number(appt.value || appt.service?.price || 0),
-                quantity: 1,
-                professional_id: appt.professional?.id || appt.professional_id || null
-            }));
+            const payloadItems = apptsToConsolidate.map(appt => {
+                const rawProfId = appt.professional?.id || appt.professional_id;
+                const safeProfId = isSafeUUID(rawProfId) ? String(rawProfId) : null;
+                return {
+                    command_id: command.id,
+                    appointment_id: appt.id,
+                    service_id: appt.service?.id || null,
+                    studio_id: activeStudioId, 
+                    title: appt.service_name || appt.service?.name || 'Serviço',
+                    price: Number(appt.value || appt.service?.price || 0),
+                    quantity: 1,
+                    professional_id: safeProfId
+                };
+            });
 
             const { error: itemsError } = await supabase
                 .from('command_items')
