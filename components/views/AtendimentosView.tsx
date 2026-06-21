@@ -1144,10 +1144,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             const payloadItems = apptsToConsolidate.map(appt => {
                 const rawProfId = appt.professional?.id || appt.professional_id;
                 const safeProfId = isSafeUUID(rawProfId) ? String(rawProfId) : null;
+                const rawServiceId = appt.service?.id || appt.service_id;
+                const safeServiceId = isSafeUUID(rawServiceId) ? String(rawServiceId) : null;
                 return {
                     command_id: command.id,
                     appointment_id: appt.id,
-                    service_id: appt.service?.id || null,
+                    service_id: safeServiceId,
                     studio_id: activeStudioId, 
                     title: appt.service_name || appt.service?.name || 'Serviço',
                     price: Number(appt.value || appt.service?.price || 0),
