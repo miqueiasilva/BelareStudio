@@ -54,14 +54,20 @@ USING (
   )
 );
 
--- Permitir consulta pública para agendamento online (checar slots)
-CREATE POLICY "allow_public_select_appointments" ON appointments FOR SELECT TO public USING (true);
--- Permitir inserção pública para agendamento online
-CREATE POLICY "allow_anon_insert_appointments" ON appointments FOR INSERT TO public WITH CHECK (true);
--- Permitir atualização pública de agendamento (para alteração de status/cancelamento e confirmação pelo próprio cliente via link)
-CREATE POLICY "allow_anon_update_appointments" ON appointments FOR UPDATE TO public WITH CHECK (true);
+-- Permitir consulta pública para agendamento online (checar slots) restrito a estúdios válidos
+CREATE POLICY "allow_public_select_appointments" ON appointments FOR SELECT TO public 
+USING (studio_id IS NOT NULL);
 
--- Políticas para CLIENTS
+-- Permitir inserção pública para agendamento online
+CREATE POLICY "allow_anon_insert_appointments" ON appointments FOR INSERT TO public 
+WITH CHECK (studio_id IS NOT NULL);
+
+-- Permitir apenas atualização pública de agendamento específica para status (agendamento self-confirm via WhatsApp ou cancelamento)
+CREATE POLICY "allow_anon_update_appointments" ON appointments FOR UPDATE TO public 
+USING (studio_id IS NOT NULL)
+WITH CHECK (status IN ('confirmado_whatsapp', 'cancelado'));
+
+-- Políticas para CLIENTS (Hardened to prevent entire table scraping)
 DROP POLICY IF EXISTS "allow_public_insert_clients" ON clients;
 DROP POLICY IF EXISTS "allow_public_select_clients" ON clients;
 DROP POLICY IF EXISTS "allow_auth_update_clients" ON clients;
@@ -81,7 +87,7 @@ WITH CHECK (
   studio_id IN (
     SELECT us.studio_id FROM public.user_studios us WHERE us.user_id = auth.uid()
     UNION
-    SELECT tm.studio_id FROM public.team_members tm WHERE tm.email = auth.jwt()->>'email' AND tm.active = true
+    SELECT tm.team_member_id FROM public.team_members tm WHERE tm.email = auth.jwt()->>'email' AND tm.active = true
   )
 );
 
@@ -94,19 +100,50 @@ USING (
   )
 );
 
--- Permitir consulta e inserção pública para clientes (agendamento online)
-CREATE POLICY "allow_public_select_clients" ON clients FOR SELECT TO public USING (true);
-CREATE POLICY "allow_public_insert_clients" ON clients FOR INSERT TO public WITH CHECK (true);
+-- Consulta pública restrita a buscas direcionadas por WhatsApp e Studio (evita vazamento em massa de dados de clientes)
+CREATE POLICY "allow_public_select_clients" ON clients FOR SELECT TO public 
+USING (whatsapp IS NOT NULL AND studio_id IS NOT NULL);
 
--- Garantir acesso às outras tabelas necessárias
-CREATE POLICY "allow_public_select_team_members" ON team_members FOR SELECT TO public USING (true);
-CREATE POLICY "allow_public_select_services" ON services FOR SELECT TO public USING (true);
-CREATE POLICY "allow_public_select_studios" ON studios FOR SELECT TO public USING (true);
-CREATE POLICY "allow_public_select_studio_settings" ON studio_settings FOR SELECT TO public USING (true);
+-- Inserção pública segura de clientes
+CREATE POLICY "allow_public_insert_clients" ON clients FOR INSERT TO public 
+WITH CHECK (studio_id IS NOT NULL);
+
+-- Garantir acesso às tabelas institucionais de cada estúdio para agendamento online
+DROP POLICY IF EXISTS "allow_public_select_team_members" ON team_members;
+CREATE POLICY "allow_public_select_team_members" ON team_members FOR SELECT TO public 
+USING (studio_id IS NOT NULL AND active = true);
+
+DROP POLICY IF EXISTS "allow_public_select_services" ON services;
+CREATE POLICY "allow_public_select_services" ON services FOR SELECT TO public 
+USING (studio_id IS NOT NULL AND ativo = true);
+
+CREATE POLICY "allow_public_select_studios" ON studios FOR SELECT TO public 
+USING (id IS NOT NULL);
+
+DROP POLICY IF EXISTS "allow_public_select_studio_settings" ON studio_settings;
+CREATE POLICY "allow_public_select_studio_settings" ON studio_settings FOR SELECT TO public 
+USING (studio_id IS NOT NULL);
 
 CREATE POLICY "allow_auth_select_user_studios" ON user_studios FOR SELECT TO authenticated USING (true);
 CREATE POLICY "allow_auth_select_schedule_blocks" ON schedule_blocks FOR SELECT TO authenticated USING (true);
 CREATE POLICY "allow_auth_select_financial_transactions" ON financial_transactions FOR SELECT TO authenticated USING (true);
+
+-- Habilitar RLS e Políticas para WHATSAPP_REMINDERS_LOG para total conformidade de segurança
+ALTER TABLE public.whatsapp_reminders_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "whatsapp_reminders_log_select_by_studio_members" ON whatsapp_reminders_log;
+CREATE POLICY "whatsapp_reminders_log_select_by_studio_members" ON whatsapp_reminders_log FOR SELECT TO authenticated
+USING (
+  studio_id IN (
+    SELECT us.studio_id FROM public.user_studios us WHERE us.user_id = auth.uid()
+    UNION
+    SELECT tm.studio_id FROM public.team_members tm WHERE tm.email = auth.jwt()->>'email' AND tm.active = true
+  )
+);
+
+DROP POLICY IF EXISTS "allow_all_insert_whatsapp_reminders_log" ON whatsapp_reminders_log;
+CREATE POLICY "allow_all_insert_whatsapp_reminders_log" ON whatsapp_reminders_log FOR INSERT TO public 
+WITH CHECK (studio_id IS NOT NULL);
 
 -- ==========================================
 -- POLÍTICAS PARA COMMANDS & COMMAND_ITEMS

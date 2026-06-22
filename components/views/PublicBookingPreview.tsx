@@ -473,21 +473,22 @@ const PublicBookingPreview: React.FC = () => {
             const cleanPhone = clientPhone.replace(/\D/g, '');
             if (cleanPhone.length < 10) throw new Error("Informe um WhatsApp válido.");
 
+            const targetStudioId = studio?.studio_id || studio?.id;
+            if (!targetStudioId) {
+                console.error('❌ [CRITICAL] studio_id não encontrado no estado studio:', studio);
+            }
+
             const { data: existingClient } = await supabase
                 .from('clients')
                 .select('id, nome')
                 .eq('whatsapp', cleanPhone)
+                .eq('studio_id', targetStudioId)
                 .maybeSingle();
 
             let clientId: number;
             if (existingClient) {
                 clientId = existingClient.id;
             } else {
-                const targetStudioId = studio?.studio_id || studio?.id;
-                if (!targetStudioId) {
-                    console.error('❌ [CRITICAL] studio_id não encontrado no estado studio:', studio);
-                }
-
                 console.log('👤 Criando novo cliente:', clientName, 'no estúdio:', targetStudioId);
                 const { data: newClient, error: clientErr } = await supabase
                     .from('clients')
