@@ -124,6 +124,7 @@ export interface LegacyAppointment {
   origem?: string;
   origin?: string;
   type?: 'appointment' | 'block';
+  reminder_sent?: boolean;
 }
 
 export interface FinancialTransaction {

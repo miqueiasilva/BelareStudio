@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { LegacyAppointment, AppointmentStatus } from '../../types';
 import { 
     Calendar, DollarSign, Edit, Trash2, 
-    User, MoreVertical, X, CheckCircle2, Receipt, MessageCircle, AlignLeft
+    User, MoreVertical, X, CheckCircle2, Receipt, MessageCircle, AlignLeft, CheckCheck
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -19,6 +19,7 @@ interface AppointmentDetailPopoverProps {
   onDelete: (id: number) => void;
   onUpdateStatus: (appointmentId: number, newStatus: AppointmentStatus) => void;
   onConvertToCommand?: (appointment: LegacyAppointment, sameDayApptIds?: number[]) => void;
+  onSendReminder?: (appointmentId: number) => void;
 }
 
 const statusLabels: { [key in AppointmentStatus]: string } = {
@@ -41,7 +42,8 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   onEdit,
   onDelete,
   onUpdateStatus,
-  onConvertToCommand
+  onConvertToCommand,
+  onSendReminder
 }) => {
   const popoverRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLButtonElement>(null);
@@ -52,6 +54,13 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const [clientPhone, setClientPhone] = useState<string | null>(null);
   const [sameDayAppointments, setSameDayAppointments] = useState<any[]>([]);
   const [sendAllTogether, setSendAllTogether] = useState<boolean>(true);
+  const [isReminderSent, setIsReminderSent] = useState<boolean>(!!appointment.reminder_sent);
+  const [prevId, setPrevId] = useState<number>(appointment.id);
+
+  if (appointment.id !== prevId) {
+    setPrevId(appointment.id);
+    setIsReminderSent(!!appointment.reminder_sent);
+  }
 
   const { activeStudioId } = useStudio();
   const [reminderTemplate, setReminderTemplate] = useState<string | null>(null);
@@ -197,8 +206,15 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
       .replace(/{empresa}/g, studioName);
 
     const logReminder = async () => {
+      setIsReminderSent(true);
+      if (onSendReminder) {
+        onSendReminder(appointment.id);
+      }
+      
       if (!activeStudioId) return;
       try {
+        await supabase.from('appointments').update({ reminder_sent: true }).eq('id', appointment.id);
+        
         await supabase.from('whatsapp_reminders_log').insert([{
           studio_id: activeStudioId,
           appointment_id: appointment.id,
@@ -303,13 +319,20 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
               <User size={18} />
             </button>
             {clientPhone && !isFinished && (
-              <button
-                onClick={handleSendWhatsAppReminder}
-                className="p-2 text-white bg-green-500 hover:bg-green-600 rounded-xl transition-all shadow-sm shadow-green-200 ml-1"
-                title="Enviar Lembrete via WhatsApp"
-              >
-                <MessageCircle size={18} />
-              </button>
+              <div className="relative inline-block">
+                <button
+                  onClick={handleSendWhatsAppReminder}
+                  className={`p-2 text-white rounded-xl transition-all shadow-sm ml-1 ${isReminderSent ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-105' : 'bg-green-500 hover:bg-green-600 shadow-green-105'}`}
+                  title={isReminderSent ? "Lembrete enviado. Clique para reenviar" : "Enviar Lembrete via WhatsApp"}
+                >
+                  <MessageCircle size={18} />
+                </button>
+                {isReminderSent && (
+                  <span className="absolute -top-1 -right-1 bg-green-500 text-white rounded-full p-0.5 border-2 border-white flex items-center justify-center shadow-md animate-bounce" title="Lembrete já enviado">
+                    <CheckCheck size={10} className="w-2.5 h-2.5 font-black" />
+                  </span>
+                )}
+              </div>
             )}
           </div>
           <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors">
@@ -327,6 +350,12 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                 </span>
               )}
             </h3>
+            {isReminderSent && appointment.type !== 'block' && (
+              <div className="mt-2.5 flex items-center justify-center gap-1.5 bg-indigo-50 border border-indigo-100 rounded-2xl px-3.5 py-2.5 text-indigo-700 animate-in fade-in duration-300">
+                <CheckCheck size={14} className="text-indigo-600 shrink-0" />
+                <span className="text-[10px] font-black uppercase tracking-wider">Lembrete manual já enviado</span>
+              </div>
+            )}
             {appointment.type === 'block' ? (
               <p className="text-[10px] font-black text-rose-500 bg-rose-50 border border-rose-100 rounded-lg px-2.5 py-1 w-fit uppercase tracking-wider mt-2">
                 BLOQUEADO / INDISPONÍVEL

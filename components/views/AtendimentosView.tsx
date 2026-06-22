@@ -5,7 +5,7 @@ import {
     ShoppingBag, Ban, Settings as SettingsIcon, Maximize2, 
     LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock,
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
-    CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle,
+    CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle, CheckCheck,
     Share2, Bell
 } from 'lucide-react';
 import { 
@@ -725,6 +725,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             type: row.type || 'appointment',
             originTable: row.type === 'block' ? 'appointments' : undefined,
             services: services.length > 0 ? services : undefined,
+            reminder_sent: row.reminder_sent,
             client: { 
                 id: row.client_id, 
                 nome: row.client_name || 'Cliente', 
@@ -1094,6 +1095,16 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             fetchAppointments();
         }
         setActiveAppointmentDetail(null);
+    };
+
+    const handleReminderSent = (appointmentId: number) => {
+        setAppointments(prev => prev.map(a => a.id === appointmentId ? { ...a, reminder_sent: true } : a));
+        setActiveAppointmentDetail(prev => {
+            if (prev && prev.id === appointmentId) {
+                return { ...prev, reminder_sent: true };
+            }
+            return prev;
+        });
     };
 
     const handleConvertToCommand = async (appointment: LegacyAppointment, sameDayApptIds?: number[]) => {
@@ -2012,6 +2023,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                 <span className="text-[7.5px] sm:text-[8.5px] font-black uppercase tracking-wider text-white">Confirmado p/ Cliente</span>
                                                             </div>
                                                         )}
+                                                        {app.reminder_sent && <CheckCheck size={10} className="text-emerald-500 font-extrabold" strokeWidth={3} title="Lembrete manual enviado" />}
                                                         {app.status === 'confirmado' && <CheckCircle size={10} className="text-blue-600" strokeWidth={3} title="Confirmado Manualmente" />}
                                                         {app.type === 'block' && <ShieldAlert size={10} className="text-rose-400" />}
                                                     </div>
@@ -2778,6 +2790,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     onDelete={handleDeleteAppointmentFull} 
                     onUpdateStatus={handleUpdateStatus}
                     onConvertToCommand={handleConvertToCommand}
+                    onSendReminder={handleReminderSent}
                 />
             )}
             {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />}
