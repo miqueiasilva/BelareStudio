@@ -246,12 +246,12 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
       try {
         localStorage.clear(); 
       } catch (e) {
-        console.warn("[AuthContext] Error clearing localStorage on signOut:", e);
+        console.warn("[AuthContext] Failed to clear localStorage on sign out:", e);
       }
       try {
         sessionStorage.clear();
       } catch (e) {
-        console.warn("[AuthContext] Error clearing sessionStorage on signOut:", e);
+        console.warn("[AuthContext] Failed to clear sessionStorage on sign out:", e);
       }
       setUser(null);
       setLoading(false);

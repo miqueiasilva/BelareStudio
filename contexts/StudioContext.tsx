@@ -26,15 +26,14 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [studios, setStudios] = useState<Studio[]>([]);
-  const [activeStudioId, setActiveStudioIdState] = useState<string | null>(
-    () => {
-      try {
-        return localStorage.getItem(STORAGE_KEY);
-      } catch (e) {
-        return null;
-      }
+  const [activeStudioId, setActiveStudioIdState] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY);
+    } catch (e) {
+      console.warn("[StudioContext] Failed to read activeStudioId from localStorage:", e);
+      return null;
     }
-  );
+  });
 
   const lastSyncRef = useRef<number>(0);
   const syncInFlightRef = useRef<boolean>(false);
@@ -44,7 +43,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
     try {
       localStorage.setItem(STORAGE_KEY, id);
     } catch (e) {
-      console.warn("[StudioContext] Error writing to localStorage:", e);
+      console.warn("[StudioContext] Failed to write activeStudioId to localStorage:", e);
     }
   }, []);
 
@@ -226,7 +225,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
         try {
           saved = localStorage.getItem(STORAGE_KEY);
         } catch (e) {
-          console.warn("[StudioContext] Error reading from localStorage:", e);
+          console.warn("[StudioContext] Failed to read activeStudioId from localStorage:", e);
         }
         const valid = saved && mappedStudios.some(s => s.id === saved);
         if (!valid) setActiveStudioId(mappedStudios[0].id);
@@ -273,7 +272,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
         try {
           localStorage.removeItem(STORAGE_KEY);
         } catch (e) {
-          console.warn("[StudioContext] Error removing from localStorage:", e);
+          console.warn("[StudioContext] Failed to remove activeStudioId from localStorage:", e);
         }
       }
     });

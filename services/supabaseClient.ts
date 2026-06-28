@@ -53,47 +53,13 @@ export const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY', DEFAULT_KEY);
 console.log(`[AUTH_DEBUG] VITE_SUPABASE_URL: ${supabaseUrl === DEFAULT_URL ? 'utilizando fallback' : 'presente'}`);
 console.log(`[AUTH_DEBUG] VITE_SUPABASE_ANON_KEY: ${supabaseAnonKey === DEFAULT_KEY ? 'utilizando fallback' : 'presente'}`);
 
-// Safe storage wrapper for Supabase Auth
-const getSafeStorage = () => {
-  const isSupported = () => {
-    try {
-      if (typeof window === 'undefined' || !window.localStorage) return false;
-      const testKey = '__storage_test__';
-      window.localStorage.setItem(testKey, testKey);
-      window.localStorage.removeItem(testKey);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  };
-
-  if (isSupported()) {
-    return window.localStorage;
-  }
-
-  // Memory storage fallback
-  const memoryStore: Record<string, string> = {};
-  return {
-    getItem: (key: string): string | null => {
-      return memoryStore[key] || null;
-    },
-    setItem: (key: string, value: string): void => {
-      memoryStore[key] = value;
-    },
-    removeItem: (key: string): void => {
-      delete memoryStore[key];
-    }
-  };
-};
-
 // Inicialização segura do cliente para evitar "supabaseUrl is required"
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    flowType: 'pkce',
-    storage: getSafeStorage()
+    flowType: 'pkce'
   }
 }) as unknown as SupabaseClient;
 
@@ -103,12 +69,8 @@ export const isConfigured = !!(supabaseUrl && supabaseAnonKey && supabaseAnonKey
 
 export const saveSupabaseConfig = (url: string, key: string) => {
   if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem('VITE_SUPABASE_URL', url);
-      localStorage.setItem('VITE_SUPABASE_ANON_KEY', key);
-    } catch (e) {
-      console.error("[supabaseClient] Error saving Supabase config:", e);
-    }
+    localStorage.setItem('VITE_SUPABASE_URL', url);
+    localStorage.setItem('VITE_SUPABASE_ANON_KEY', key);
     window.location.reload();
   }
 };

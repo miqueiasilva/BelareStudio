@@ -55,6 +55,7 @@ const AppContent: React.FC = () => {
     try {
       return sessionStorage.getItem('open_paid_command');
     } catch (e) {
+      console.warn("[App] Failed to read open_paid_command from sessionStorage:", e);
       return null;
     }
   });
@@ -176,7 +177,7 @@ const AppContent: React.FC = () => {
     try {
       sessionStorage.setItem('open_paid_command', id);
     } catch (e) {
-      console.warn("[App] Error writing to sessionStorage:", e);
+      console.warn("[App] Failed to write open_paid_command to sessionStorage:", e);
     }
     setViewingPaidId(id);
   };
@@ -185,7 +186,7 @@ const AppContent: React.FC = () => {
     try {
       sessionStorage.removeItem('open_paid_command');
     } catch (e) {
-      console.warn("[App] Error removing from sessionStorage:", e);
+      console.warn("[App] Failed to remove open_paid_command from sessionStorage:", e);
     }
     setViewingPaidId(null);
   };

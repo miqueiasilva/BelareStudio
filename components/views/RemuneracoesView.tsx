@@ -54,17 +54,6 @@ const RemuneracoesView: React.FC = () => {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sid);
   };
 
-  const safeFormatDate = (dateVal: any, formatStr: string): string => {
-    if (!dateVal) return '---';
-    try {
-      const parsedDate = new Date(dateVal);
-      if (isNaN(parsedDate.getTime())) return '---';
-      return format(parsedDate, formatStr);
-    } catch (e) {
-      return '---';
-    }
-  };
-
   const fetchData = useCallback(async () => {
     if (!isMounted.current || !activeStudioId) return;
     
@@ -100,7 +89,7 @@ const RemuneracoesView: React.FC = () => {
             // FIX 3: Puxa payment_data (JSONB) que já contém tax_rate e net_value
             supabase.from('command_items')
                 .select(`
-                    id, title, price, quantity, professional_id, appointment_id,
+                    id, title, price, quantity, professional_id,
                     commands!inner(
                         id, closed_at, status, payment_method, payment_data,
                         client_name,
@@ -181,14 +170,6 @@ const RemuneracoesView: React.FC = () => {
   }, [fetchData]);
 
   const payroll = useMemo(() => {
-    // Conjunto de IDs de agendamento faturados como cortesia (desconto de 100%)
-    const courtesyApptIds = new Set<string | number>();
-    commandItems.forEach(item => {
-      if (item.appointment_id && item.commands?.payment_method === 'cortesia') {
-        courtesyApptIds.add(item.appointment_id);
-      }
-    });
-
     return teamMembers.map(member => {
       const memberIdStr = String(member.id);
       const mName = String(member.name || '').trim();
@@ -207,8 +188,7 @@ const RemuneracoesView: React.FC = () => {
           });
 
           const totalBase = myAppts.reduce((acc, appt) => {
-              const isCourtesy = courtesyApptIds.has(appt.id);
-              const rawPrice = isCourtesy ? 0 : Number(appt.value || appt.price || 0);
+              const rawPrice = Number(appt.value || appt.price || 0);
               return acc + rawPrice;
           }, 0);
 
@@ -216,20 +196,16 @@ const RemuneracoesView: React.FC = () => {
 
           return {
               member,
-              items: myAppts.map(appt => {
-                  const isCourtesy = courtesyApptIds.has(appt.id);
-                  return {
-                      id: appt.id,
-                      title: appt.service_name || 'Serviço',
-                      price: isCourtesy ? 0 : (appt.value || appt.price || 0),
-                      quantity: 1,
-                      type: 'appointment',
-                      date: appt.date,
-                      client_name: appt.client_name || 'Cliente',
-                      professional_id: appt.professional_id,
-                      is_courtesy: isCourtesy
-                  };
-              }),
+              items: myAppts.map(appt => ({
+                  id: appt.id,
+                  title: appt.service_name || 'Serviço',
+                  price: appt.value || appt.price || 0,
+                  quantity: 1,
+                  type: 'appointment',
+                  date: appt.date,
+                  client_name: appt.client_name || 'Cliente',
+                  professional_id: appt.professional_id
+              })),
               totalBase,
               commissionValue,
               count: myAppts.length,
@@ -242,9 +218,6 @@ const RemuneracoesView: React.FC = () => {
           );
           
           const totalBase = myItems.reduce((acc, item) => {
-              const isCourtesy = item.commands?.payment_method === 'cortesia';
-              if (isCourtesy) return acc;
-
               const rawPrice = Number(item.price || 0) * Number(item.quantity || 1);
               
               if (calculationBase === 'liquido') {
@@ -355,14 +328,7 @@ const RemuneracoesView: React.FC = () => {
 
       const tableRows = item.items.map((it: any) => {
           const isAppt = it.type === 'appointment';
-          const isCourtesyItem = isAppt 
-              ? it.is_courtesy 
-              : it.commands?.payment_method === 'cortesia';
-              
-          const rawVal = isCourtesyItem 
-              ? 0 
-              : (Number(it.price || 0) * Number(it.quantity || 1));
-              
+          const rawVal = Number(it.price || 0) * Number(it.quantity || 1);
           const taxRate = isAppt ? 0 : getTaxRate(it);
           const base = (calculationBase === 'liquido' && !isAppt)
               ? rawVal * (1 - (taxRate / 100))
@@ -372,18 +338,16 @@ const RemuneracoesView: React.FC = () => {
           const formattedComm = formatBRL(comm);
           
           const closedAt = isAppt
-              ? safeFormatDate(it.date, 'dd/MM/yyyy HH:mm')
-              : safeFormatDate(it.commands?.closed_at, 'dd/MM/yyyy HH:mm');
+              ? (it.date ? format(new Date(it.date), 'dd/MM/yyyy HH:mm') : '---')
+              : (it.commands?.closed_at ? format(new Date(it.commands.closed_at), 'dd/MM/yyyy HH:mm') : '---');
               
           const clientName = isAppt
               ? it.client_name
               : (it.commands?.clients?.nome || it.commands?.clients?.name || it.commands?.client_name || "CONSUMIDOR FINAL");
               
-          const method = isCourtesyItem
-              ? 'Cortesia'
-              : (isAppt
-                  ? 'Agenda'
-                  : (it.commands?.payment_method ?? it.commands?.payment_data?.method ?? 'misto'));
+          const method = isAppt
+              ? 'Agenda'
+              : (it.commands?.payment_method ?? it.commands?.payment_data?.method ?? 'misto');
               
           const identifier = isAppt
               ? `AGD #${String(it.id).substring(0,8).toUpperCase()}`
@@ -657,32 +621,23 @@ const RemuneracoesView: React.FC = () => {
                                     <tbody className="divide-y divide-slate-100">
                                         {item.items.map((it: any) => {
                                             const isAppt = it.type === 'appointment';
-                                            const isCourtesyItem = isAppt 
-                                                ? it.is_courtesy 
-                                                : it.commands?.payment_method === 'cortesia';
-                                                
-                                            const rawVal = isCourtesyItem 
-                                                ? 0 
-                                                : (Number(it.price || 0) * Number(it.quantity || 1));
-                                                
+                                            const rawVal = Number(it.price || 0) * Number(it.quantity || 1);
                                             const taxRate = isAppt ? 0 : getTaxRate(it);
                                             const base = (calculationBase === 'liquido' && !isAppt)
                                                 ? rawVal * (1 - (taxRate / 100))
                                                 : rawVal;
                                             const comm = base * (item.rate / 100);
-                                            const method = isCourtesyItem
-                                                ? 'Cortesia'
-                                                : (isAppt 
-                                                    ? 'Agenda' 
-                                                    : (it.commands?.payment_method ?? it.commands?.payment_data?.method ?? 'misto'));
+                                            const method = isAppt 
+                                                ? 'Agenda' 
+                                                : (it.commands?.payment_method ?? it.commands?.payment_data?.method ?? 'misto');
                                             
                                             const clientDisplay = isAppt 
                                                 ? it.client_name 
                                                 : (it.commands?.clients?.nome || it.commands?.clients?.name || it.commands?.client_name || "CONSUMIDOR FINAL");
                                             
                                             const dateDisplay = isAppt 
-                                                ? safeFormatDate(it.date, 'dd/MM HH:mm')
-                                                : safeFormatDate(it.commands?.closed_at, 'dd/MM HH:mm');
+                                                ? (it.date ? format(new Date(it.date), 'dd/MM HH:mm') : '---')
+                                                : (it.commands?.closed_at ? format(new Date(it.commands.closed_at), 'dd/MM HH:mm') : '---');
                                             
                                             const identifier = isAppt 
                                                 ? `AGD #${String(it.id).substring(0, 8).toUpperCase()}` 

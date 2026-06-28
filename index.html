@@ -2,29 +2,6 @@
 <html lang="pt-BR" translate="no">
   <head>
     <script>
-      // Block third-party/cross-origin or extension-related console errors from bubbling to platform logs
-      var originalConsoleError = console.error;
-      console.error = function() {
-        var args = Array.prototype.slice.call(arguments);
-        var argStr = args.map(function(arg) {
-          try {
-            if (arg instanceof Error) return arg.message + " " + (arg.stack || "");
-            return typeof arg === 'object' ? JSON.stringify(arg) : String(arg || "");
-          } catch(e) {
-            return String(arg || "");
-          }
-        }).join(" ");
-        
-        var isScriptError = argStr.toLowerCase().indexOf("script error") !== -1;
-        var isExtensionError = argStr.indexOf("extension") !== -1 || argStr.indexOf("chrome-extension") !== -1 || argStr.indexOf("moz-extension") !== -1 || argStr.indexOf("safari-extension") !== -1;
-        
-        if (isScriptError || isExtensionError) {
-          return; // Swallow the error completely
-        }
-        
-        originalConsoleError.apply(console, arguments);
-      };
-
       // Early capture of PWA installation prompt
       window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
@@ -34,60 +11,9 @@
       });
 
       // Aggressive fallback to detect old build chunks and clear cache automatically without infinite loading loops
-      window.onerror = function(message, source, lineno, colno, error) {
-        var errorMsg = String(message || "");
-        var errorSrc = String(source || "");
-        var errObjStr = error ? String(error.stack || error.message || "") : "";
-        
-        var isScriptError = errorMsg.toLowerCase().indexOf("script error") !== -1;
-        var isExtension = errorMsg.indexOf("extension") !== -1 || 
-                            errorSrc.indexOf("extension") !== -1 || 
-                            errorSrc.indexOf("chrome-extension") !== -1 || 
-                            errorSrc.indexOf("moz-extension") !== -1 ||
-                            errObjStr.indexOf("extension") !== -1;
-        
-        var isCrossOrigin = false;
-        if (errorSrc) {
-          var isLocal = errorSrc.indexOf(window.location.origin) === 0 || errorSrc.indexOf('/') === 0 || errorSrc.indexOf('.') === 0;
-          if (!isLocal) {
-            isCrossOrigin = true;
-          }
-        }
-
-        if (isScriptError || isExtension || isCrossOrigin) {
-          console.warn("[Error Filter] Ignorado erro externo/cross-origin ou de extensão:", errorMsg, "Source:", errorSrc);
-          return true; // Swallows the error, preventing it from bubbling to parent frame/console
-        }
-      };
-
       window.addEventListener('error', function(e) {
-        var errorMsg = String(e.message || (e.error && e.error.message) || "");
-        var errorSrc = String(e.filename || "");
-        var errObjStr = e.error ? String(e.error.stack || "") : "";
-
-        var isScriptError = errorMsg.toLowerCase().indexOf("script error") !== -1;
-        var isExtension = errorMsg.indexOf("extension") !== -1 || 
-                            errorSrc.indexOf("extension") !== -1 || 
-                            errorSrc.indexOf("chrome-extension") !== -1 || 
-                            errorSrc.indexOf("moz-extension") !== -1 ||
-                            errObjStr.indexOf("extension") !== -1;
-
-        var isCrossOrigin = false;
-        if (errorSrc) {
-          var isLocal = errorSrc.indexOf(window.location.origin) === 0 || errorSrc.indexOf('/') === 0 || errorSrc.indexOf('.') === 0;
-          if (!isLocal) {
-            isCrossOrigin = true;
-          }
-        }
-
-        if (isScriptError || isExtension || isCrossOrigin) {
-          console.warn("[Error Filter Event] Ignorado erro cross-origin:", errorMsg, "Source:", errorSrc);
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          return;
-        }
-
         var target = e.target;
+        var errorMsg = String(e.message || e.error || "");
         var isChunkTextError = errorMsg.indexOf("ChunkLoadError") !== -1 || 
                                errorMsg.indexOf("Loading chunk") !== -1 || 
                                errorMsg.indexOf("Failed to fetch dynamically imported module") !== -1;
@@ -149,16 +75,6 @@
       // Catch unhandled promise rejections representing module/chunk loading failures
       window.addEventListener('unhandledrejection', function(e) {
         var reasonText = String(e.reason || "");
-        var isScriptError = reasonText.toLowerCase().indexOf("script error") !== -1;
-        var isExtensionError = reasonText.indexOf("extension") !== -1 || reasonText.indexOf("chrome-extension") !== -1 || reasonText.indexOf("moz-extension") !== -1;
-
-        if (isScriptError || isExtensionError) {
-          console.warn("[Error Filter Rejection] Ignorada rejeição cross-origin ou de extensão:", reasonText);
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          return;
-        }
-
         var isChunkRejection = reasonText.indexOf("ChunkLoadError") !== -1 || 
                                reasonText.indexOf("Loading chunk") !== -1 || 
                                reasonText.indexOf("Failed to fetch dynamically imported module") !== -1;
@@ -209,7 +125,7 @@
     <title>BelareStudio - Gestão Inteligente</title>
 
     <!-- Tailwind handles UI -->
-    <script src="https://cdn.tailwindcss.com/" crossorigin="anonymous"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
