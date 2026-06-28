@@ -4,7 +4,7 @@ import Card from '../shared/Card';
 import JaciBotAssistant from '../shared/JaciBotAssistant';
 import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import { getDashboardInsight } from '../../services/geminiService';
-import { DollarSign, Calendar, Users, TrendingUp, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3, Zap, UserCircle, Sparkles, Pencil, Wallet } from 'lucide-react';
+import { DollarSign, Calendar, Users, TrendingUp, TrendingDown, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3, Zap, UserCircle, Sparkles, Pencil, Wallet } from 'lucide-react';
 // FIX: Grouping date-fns imports and removing problematic members startOfDay, subDays, startOfMonth.
 import { 
     format, addDays, endOfDay, endOfMonth
@@ -14,6 +14,7 @@ import { ViewState } from '../../types';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import toast from 'react-hot-toast';
+import { motion } from 'framer-motion';
 
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -23,8 +24,34 @@ const formatCurrency = (value: number) => {
     }).format(value);
 };
 
+const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+        opacity: 1,
+        transition: {
+            staggerChildren: 0.05
+        }
+    }
+};
+
+const itemVariants = {
+    hidden: { opacity: 0, y: 15 },
+    show: { 
+        opacity: 1, 
+        y: 0,
+        transition: {
+            type: "spring",
+            stiffness: 100,
+            damping: 15
+        }
+    }
+};
+
 const StatCard = ({ title, value, icon: Icon, colorClass, subtext, trend }: any) => (
-    <div className="bg-white p-5 rounded-[32px] border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-[0_20px_50px_rgba(0,0,0,0.05)] transition-all hover:-translate-y-1 text-left h-full group">
+    <motion.div 
+        variants={itemVariants}
+        className="bg-white p-5 rounded-[32px] border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-[0_20px_50px_rgba(0,0,0,0.05)] transition-all hover:-translate-y-1 text-left h-full group"
+    >
         <div className="flex items-start justify-between mb-4">
             <div className={`p-3.5 rounded-2xl flex-shrink-0 ${colorClass} shadow-lg transition-transform group-hover:scale-110`}>
                 <Icon className="w-5 h-5 text-white" />
@@ -41,11 +68,12 @@ const StatCard = ({ title, value, icon: Icon, colorClass, subtext, trend }: any)
             <h3 className="text-2xl font-black text-slate-800 tracking-tighter truncate">{value}</h3>
             {subtext && <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase truncate opacity-60 tracking-wider">{subtext}</p>}
         </div>
-    </div>
+    </motion.div>
 );
 
 const QuickAction = ({ icon: Icon, label, color, onClick }: any) => (
-    <button 
+    <motion.button 
+        variants={itemVariants}
         onClick={onClick}
         className="flex flex-col items-center justify-center p-5 rounded-[32px] border border-slate-100 bg-white hover:border-orange-200 hover:bg-orange-50/30 transition-all group active:scale-95 w-full shadow-sm hover:shadow-md"
     >
@@ -53,7 +81,7 @@ const QuickAction = ({ icon: Icon, label, color, onClick }: any) => (
             <Icon className="w-6 h-6 text-white" />
         </div>
         <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-orange-700">{label}</span>
-    </button>
+    </motion.button>
 );
 
 const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNavigate }) => {
@@ -373,7 +401,12 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 </div>
             </header>
 
-            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4 lg:gap-6 mb-10">
+            <motion.div 
+                variants={containerVariants}
+                initial="hidden"
+                animate="show"
+                className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4 lg:gap-6 mb-10"
+            >
                 <StatCard title="Faturamento" value={formatCurrency(kpis.revenue)} icon={DollarSign} colorClass="bg-emerald-500" subtext={dateRange.label} trend={12} />
                 <StatCard title="Agendados" value={kpis.scheduled} icon={Calendar} colorClass="bg-blue-500" subtext={dateRange.label} trend={8} />
                 <StatCard title="Online" value={kpis.onlineCount} icon={Globe} colorClass="bg-orange-500" subtext={`${kpis.onlineRate.toFixed(1)}% do total`} trend={22} />
@@ -381,7 +414,8 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 <StatCard title="Lembretes Jaci IA" value={`${last24hReminders} ${last24hReminders === 1 ? 'disparo' : 'disparos'}`} icon={Sparkles} colorClass="bg-orange-500" subtext="Últimas 24 horas" />
                 
                 {/* Visual Widget: Month commissions with link to Remuneracoes module */}
-                <div 
+                <motion.div 
+                    variants={itemVariants}
                     onClick={() => onNavigate('remuneracoes')}
                     className="bg-white p-5 rounded-[32px] border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-[0_20px_50px_rgba(249,115,22,0.08)] hover:border-orange-200 transition-all hover:-translate-y-1 cursor-pointer text-left h-full group relative overflow-hidden"
                     title="Ver detalhamento de remunerações"
@@ -404,9 +438,10 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                             Remunerações →
                         </p>
                     </div>
-                </div>
+                </motion.div>
 
-                <div 
+                <motion.div 
+                    variants={itemVariants}
                     onClick={() => { setTempGoal(financialGoal ? financialGoal.toString() : ''); setIsGoalModalOpen(true); }}
                     className="bg-slate-900 p-6 rounded-[32px] text-white flex flex-col justify-between shadow-2xl relative overflow-hidden group h-full cursor-pointer hover:bg-slate-800 transition-all active:scale-98 border border-white/5"
                     title="Clique para editar a meta mensal"
@@ -430,18 +465,23 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         </div>
                         <p className="text-[8px] text-slate-500 font-bold uppercase mt-1 tracking-wider text-right">Toque para configurar</p>
                     </div>
-                </div>
-            </div>
+                </motion.div>
+            </motion.div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-2 space-y-8">
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                    <motion.div 
+                        variants={containerVariants}
+                        initial="hidden"
+                        animate="show"
+                        className="grid grid-cols-2 sm:grid-cols-5 gap-4"
+                    >
                         <QuickAction icon={UserCircle} label="Clientes" color="bg-blue-600" onClick={() => onNavigate('clientes')} />
                         <QuickAction icon={Globe} label="Portal" color="bg-purple-600" onClick={() => onNavigate('agenda_online')} />
                         <QuickAction icon={ShoppingBag} label="PDV" color="bg-emerald-600" onClick={() => onNavigate('vendas')} />
                         <QuickAction icon={BarChart3} label="DRE" color="bg-slate-800" onClick={() => onNavigate('relatorios')} />
                         <QuickAction icon={Calendar} label="Agenda" color="bg-orange-600" onClick={() => onNavigate('agenda')} />
-                    </div>
+                    </motion.div>
                     
                     <div className="bg-white rounded-[40px] p-2 border border-slate-100 shadow-sm overflow-hidden">
                         <JaciBotAssistant fetchInsight={getDashboardInsight} />
