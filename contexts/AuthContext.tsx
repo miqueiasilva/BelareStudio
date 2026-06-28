@@ -243,8 +243,16 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
       lastProcessedId.current = null;
       await supabase.auth.signOut();
     } finally {
-      localStorage.clear(); 
-      sessionStorage.clear();
+      try {
+        localStorage.clear(); 
+      } catch (e) {
+        console.warn("[AuthContext] Error clearing localStorage on signOut:", e);
+      }
+      try {
+        sessionStorage.clear();
+      } catch (e) {
+        console.warn("[AuthContext] Error clearing sessionStorage on signOut:", e);
+      }
       setUser(null);
       setLoading(false);
       window.location.href = '/'; 

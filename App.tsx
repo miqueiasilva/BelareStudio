@@ -51,7 +51,13 @@ const AppContent: React.FC = () => {
   const { activeStudioId, isSyncing, refreshStudios } = useStudio();
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
-  const [viewingPaidId, setViewingPaidId] = useState<string | null>(() => sessionStorage.getItem('open_paid_command'));
+  const [viewingPaidId, setViewingPaidId] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem('open_paid_command');
+    } catch (e) {
+      return null;
+    }
+  });
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(mockTransactions);
   const [hash, setHash] = useState(() => {
     const path = window.location.pathname.toLowerCase();
@@ -167,12 +173,20 @@ const AppContent: React.FC = () => {
   };
 
   const openPaidSummary = (id: string) => {
-    sessionStorage.setItem('open_paid_command', id);
+    try {
+      sessionStorage.setItem('open_paid_command', id);
+    } catch (e) {
+      console.warn("[App] Error writing to sessionStorage:", e);
+    }
     setViewingPaidId(id);
   };
 
   const closePaidSummary = () => {
-    sessionStorage.removeItem('open_paid_command');
+    try {
+      sessionStorage.removeItem('open_paid_command');
+    } catch (e) {
+      console.warn("[App] Error removing from sessionStorage:", e);
+    }
     setViewingPaidId(null);
   };
 
