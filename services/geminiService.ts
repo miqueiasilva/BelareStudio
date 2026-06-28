@@ -581,3 +581,133 @@ export const enqueueReminder = async (id: number, type: string) => {
 export const autoCashClose = async (date: Date) => {
     return { totalPrevisto: 0, totalRecebido: 0, diferenca: 0, resumo: "Fechamento automático realizado pelo JaciBot." };
 };
+
+export interface PendingTransaction {
+    id: string;
+    description: string;
+    amount: number;
+    date: string;
+    type: 'income' | 'expense';
+}
+
+export interface CategorySuggestion {
+    id: string;
+    category: string;
+    confidence: number;
+    reasoning: string;
+}
+
+export const getLocalCategorySuggestionsFallback = (
+    pending: PendingTransaction[],
+    categories: string[]
+): CategorySuggestion[] => {
+    return pending.map(p => {
+        const desc = p.description.toLowerCase();
+        let category = "Outros";
+        let confidence = 70;
+        let reasoning = "Classificado como 'Outros' por padrão.";
+
+        if (desc.includes("loreal") || desc.includes("shampoo") || desc.includes("condicionador") || desc.includes("cosmet") || desc.includes("compra beleza") || desc.includes("wella") || desc.includes("keune") || desc.includes("esmalte") || desc.includes("produtos") || desc.includes("insumos")) {
+            category = categories.find(c => c.toLowerCase().includes("produtos") || c.toLowerCase().includes("insumos")) || "Produtos e Insumos";
+            confidence = 95;
+            reasoning = `Sugerido '${category}' baseado na identificação de marcas ou palavras-chave de produtos/insumos de beleza.`;
+        } else if (desc.includes("enel") || desc.includes("luz") || desc.includes("energia") || desc.includes("sabesp") || desc.includes("agua") || desc.includes("telef") || desc.includes("internet") || desc.includes("wi-fi") || desc.includes("wifi") || desc.includes("celular")) {
+            category = categories.find(c => c.toLowerCase().includes("água") || c.toLowerCase().includes("luz") || c.toLowerCase().includes("internet") || c.toLowerCase().includes("consumo")) || "Água/Luz/Internet";
+            confidence = 98;
+            reasoning = `Identificado como conta de consumo recorrente (${category}).`;
+        } else if (desc.includes("aluguel") || desc.includes("salao") || desc.includes("condominio") || desc.includes("imobiliaria") || desc.includes("locacao")) {
+            category = categories.find(c => c.toLowerCase().includes("aluguel")) || "Aluguel";
+            confidence = 95;
+            reasoning = "Sugerido como despesa de Aluguel/Condomínio da instalação do estúdio.";
+        } else if (desc.includes("marketing") || desc.includes("anuncio") || desc.includes("facebook") || desc.includes("google ads") || desc.includes("instagram") || desc.includes("panfleto") || desc.includes("propaganda") || desc.includes("impulsiona")) {
+            category = categories.find(c => c.toLowerCase().includes("marketing")) || "Marketing";
+            confidence = 90;
+            reasoning = "Identificado como gasto de tráfego pago ou promoção do salão.";
+        } else if (desc.includes("tarifa") || desc.includes("itau") || desc.includes("banco") || desc.includes("manutencao conta") || desc.includes("iof") || desc.includes("juros") || desc.includes("mensalidade conta") || desc.includes("ted") || desc.includes("doc")) {
+            category = categories.find(c => c.toLowerCase().includes("outros")) || "Outros";
+            confidence = 85;
+            reasoning = "Taxas, juros e tarifas financeiras bancárias operacionais.";
+        } else if (p.type === "income" && (desc.includes("pix") || desc.includes("recebido") || desc.includes("comanda") || desc.includes("atendimento") || desc.includes("unhas") || desc.includes("cabelo") || desc.includes("corte") || desc.includes("escova") || desc.includes("cliente"))) {
+            category = categories.find(c => c.toLowerCase().includes("serviço")) || "Serviço";
+            confidence = 90;
+            reasoning = "Entrada identificada como pagamento de serviço de beleza prestado.";
+        } else if (desc.includes("comissao") || desc.includes("repasses") || desc.includes("comissões") || desc.includes("repasse profissional")) {
+            category = categories.find(c => c.toLowerCase().includes("comissões")) || "Comissões";
+            confidence = 95;
+            reasoning = "Sugerido como repasse de comissões da equipe do estúdio.";
+        }
+
+        return {
+            id: p.id,
+            category,
+            confidence,
+            reasoning
+        };
+    });
+};
+
+export const suggestTransactionCategories = async (
+    pending: PendingTransaction[],
+    categories: string[],
+    history: { description: string; category: string }[]
+): Promise<CategorySuggestion[]> => {
+    try {
+        const localClient = getLocalGeminiClient();
+        if (localClient) {
+            const prompt = `
+                Você é JaciBot, assistente de IA especialista em finanças para o salão de beleza BelareStudio.
+                Sua tarefa é analisar uma lista de transações bancárias pendentes e sugerir a melhor categoria para cada uma delas, baseando-se nas categorias disponíveis e no histórico de lançamentos do estúdio.
+
+                Categorias Disponíveis:
+                ${JSON.stringify(categories)}
+
+                Histórico de Referência do Estúdio:
+                ${JSON.stringify(history.slice(0, 15))}
+
+                Transações Pendentes a Categorizar:
+                ${JSON.stringify(pending.map(p => ({ id: p.id, description: p.description, amount: p.amount, type: p.type })))}
+
+                Retorne uma array contendo as sugestões em formato JSON estruturado com 'id', 'category' (deve ser EXATAMENTE uma das categorias disponíveis ou se não encaixar, 'Outros'), 'confidence' (número de 0 a 100) e 'reasoning' (uma justificativa curta em português explicando por que escolheu essa categoria).
+                Responda APENAS o JSON puro, sem blocos de código markdown ou texto extra.
+            `;
+
+            try {
+                const res = await localClient.models.generateContent({
+                    model: modelId,
+                    contents: prompt,
+                    config: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    id: { type: Type.STRING },
+                                    category: { type: Type.STRING },
+                                    confidence: { type: Type.INTEGER },
+                                    reasoning: { type: Type.STRING }
+                                },
+                                required: ["id", "category", "confidence", "reasoning"]
+                            }
+                        }
+                    }
+                });
+
+                if (res.text) {
+                    const parsed = JSON.parse(cleanJsonResponse(res.text));
+                    if (Array.isArray(parsed)) {
+                        return parsed as CategorySuggestion[];
+                    }
+                }
+            } catch (err) {
+                console.warn("[GEMINI_SERVICE] Direct suggestTransactionCategories failed, falling back to rule-based matcher:", err);
+            }
+        }
+
+        // Fallback rule-based
+        return getLocalCategorySuggestionsFallback(pending, categories);
+    } catch (error) {
+        console.error("AI Category Suggestion Error:", error);
+        return getLocalCategorySuggestionsFallback(pending, categories);
+    }
+};
