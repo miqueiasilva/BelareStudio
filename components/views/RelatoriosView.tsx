@@ -32,6 +32,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 import DREReport from '../reports/DREReport';
+import { D3RevenueEvolutionChart, D3TeamPerformanceChart } from '../reports/D3Charts';
 
 // --- Types ---
 type Period = 'today' | '7d' | '15d' | '30d' | '3m' | '6m' | '12m' | 'custom';
@@ -1555,21 +1556,13 @@ const RelatoriosView: React.FC = () => {
             <TrendingUp className="text-emerald-500" size={20} />
           </div>
           <div className="h-64 md:h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={metrics?.evolution}>
-                <defs>
-                  <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 'bold'}} />
-                <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 'bold'}} />
-                <Tooltip contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'}} />
-                <Area type="monotone" dataKey="valor" stroke="#10b981" strokeWidth={4} fillOpacity={1} fill="url(#colorVal)" />
-              </AreaChart>
-            </ResponsiveContainer>
+            {metrics?.evolution && metrics.evolution.length > 0 ? (
+              <D3RevenueEvolutionChart data={metrics.evolution} />
+            ) : (
+              <div className="h-full flex items-center justify-center">
+                <EmptyState />
+              </div>
+            )}
           </div>
         </div>
 
@@ -2439,6 +2432,23 @@ const RelatoriosView: React.FC = () => {
         <KPICard title="Faturamento Realizado (Equipe)" value={`R$ ${data?.income.toLocaleString('pt-BR')}`} color="bg-emerald-500" icon={DollarSign} loading={isLoading} />
         <KPICard title="Projeção Equipe (Agenda)" value={`R$ ${data?.potentialIncome.toLocaleString('pt-BR')}`} color="bg-blue-500" icon={Target} loading={isLoading} />
         <KPICard title="Ticket Médio Geral" value={`R$ ${data?.ticketMedio.toFixed(2)}`} color="bg-orange-500" icon={Star} loading={isLoading} />
+      </div>
+
+      {/* D3 Team Performance Chart */}
+      <div className="bg-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-base md:text-lg font-black text-slate-800 uppercase tracking-tighter">Desempenho da Equipe (Receita)</h3>
+          <BarChart4 className="text-indigo-500" size={20} />
+        </div>
+        <div className="h-80 w-full">
+          {teamStats && teamStats.length > 0 ? (
+            <D3TeamPerformanceChart data={teamStats} />
+          ) : (
+            <div className="h-full flex items-center justify-center">
+              <EmptyState message="Sem dados de desempenho para o período." />
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">

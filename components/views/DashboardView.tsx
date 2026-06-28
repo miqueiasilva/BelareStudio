@@ -87,6 +87,7 @@ const QuickAction = ({ icon: Icon, label, color, onClick }: any) => (
 const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNavigate }) => {
     const { activeStudioId } = useStudio();
     const [isLoading, setIsLoading] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [appointments, setAppointments] = useState<any[]>([]);
     const [financialGoal, setFinancialGoal] = useState(0);
     const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
@@ -187,9 +188,15 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         if (!activeStudioId) return;
         let mounted = true;
 
-        const fetchDashboardData = async () => {
+        const fetchDashboardData = async (isBackground = false) => {
             try {
-                if (mounted) setIsLoading(true);
+                if (mounted) {
+                    if (!isBackground) {
+                        setIsLoading(true);
+                    } else {
+                        setIsRefreshing(true);
+                    }
+                }
 
                 const { data: appts, error: apptsError } = await supabase
                     .from('appointments')
@@ -322,14 +329,23 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
             } catch (e) {
                 console.error("Erro crítico ao sincronizar dashboard:", e);
             } finally {
-                if (mounted) setIsLoading(false);
+                if (mounted) {
+                    setIsLoading(false);
+                    setIsRefreshing(false);
+                }
             }
         };
 
-        fetchDashboardData();
+        fetchDashboardData(false);
+
+        // Atualização automática a cada 30 segundos
+        const intervalId = setInterval(() => {
+            fetchDashboardData(true);
+        }, 30000);
 
         return () => {
             mounted = false;
+            clearInterval(intervalId);
         };
     }, [dateRange, activeStudioId]);
 
@@ -379,9 +395,19 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         <div className="p-4 sm:p-8 h-full overflow-y-auto bg-slate-50/30 custom-scrollbar font-sans text-left">
             <header className="flex flex-col xl:flex-row justify-between items-start xl:items-end mb-10 gap-6">
                 <div>
-                    <div className="flex items-center gap-2 text-slate-400 text-[10px] font-black uppercase tracking-[0.3em] mb-2">
-                        <Zap size={14} className="text-orange-500 animate-pulse" />
-                        <span>Insight do Sistema • {format(new Date(), "dd 'de' MMMM", { locale: pt })}</span>
+                    <div className="flex flex-wrap items-center gap-3 text-slate-400 text-[10px] font-black uppercase tracking-[0.3em] mb-2">
+                        <div className="flex items-center gap-1.5">
+                            <Zap size={14} className="text-orange-500 animate-pulse" />
+                            <span>Insight do Sistema • {format(new Date(), "dd 'de' MMMM", { locale: pt })}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 px-2.5 py-0.5 rounded-full border border-emerald-100 text-[9px] font-bold tracking-wider">
+                            {isRefreshing ? (
+                                <Loader2 className="w-2.5 h-2.5 animate-spin text-emerald-500" />
+                            ) : (
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                            )}
+                            <span>Tempo Real (30s)</span>
+                        </div>
                     </div>
                     <h1 className="text-3xl sm:text-4xl font-black text-slate-800 leading-none tracking-tighter">
                         Olá, <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-orange-400">Time Belare</span>
