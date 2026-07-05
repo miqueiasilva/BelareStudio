@@ -65,6 +65,9 @@ const AppContent: React.FC = () => {
     if (path === '/login' || path === '/login/') {
       return '';
     }
+    if (path.startsWith('/reset-password')) {
+      return '#/reset-password';
+    }
     return window.location.hash;
   });
   const [showLogin, setShowLogin] = useState(() => {
@@ -81,6 +84,15 @@ const AppContent: React.FC = () => {
     const handleHashChange = () => {
       const currentHash = window.location.hash;
       const path = window.location.pathname.toLowerCase();
+      
+      if (
+        path.startsWith('/reset-password') || 
+        currentHash.toLowerCase().includes('type=recovery') ||
+        window.location.search.toLowerCase().includes('type=recovery')
+      ) {
+        setHash('#/reset-password');
+        return;
+      }
       
       setHash(currentHash);
       
@@ -106,6 +118,15 @@ const AppContent: React.FC = () => {
     if (user) {
       const currentHash = window.location.hash;
       const path = window.location.pathname.toLowerCase();
+      
+      if (
+        path.startsWith('/reset-password') || 
+        currentHash.toLowerCase().includes('type=recovery') || 
+        currentHash.startsWith('#/reset-password')
+      ) {
+        return;
+      }
+
       if (
         currentHash === '#/login' || 
         currentHash === '#login' || 
@@ -124,7 +145,14 @@ const AppContent: React.FC = () => {
   }, [user]);
 
   if (hash.startsWith('#/public-preview')) return <Suspense fallback={<ViewLoader />}><PublicBookingPreview /></Suspense>;
-  if (hash.startsWith('#/reset-password')) return <Suspense fallback={<ViewLoader />}><ResetPasswordView /></Suspense>;
+  if (
+    hash.startsWith('#/reset-password') || 
+    window.location.pathname.toLowerCase().startsWith('/reset-password') || 
+    window.location.hash.toLowerCase().includes('type=recovery') ||
+    window.location.search.toLowerCase().includes('type=recovery')
+  ) {
+    return <Suspense fallback={<ViewLoader />}><ResetPasswordView /></Suspense>;
+  }
 
   if (authLoading) {
     return (

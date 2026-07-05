@@ -168,6 +168,16 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       console.log(`[AUTH_DEBUG] Evento de Autenticação: ${event}`);
+      
+      if (
+        event === 'PASSWORD_RECOVERY' || 
+        window.location.hash.toLowerCase().includes('type=recovery') || 
+        window.location.search.toLowerCase().includes('type=recovery')
+      ) {
+        console.log("[AUTH_DEBUG] Fluxo de recuperação de senha detectado! Redirecionando hash para #/reset-password.");
+        window.location.hash = '#/reset-password';
+      }
+
       const currentId = currentSession?.user?.id || null;
 
       if (currentId === lastProcessedId.current && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED' && event !== 'INITIAL_SESSION') {
