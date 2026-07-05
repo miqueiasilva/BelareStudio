@@ -9,7 +9,8 @@ import {
   Loader2, 
   CheckCircle2,
   Building2,
-  Palmtree
+  Palmtree,
+  Zap
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';

@@ -96,8 +96,10 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
 
           if (isRecovery) {
             window.history.replaceState({}, '', '/reset-password');
+            window.dispatchEvent(new Event('popstate'));
           } else {
             window.history.replaceState({}, '', '/');
+            window.dispatchEvent(new Event('popstate'));
           }
           
           if (error) {
@@ -179,14 +181,18 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       console.log(`[AUTH_DEBUG] Evento de Autenticação: ${event}`);
       
+      const hasRecoveryToken = 
+        window.location.hash.toLowerCase().includes('type=recovery') || 
+        window.location.search.toLowerCase().includes('type=recovery');
+
       if (
         event === 'PASSWORD_RECOVERY' || 
-        window.location.hash.toLowerCase().includes('type=recovery') || 
-        window.location.search.toLowerCase().includes('type=recovery')
+        (currentSession && hasRecoveryToken)
       ) {
-        console.log("[AUTH_DEBUG] Fluxo de recuperação de senha detectado! Alterando rota sem limpar sessão.");
+        console.log("[AUTH_DEBUG] Fluxo de recuperação de senha detectado e validado! Alterando rota sem limpar sessão.");
         if (window.location.pathname !== '/reset-password') {
           window.history.replaceState({}, '', '/reset-password');
+          window.dispatchEvent(new Event('popstate'));
         }
       }
 
