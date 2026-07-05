@@ -88,7 +88,17 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         if (code) {
           console.log("[AUTH_DEBUG] Detectado código OAuth, trocando por sessão...");
           const { data, error } = await supabase.auth.exchangeCodeForSession(window.location.href);
-          window.history.replaceState({}, '', '/');
+          
+          const isRecovery = 
+            window.location.pathname.toLowerCase().startsWith('/reset-password') || 
+            window.location.search.toLowerCase().includes('type=recovery') ||
+            window.location.hash.toLowerCase().includes('type=recovery');
+
+          if (isRecovery) {
+            window.history.replaceState({}, '', '/reset-password');
+          } else {
+            window.history.replaceState({}, '', '/');
+          }
           
           if (error) {
             console.error("[AUTH_DEBUG] Erro ao trocar código:", error);
@@ -174,8 +184,10 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         window.location.hash.toLowerCase().includes('type=recovery') || 
         window.location.search.toLowerCase().includes('type=recovery')
       ) {
-        console.log("[AUTH_DEBUG] Fluxo de recuperação de senha detectado! Redirecionando hash para #/reset-password.");
-        window.location.hash = '#/reset-password';
+        console.log("[AUTH_DEBUG] Fluxo de recuperação de senha detectado! Alterando rota sem limpar sessão.");
+        if (window.location.pathname !== '/reset-password') {
+          window.history.replaceState({}, '', '/reset-password');
+        }
       }
 
       const currentId = currentSession?.user?.id || null;
