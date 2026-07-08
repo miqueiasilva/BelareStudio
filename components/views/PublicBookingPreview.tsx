@@ -107,14 +107,31 @@ const Plus = ({ size }: { size: number }) => (
 );
 
 const getWhatsAppUrl = (phone: string, text?: string) => {
-    if (!phone) return text ? `https://wa.me/?text=${text}` : `https://wa.me/`;
-    const cleanPhone = phone.replace(/\D/g, '');
-    let formattedPhone = cleanPhone;
-    if (cleanPhone.length === 10 || cleanPhone.length === 11) {
-        // Se for um número brasileiro sem DDI, adiciona 55
-        formattedPhone = `55${cleanPhone}`;
+    if (!phone) return text ? `https://wa.me/?text=${encodeURIComponent(text)}` : `https://wa.me/`;
+    
+    // Remove todos os caracteres não-numéricos
+    let cleanPhone = phone.replace(/\D/g, '');
+    
+    // Se começar com zero (ex: 081995685910), remove o zero
+    if (cleanPhone.startsWith('0')) {
+        cleanPhone = cleanPhone.substring(1);
     }
-    const queryParam = text ? `?text=${text}` : '';
+    
+    let formattedPhone = cleanPhone;
+    
+    // Se não começar com 55 (DDI Brasil)
+    if (!cleanPhone.startsWith('55')) {
+        if (cleanPhone.length === 10 || cleanPhone.length === 11) {
+            formattedPhone = `55${cleanPhone}`;
+        }
+    } else {
+        // Se já começa com 55, verifica se tem tamanho válido (12 ou 13 dígitos)
+        if (cleanPhone.length === 12 || cleanPhone.length === 13) {
+            formattedPhone = cleanPhone;
+        }
+    }
+    
+    const queryParam = text ? `?text=${encodeURIComponent(text)}` : '';
     return `https://wa.me/${formattedPhone}${queryParam}`;
 };
 
@@ -252,12 +269,48 @@ const PublicBookingPreview: React.FC = () => {
                         }
                     }
 
-                    // O usuário informou que studio_settings é a tabela correta e contém os dados necessários.
+                    // Buscar dados adicionais do business_settings e studios para garantir que telefone, whatsapp, nome e endereço fiquem corretos
+                    let businessData = null;
+                    let studioBaseData = null;
+
+                    try {
+                        const { data: bizData } = await supabase
+                            .from('business_settings')
+                            .select('*')
+                            .or(`id.eq.${studioId},studio_id.eq.${studioId}`)
+                            .maybeSingle();
+                        if (bizData) {
+                            businessData = bizData;
+                        }
+                    } catch (bizErr) {
+                        console.error('Erro ao buscar business_settings no preview:', bizErr);
+                    }
+
+                    try {
+                        const { data: baseData } = await supabase
+                            .from('studios')
+                            .select('*')
+                            .eq('id', studioId)
+                            .maybeSingle();
+                        if (baseData) {
+                            studioBaseData = baseData;
+                        }
+                    } catch (baseErr) {
+                        console.error('Erro ao buscar studios no preview:', baseErr);
+                    }
+
+                    const resolvedPhone = businessData?.phone || studioBaseData?.contact_phone || studioData?.phone || '';
+                    const resolvedWhatsapp = businessData?.whatsapp_reminder_number || businessData?.phone || studioBaseData?.contact_phone || studioData?.whatsapp || studioData?.phone || '';
+
                     setStudio({ 
                         ...studioData,
+                        ...businessData,
+                        phone: resolvedPhone,
+                        whatsapp: resolvedWhatsapp,
                         studio_id: studioId,
                         // Garantir que o nome do estúdio venha do studio_settings
-                        studio_name: studioData.studio_name || studioData.business_name || "Seu Estúdio de Beleza"
+                        studio_name: studioData.studio_name || businessData?.business_name || studioBaseData?.name || studioData.business_name || "Seu Estúdio de Beleza",
+                        address: businessData?.street ? `${businessData.street}${businessData.number ? `, ${businessData.number}` : ''}${businessData.district ? ` - ${businessData.district}` : ''}` : (studioBaseData?.address || studioData?.address || '')
                     });
                     const rawNotice = parseFloat(studioData.min_scheduling_notice || '2');
                     const finalNoticeMinutes = rawNotice < 48 ? rawNotice * 60 : rawNotice;
