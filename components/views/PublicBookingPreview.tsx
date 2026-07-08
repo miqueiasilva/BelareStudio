@@ -106,6 +106,18 @@ const Plus = ({ size }: { size: number }) => (
     </svg>
 );
 
+const getWhatsAppUrl = (phone: string, text?: string) => {
+    if (!phone) return text ? `https://wa.me/?text=${text}` : `https://wa.me/`;
+    const cleanPhone = phone.replace(/\D/g, '');
+    let formattedPhone = cleanPhone;
+    if (cleanPhone.length === 10 || cleanPhone.length === 11) {
+        // Se for um número brasileiro sem DDI, adiciona 55
+        formattedPhone = `55${cleanPhone}`;
+    }
+    const queryParam = text ? `?text=${text}` : '';
+    return `https://wa.me/${formattedPhone}${queryParam}`;
+};
+
 const PublicBookingPreview: React.FC = () => {
     const { user } = useAuth();
     const [loading, setLoading] = useState(true);
@@ -836,9 +848,9 @@ const PublicBookingPreview: React.FC = () => {
 
                                     <button
                                         onClick={() => {
-                                            const phone = studio?.whatsapp?.replace(/\D/g, '') || studio?.phone?.replace(/\D/g, '');
-                                            const text = encodeURIComponent(`Olá! Gostaria de reagendar ou tirar dúvidas sobre meu agendamento no dia ${format(new Date(confirmingAppointment.date), 'dd/MM/yyyy')} às ${format(new Date(confirmingAppointment.date), 'HH:mm')} (${confirmingAppointment.service_name})`);
-                                            window.open(phone ? `https://wa.me/55${phone}?text=${text}` : `https://wa.me/?text=${text}`, '_blank');
+                                            const phone = studio?.whatsapp || studio?.phone || '';
+                                            const text = `Olá! Gostaria de reagendar ou tirar dúvidas sobre meu agendamento no dia ${format(new Date(confirmingAppointment.date), 'dd/MM/yyyy')} às ${format(new Date(confirmingAppointment.date), 'HH:mm')} (${confirmingAppointment.service_name})`;
+                                            window.open(getWhatsAppUrl(phone, text), '_blank');
                                         }}
                                         className="w-full bg-white hover:bg-slate-50 border-2 border-slate-200 text-slate-500 py-3.5 px-6 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all"
                                     >
@@ -859,7 +871,7 @@ const PublicBookingPreview: React.FC = () => {
                             {(studio?.whatsapp || studio?.phone) && (
                                 <span className="text-[10px] font-black text-orange-500 mt-2 block hover:underline cursor-pointer" onClick={() => {
                                     const rawVal = studio.whatsapp || studio.phone;
-                                    window.open(`https://wa.me/55${rawVal.replace(/\D/g, '')}`, '_blank');
+                                    window.open(getWhatsAppUrl(rawVal), '_blank');
                                 }}>
                                     Fale conosco: {studio.whatsapp || studio.phone}
                                 </span>
@@ -914,7 +926,7 @@ const PublicBookingPreview: React.FC = () => {
                             <Star size={14} fill="currentColor" /> 5.0 (250+ avaliações)
                         </div>
                         <a 
-                            href={`https://wa.me/${studio?.whatsapp?.replace(/\D/g, '')}`} 
+                            href={getWhatsAppUrl(studio?.whatsapp || studio?.phone || '')} 
                             target="_blank" 
                             rel="noreferrer"
                             className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-full text-xs font-black border border-emerald-100 hover:bg-emerald-100 transition-colors"
