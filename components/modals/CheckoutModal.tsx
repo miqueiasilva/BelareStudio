@@ -135,7 +135,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, appointm
     }, [currentMethod, installments, appointment.price]);
 
     const handleConfirmPayment = async () => {
-        if (!currentMethod) return;
+        if (!currentMethod || isLoading) return;
         setIsLoading(true);
 
         try {

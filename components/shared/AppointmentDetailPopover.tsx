@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { LegacyAppointment, AppointmentStatus } from '../../types';
 import { 
     Calendar, DollarSign, Edit, Trash2, 
-    User, MoreVertical, X, CheckCircle2, Receipt, MessageCircle, AlignLeft, CheckCheck
+    User, MoreVertical, X, CheckCircle2, Receipt, MessageCircle, AlignLeft, CheckCheck, Loader2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
@@ -56,6 +56,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const [sendAllTogether, setSendAllTogether] = useState<boolean>(true);
   const [isReminderSent, setIsReminderSent] = useState<boolean>(!!appointment.reminder_sent);
   const [prevId, setPrevId] = useState<number>(appointment.id);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
   if (appointment.id !== prevId) {
     setPrevId(appointment.id);
@@ -283,11 +284,20 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const isFinished = ['concluido', 'cancelado', 'bloqueado'].includes(appointment.status);
   const canCheckout = !isFinished;
 
-  const handleFinalize = () => {
+  const handleFinalize = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
     if (onConvertToCommand) {
-      onConvertToCommand(appointment);
+      try {
+        await onConvertToCommand(appointment);
+      } catch (err) {
+        console.error("Erro ao converter para comanda:", err);
+      } finally {
+        setIsProcessing(false);
+      }
     } else {
       setIsCheckoutOpen(true);
+      setIsProcessing(false);
     }
   };
 
@@ -477,34 +487,47 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                     Múltiplos agendamentos pendentes hoje!
                   </p>
                   <button
-                    onClick={() => {
+                    disabled={isProcessing}
+                    onClick={async () => {
+                      if (isProcessing) return;
+                      setIsProcessing(true);
                       const pending = sameDayAppointments.filter(app => !['concluido', 'cancelado', 'bloqueado'].includes(app.status));
                       const ids = pending.map(app => app.id);
                       if (onConvertToCommand) {
-                        onConvertToCommand(appointment, ids);
+                        try {
+                          await onConvertToCommand(appointment, ids);
+                        } catch (err) {
+                          console.error("Erro ao converter agendamentos:", err);
+                        } finally {
+                          setIsProcessing(false);
+                        }
                       } else {
                         setIsCheckoutOpen(true);
+                        setIsProcessing(false);
                       }
                     }}
-                    className="w-full bg-amber-500 hover:bg-amber-600 text-white font-black text-xs uppercase tracking-[0.05em] py-4 rounded-[20px] shadow-md shadow-amber-100 transition-all active:scale-95 flex items-center justify-center gap-2"
+                    className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:hover:bg-amber-500 text-white font-black text-xs uppercase tracking-[0.05em] py-4 rounded-[20px] shadow-md shadow-amber-100 transition-all active:scale-95 flex items-center justify-center gap-2"
                   >
-                    <Receipt size={16} />
-                    Finalizar Todos Juntos (R$ {sameDayAppointments.filter(app => !['concluido', 'cancelado', 'bloqueado'].includes(app.status)).reduce((sum, item) => sum + Number(item.value || 0), 0).toFixed(2)})
+                    {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Receipt size={16} />}
+                    {isProcessing ? 'Processando...' : `Finalizar Todos Juntos (R$ ${sameDayAppointments.filter(app => !['concluido', 'cancelado', 'bloqueado'].includes(app.status)).reduce((sum, item) => sum + Number(item.value || 0), 0).toFixed(2)})`}
                   </button>
                   <button
+                    disabled={isProcessing}
                     onClick={handleFinalize}
-                    className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] uppercase tracking-[0.05em] py-2.5 rounded-[16px] transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                    className="w-full bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 font-bold text-[10px] uppercase tracking-[0.05em] py-2.5 rounded-[16px] transition-all active:scale-95 flex items-center justify-center gap-1.5"
                   >
-                    Finalizar Apenas Este
+                    {isProcessing ? <Loader2 size={12} className="animate-spin" /> : null}
+                    {isProcessing ? 'Aguarde...' : 'Finalizar Apenas Este'}
                   </button>
                 </div>
               ) : (
                 <button
+                  disabled={isProcessing}
                   onClick={handleFinalize}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-[0.1em] py-5 rounded-[24px] shadow-xl shadow-emerald-100 transition-all active:scale-95 flex items-center justify-center gap-2"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:hover:bg-emerald-600 text-white font-black text-xs uppercase tracking-[0.1em] py-5 rounded-[24px] shadow-xl shadow-emerald-100 transition-all active:scale-95 flex items-center justify-center gap-2"
                 >
-                  <Receipt size={18} />
-                  Finalizar Atendimento
+                  {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Receipt size={18} />}
+                  {isProcessing ? 'Processando...' : 'Finalizar Atendimento'}
                 </button>
               )
             )}

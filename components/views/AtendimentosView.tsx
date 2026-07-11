@@ -1108,7 +1108,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     };
 
     const handleConvertToCommand = async (appointment: LegacyAppointment, sameDayApptIds?: number[]) => {
-        if (!activeStudioId) return;
+        if (!activeStudioId || isLoadingData) return;
         setIsLoadingData(true);
         try {
             let apptsToConsolidate = [appointment];
