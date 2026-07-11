@@ -595,6 +595,59 @@ const PublicBookingPreview: React.FC = () => {
 
             const endDateTime = addMinutes(appointmentDate, totalDuration);
 
+            // --- AUDIT & VALIDATION TO PREVENT DOUBLE BOOKINGS ---
+            // 1. Verificar se o profissional já tem agendamento que conflita com este período
+            const startOfDayStr = getStartOfDay(appointmentDate).toISOString();
+            const endOfDayStr = addDays(getStartOfDay(appointmentDate), 1).toISOString();
+
+            const { data: profOverlapCheck, error: overlapErr } = await supabase
+                .from('appointments')
+                .select('id, date, duration, start_at, end_at')
+                .eq('professional_id', selectedProfessional.id)
+                .neq('status', 'cancelado')
+                .gte('date', startOfDayStr)
+                .lte('date', endOfDayStr);
+
+            if (overlapErr) {
+                console.error("Erro ao verificar sobreposição do profissional:", overlapErr);
+            }
+
+            const slotStart = appointmentDate;
+            const slotEnd = endDateTime;
+
+            const hasProfOverlap = profOverlapCheck?.some(app => {
+                const appStart = new Date(app.date || app.start_at);
+                const appEnd = addMinutes(appStart, app.duration);
+                return (slotStart < appEnd) && (slotEnd > appStart);
+            });
+
+            if (hasProfOverlap) {
+                throw new Error("Desculpe, este horário acabou de ser preenchido por outro cliente. Por favor, retorne e selecione outro horário disponível.");
+            }
+
+            // 2. Verificar se o próprio cliente já tem um agendamento no mesmo horário (conflitante)
+            const { data: clientOverlapCheck, error: clientOverlapErr } = await supabase
+                .from('appointments')
+                .select('id, date, duration, start_at, end_at')
+                .eq('client_whatsapp', cleanPhone)
+                .neq('status', 'cancelado')
+                .gte('date', startOfDayStr)
+                .lte('date', endOfDayStr);
+
+            if (clientOverlapErr) {
+                console.error("Erro ao verificar sobreposição do cliente:", clientOverlapErr);
+            }
+
+            const hasClientOverlap = clientOverlapCheck?.some(app => {
+                const appStart = new Date(app.date || app.start_at);
+                const appEnd = addMinutes(appStart, app.duration);
+                return (slotStart < appEnd) && (slotEnd > appStart);
+            });
+
+            if (hasClientOverlap) {
+                throw new Error("Você já possui um agendamento agendado para o mesmo horário. Por favor, selecione um horário diferente.");
+            }
+
             // Enviar estritamente professional_id. resource_id gerado no DB como espelho.
             const payload = {
                 studio_id: studio?.studio_id || studio?.id,
