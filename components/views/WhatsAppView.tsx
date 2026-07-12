@@ -1,10 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
     Search, MoreVertical, Paperclip, Send, Smile, Check, CheckCheck, 
     MessageSquare, Bell, Calendar, Heart, Star, Clock, Zap, 
     Link as LinkIcon, Smartphone, Wifi, WifiOff, LogOut, ChevronLeft, 
     ArrowLeft, CheckCircle2, User, Camera, Shield, Signal, Battery,
-    QrCode, RefreshCw
+    QrCode, RefreshCw, Info, Settings, ShieldCheck, KeyRound, Globe, Phone
 } from 'lucide-react';
 import { mockConversations } from '../../data/mockData';
 import { ChatConversation, ChatMessage } from '../../types';
@@ -12,6 +12,8 @@ import { format, addHours, addDays } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import ToggleSwitch from '../shared/ToggleSwitch';
 import Toast, { ToastType } from '../shared/Toast';
+import { supabase } from '../../services/supabaseClient';
+import { useStudio } from '../../contexts/StudioContext';
 
 // --- Componente de Simulador de Smartphone ---
 const PhonePreview = ({ type, time, active }: { type: string, time: string, active: boolean }) => {
@@ -166,6 +168,7 @@ const ChevronDown = ({ size, strokeWidth, className }: any) => (
 );
 
 const WhatsAppView: React.FC = () => {
+    const { activeStudioId } = useStudio();
     const [activeTab, setActiveTab] = useState<'chats' | 'automations' | 'connection'>('chats');
     const [conversations, setConversations] = useState<ChatConversation[]>(mockConversations);
     const [selectedChatId, setSelectedChatId] = useState<number | null>(null);
@@ -196,6 +199,176 @@ const WhatsAppView: React.FC = () => {
 
     // --- Connection State ---
     const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'qr_ready' | 'connected'>('connected');
+
+    // --- Meta WhatsApp API Configuration State ---
+    const [metaSettings, setMetaSettings] = useState({
+        connectionType: 'mock' as 'mock' | 'meta_api',
+        meta_whatsapp_token: '',
+        meta_whatsapp_phone_number_id: '',
+        meta_whatsapp_business_account_id: '',
+        meta_whatsapp_template_name: '',
+        meta_whatsapp_language: 'pt_BR',
+        meta_whatsapp_active: false
+    });
+    const [isLoadingSettings, setIsLoadingSettings] = useState(false);
+    const [isSavingSettings, setIsSavingSettings] = useState(false);
+    const [testPhone, setTestPhone] = useState('');
+    const [isSendingTest, setIsSendingTest] = useState(false);
+
+    useEffect(() => {
+        if (!activeStudioId) return;
+        const loadSettings = async () => {
+            setIsLoadingSettings(true);
+            try {
+                const { data, error } = await supabase
+                    .from('business_settings')
+                    .select('meta_whatsapp_token, meta_whatsapp_phone_number_id, meta_whatsapp_business_account_id, meta_whatsapp_template_name, meta_whatsapp_language, meta_whatsapp_active')
+                    .eq('studio_id', activeStudioId)
+                    .maybeSingle();
+
+                if (data) {
+                    setMetaSettings({
+                        connectionType: data.meta_whatsapp_active ? 'meta_api' : 'mock',
+                        meta_whatsapp_token: data.meta_whatsapp_token || '',
+                        meta_whatsapp_phone_number_id: data.meta_whatsapp_phone_number_id || '',
+                        meta_whatsapp_business_account_id: data.meta_whatsapp_business_account_id || '',
+                        meta_whatsapp_template_name: data.meta_whatsapp_template_name || '',
+                        meta_whatsapp_language: data.meta_whatsapp_language || 'pt_BR',
+                        meta_whatsapp_active: !!data.meta_whatsapp_active
+                    });
+                }
+            } catch (err) {
+                console.error("Erro ao carregar configurações de WhatsApp:", err);
+            } finally {
+                setIsLoadingSettings(false);
+            }
+        };
+        loadSettings();
+    }, [activeStudioId]);
+
+    const handleSaveSettings = async () => {
+        if (!activeStudioId) {
+            showToast("Erro: Nenhum estúdio ativo encontrado.", "error");
+            return;
+        }
+        setIsSavingSettings(true);
+        try {
+            const payload = {
+                meta_whatsapp_token: metaSettings.meta_whatsapp_token,
+                meta_whatsapp_phone_number_id: metaSettings.meta_whatsapp_phone_number_id,
+                meta_whatsapp_business_account_id: metaSettings.meta_whatsapp_business_account_id,
+                meta_whatsapp_template_name: metaSettings.meta_whatsapp_template_name,
+                meta_whatsapp_language: metaSettings.meta_whatsapp_language,
+                meta_whatsapp_active: metaSettings.connectionType === 'meta_api',
+                updated_at: new Date().toISOString()
+            };
+
+            const { error } = await supabase
+                .from('business_settings')
+                .upsert(payload, { onConflict: 'studio_id' });
+
+            if (error) {
+                throw error;
+            } else {
+                showToast("Configurações salvas com sucesso!", "success");
+            }
+        } catch (err: any) {
+            console.error("Erro ao salvar configurações:", err);
+            showToast(`Erro ao salvar: ${err.message}`, "error");
+        } finally {
+            setIsSavingSettings(false);
+        }
+    };
+
+    const handleSendTestMessage = async () => {
+        if (!testPhone.trim()) {
+            showToast("Digite um número de telefone de teste.", "info");
+            return;
+        }
+        if (!metaSettings.meta_whatsapp_token || !metaSettings.meta_whatsapp_phone_number_id) {
+            showToast("Preencha o Token e o ID do Número antes de testar.", "error");
+            return;
+        }
+
+        setIsSendingTest(true);
+        try {
+            let cleanPhone = testPhone.replace(/\D/g, '');
+            if (cleanPhone.length === 10 || cleanPhone.length === 11) {
+                cleanPhone = '55' + cleanPhone;
+            }
+
+            const url = `https://graph.facebook.com/v21.0/${metaSettings.meta_whatsapp_phone_number_id}/messages`;
+
+            const hasTemplate = !!metaSettings.meta_whatsapp_template_name.trim();
+
+            const body = hasTemplate ? {
+                messaging_product: "whatsapp",
+                to: cleanPhone,
+                type: "template",
+                template: {
+                    name: metaSettings.meta_whatsapp_template_name,
+                    language: {
+                        code: metaSettings.meta_whatsapp_language || 'pt_BR'
+                    },
+                    components: [
+                        {
+                            type: "body",
+                            parameters: [
+                                { type: "text", text: "Cliente de Teste" },
+                                { type: "text", text: "Manicure & Pedicure" },
+                                { type: "text", text: "Profissional de Teste" },
+                                { type: "text", text: "Amanhã" },
+                                { type: "text", text: "14:00" },
+                                { type: "text", text: `${window.location.origin}/#/public-preview?sid=${activeStudioId}` }
+                            ]
+                        }
+                    ]
+                }
+            } : {
+                messaging_product: "whatsapp",
+                recipient_type: "individual",
+                to: cleanPhone,
+                type: "text",
+                text: {
+                    preview_url: false,
+                    body: "Olá! Este é um teste do sistema de lembretes automáticos do Belare Studio via API Oficial da Meta. Funcionou perfeitamente! 🚀"
+                }
+            };
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${metaSettings.meta_whatsapp_token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(body)
+            });
+
+            const resData = await response.json();
+            if (!response.ok) {
+                throw new Error(resData?.error?.message || "Erro desconhecido na API da Meta.");
+            }
+
+            showToast("Mensagem de teste enviada com sucesso!", "success");
+
+            try {
+                await supabase.from('whatsapp_reminders_log').insert([{
+                    studio_id: activeStudioId,
+                    client_name: 'Cliente de Teste',
+                    phone: cleanPhone,
+                    sender: 'API Oficial Meta'
+                }]);
+            } catch (logErr) {
+                console.error("Erro ao registrar log de teste:", logErr);
+            }
+
+        } catch (err: any) {
+            console.error("Erro ao enviar mensagem de teste:", err);
+            showToast(`Falha no envio: ${err.message}`, "error");
+        } finally {
+            setIsSendingTest(false);
+        }
+    };
 
     // --- Handlers ---
     const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
@@ -353,31 +526,71 @@ const WhatsAppView: React.FC = () => {
                     )}
 
                     {activeTab === 'connection' && (
-                        <div className="p-6 flex flex-col items-center justify-center h-full text-center">
-                            <div className={`w-20 h-20 rounded-3xl flex items-center justify-center shadow-xl mb-6 border-4 border-white ${connectionStatus === 'connected' ? 'bg-green-100 text-green-600' : 'bg-rose-100 text-rose-600 animate-pulse'}`}>
-                                {connectionStatus === 'connected' ? <Wifi size={32} /> : <WifiOff size={32} />}
+                        <div className="p-4 space-y-4">
+                            <header className="mb-4">
+                                <h2 className="text-sm font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Método de Conexão</h2>
+                                <p className="text-[10px] text-slate-500 mt-1 ml-1">Escolha como disparar as notificações.</p>
+                            </header>
+
+                            <div className="space-y-3">
+                                {/* Opção 1: Simulador / QR Code */}
+                                <button 
+                                    onClick={() => setMetaSettings(prev => ({ ...prev, connectionType: 'mock' }))}
+                                    className={`w-full text-left p-4 rounded-2xl border transition-all ${
+                                        metaSettings.connectionType === 'mock'
+                                            ? 'bg-white border-orange-500 shadow-md shadow-orange-100'
+                                            : 'bg-slate-50 border-slate-100 opacity-70 hover:opacity-100'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2 rounded-xl ${metaSettings.connectionType === 'mock' ? 'bg-orange-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                                            <QrCode size={18} />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-black text-slate-800">Simulador / App Web</p>
+                                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">QR Code Local (Mock)</p>
+                                        </div>
+                                    </div>
+                                </button>
+
+                                {/* Opção 2: API Oficial da Meta */}
+                                <button 
+                                    onClick={() => setMetaSettings(prev => ({ ...prev, connectionType: 'meta_api' }))}
+                                    className={`w-full text-left p-4 rounded-2xl border transition-all ${
+                                        metaSettings.connectionType === 'meta_api'
+                                            ? 'bg-white border-orange-500 shadow-md shadow-orange-100'
+                                            : 'bg-slate-50 border-slate-100 opacity-70 hover:opacity-100'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2 rounded-xl ${metaSettings.connectionType === 'meta_api' ? 'bg-orange-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                                            <Globe size={18} />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-black text-slate-800">API Oficial da Meta</p>
+                                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Cloud API de Produção</p>
+                                        </div>
+                                    </div>
+                                </button>
                             </div>
-                            <h3 className="text-lg font-black text-slate-800 tracking-tight">Status da Conexão</h3>
-                            <p className="text-xs text-slate-500 mt-2 max-w-[200px] leading-relaxed">
-                                {connectionStatus === 'connected' 
-                                    ? 'Sincronizado com Jaciene Félix.' 
-                                    : 'Escaneie o código no Desktop para ativar.'}
-                            </p>
-                            
-                            {connectionStatus === 'connected' && (
-                                <div className="mt-8 w-full p-4 bg-white rounded-2xl border border-slate-100 text-left">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="text-[9px] font-black text-slate-400 uppercase">Bateria do Celular</span>
-                                        <span className="text-[9px] font-black text-green-600">85%</span>
+
+                            {/* Status Resumido */}
+                            <div className="mt-4 p-4 bg-white rounded-2xl border border-slate-100">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-2">Status do Canal</span>
+                                {metaSettings.connectionType === 'mock' ? (
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                                        <span className="text-xs font-bold text-slate-700">Conectado (WhatsApp Web Simulado)</span>
                                     </div>
-                                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                        <div className="h-full bg-green-500 w-[85%]"></div>
+                                ) : (
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-2.5 h-2.5 rounded-full ${metaSettings.meta_whatsapp_active && metaSettings.meta_whatsapp_token ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></div>
+                                        <span className="text-xs font-bold text-slate-700">
+                                            {metaSettings.meta_whatsapp_active && metaSettings.meta_whatsapp_token ? 'API Meta Ativa & Pronta' : 'Aguardando Credenciais'}
+                                        </span>
                                     </div>
-                                    <button onClick={() => setConnectionStatus('disconnected')} className="mt-6 w-full flex items-center justify-center gap-2 text-rose-500 text-[10px] font-black uppercase tracking-widest hover:bg-rose-50 p-3 rounded-xl transition-all">
-                                        <LogOut size={14} /> Desconectar
-                                    </button>
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
                     )}
                 </main>
@@ -476,21 +689,199 @@ const WhatsAppView: React.FC = () => {
                     </div>
                 )}
                 
-                {/* State: Connection Placeholder */}
+                {/* State: Connection Placeholder / Meta API Settings Form */}
                 {activeTab === 'connection' && (
-                    <div className="flex-1 flex flex-col items-center justify-center p-12 bg-white/50">
-                        <div className="max-w-md w-full bg-white p-10 rounded-[48px] shadow-2xl border border-slate-100 text-center">
-                            <QrCode size={180} className="mx-auto text-slate-800 mb-8" />
-                            <h3 className="text-2xl font-black text-slate-800 mb-4 tracking-tight">Parear WhatsApp</h3>
-                            <p className="text-sm text-slate-500 leading-relaxed mb-8">
-                                1. Abra o WhatsApp no seu celular<br/>
-                                2. Toque em <b>Aparelhos Conectados</b><br/>
-                                3. Toque em <b>Conectar um Aparelho</b> e aponte para a tela
-                            </p>
-                            <button className="flex items-center justify-center gap-3 w-full bg-slate-100 p-4 rounded-2xl font-black text-slate-600 hover:bg-orange-50 hover:text-orange-600 transition-all group">
-                                <RefreshCw size={20} className="group-hover:rotate-180 transition-transform duration-500" /> Gerar Novo Código
-                            </button>
-                        </div>
+                    <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-50 text-left">
+                        {metaSettings.connectionType === 'mock' ? (
+                            <div className="h-full flex items-center justify-center">
+                                <div className="max-w-md w-full bg-white p-10 rounded-[48px] shadow-2xl border border-slate-100 text-center">
+                                    <QrCode size={180} className="mx-auto text-slate-800 mb-8 animate-pulse" />
+                                    <h3 className="text-2xl font-black text-slate-800 mb-4 tracking-tight">Parear WhatsApp</h3>
+                                    <p className="text-sm text-slate-500 leading-relaxed mb-8">
+                                        1. Abra o WhatsApp no seu celular<br/>
+                                        2. Toque em <b>Aparelhos Conectados</b><br/>
+                                        3. Toque em <b>Conectar um Aparelho</b> e aponte para a tela
+                                    </p>
+                                    <button onClick={() => showToast("Código gerado com sucesso!")} className="flex items-center justify-center gap-3 w-full bg-slate-100 p-4 rounded-2xl font-black text-slate-600 hover:bg-orange-50 hover:text-orange-600 transition-all group">
+                                        <RefreshCw size={20} className="group-hover:rotate-180 transition-transform duration-500" /> Gerar Novo Código
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="max-w-4xl mx-auto space-y-6">
+                                <div className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200/60 shadow-xl shadow-slate-100/50">
+                                    <div className="flex items-center gap-3 border-b border-slate-100 pb-5 mb-6">
+                                        <div className="p-3 bg-blue-500 text-white rounded-2xl">
+                                            <Settings size={22} />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-xl font-black text-slate-800 leading-none">Credenciais da Cloud API Oficial da Meta</h3>
+                                            <p className="text-xs text-slate-400 mt-1.5 font-bold uppercase tracking-wide">Integração oficial de alta velocidade, homologada e sem bloqueios</p>
+                                        </div>
+                                    </div>
+
+                                    {isLoadingSettings ? (
+                                        <div className="py-12 flex flex-col items-center justify-center gap-3 text-slate-400">
+                                            <RefreshCw className="animate-spin text-orange-500" size={32} />
+                                            <span className="text-xs font-black uppercase tracking-widest">Carregando credenciais...</span>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-5">
+                                            {/* Token de Acesso */}
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest flex items-center gap-1">
+                                                    <KeyRound size={12} className="text-slate-400" /> Token de Acesso Permanente (Bearer)
+                                                </label>
+                                                <input 
+                                                    type="password" 
+                                                    value={metaSettings.meta_whatsapp_token} 
+                                                    onChange={e => setMetaSettings(prev => ({ ...prev, meta_whatsapp_token: e.target.value }))}
+                                                    placeholder="EAABw..." 
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-xs font-mono outline-none focus:bg-white focus:ring-4 focus:ring-orange-50 focus:border-orange-200 transition-all"
+                                                />
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {/* ID do Número de Telefone */}
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest flex items-center gap-1">
+                                                        <Phone size={12} className="text-slate-400" /> ID do Número de Telefone
+                                                    </label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={metaSettings.meta_whatsapp_phone_number_id} 
+                                                        onChange={e => setMetaSettings(prev => ({ ...prev, meta_whatsapp_phone_number_id: e.target.value }))}
+                                                        placeholder="Ex: 105943283234563" 
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-bold outline-none focus:bg-white focus:ring-4 focus:ring-orange-50 focus:border-orange-200 transition-all"
+                                                    />
+                                                </div>
+
+                                                {/* ID da Conta Comercial */}
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest flex items-center gap-1">
+                                                        <User size={12} className="text-slate-400" /> ID da Conta Comercial (WABA)
+                                                    </label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={metaSettings.meta_whatsapp_business_account_id} 
+                                                        onChange={e => setMetaSettings(prev => ({ ...prev, meta_whatsapp_business_account_id: e.target.value }))}
+                                                        placeholder="Ex: 230985472394783" 
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-bold outline-none focus:bg-white focus:ring-4 focus:ring-orange-50 focus:border-orange-200 transition-all"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {/* Nome do Modelo */}
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest flex items-center gap-1">
+                                                        <Zap size={12} className="text-slate-400" /> Nome do Modelo (Template Name)
+                                                    </label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={metaSettings.meta_whatsapp_template_name} 
+                                                        onChange={e => setMetaSettings(prev => ({ ...prev, meta_whatsapp_template_name: e.target.value }))}
+                                                        placeholder="Ex: lembrete_agendamento" 
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-bold outline-none focus:bg-white focus:ring-4 focus:ring-orange-50 focus:border-orange-200 transition-all"
+                                                    />
+                                                </div>
+
+                                                {/* Idioma */}
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest flex items-center gap-1">
+                                                        <Globe size={12} className="text-slate-400" /> Idioma do Modelo
+                                                    </label>
+                                                    <select 
+                                                        value={metaSettings.meta_whatsapp_language} 
+                                                        onChange={e => setMetaSettings(prev => ({ ...prev, meta_whatsapp_language: e.target.value }))}
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-bold outline-none focus:bg-white focus:ring-4 focus:ring-orange-50 focus:border-orange-200 transition-all appearance-none cursor-pointer"
+                                                    >
+                                                        <option value="pt_BR">Português (Brasil)</option>
+                                                        <option value="en_US">Inglês (EUA)</option>
+                                                        <option value="es_ES">Espanhol (Espanha)</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            {/* Salvar Button */}
+                                            <div className="pt-4">
+                                                <button 
+                                                    onClick={handleSaveSettings}
+                                                    disabled={isSavingSettings}
+                                                    className="w-full bg-green-600 hover:bg-green-700 text-white font-black uppercase tracking-wider text-xs p-4 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-100 disabled:opacity-50"
+                                                >
+                                                    {isSavingSettings ? (
+                                                        <>
+                                                            <RefreshCw className="animate-spin" size={16} /> Salvando...
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <ShieldCheck size={16} /> Salvar Credenciais & Ativar Canal Oficial
+                                                        </>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Sandbox Testing Card */}
+                                <div className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200/60 shadow-xl shadow-slate-100/50">
+                                    <div className="flex items-center gap-3 border-b border-slate-100 pb-5 mb-6">
+                                        <div className="p-3 bg-orange-500 text-white rounded-2xl">
+                                            <Smartphone size={22} />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-xl font-black text-slate-800 leading-none">Sandbox de Testes da Meta Cloud API</h3>
+                                            <p className="text-xs text-slate-400 mt-1.5 font-bold">Teste os disparos reais da Meta Cloud API para o seu celular imediatamente</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl text-xs text-blue-700 leading-relaxed font-medium">
+                                            <p className="font-black flex items-center gap-1.5 mb-1 text-blue-800"><Info size={14} /> Dica de Sandbox:</p>
+                                            <p>As variáveis que o Belare Studio passará automaticamente para o seu template da Meta no corpo da mensagem são, em ordem:</p>
+                                            <ol className="list-decimal list-inside space-y-0.5 mt-2 font-mono">
+                                                <li>Nome do Cliente (Ex: Maria)</li>
+                                                <li>Nome do Serviço (Ex: Cabelo + Escova)</li>
+                                                <li>Nome do Profissional (Ex: Jacilene Félix)</li>
+                                                <li>Data Formatada (Ex: Segunda, 12/07)</li>
+                                                <li>Horário (Ex: 14:00)</li>
+                                                <li>Link de Confirmação (Gerado dinamicamente para o cliente clicar)</li>
+                                            </ol>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                                            <div className="space-y-1.5 md:col-span-2">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest block">Telefone de Teste (Com DDD)</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={testPhone} 
+                                                    onChange={e => setTestPhone(e.target.value)}
+                                                    placeholder="Ex: 81999999999" 
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-bold outline-none focus:bg-white focus:ring-4 focus:ring-orange-50 focus:border-orange-200 transition-all"
+                                                />
+                                            </div>
+                                            <button 
+                                                onClick={handleSendTestMessage}
+                                                disabled={isSendingTest}
+                                                className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black uppercase tracking-wider text-xs p-4 h-[54px] rounded-2xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                                            >
+                                                {isSendingTest ? (
+                                                    <>
+                                                        <RefreshCw className="animate-spin" size={16} /> Enviando...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Send size={14} /> Disparar Teste
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

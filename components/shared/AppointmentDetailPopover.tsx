@@ -4,6 +4,7 @@ import {
     Calendar, DollarSign, Edit, Trash2, 
     User, MoreVertical, X, CheckCircle2, Receipt, MessageCircle, AlignLeft, CheckCheck, Loader2
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import StatusUpdatePopover from './StatusUpdatePopover';
@@ -66,6 +67,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const { activeStudioId } = useStudio();
   const [reminderTemplate, setReminderTemplate] = useState<string | null>(null);
   const [studioName, setStudioName] = useState<string>('Studio Jacilene Félix');
+  const [studioSettings, setStudioSettings] = useState<any>(null);
 
   useEffect(() => {
     const fetchStudioSettings = async () => {
@@ -77,6 +79,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
           .eq('studio_id', activeStudioId)
           .maybeSingle();
         if (data) {
+          setStudioSettings(data);
           if (data.whatsapp_reminder_template) {
             setReminderTemplate(data.whatsapp_reminder_template);
           }
@@ -153,7 +156,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     fetchSameDayAppointments();
   }, [appointment.client?.id, appointment.client_name, appointment.start, activeStudioId]);
 
-  const handleSendWhatsAppReminder = () => {
+  const handleSendWhatsAppReminder = async () => {
     if (!clientPhone) return;
     const cleanPhone = clientPhone.replace(/\D/g, '');
     const clientName = appointment.client?.nome || appointment.client_name || 'Cliente';
@@ -184,6 +187,101 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     const dateStr = format(appointment.start, "EEEE, dd/MM", { locale: pt });
     const fallbackLink = `${window.location.origin}/#/public-preview?sid=${activeStudioId}&apid=${appointment.id}`;
 
+    // 1. Verifica se a API Oficial da Meta está ativa
+    const isMetaActive = studioSettings?.meta_whatsapp_active && studioSettings?.meta_whatsapp_token;
+
+    if (isMetaActive) {
+      setIsProcessing(true);
+      const loadingToastId = toast.loading("Enviando lembrete automático via API Oficial da Meta...");
+      try {
+        let recipientPhone = cleanPhone;
+        if (recipientPhone.length === 10 || recipientPhone.length === 11) {
+          recipientPhone = '55' + recipientPhone;
+        }
+
+        const url = `https://graph.facebook.com/v21.0/${studioSettings.meta_whatsapp_phone_number_id}/messages`;
+
+        const hasTemplate = !!studioSettings.meta_whatsapp_template_name?.trim();
+
+        const body = hasTemplate ? {
+          messaging_product: "whatsapp",
+          to: recipientPhone,
+          type: "template",
+          template: {
+            name: studioSettings.meta_whatsapp_template_name,
+            language: {
+              code: studioSettings.meta_whatsapp_language || 'pt_BR'
+            },
+            components: [
+              {
+                type: "body",
+                parameters: [
+                  { type: "text", text: clientName },
+                  { type: "text", text: serviceName },
+                  { type: "text", text: profName || 'Profissional' },
+                  { type: "text", text: dateStr },
+                  { type: "text", text: timeStr },
+                  { type: "text", text: fallbackLink }
+                ]
+              }
+            ]
+          }
+        } : {
+          messaging_product: "whatsapp",
+          recipient_type: "individual",
+          to: recipientPhone,
+          type: "text",
+          text: {
+            preview_url: false,
+            body: `Olá, ${clientName}! Passando para lembrar do seu agendamento de ${serviceName} com ${profName || 'nosso estúdio'} no dia ${dateStr} às ${timeStr}. Confirme clicando em: ${fallbackLink}`
+          }
+        };
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${studioSettings.meta_whatsapp_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
+        });
+
+        const resData = await response.json();
+        if (!response.ok) {
+          throw new Error(resData?.error?.message || "Erro desconhecido na API da Meta.");
+        }
+
+        // Se deu tudo certo!
+        toast.success("Lembrete automático enviado via API Oficial!", { id: loadingToastId });
+        
+        setIsReminderSent(true);
+        if (onSendReminder) {
+          onSendReminder(appointment.id);
+        }
+
+        // Atualiza banco de dados
+        await supabase.from('appointments').update({ reminder_sent: true }).eq('id', appointment.id);
+        await supabase.from('whatsapp_reminders_log').insert([{
+          studio_id: activeStudioId,
+          appointment_id: appointment.id,
+          client_name: clientName,
+          phone: recipientPhone,
+          sender: 'API Oficial Meta'
+        }]);
+
+        setIsProcessing(false);
+        return; // Sai da função com sucesso!
+
+      } catch (err: any) {
+        console.error("Erro ao enviar por Meta Cloud API. Usando fallback para WhatsApp Web...", err);
+        toast.error(`Falha na API da Meta: ${err.message}. Abrindo envio manual...`, { id: loadingToastId, duration: 4000 });
+        // O código continua abaixo para abrir o WhatsApp Web como fallback!
+      } finally {
+        setIsProcessing(false);
+      }
+    }
+
+    // --- FALLBACK / DISPARO MANUAL ORIGINAL ---
     const template = reminderTemplate || 
       'Olá, {cliente}! 😊\n\n' +
       'Passando para confirmar seu horário no *{empresa}*:\n\n' +
