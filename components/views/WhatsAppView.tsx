@@ -208,7 +208,8 @@ const WhatsAppView: React.FC = () => {
         meta_whatsapp_business_account_id: '',
         meta_whatsapp_template_name: '',
         meta_whatsapp_language: 'pt_BR',
-        meta_whatsapp_active: false
+        meta_whatsapp_active: false,
+        meta_whatsapp_template_params: 'Cliente de Teste, Manicure & Pedicure, Profissional de Teste, Amanhã, 14:00, Link de Confirmação'
     });
     const [isLoadingSettings, setIsLoadingSettings] = useState(false);
     const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -248,7 +249,8 @@ const WhatsAppView: React.FC = () => {
                     meta_whatsapp_business_account_id: mergedData.meta_whatsapp_business_account_id || '',
                     meta_whatsapp_template_name: mergedData.meta_whatsapp_template_name || '',
                     meta_whatsapp_language: mergedData.meta_whatsapp_language || 'pt_BR',
-                    meta_whatsapp_active: !!mergedData.meta_whatsapp_active
+                    meta_whatsapp_active: !!mergedData.meta_whatsapp_active,
+                    meta_whatsapp_template_params: mergedData.meta_whatsapp_template_params || 'Cliente de Teste, Manicure & Pedicure, Profissional de Teste, Amanhã, 14:00, Link de Confirmação'
                 });
             } catch (err) {
                 console.error("Erro ao carregar configurações de WhatsApp:", err);
@@ -274,6 +276,7 @@ const WhatsAppView: React.FC = () => {
                 meta_whatsapp_template_name: metaSettings.meta_whatsapp_template_name,
                 meta_whatsapp_language: metaSettings.meta_whatsapp_language,
                 meta_whatsapp_active: metaSettings.connectionType === 'meta_api',
+                meta_whatsapp_template_params: metaSettings.meta_whatsapp_template_params,
             };
 
             try {
@@ -352,6 +355,10 @@ const WhatsAppView: React.FC = () => {
 
             const hasTemplate = !!metaSettings.meta_whatsapp_template_name.trim();
 
+            const parameterList = metaSettings.meta_whatsapp_template_params
+                ? metaSettings.meta_whatsapp_template_params.split(',').map(item => item.trim()).filter(Boolean)
+                : [];
+
             const body = hasTemplate ? {
                 messaging_product: "whatsapp",
                 to: cleanPhone,
@@ -361,19 +368,12 @@ const WhatsAppView: React.FC = () => {
                     language: {
                         code: metaSettings.meta_whatsapp_language || 'pt_BR'
                     },
-                    components: [
+                    components: parameterList.length > 0 ? [
                         {
                             type: "body",
-                            parameters: [
-                                { type: "text", text: "Cliente de Teste" },
-                                { type: "text", text: "Manicure & Pedicure" },
-                                { type: "text", text: "Profissional de Teste" },
-                                { type: "text", text: "Amanhã" },
-                                { type: "text", text: "14:00" },
-                                { type: "text", text: `${window.location.origin}/#/public-preview?sid=${activeStudioId}` }
-                            ]
+                            parameters: parameterList.map(text => ({ type: "text", text }))
                         }
-                    ]
+                    ] : []
                 }
             } : {
                 messaging_product: "whatsapp",
@@ -397,7 +397,11 @@ const WhatsAppView: React.FC = () => {
 
             const resData = await response.json();
             if (!response.ok) {
-                throw new Error(resData?.error?.message || "Erro desconhecido na API da Meta.");
+                let errMsg = resData?.error?.message || "Erro desconhecido na API da Meta.";
+                if (resData?.error?.code === 132001 || errMsg.includes("132001") || errMsg.includes("does not exist in the translation")) {
+                    errMsg = `Erro (#132001): O modelo '${metaSettings.meta_whatsapp_template_name}' não existe, não está aprovado ou o idioma '${metaSettings.meta_whatsapp_language}' não corresponde ao cadastrado no painel da Meta. Verifique se o nome do modelo está idêntico e tente idiomas como 'pt' ou 'pt_BR'. Além disso, certifique-se de que o número de variáveis enviadas (${parameterList.length}) corresponde ao seu modelo no Facebook.`;
+                }
+                throw new Error(errMsg);
             }
 
             showToast("Mensagem de teste enviada com sucesso!", "success");
@@ -847,9 +851,13 @@ const WhatsAppView: React.FC = () => {
                                                         onChange={e => setMetaSettings(prev => ({ ...prev, meta_whatsapp_language: e.target.value }))}
                                                         className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-bold outline-none focus:bg-white focus:ring-4 focus:ring-orange-50 focus:border-orange-200 transition-all appearance-none cursor-pointer"
                                                     >
-                                                        <option value="pt_BR">Português (Brasil)</option>
-                                                        <option value="en_US">Inglês (EUA)</option>
-                                                        <option value="es_ES">Espanhol (Espanha)</option>
+                                                        <option value="pt_BR">Português (Brasil) [pt_BR]</option>
+                                                        <option value="pt">Português (Geral) [pt]</option>
+                                                        <option value="pt_PT">Português (Portugal) [pt_PT]</option>
+                                                        <option value="en">Inglês [en]</option>
+                                                        <option value="en_US">Inglês (EUA) [en_US]</option>
+                                                        <option value="es">Espanhol [es]</option>
+                                                        <option value="es_ES">Espanhol (Espanha) [es_ES]</option>
                                                     </select>
                                                 </div>
                                             </div>
@@ -888,31 +896,48 @@ const WhatsAppView: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    <div className="space-y-4">
-                                        <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl text-xs text-blue-700 leading-relaxed font-medium">
-                                            <p className="font-black flex items-center gap-1.5 mb-1 text-blue-800"><Info size={14} /> Dica de Sandbox:</p>
-                                            <p>As variáveis que o Belare Studio passará automaticamente para o seu template da Meta no corpo da mensagem são, em ordem:</p>
-                                            <ol className="list-decimal list-inside space-y-0.5 mt-2 font-mono">
-                                                <li>Nome do Cliente (Ex: Maria)</li>
-                                                <li>Nome do Serviço (Ex: Cabelo + Escova)</li>
-                                                <li>Nome do Profissional (Ex: Jacilene Félix)</li>
-                                                <li>Data Formatada (Ex: Segunda, 12/07)</li>
-                                                <li>Horário (Ex: 14:00)</li>
-                                                <li>Link de Confirmação (Gerado dinamicamente para o cliente clicar)</li>
-                                            </ol>
-                                        </div>
+                                        <div className="space-y-4">
+                                            <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl text-xs text-blue-700 leading-relaxed font-medium">
+                                                <p className="font-black flex items-center gap-1.5 mb-1 text-blue-800"><Info size={14} /> Dica de Sandbox:</p>
+                                                <p>As variáveis que o Belare Studio passará automaticamente para o seu template da Meta no corpo da mensagem são, em ordem:</p>
+                                                <ol className="list-decimal list-inside space-y-0.5 mt-2 font-mono">
+                                                    <li>Nome do Cliente (Ex: Maria)</li>
+                                                    <li>Nome do Serviço (Ex: Cabelo + Escova)</li>
+                                                    <li>Nome do Profissional (Ex: Jacilene Félix)</li>
+                                                    <li>Data Formatada (Ex: Segunda, 12/07)</li>
+                                                    <li>Horário (Ex: 14:00)</li>
+                                                    <li>Link de Confirmação (Gerado dinamicamente para o cliente clicar)</li>
+                                                </ol>
+                                            </div>
 
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                                            <div className="space-y-1.5 md:col-span-2">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest block">Telefone de Teste (Com DDD)</label>
+                                            {/* Variáveis Customizadas */}
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest block">
+                                                    Variáveis do Template (Separadas por vírgula)
+                                                </label>
                                                 <input 
                                                     type="text" 
-                                                    value={testPhone} 
-                                                    onChange={e => setTestPhone(e.target.value)}
-                                                    placeholder="Ex: 81999999999" 
+                                                    value={metaSettings.meta_whatsapp_template_params || ''} 
+                                                    onChange={e => setMetaSettings(prev => ({ ...prev, meta_whatsapp_template_params: e.target.value }))}
+                                                    placeholder="Cliente de Teste, Manicure & Pedicure, Profissional de Teste, Amanhã, 14:00" 
                                                     className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-bold outline-none focus:bg-white focus:ring-4 focus:ring-orange-50 focus:border-orange-200 transition-all"
                                                 />
+                                                <p className="text-[10px] text-slate-400 font-medium ml-1">
+                                                    Ajuste as variáveis acima se o seu modelo aprovado no Facebook tiver menos parâmetros ou for estático (vazio).
+                                                </p>
                                             </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                                                <div className="space-y-1.5 md:col-span-2">
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest block">Telefone de Teste (Com DDD)</label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={testPhone} 
+                                                        onChange={e => setTestPhone(e.target.value)}
+                                                        placeholder="Ex: 81999999999" 
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-bold outline-none focus:bg-white focus:ring-4 focus:ring-orange-50 focus:border-orange-200 transition-all"
+                                                    />
+                                                </div>
                                             <button 
                                                 onClick={handleSendTestMessage}
                                                 disabled={isSendingTest}
