@@ -222,7 +222,7 @@ const WhatsAppView: React.FC = () => {
             try {
                 const { data, error } = await supabase
                     .from('business_settings')
-                    .select('meta_whatsapp_token, meta_whatsapp_phone_number_id, meta_whatsapp_business_account_id, meta_whatsapp_template_name, meta_whatsapp_language, meta_whatsapp_active')
+                    .select('*')
                     .eq('studio_id', activeStudioId)
                     .maybeSingle();
 
@@ -254,6 +254,8 @@ const WhatsAppView: React.FC = () => {
         setIsSavingSettings(true);
         try {
             const payload = {
+                id: activeStudioId,
+                studio_id: activeStudioId,
                 meta_whatsapp_token: metaSettings.meta_whatsapp_token,
                 meta_whatsapp_phone_number_id: metaSettings.meta_whatsapp_phone_number_id,
                 meta_whatsapp_business_account_id: metaSettings.meta_whatsapp_business_account_id,
