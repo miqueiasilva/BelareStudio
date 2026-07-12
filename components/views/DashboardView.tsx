@@ -7,8 +7,11 @@ import { getDashboardInsight } from '../../services/geminiService';
 import { DollarSign, Calendar, Users, TrendingUp, TrendingDown, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3, Zap, UserCircle, Sparkles, Pencil, Wallet } from 'lucide-react';
 // FIX: Grouping date-fns imports and removing problematic members startOfDay, subDays, startOfMonth.
 import { 
-    format, addDays, endOfDay, endOfMonth
+    format, addDays, endOfDay, endOfMonth, eachDayOfInterval, parseISO
 } from 'date-fns';
+import { 
+    ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip 
+} from 'recharts';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 import { ViewState } from '../../types';
 import { supabase } from '../../services/supabaseClient';
@@ -22,6 +25,37 @@ const formatCurrency = (value: number) => {
         currency: 'BRL',
         maximumFractionDigits: 0
     }).format(value);
+};
+
+const FaturamentoTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+        return (
+            <div className="bg-slate-900/95 backdrop-blur-md border border-slate-800 p-4 rounded-2xl shadow-2xl text-left">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{label}</p>
+                <p className="text-sm font-black text-white">
+                    Faturamento: {formatCurrency(payload[0].value)}
+                </p>
+            </div>
+        );
+    }
+    return null;
+};
+
+const OcupacaoTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+        return (
+            <div className="bg-slate-900/95 backdrop-blur-md border border-slate-800 p-4 rounded-2xl shadow-2xl text-left">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{label}</p>
+                <p className="text-sm font-black text-white">
+                    Ocupação: {payload[0].value}%
+                </p>
+                <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">
+                    Capacidade da Equipe
+                </p>
+            </div>
+        );
+    }
+    return null;
 };
 
 const containerVariants = {
@@ -93,6 +127,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
     const [tempGoal, setTempGoal] = useState('');
     const [isSavingGoal, setIsSavingGoal] = useState(false);
+    const [activeTab, setActiveTab] = useState<'faturamento' | 'ocupacao'>('faturamento');
 
     const handleSaveGoal = async (val: number) => {
         if (!activeStudioId) return;
@@ -388,6 +423,89 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         };
     }, [monthRevenueTotal, financialGoal]);
 
+    // Dados de Faturamento Diário e Ocupação da Agenda para os Gráficos
+    const chartData = useMemo(() => {
+        const activeProfsCount = Math.max(1, new Set(appointments.map(a => a.professional_id).filter(Boolean)).size);
+
+        if (filter === 'hoje') {
+            // Group by hour (08:00 to 20:00 with 1-hour increments)
+            const hours = Array.from({ length: 13 }, (_, i) => i + 8); // 8 to 20
+            return hours.map(h => {
+                const hourStr = `${String(h).padStart(2, '0')}:00`;
+                
+                const apptsInHour = appointments.filter(a => {
+                    if (!a.date) return false;
+                    const d = new Date(a.date);
+                    return d.getHours() === h;
+                });
+
+                const faturamento = apptsInHour
+                    .filter(a => a.status === 'concluido')
+                    .reduce((acc, a) => acc + (Number(a.value) || 0), 0);
+
+                const minutosOcupados = apptsInHour
+                    .filter(a => a.status !== 'cancelado')
+                    .reduce((acc, a) => acc + (Number(a.duration) || 30), 0);
+
+                const capacity = activeProfsCount * 60; // 60 minutes capacity per hour for active professionals
+                const ocupacao = Math.min(100, (minutosOcupados / capacity) * 100);
+
+                return {
+                    name: hourStr,
+                    faturamento,
+                    ocupacao: parseFloat(ocupacao.toFixed(1))
+                };
+            });
+        } else {
+            // Group by day using eachDayOfInterval
+            try {
+                const days = eachDayOfInterval({
+                    start: new Date(dateRange.start),
+                    end: new Date(dateRange.end)
+                });
+
+                return days.map(day => {
+                    const dStr = format(day, 'yyyy-MM-dd');
+                    const label = format(day, 'dd/MM');
+
+                    const apptsInDay = appointments.filter(a => {
+                        if (!a.date) return false;
+                        const aDateStr = a.date.substring(0, 10);
+                        return aDateStr === dStr;
+                    });
+
+                    const faturamento = apptsInDay
+                        .filter(a => a.status === 'concluido')
+                        .reduce((acc, a) => acc + (Number(a.value) || 0), 0);
+
+                    const minutosOcupados = apptsInDay
+                        .filter(a => a.status !== 'cancelado')
+                        .reduce((acc, a) => acc + (Number(a.duration) || 30), 0);
+
+                    const capacity = activeProfsCount * 480; // 8 hours (480 mins) capacity per professional per day
+                    const ocupacao = Math.min(100, (minutosOcupados / capacity) * 100);
+
+                    return {
+                        name: label,
+                        faturamento,
+                        ocupacao: parseFloat(ocupacao.toFixed(1))
+                    };
+                });
+            } catch (err) {
+                console.error("Erro ao gerar dados do gráfico:", err);
+                return [];
+            }
+        }
+    }, [appointments, filter, dateRange]);
+
+    const totalFaturamentoPeriodo = useMemo(() => {
+        return chartData.reduce((acc, curr) => acc + curr.faturamento, 0);
+    }, [chartData]);
+
+    const mediaOcupacaoPeriodo = useMemo(() => {
+        return chartData.length > 0 ? chartData.reduce((acc, curr) => acc + curr.ocupacao, 0) / chartData.length : 0;
+    }, [chartData]);
+
     if (isLoading) {
         return (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-white">
@@ -522,14 +640,120 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         <JaciBotAssistant fetchInsight={getDashboardInsight} />
                     </div>
                     
-                    <Card title="Desempenho Semanal" icon={<BarChart3 size={18} className="text-orange-500" />}>
-                        <div className="py-16 text-center text-slate-400 flex flex-col items-center">
-                            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-4 text-slate-200">
-                                <TrendingUp size={40} />
+                    <Card title="Desempenho" icon={<BarChart3 size={18} className="text-orange-500" />}>
+                        <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-6 border-b border-slate-100 pb-4">
+                            <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-200/50">
+                                <button 
+                                    onClick={() => setActiveTab('faturamento')}
+                                    className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${
+                                        activeTab === 'faturamento' 
+                                            ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' 
+                                            : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100/50'
+                                    }`}
+                                >
+                                    <DollarSign size={12} /> Faturamento ({formatCurrency(totalFaturamentoPeriodo)})
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTab('ocupacao')}
+                                    className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${
+                                        activeTab === 'ocupacao' 
+                                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
+                                            : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100/50'
+                                    }`}
+                                >
+                                    <Clock size={12} /> Ocupação Média ({mediaOcupacaoPeriodo.toFixed(0)}%)
+                                </button>
                             </div>
-                            <p className="text-xs font-black uppercase tracking-[0.3em]">IA em processamento...</p>
-                            <p className="text-[10px] font-bold mt-2 text-slate-300">Cruzando dados de faturamento e ocupação</p>
+                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-full flex items-center gap-1.5 self-start sm:self-auto">
+                                <Calendar size={12} /> {dateRange.label}
+                            </div>
                         </div>
+
+                        {/* Chart Render */}
+                        {chartData.length === 0 ? (
+                            <div className="py-16 text-center text-slate-400 flex flex-col items-center">
+                                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 text-slate-200">
+                                    <TrendingUp size={30} />
+                                </div>
+                                <p className="text-xs font-black uppercase tracking-[0.3em]">Nenhum agendamento</p>
+                                <p className="text-[10px] font-bold mt-2 text-slate-300">Não há dados suficientes no período para exibir o gráfico</p>
+                            </div>
+                        ) : activeTab === 'faturamento' ? (
+                            <div className="h-72 w-full animate-in fade-in duration-300">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                        <defs>
+                                            <linearGradient id="colorFaturamento" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
+                                                <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis 
+                                            dataKey="name" 
+                                            axisLine={false} 
+                                            tickLine={false} 
+                                            tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 'bold' }}
+                                            dy={10}
+                                        />
+                                        <YAxis 
+                                            axisLine={false} 
+                                            tickLine={false} 
+                                            tick={{ fill: '#94a3b8', fontSize: 10 }}
+                                            tickFormatter={(val) => `R$${val}`}
+                                        />
+                                        <Tooltip content={<FaturamentoTooltip />} />
+                                        <Area 
+                                            type="monotone" 
+                                            dataKey="faturamento" 
+                                            stroke="#f97316" 
+                                            strokeWidth={4}
+                                            fillOpacity={1} 
+                                            fill="url(#colorFaturamento)" 
+                                            animationDuration={1500}
+                                        />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </div>
+                        ) : (
+                            <div className="h-72 w-full animate-in fade-in duration-300">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                        <defs>
+                                            <linearGradient id="colorOcupacao" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3}/>
+                                                <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis 
+                                            dataKey="name" 
+                                            axisLine={false} 
+                                            tickLine={false} 
+                                            tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 'bold' }}
+                                            dy={10}
+                                        />
+                                        <YAxis 
+                                            axisLine={false} 
+                                            tickLine={false} 
+                                            tick={{ fill: '#94a3b8', fontSize: 10 }}
+                                            tickFormatter={(val) => `${val}%`}
+                                            domain={[0, 100]}
+                                        />
+                                        <Tooltip content={<OcupacaoTooltip />} />
+                                        <Area 
+                                            type="monotone" 
+                                            dataKey="ocupacao" 
+                                            stroke="#2563eb" 
+                                            strokeWidth={4}
+                                            fillOpacity={1} 
+                                            fill="url(#colorOcupacao)" 
+                                            animationDuration={1500}
+                                        />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </div>
+                        )}
                     </Card>
                 </div>
                 <div className="lg:col-span-1">
