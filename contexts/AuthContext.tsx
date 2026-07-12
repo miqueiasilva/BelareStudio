@@ -146,7 +146,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
             try {
               for (let i = localStorage.length - 1; i >= 0; i--) {
                 const key = localStorage.key(i);
-                if (key && (key.includes('auth-token') || key.includes('sb-'))) {
+                if (key && (key.includes('auth-token') || key.includes('sb-') || key.includes('supabase.auth.'))) {
                   localStorage.removeItem(key);
                 }
               }
@@ -154,10 +154,14 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
               console.error("[AUTH_DEBUG] Erro ao limpar keys de auth do localStorage:", e);
             }
             try {
-              localStorage.clear();
-              sessionStorage.clear();
+              for (let i = sessionStorage.length - 1; i >= 0; i--) {
+                const key = sessionStorage.key(i);
+                if (key && (key.includes('auth-token') || key.includes('sb-') || key.includes('supabase.auth.'))) {
+                  sessionStorage.removeItem(key);
+                }
+              }
             } catch (e) {
-              console.warn(e);
+              console.error("[AUTH_DEBUG] Erro ao limpar keys de auth do sessionStorage:", e);
             }
             if (isMounted.current) {
               setUser(null);

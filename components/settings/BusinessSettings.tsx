@@ -85,16 +85,27 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
             setIsLoading(true);
             try {
                 const { data, error } = await supabase.from('business_settings').select('*').eq('id', activeStudioId).maybeSingle();
+                
+                let localReminders: any = {};
+                try {
+                    const localStr = window.safeLocalStorage?.getItem(`business_reminders_settings_${activeStudioId}`);
+                    if (localStr) {
+                        localReminders = JSON.parse(localStr);
+                    }
+                } catch (localErr) {
+                    console.warn("Erro ao carregar configurações locais de lembrete:", localErr);
+                }
+
                 if (data) setFormData({ 
                     ...data, 
                     business_hours: sanitizeBusinessHours(data.business_hours),
-                    whatsapp_reminder_number: data.whatsapp_reminder_number || '',
-                    whatsapp_reminder_template: data.whatsapp_reminder_template || 'Olá, {cliente}! Confirmamos seu agendamento de {servico} com {profissional} no dia {data} às {horario}. Para confirmar ou reagendar seu horário, use o link: {link_confirmacao}'
+                    whatsapp_reminder_number: data.whatsapp_reminder_number || localReminders.whatsapp_reminder_number || '',
+                    whatsapp_reminder_template: data.whatsapp_reminder_template || localReminders.whatsapp_reminder_template || 'Olá, {cliente}! Confirmamos seu agendamento de {servico} com {profissional} no dia {data} às {horario}. Para confirmar ou reagendar seu horário, use o link: {link_confirmacao}'
                 });
                 else setFormData(p => ({ 
                     ...p, 
-                    whatsapp_reminder_number: '', 
-                    whatsapp_reminder_template: 'Olá, {cliente}! Confirmamos seu agendamento de {servico} com {profissional} no dia {data} às {horario}. Para confirmar ou reagendar seu horário, use o link: {link_confirmacao}',
+                    whatsapp_reminder_number: localReminders.whatsapp_reminder_number || '', 
+                    whatsapp_reminder_template: localReminders.whatsapp_reminder_template || 'Olá, {cliente}! Confirmamos seu agendamento de {servico} com {profissional} no dia {data} às {horario}. Para confirmar ou reagendar seu horário, use o link: {link_confirmacao}',
                     business_hours: sanitizeBusinessHours({}) 
                 }));
             } catch (err) {
@@ -165,6 +176,20 @@ const BusinessSettings = ({ onBack }: { onBack: () => void }) => {
                 // Atualizar contexto
                 await refreshStudios(true);
                 setActiveStudioId(studioId);
+            }
+
+            // Primeiro, salvamos localmente no safeLocalStorage
+            try {
+                const localRemindersPayload = {
+                    whatsapp_reminder_number: formData.whatsapp_reminder_number,
+                    whatsapp_reminder_template: formData.whatsapp_reminder_template
+                };
+                window.safeLocalStorage?.setItem(
+                    `business_reminders_settings_${studioId}`,
+                    JSON.stringify(localRemindersPayload)
+                );
+            } catch (localErr) {
+                console.warn("Erro ao salvar localmente no safeLocalStorage:", localErr);
             }
 
             // Agora salvamos as configurações do negócio

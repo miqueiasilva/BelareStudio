@@ -313,14 +313,23 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 // Busca dinâmica de disparos de lembrete da Jaci IA nas últimas 24h
                 const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
                 try {
-                    const { count: reminderCount, error: countError } = await supabase
-                        .from('whatsapp_reminders_log')
-                        .select('*', { count: 'exact', head: true })
-                        .eq('studio_id', activeStudioId)
-                        .gte('sent_at', twentyFourHoursAgo);
+                    if ((window as any).__hasRemindersLogTable !== false) {
+                        const { count: reminderCount, error: countError } = await supabase
+                            .from('whatsapp_reminders_log')
+                            .select('*', { count: 'exact', head: true })
+                            .eq('studio_id', activeStudioId)
+                            .gte('sent_at', twentyFourHoursAgo);
 
-                    if (!countError && mounted) {
-                        setLast24hReminders(reminderCount || 0);
+                        if (countError) {
+                            if (countError.code === 'PGRST205' || countError.status === 404) {
+                                (window as any).__hasRemindersLogTable = false;
+                            }
+                            throw countError;
+                        }
+
+                        if (!countError && mounted) {
+                            setLast24hReminders(reminderCount || 0);
+                        }
                     }
                 } catch (err) {
                     console.error("Erro ao buscar lembretes 24h:", err);

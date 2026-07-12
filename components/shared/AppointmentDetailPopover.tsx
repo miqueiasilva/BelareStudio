@@ -78,14 +78,37 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
           .select('*')
           .eq('studio_id', activeStudioId)
           .maybeSingle();
-        if (data) {
-          setStudioSettings(data);
-          if (data.whatsapp_reminder_template) {
-            setReminderTemplate(data.whatsapp_reminder_template);
+
+        // Tenta carregar as configurações locais de lembretes e WhatsApp
+        let localReminders: any = {};
+        try {
+          const localStr = window.safeLocalStorage?.getItem(`business_reminders_settings_${activeStudioId}`);
+          if (localStr) {
+            localReminders = JSON.parse(localStr);
           }
-          if (data.business_name) {
-            setStudioName(data.business_name);
+        } catch (localErr) {
+          console.warn("Erro ao carregar configurações locais de lembrete:", localErr);
+        }
+
+        let localMeta: any = {};
+        try {
+          const localStr = window.safeLocalStorage?.getItem(`meta_whatsapp_settings_${activeStudioId}`);
+          if (localStr) {
+            localMeta = JSON.parse(localStr);
           }
+        } catch (localErr) {
+          console.warn("Erro ao carregar configurações locais de Meta:", localErr);
+        }
+
+        const mergedSettings = { ...localMeta, ...localReminders, ...data };
+
+        setStudioSettings(mergedSettings);
+
+        if (mergedSettings.whatsapp_reminder_template) {
+          setReminderTemplate(mergedSettings.whatsapp_reminder_template);
+        }
+        if (mergedSettings.business_name) {
+          setStudioName(mergedSettings.business_name);
         }
       } catch (e) {
         // silencioso
@@ -259,15 +282,24 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
           onSendReminder(appointment.id);
         }
 
-        // Atualiza banco de dados
-        await supabase.from('appointments').update({ reminder_sent: true }).eq('id', appointment.id);
-        await supabase.from('whatsapp_reminders_log').insert([{
-          studio_id: activeStudioId,
-          appointment_id: appointment.id,
-          client_name: clientName,
-          phone: recipientPhone,
-          sender: 'API Oficial Meta'
-        }]);
+        // Atualiza banco de dados de forma segura
+        try {
+          await supabase.from('appointments').update({ reminder_sent: true }).eq('id', appointment.id);
+        } catch (dbErr) {
+          console.error("Erro ao atualizar status de reminder_sent no agendamento:", dbErr);
+        }
+
+        try {
+          await supabase.from('whatsapp_reminders_log').insert([{
+            studio_id: activeStudioId,
+            appointment_id: appointment.id,
+            client_name: clientName,
+            phone: recipientPhone,
+            sender: 'API Oficial Meta'
+          }]);
+        } catch (logErr) {
+          console.error("Erro ao registrar log do lembrete:", logErr);
+        }
 
         setIsProcessing(false);
         return; // Sai da função com sucesso!

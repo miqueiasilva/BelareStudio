@@ -2,6 +2,83 @@
 <html lang="pt-BR" translate="no">
   <head>
     <script>
+      // Early check and polyfill for localStorage/sessionStorage blocks (iframe SecurityError)
+      (function() {
+        var createMockStorage = function() {
+          var store = {};
+          return {
+            getItem: function(key) {
+              return store.hasOwnProperty(key) ? store[key] : null;
+            },
+            setItem: function(key, value) {
+              store[key] = String(value);
+            },
+            removeItem: function(key) {
+              delete store[key];
+            },
+            clear: function() {
+              store = {};
+            },
+            key: function(index) {
+              var keys = Object.keys(store);
+              return keys[index] || null;
+            },
+            get length() {
+              return Object.keys(store).length;
+            }
+          };
+        };
+
+        var safeLS = createMockStorage();
+        var safeSS = createMockStorage();
+
+        try {
+          var realLS = window.localStorage;
+          realLS.setItem('__storage_test__', '1');
+          realLS.removeItem('__storage_test__');
+          safeLS = realLS;
+        } catch (e) {
+          console.warn("[AISTUDIO_PATCH] localStorage is blocked in this iframe. Falling back to safe memory storage.");
+        }
+
+        try {
+          var realSS = window.sessionStorage;
+          realSS.setItem('__storage_test__', '1');
+          realSS.removeItem('__storage_test__');
+          safeSS = realSS;
+        } catch (e) {
+          console.warn("[AISTUDIO_PATCH] sessionStorage is blocked in this iframe. Falling back to safe memory storage.");
+        }
+
+        window.safeLocalStorage = safeLS;
+        window.safeSessionStorage = safeSS;
+
+        // Try to also define on standard window/Window.prototype just in case third-party scripts bypass Vite define
+        try {
+          Object.defineProperty(Window.prototype, 'localStorage', {
+            get: function() { return safeLS; },
+            configurable: true
+          });
+          Object.defineProperty(Window.prototype, 'sessionStorage', {
+            get: function() { return safeSS; },
+            configurable: true
+          });
+        } catch (protoErr) {
+          try {
+            Object.defineProperty(window, 'localStorage', {
+              get: function() { return safeLS; },
+              configurable: true
+            });
+            Object.defineProperty(window, 'sessionStorage', {
+              get: function() { return safeSS; },
+              configurable: true
+            });
+          } catch (err) {
+            console.warn("[AISTUDIO_PATCH] Could not redefine window.localStorage directly (expected in sandboxed browser environments).");
+          }
+        }
+      })();
+
       // Early capture of PWA installation prompt
       window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
@@ -107,6 +184,201 @@
         }
       });
     </script>
+    <script>
+      // Diagnostic tool for sandbox iframe and load failures
+      (function() {
+        var capturedErrors = [];
+        var maxErrorsToKeep = 10;
+
+        function recordError(e, type) {
+          var errorObj = {
+            type: type || 'error',
+            timestamp: new Date().toLocaleTimeString(),
+            message: '',
+            stack: '',
+            filename: '',
+            lineno: '',
+            colno: ''
+          };
+
+          if (type === 'promise') {
+            errorObj.message = e.reason ? (e.reason.message || String(e.reason)) : 'Unhandled Promise Rejection';
+            errorObj.stack = e.reason && e.reason.stack ? e.reason.stack : '';
+          } else {
+            errorObj.message = e.message || 'Erro Desconhecido';
+            errorObj.stack = e.error && e.error.stack ? e.error.stack : '';
+            errorObj.filename = e.filename || '';
+            errorObj.lineno = e.lineno || '';
+            errorObj.colno = e.colno || '';
+          }
+
+          capturedErrors.push(errorObj);
+          if (capturedErrors.length > maxErrorsToKeep) {
+            capturedErrors.shift();
+          }
+
+          // Render immediately on error if not mounted
+          if (!window.__react_mounted) {
+            renderDiagnosticScreen();
+          }
+        }
+
+        window.addEventListener('error', function(e) {
+          // Ignore PWA chunk load failures handled by the other listener
+          var errorMsg = String(e.message || e.error || "");
+          if (errorMsg.indexOf("ChunkLoadError") === -1 && 
+              errorMsg.indexOf("Loading chunk") === -1 && 
+              errorMsg.indexOf("Failed to fetch dynamically imported module") === -1) {
+            recordError(e, 'error');
+          }
+        });
+
+        window.addEventListener('unhandledrejection', function(e) {
+          var reasonText = String(e.reason || "");
+          if (reasonText.indexOf("ChunkLoadError") === -1 && 
+              reasonText.indexOf("Loading chunk") === -1 && 
+              reasonText.indexOf("Failed to fetch dynamically imported module") === -1) {
+            recordError(e, 'promise');
+          }
+        });
+
+        function testSupabase(callback) {
+          var url = "https://rxtwmwrgcilmsldtqdfe.supabase.co";
+          var start = Date.now();
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', url + '/rest/v1/', true);
+          xhr.timeout = 4000;
+          xhr.onload = function() {
+            if (xhr.status >= 200 && xhr.status < 400) {
+              callback(true, "Operacional (" + (Date.now() - start) + "ms)");
+            } else {
+              callback(false, "Erro HTTP " + xhr.status);
+            }
+          };
+          xhr.onerror = function() {
+            callback(false, "Bloqueado por CORS ou falha de rede");
+          };
+          xhr.ontimeout = function() {
+            callback(false, "Tempo limite excedido (timeout)");
+          };
+          xhr.send();
+        }
+
+        function renderDiagnosticScreen() {
+          if (window.__react_mounted) return;
+          var root = document.getElementById('root');
+          if (!root) return;
+
+          testSupabase(function(dbOk, dbMsg) {
+            // Check if still not mounted
+            if (window.__react_mounted) return;
+
+            var errorListHtml = '';
+            if (capturedErrors.length > 0) {
+              errorListHtml = capturedErrors.map(function(err) {
+                var fileInfo = err.filename ? (err.filename.split('/').pop() + ':' + err.lineno + ':' + err.colno) : 'Módulo Externo';
+                var stack = err.stack ? err.stack : 'Sem stack trace disponível.';
+                return '<div style="background: rgba(244, 63, 94, 0.05); border: 1px solid rgba(244, 63, 94, 0.15); border-radius: 12px; padding: 16px; margin-bottom: 12px; text-align: left;">' +
+                  '<div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">' +
+                    '<span style="background: #f43f5e; color: white; font-size: 10px; font-weight: 900; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.05em; font-family: sans-serif;">' +
+                      (err.type === 'promise' ? 'Promise' : 'Erro de Runtime') +
+                    '</span>' +
+                    '<span style="font-family: monospace; font-size: 11px; color: #94a3b8; font-weight: bold;">' +
+                      fileInfo +
+                    '</span>' +
+                  '</div>' +
+                  '<p style="font-size: 13px; font-weight: bold; color: #f1f5f9; margin: 0 0 8px 0; font-family: sans-serif; line-height: 1.4;">' +
+                    err.message +
+                  '</p>' +
+                  '<pre style="font-family: monospace; font-size: 10px; color: #f43f5e; background: rgba(0,0,0,0.25); padding: 12px; border-radius: 8px; margin: 0; overflow-x: auto; white-space: pre-wrap; line-height: 1.5; border: 1px solid rgba(255,255,255,0.03); max-height: 180px;">' + stack + '</pre>' +
+                '</div>';
+              }).join('');
+            } else {
+              errorListHtml = '<div style="background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.15); border-radius: 12px; padding: 16px; text-align: center; margin-bottom: 12px;">' +
+                '<p style="font-size: 13px; font-weight: bold; color: #f59e0b; margin: 0 0 4px 0; font-family: sans-serif;">O aplicativo está demorando muito para inicializar</p>' +
+                '<p style="font-size: 11px; color: #94a3b8; margin: 0; font-family: sans-serif;">Nenhum erro de runtime explícito foi capturado até o momento. Pode ser um bloqueio silencioso.</p>' +
+              '</div>';
+            }
+
+            var hasCustomGemini = false;
+            try {
+              if (window.safeLocalStorage && window.safeLocalStorage.getItem('VITE_GEMINI_API_KEY')) {
+                hasCustomGemini = true;
+              }
+            } catch(e) {}
+
+            var isIframe = window.self !== window.top;
+            var isStorageUsingFallback = window.safeLocalStorage && window.safeLocalStorage.getItem('__storage_test__') === null;
+
+            root.innerHTML = '<div style="min-height: 100vh; background: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box;">' +
+              '<div style="width: 100%; max-width: 640px; background: #1e293b; border: 1px solid rgba(255,255,255,0.05); border-radius: 24px; padding: 32px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); box-sizing: border-box; text-align: left;">' +
+                '<div style="display: flex; align-items: center; gap: 16px; margin-bottom: 24px;">' +
+                  '<div style="width: 48px; height: 48px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 24px;">' +
+                    '⚠️' +
+                  '</div>' +
+                  '<div>' +
+                    '<h1 style="font-size: 18px; font-weight: 900; color: #f1f5f9; margin: 0; text-transform: uppercase; letter-spacing: -0.01em; font-family: sans-serif;">Diagnóstico de Inicialização</h1>' +
+                    '<p style="font-size: 12px; color: #64748b; margin: 4px 0 0 0; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; font-family: sans-serif;">BelareStudio Console de Erros</p>' +
+                  '</div>' +
+                '</div>' +
+
+                '<p style="font-size: 14px; color: #94a3b8; line-height: 1.6; margin: 0 0 24px 0; font-family: sans-serif;">' +
+                  'O aplicativo falhou ao montar ou apresentou problemas de compatibilidade com o sandbox do AI Studio Preview. Veja o relatório diagnóstico abaixo:' +
+                '</p>' +
+
+                '<div style="margin-bottom: 24px;">' +
+                  '<div style="font-size: 11px; font-weight: 900; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px; font-family: sans-serif;">Erros de Execução Detectados</div>' +
+                  errorListHtml +
+                '</div>' +
+
+                '<div>' +
+                  '<div style="font-size: 11px; font-weight: 900; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px; font-family: sans-serif;">Verificação de Integridade do Ambiente</div>' +
+                  '<div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px;">' +
+                    '<div style="display: flex; justify-content: space-between; font-size: 12px; font-family: sans-serif;">' +
+                      '<span style="color: #94a3b8; font-weight: bold;">Ambiente Sandbox:</span>' +
+                      '<span style="font-family: monospace; font-weight: bold; color: #38bdf8;">' + (isIframe ? 'iFrame (AI Studio Preview)' : 'Aba Direta / Externo') + '</span>' +
+                    '</div>' +
+                    '<div style="display: flex; justify-content: space-between; font-size: 12px; font-family: sans-serif;">' +
+                      '<span style="color: #94a3b8; font-weight: bold;">Armazenamento Local:</span>' +
+                      '<span style="font-family: monospace; font-weight: bold; color: ' + (isStorageUsingFallback ? '#f59e0b' : '#10b981') + ';">' + 
+                        (isStorageUsingFallback ? 'BLOQUEADO (Usando Fallback na Memória)' : 'ATIVO') + 
+                      '</span>' +
+                    '</div>' +
+                    '<div style="display: flex; justify-content: space-between; font-size: 12px; font-family: sans-serif;">' +
+                      '<span style="color: #94a3b8; font-weight: bold;">Conexão Supabase DB:</span>' +
+                      '<span style="font-family: monospace; font-weight: bold; color: ' + (dbOk ? '#10b981' : '#f43f5e') + ';">' + dbMsg + '</span>' +
+                    '</div>' +
+                    '<div style="display: flex; justify-content: space-between; font-size: 12px; font-family: sans-serif;">' +
+                      '<span style="color: #94a3b8; font-weight: bold;">Chave Gemini API:</span>' +
+                      '<span style="font-family: monospace; font-weight: bold; color: ' + (hasCustomGemini ? '#10b981' : '#f59e0b') + ';">' + 
+                        (hasCustomGemini ? '✔ Configurada (Local)' : '⚠ Não definida (Usando chave padrão)') + 
+                      '</span>' +
+                    '</div>' +
+                  '</div>' +
+                '</div>' +
+
+                '<div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; gap: 12px; justify-content: flex-end;">' +
+                  '<button onclick="window.location.reload()" style="background: #334155; border: none; color: white; padding: 12px 20px; font-weight: bold; border-radius: 12px; font-size: 13px; cursor: pointer; transition: all 0.2s; font-family: sans-serif;">' +
+                    'Recarregar Preview' +
+                  '</button>' +
+                  '<button onclick="window.open(window.location.href, \'_blank\')" style="background: #b5895a; border: none; color: white; padding: 12px 20px; font-weight: bold; border-radius: 12px; font-size: 13px; cursor: pointer; font-family: sans-serif;">' +
+                    'Abrir em Nova Aba' +
+                  '</button>' +
+                '</div>' +
+              '</div>' +
+            '</div>';
+          });
+        }
+
+        // Set liveness checker
+        setTimeout(function() {
+          if (!window.__react_mounted) {
+            console.warn("[AISTUDIO_PATCH] React application did not mount after 5 seconds. Showing diagnostic options.");
+            renderDiagnosticScreen();
+          }
+        }, 5000);
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="google" content="notranslate" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -124,9 +396,6 @@
     <meta http-equiv="Expires" content="0">
     <title>BelareStudio - Gestão Inteligente</title>
 
-    <!-- Tailwind handles UI -->
-    <script src="https://cdn.tailwindcss.com"></script>
-
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -134,43 +403,6 @@
       href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-
-    <style>
-      :root {
-        --primary-color: #f97316;
-      }
-      body { font-family: 'Poppins', sans-serif; }
-      .scrollbar-hide::-webkit-scrollbar { display: none; }
-      .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-      
-      /* Custom scrollbar for sidebar */
-      ::-webkit-scrollbar {
-        width: 5px;
-      }
-      ::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #e2e8f0;
-        border-radius: 10px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #cbd5e1;
-      }
-
-      /* Dynamic Theme Overrides */
-      .bg-primary { background-color: var(--primary-color) !important; }
-      .text-primary { color: var(--primary-color) !important; }
-      .border-primary { border-color: var(--primary-color) !important; }
-      .ring-primary { --tw-ring-color: var(--primary-color) !important; }
-      
-      /* Sidebar Active State Override */
-      .sidebar-active {
-        background-color: color-mix(in srgb, var(--primary-color), white 90%) !important;
-        color: var(--primary-color) !important;
-        border-color: color-mix(in srgb, var(--primary-color), white 80%) !important;
-      }
-    </style>
   </head>
   <body class="bg-slate-50 notranslate">
     <div id="root"></div>
