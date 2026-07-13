@@ -270,10 +270,10 @@ const WhatsAppView: React.FC = () => {
         try {
             // 1. Primeiro salvamos tudo localmente no safeLocalStorage
             const localPayload = {
-                meta_whatsapp_token: metaSettings.meta_whatsapp_token,
-                meta_whatsapp_phone_number_id: metaSettings.meta_whatsapp_phone_number_id,
-                meta_whatsapp_business_account_id: metaSettings.meta_whatsapp_business_account_id,
-                meta_whatsapp_template_name: metaSettings.meta_whatsapp_template_name,
+                meta_whatsapp_token: metaSettings.meta_whatsapp_token.trim(),
+                meta_whatsapp_phone_number_id: metaSettings.meta_whatsapp_phone_number_id.trim(),
+                meta_whatsapp_business_account_id: metaSettings.meta_whatsapp_business_account_id.trim(),
+                meta_whatsapp_template_name: metaSettings.meta_whatsapp_template_name.trim(),
                 meta_whatsapp_language: metaSettings.meta_whatsapp_language,
                 meta_whatsapp_active: metaSettings.connectionType === 'meta_api',
                 meta_whatsapp_template_params: metaSettings.meta_whatsapp_template_params,
@@ -339,7 +339,12 @@ const WhatsAppView: React.FC = () => {
             showToast("Digite um número de telefone de teste.", "info");
             return;
         }
-        if (!metaSettings.meta_whatsapp_token || !metaSettings.meta_whatsapp_phone_number_id) {
+
+        const tokenClean = metaSettings.meta_whatsapp_token.trim();
+        const phoneIdClean = metaSettings.meta_whatsapp_phone_number_id.trim();
+        const templateNameClean = metaSettings.meta_whatsapp_template_name.trim();
+
+        if (!tokenClean || !phoneIdClean) {
             showToast("Preencha o Token e o ID do Número antes de testar.", "error");
             return;
         }
@@ -351,9 +356,9 @@ const WhatsAppView: React.FC = () => {
                 cleanPhone = '55' + cleanPhone;
             }
 
-            const url = `https://graph.facebook.com/v21.0/${metaSettings.meta_whatsapp_phone_number_id}/messages`;
+            const url = `https://graph.facebook.com/v21.0/${phoneIdClean}/messages`;
 
-            const hasTemplate = !!metaSettings.meta_whatsapp_template_name.trim();
+            const hasTemplate = !!templateNameClean;
 
             const parameterList = metaSettings.meta_whatsapp_template_params
                 ? metaSettings.meta_whatsapp_template_params.split(',').map(item => item.trim()).filter(Boolean)
@@ -364,7 +369,7 @@ const WhatsAppView: React.FC = () => {
                 to: cleanPhone,
                 type: "template",
                 template: {
-                    name: metaSettings.meta_whatsapp_template_name,
+                    name: templateNameClean,
                     language: {
                         code: metaSettings.meta_whatsapp_language || 'pt_BR'
                     },
@@ -389,7 +394,7 @@ const WhatsAppView: React.FC = () => {
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${metaSettings.meta_whatsapp_token}`,
+                    'Authorization': `Bearer ${tokenClean}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(body)
@@ -399,7 +404,7 @@ const WhatsAppView: React.FC = () => {
             if (!response.ok) {
                 let errMsg = resData?.error?.message || "Erro desconhecido na API da Meta.";
                 if (resData?.error?.code === 132001 || errMsg.includes("132001") || errMsg.includes("does not exist in the translation")) {
-                    errMsg = `Erro (#132001): O modelo '${metaSettings.meta_whatsapp_template_name}' não existe, não está aprovado ou o idioma '${metaSettings.meta_whatsapp_language}' não corresponde ao cadastrado no painel da Meta. Verifique se o nome do modelo está idêntico e tente idiomas como 'pt' ou 'pt_BR'. Além disso, certifique-se de que o número de variáveis enviadas (${parameterList.length}) corresponde ao seu modelo no Facebook.`;
+                    errMsg = `Erro (#132001): O modelo '${templateNameClean}' não existe, não está aprovado ou o idioma '${metaSettings.meta_whatsapp_language}' não corresponde ao cadastrado no painel da Meta. Verifique se o nome do modelo está idêntico e tente idiomas como 'pt' ou 'pt_BR'. Além disso, certifique-se de que o número de variáveis enviadas (${parameterList.length}) corresponde ao seu modelo no Facebook.`;
                 }
                 throw new Error(errMsg);
             }

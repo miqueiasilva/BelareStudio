@@ -35,15 +35,16 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         .from('team_members')
         .select('access_level, role, photo_url, name, permissions')
         .ilike('email', emailQuery)
-        .maybeSingle();
+        .maybeSingle()
+        .catch(err => ({ data: null, error: err }));
 
-      const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) => 
-        setTimeout(() => reject(new Error("Timeout de 2.5 segundos na consulta ao banco")), 2500)
+      const timeoutPromise = new Promise<{ data: any; error: any }>((resolve) => 
+        setTimeout(() => resolve({ data: null, error: new Error("Timeout de 2.5 segundos na consulta ao banco") }), 2500)
       );
 
       const { data: profData, error } = await Promise.race([queryPromise, timeoutPromise]);
       if (error) {
-        console.warn("[AUTH_DEBUG] Erro ao buscar team_members:", error);
+        console.warn("[AUTH_DEBUG] Erro ao buscar team_members (ou timeout):", error);
       }
 
       return {
@@ -54,7 +55,7 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         permissions: profData?.permissions || {}
       };
     } catch (e) {
-      console.warn("[AUTH_DEBUG] fetchProfile falhou ou excedeu o limite de tempo, aplicando fallback de emergência:", e);
+      console.warn("[AUTH_DEBUG] fetchProfile falhou, aplicando fallback de emergência:", e);
       return { 
         ...authUser, 
         papel: (authUser.email === 'mykeias@gmail.com' ? 'admin' : 'profissional').toLowerCase(), 

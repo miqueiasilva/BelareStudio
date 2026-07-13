@@ -211,7 +211,10 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     const fallbackLink = `${window.location.origin}/#/public-preview?sid=${activeStudioId}&apid=${appointment.id}`;
 
     // 1. Verifica se a API Oficial da Meta está ativa
-    const isMetaActive = studioSettings?.meta_whatsapp_active && studioSettings?.meta_whatsapp_token;
+    const tokenClean = studioSettings?.meta_whatsapp_token?.trim();
+    const phoneIdClean = studioSettings?.meta_whatsapp_phone_number_id?.trim();
+    const templateNameClean = studioSettings?.meta_whatsapp_template_name?.trim();
+    const isMetaActive = studioSettings?.meta_whatsapp_active && !!tokenClean && !!phoneIdClean;
 
     if (isMetaActive) {
       setIsProcessing(true);
@@ -222,16 +225,16 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
           recipientPhone = '55' + recipientPhone;
         }
 
-        const url = `https://graph.facebook.com/v21.0/${studioSettings.meta_whatsapp_phone_number_id}/messages`;
+        const url = `https://graph.facebook.com/v21.0/${phoneIdClean}/messages`;
 
-        const hasTemplate = !!studioSettings.meta_whatsapp_template_name?.trim();
+        const hasTemplate = !!templateNameClean;
 
         const body = hasTemplate ? {
           messaging_product: "whatsapp",
           to: recipientPhone,
           type: "template",
           template: {
-            name: studioSettings.meta_whatsapp_template_name,
+            name: templateNameClean,
             language: {
               code: studioSettings.meta_whatsapp_language || 'pt_BR'
             },
@@ -263,7 +266,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
         const response = await fetch(url, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${studioSettings.meta_whatsapp_token}`,
+            'Authorization': `Bearer ${tokenClean}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(body)
@@ -271,7 +274,12 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
 
         const resData = await response.json();
         if (!response.ok) {
-          throw new Error(resData?.error?.message || "Erro desconhecido na API da Meta.");
+          let errMsg = resData?.error?.message || "Erro desconhecido na API da Meta.";
+          const errCode = resData?.error?.code;
+          if (errCode === 132001 || errMsg.includes("132001") || errMsg.includes("does not exist in the translation")) {
+            errMsg = `Erro (#132001): O modelo '${templateNameClean}' não pôde ser disparado. Certifique-se de que o nome está idêntico e o idioma '${studioSettings.meta_whatsapp_language || 'pt_BR'}' é o mesmo cadastrado no Meta. Além disso, verifique se o seu modelo possui exatamente 6 variáveis cadastradas no Facebook (pois o Belare Studio envia 6 parâmetros padrão de agendamento na mensagem).`;
+          }
+          throw new Error(errMsg);
         }
 
         // Se deu tudo certo!
