@@ -76,7 +76,7 @@ const RemuneracoesView: React.FC = () => {
             end = `${eDate}T23:59:59`;
         }
 
-        const [teamRes, itemsRes, apptsRes] = await Promise.all([
+        const [teamRes, commandsRes, apptsRes] = await Promise.all([
             // FIX 1: Filtra apenas membros ATIVOS — remove "Geral/Studio" e inativos
             supabase.from('team_members')
                 .select('id, name, photo_url, commission_rate, commission_percent, email, role, access_level')
@@ -87,20 +87,20 @@ const RemuneracoesView: React.FC = () => {
 
             // FIX 2: Aceita status 'pago' E 'paid' (banco tem os dois)
             // FIX 3: Puxa payment_data (JSONB) que já contém tax_rate e net_value
-            supabase.from('command_items')
+            supabase.from('commands')
                 .select(`
-                    id, title, price, quantity, professional_id,
-                    commands!inner(
-                        id, closed_at, status, payment_method, payment_data,
-                        client_name,
-                        clients:client_id(nome, name)
+                    id, closed_at, status, payment_method, payment_data,
+                    client_name,
+                    clients:client_id(nome, name),
+                    command_items (
+                        id, title, price, quantity, professional_id
                     )
                 `)
                 .eq('studio_id', activeStudioId)
-                .in('commands.status', ['pago', 'paid'])
-                .not('commands.closed_at', 'is', null)
-                .gte('commands.closed_at', start)
-                .lte('commands.closed_at', end)
+                .in('status', ['pago', 'paid'])
+                .not('closed_at', 'is', null)
+                .gte('closed_at', start)
+                .lte('closed_at', end)
                 .abortSignal(abortControllerRef.current.signal),
 
             // BUSCA AGENDAMENTOS CONCLUÍDOS COMO FONTE DE DADOS AUTOMÁTICA
@@ -117,7 +117,7 @@ const RemuneracoesView: React.FC = () => {
         ]);
 
         if (teamRes.error) throw teamRes.error;
-        if (itemsRes.error) throw itemsRes.error;
+        if (commandsRes.error) throw commandsRes.error;
         if (apptsRes.error) throw apptsRes.error;
 
         if (isMounted.current) {
@@ -138,7 +138,32 @@ const RemuneracoesView: React.FC = () => {
                     m.email?.toLowerCase().trim() === user?.email?.toLowerCase().trim()
                 );
             setTeamMembers(filtered);
-            const cmdItems = itemsRes.data || [];
+
+            // Reconstroi cmdItems a partir de commandsRes
+            const cmdItems: any[] = [];
+            const fetchedCommands = commandsRes.data || [];
+            fetchedCommands.forEach(cmd => {
+                const items = cmd.command_items || [];
+                items.forEach((item: any) => {
+                    cmdItems.push({
+                        id: item.id,
+                        title: item.title,
+                        price: item.price,
+                        quantity: item.quantity,
+                        professional_id: item.professional_id,
+                        commands: {
+                            id: cmd.id,
+                            closed_at: cmd.closed_at,
+                            status: cmd.status,
+                            payment_method: cmd.payment_method,
+                            payment_data: cmd.payment_data,
+                            client_name: cmd.client_name,
+                            clients: cmd.clients
+                        }
+                    });
+                });
+            });
+
             const apptsData = apptsRes.data || [];
             setCommandItems(cmdItems);
             setAppointments(apptsData);

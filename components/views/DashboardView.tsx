@@ -133,20 +133,35 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
         if (!activeStudioId) return;
         setIsSavingGoal(true);
         try {
-            const { error } = await supabase
-                .from('studio_settings')
-                .upsert({
-                    studio_id: activeStudioId,
-                    revenue_goal: val,
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'studio_id' });
+            // Salva em safeLocalStorage como fallback imediato
+            try {
+                window.safeLocalStorage?.setItem(`revenue_goal_${activeStudioId}`, String(val));
+            } catch (storageErr) {
+                console.warn("Falha ao salvar meta no safeLocalStorage:", storageErr);
+            }
 
-            if (error) throw error;
+            // Tenta salvar no Supabase, mas de forma segura se a coluna não existir
+            try {
+                const { error } = await supabase
+                    .from('studio_settings')
+                    .upsert({
+                        studio_id: activeStudioId,
+                        revenue_goal: val,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: 'studio_id' });
+
+                if (error) {
+                    console.warn("Aviso ao persistir no Supabase (coluna 'revenue_goal' pode estar ausente):", error);
+                }
+            } catch (dbErr) {
+                console.warn("Erro ao tentar persistir meta no banco:", dbErr);
+            }
+
             setFinancialGoal(val);
             toast.success("Meta faturamento atualizada com sucesso!");
             setIsGoalModalOpen(false);
         } catch (err: any) {
-            console.error("Erro ao salvar meta financeira:", err);
+            console.warn("Erro ao salvar meta financeira:", err);
             toast.error("Erro ao salvar meta financeira: " + (err.message || 'tente novamente'));
         } finally {
             setIsSavingGoal(false);
@@ -277,41 +292,50 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 const startMonthStr = startMonth.toISOString();
                 const endMonthStr = endOfMonth(now).toISOString();
                 
-                const { data: monthData, error: monthError } = await supabase
-                    .from('appointments')
-                    .select('value')
-                    .eq('studio_id', activeStudioId)
-                    .eq('status', 'concluido')
-                    .gte('date', startMonthStr)
-                    .lte('date', endMonthStr);
-                
-                if (monthError) throw monthError;
-                
-                const totalMonthRev = monthData?.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0) || 0;
-                if (mounted) setMonthRevenueTotal(totalMonthRev);
+                try {
+                    const { data: monthData, error: monthError } = await supabase
+                        .from('appointments')
+                        .select('*')
+                        .eq('studio_id', activeStudioId)
+                        .eq('status', 'concluido')
+                        .gte('date', startMonthStr)
+                        .lte('date', endMonthStr);
+                    
+                    if (monthError) {
+                        console.warn("Erro detalhado do Supabase para faturamento mensal:", monthError);
+                        throw monthError;
+                    }
+                    
+                    const totalMonthRev = monthData?.reduce((acc, curr) => acc + (Number(curr.value || curr.price || 0) || 0), 0) || 0;
+                    if (mounted) setMonthRevenueTotal(totalMonthRev);
+                } catch (monthErr: any) {
+                    console.warn("Erro ao buscar faturamento mensal no dashboard (pode ser offline ou Failed to fetch):", monthErr?.message || monthErr);
+                }
 
                 // Fetch and calculate total commissions for the current month
                 try {
-                    const [teamRes, itemsRes] = await Promise.all([
+                    const [teamRes, commandsRes] = await Promise.all([
                         supabase.from('team_members')
                             .select('id, commission_rate, commission_percent')
                             .eq('studio_id', activeStudioId)
                             .eq('active', true),
-                        supabase.from('command_items')
+                        supabase.from('commands')
                             .select(`
-                                price, quantity, professional_id,
-                                commands!inner(closed_at, status)
+                                closed_at, status,
+                                command_items (
+                                    price, quantity, professional_id
+                                )
                             `)
                             .eq('studio_id', activeStudioId)
-                            .in('commands.status', ['pago', 'paid'])
-                            .not('commands.closed_at', 'is', null)
-                            .gte('commands.closed_at', startMonthStr)
-                            .lte('commands.closed_at', endMonthStr)
+                            .in('status', ['pago', 'paid'])
+                            .not('closed_at', 'is', null)
+                            .gte('closed_at', startMonthStr)
+                            .lte('closed_at', endMonthStr)
                     ]);
 
-                    if (!teamRes.error && !itemsRes.error && teamRes.data && itemsRes.data) {
+                    if (!teamRes.error && !commandsRes.error && teamRes.data && commandsRes.data) {
                         const members = teamRes.data;
-                        const items = itemsRes.data;
+                        const commands = commandsRes.data;
                         
                         const ratesMap = new Map();
                         members.forEach(m => {
@@ -320,29 +344,52 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         });
 
                         let calculatedCommissions = 0;
-                        items.forEach(item => {
-                            const profId = String(item.professional_id);
-                            const rate = ratesMap.get(profId) || 0;
-                            const itemPrice = Number(item.price || 0) * Number(item.quantity || 1);
-                            calculatedCommissions += itemPrice * (rate / 100);
+                        commands.forEach(cmd => {
+                            const items = cmd.command_items || [];
+                            items.forEach((item: any) => {
+                                const profId = String(item.professional_id);
+                                const rate = ratesMap.get(profId) || 0;
+                                const itemPrice = Number(item.price || 0) * Number(item.quantity || 1);
+                                calculatedCommissions += itemPrice * (rate / 100);
+                            });
                         });
                         
                         if (mounted) setMonthCommissionsTotal(calculatedCommissions);
                     }
                 } catch (commError) {
-                    console.error("Erro ao calcular comissões no dashboard:", commError);
+                    console.warn("Erro ao calcular comissões no dashboard:", commError);
                 }
 
-                const { data: settings, error: settingsError } = await supabase
-                    .from('studio_settings')
-                    .select('revenue_goal')
-                    .eq('studio_id', activeStudioId)
-                    .maybeSingle();
-                
-                if (settingsError) throw settingsError;
-                
+                // Busca de meta de faturamento com fallback seguro
+                let dbGoal = 5000;
+                try {
+                    const { data: settings, error: settingsError } = await supabase
+                        .from('studio_settings')
+                        .select('revenue_goal')
+                        .eq('studio_id', activeStudioId)
+                        .maybeSingle();
+                    
+                    if (settingsError) throw settingsError;
+                    if (settings && 'revenue_goal' in settings) {
+                        dbGoal = (settings as any).revenue_goal || 5000;
+                    }
+                } catch (settingsError) {
+                    console.warn("Erro ao buscar revenue_goal do banco, usando fallback local:", settingsError);
+                }
+
                 if (mounted) {
-                    setFinancialGoal(settings?.revenue_goal || 5000);
+                    let localGoal = 5000;
+                    try {
+                        const saved = window.safeLocalStorage?.getItem(`revenue_goal_${activeStudioId}`);
+                        if (saved) {
+                            localGoal = Number(saved) || 5000;
+                        } else {
+                            localGoal = dbGoal;
+                        }
+                    } catch (err) {
+                        localGoal = dbGoal;
+                    }
+                    setFinancialGoal(localGoal);
                 }
 
                 // Busca dinâmica de disparos de lembrete da Jaci IA nas últimas 24h
@@ -367,11 +414,11 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         }
                     }
                 } catch (err) {
-                    console.error("Erro ao buscar lembretes 24h:", err);
+                    console.warn("Erro ao buscar lembretes 24h:", err);
                 }
 
-            } catch (e) {
-                console.error("Erro crítico ao sincronizar dashboard:", e);
+            } catch (e: any) {
+                console.warn("Erro crítico/conexão ao sincronizar dashboard (pode ser offline ou Failed to fetch):", e?.message || e);
             } finally {
                 if (mounted) {
                     setIsLoading(false);
@@ -492,7 +539,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     };
                 });
             } catch (err) {
-                console.error("Erro ao gerar dados do gráfico:", err);
+                console.warn("Erro ao gerar dados do gráfico:", err);
                 return [];
             }
         }

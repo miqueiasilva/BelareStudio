@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../services/supabaseClient';
-import { Loader2, Eye, EyeOff, Mail, Lock, ArrowRight, XCircle, CheckCircle2, RefreshCw, ExternalLink, Trash2, HelpCircle, AlertCircle } from 'lucide-react';
+import { Loader2, Eye, EyeOff, Mail, Lock, ArrowRight, XCircle, CheckCircle2, RefreshCw, ExternalLink, Trash2, HelpCircle, AlertCircle, Sparkles } from 'lucide-react';
 
 type AuthMode = 'login' | 'register' | 'forgot';
 
@@ -75,6 +75,39 @@ const LoginView: React.FC<LoginViewProps> = ({ onBack }) => {
             } catch (e: any) {
                 setError("Erro ao limpar cookies/localStorage: " + e.message);
             }
+        }
+    };
+
+    const handleDemoLogin = async () => {
+        setError(null);
+        setSuccessMessage(null);
+        setIsLoading(true);
+        console.log('[AUTH_DEBUG] Usuário iniciou Login de Demonstração');
+        try {
+            const demoEmail = 'demo@belarestudio.com';
+            const demoPass = 'demo123456';
+            const { error: signInError } = await signIn(demoEmail, demoPass);
+            if (signInError) {
+                console.log('[AUTH_DEBUG] Login demo falhou. Tentando criar conta demo...', signInError.message);
+                const { error: signUpError } = await signUp(demoEmail, demoPass, 'Administrador Demo');
+                if (signUpError) {
+                    throw signUpError;
+                }
+                // Se o cadastro funcionou, tenta o login novamente
+                const { error: signInRetryError } = await signIn(demoEmail, demoPass);
+                if (signInRetryError) {
+                    throw signInRetryError;
+                }
+            }
+            setSuccessMessage("Logado com sucesso no Modo de Demonstração!");
+            setTimeout(() => {
+                window.location.reload();
+            }, 500);
+        } catch (err: any) {
+            console.error('[AUTH_DEBUG] Falha no login demo:', err);
+            setError("Não foi possível iniciar o modo de demonstração: " + (err.message || "Erro desconhecido"));
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -207,6 +240,16 @@ const LoginView: React.FC<LoginViewProps> = ({ onBack }) => {
                     >
                         <GoogleIcon />
                         <span>Entrar com Google</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={handleDemoLogin}
+                        disabled={isLoading}
+                        className="w-full flex items-center justify-center gap-3 bg-gradient-to-r from-orange-500/10 to-rose-500/10 hover:from-orange-500/20 hover:to-rose-500/20 border border-orange-500/20 text-orange-400 font-bold py-3.5 rounded-xl transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+                    >
+                        <Sparkles size={18} className="text-orange-400" />
+                        <span>Entrar como Convidado (Modo Demo)</span>
                     </button>
 
                     <div className="relative flex items-center py-4">
