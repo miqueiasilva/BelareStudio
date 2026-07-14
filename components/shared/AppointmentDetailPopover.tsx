@@ -229,6 +229,23 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
 
         const hasTemplate = !!templateNameClean;
 
+        const customParamsStr = studioSettings?.meta_whatsapp_template_params;
+        let finalParameters = [
+          { type: "text", text: clientName },
+          { type: "text", text: serviceName },
+          { type: "text", text: profName || 'Profissional' },
+          { type: "text", text: dateStr },
+          { type: "text", text: timeStr },
+          { type: "text", text: fallbackLink }
+        ];
+
+        if (customParamsStr) {
+          const expectedCount = customParamsStr.split(',').map((x: string) => x.trim()).filter(Boolean).length;
+          if (expectedCount > 0 && expectedCount < 6) {
+            finalParameters = finalParameters.slice(0, expectedCount);
+          }
+        }
+
         const body = hasTemplate ? {
           messaging_product: "whatsapp",
           to: recipientPhone,
@@ -241,14 +258,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
             components: [
               {
                 type: "body",
-                parameters: [
-                  { type: "text", text: clientName },
-                  { type: "text", text: serviceName },
-                  { type: "text", text: profName || 'Profissional' },
-                  { type: "text", text: dateStr },
-                  { type: "text", text: timeStr },
-                  { type: "text", text: fallbackLink }
-                ]
+                parameters: finalParameters
               }
             ]
           }
@@ -277,7 +287,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
           let errMsg = resData?.error?.message || "Erro desconhecido na API da Meta.";
           const errCode = resData?.error?.code;
           if (errCode === 132001 || errMsg.includes("132001") || errMsg.includes("does not exist in the translation")) {
-            errMsg = `Erro (#132001): O modelo '${templateNameClean}' não pôde ser disparado. Certifique-se de que o nome está idêntico e o idioma '${studioSettings.meta_whatsapp_language || 'pt_BR'}' é o mesmo cadastrado no Meta. Além disso, verifique se o seu modelo possui exatamente 6 variáveis cadastradas no Facebook (pois o Belare Studio envia 6 parâmetros padrão de agendamento na mensagem).`;
+            errMsg = `Erro (#132001): O modelo '${templateNameClean}' não pôde ser disparado. Certifique-se de que o nome está idêntico e o idioma '${studioSettings.meta_whatsapp_language || 'pt_BR'}' é o mesmo cadastrado no Meta. Além disso, verifique se o seu modelo possui exatamente ${finalParameters.length} variáveis cadastradas no Facebook. (Retorno original da Meta: ${resData?.error?.message || errMsg})`;
           }
           throw new Error(errMsg);
         }

@@ -59,8 +59,18 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
     try {
       let sessionData = null;
       try {
-        const { data } = await supabase.auth.getSession();
-        sessionData = data;
+        const { data, error } = await supabase.auth.getSession();
+        if (error) {
+          console.warn("[StudioProvider] Erro ao obter sessão:", error.message || error);
+          const msg = String(error.message || error || "").toLowerCase();
+          if (msg.includes("refresh_token_not_found") || msg.includes("refresh token") || msg.includes("invalid refresh token") || msg.includes("invalid_grant")) {
+            sessionData = null;
+          } else {
+            sessionData = data;
+          }
+        } else {
+          sessionData = data;
+        }
       } catch (e) {
         console.warn("[StudioProvider] Exceção ao sincronizar sessão:", e);
       }

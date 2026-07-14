@@ -404,7 +404,7 @@ const WhatsAppView: React.FC = () => {
             if (!response.ok) {
                 let errMsg = resData?.error?.message || "Erro desconhecido na API da Meta.";
                 if (resData?.error?.code === 132001 || errMsg.includes("132001") || errMsg.includes("does not exist in the translation")) {
-                    errMsg = `Erro (#132001): O modelo '${templateNameClean}' não existe, não está aprovado ou o idioma '${metaSettings.meta_whatsapp_language}' não corresponde ao cadastrado no painel da Meta. Verifique se o nome do modelo está idêntico e tente idiomas como 'pt' ou 'pt_BR'. Além disso, certifique-se de que o número de variáveis enviadas (${parameterList.length}) corresponde ao seu modelo no Facebook.`;
+                    errMsg = `Erro (#132001): O modelo '${templateNameClean}' não existe, não está aprovado ou o idioma '${metaSettings.meta_whatsapp_language}' não corresponde ao cadastrado no painel da Meta. Verifique se o nome do modelo está idêntico e tente idiomas como 'pt' ou 'pt_BR'. Além disso, certifique-se de que o número de variáveis enviadas (${parameterList.length}) corresponde ao seu modelo no Facebook. (Retorno original da Meta: ${resData?.error?.message || errMsg})`;
                 }
                 throw new Error(errMsg);
             }

@@ -148,15 +148,22 @@ const LoginView: React.FC<LoginViewProps> = ({ onBack }) => {
                 setSuccessMessage("Verifique a janela pop-up que se abriu para concluir o login do Google.");
                 
                 const interval = setInterval(async () => {
-                    const { data: sessionData } = await supabase.auth.getSession();
-                    if (sessionData?.session?.user) {
-                        console.log('[AUTH_DEBUG] Sessão detectada via polling!');
-                        clearInterval(interval);
-                        setSuccessMessage("Login do Google realizado com sucesso! Atualizando...");
-                        setIsLoading(false);
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 500);
+                    try {
+                        const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+                        if (sessionErr) {
+                            console.warn('[AUTH_DEBUG] Polling getSession error:', sessionErr);
+                        }
+                        if (sessionData?.session?.user) {
+                            console.log('[AUTH_DEBUG] Sessão detectada via polling!');
+                            clearInterval(interval);
+                            setSuccessMessage("Login do Google realizado com sucesso! Atualizando...");
+                            setIsLoading(false);
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 500);
+                        }
+                    } catch (pollingErr) {
+                        console.error('[AUTH_DEBUG] Polling exception:', pollingErr);
                     }
                     if (authWindow.closed) {
                         clearInterval(interval);
