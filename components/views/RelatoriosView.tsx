@@ -219,6 +219,7 @@ const RelatoriosView: React.FC = () => {
   const [rawReceivedData, setRawReceivedData] = useState<any>(null);
   const [rawPreviousData, setRawPreviousData] = useState<any>(null);
   const [rawUpcomingData, setRawUpcomingData] = useState<any[]>([]);
+  const [rawSixMonthsTransactions, setRawSixMonthsTransactions] = useState<any[]>([]);
   
   // Filters
   const [selectedProfessionals, setSelectedProfessionals] = useState<string[]>([]);
@@ -428,14 +429,16 @@ const RelatoriosView: React.FC = () => {
     
     try {
       const { start, end, prevStart, prevEnd } = getDates();
+      const sixMonthsAgo = startOfMonth(subMonths(new Date(), 6));
       
-      // Fetch current period
-      const [transRes, apptsRes, teamRes, categoriesRes, servicesRes] = await Promise.all([
+      // Fetch current period and historical six months
+      const [transRes, apptsRes, teamRes, categoriesRes, servicesRes, sixMonthsTransRes] = await Promise.all([
         supabase.from('financial_transactions').select('*').eq('studio_id', activeStudioId).gte('date', start.toISOString()).lte('date', end.toISOString()),
         supabase.from('appointments').select('*').eq('studio_id', activeStudioId).gte('date', start.toISOString()).lte('date', end.toISOString()),
         supabase.from('team_members').select('*').eq('studio_id', activeStudioId),
         supabase.from('financial_categories').select('name').eq('studio_id', activeStudioId).eq('active', true),
-        supabase.from('services').select('id, preco, nome, categoria').eq('studio_id', activeStudioId)
+        supabase.from('services').select('id, preco, nome, categoria').eq('studio_id', activeStudioId),
+        supabase.from('financial_transactions').select('*').eq('studio_id', activeStudioId).gte('date', sixMonthsAgo.toISOString()).lte('date', new Date().toISOString())
       ]);
 
       // Fetch upcoming appointments for projection (next 30 days)
@@ -489,6 +492,7 @@ const RelatoriosView: React.FC = () => {
       setRawPreviousData(process(prevTransRes.data || [], prevApptsRes.data || []));
       
       setRawUpcomingData(upcomingAppts || []);
+      setRawSixMonthsTransactions(sixMonthsTransRes.data || []);
       
     } catch (err) {
       console.error("Erro ao buscar dados do BI:", err);
@@ -562,6 +566,79 @@ const RelatoriosView: React.FC = () => {
       categoryData
     };
   }, [data, previousData, getDates, services]);
+
+  const filteredSixMonthsTransactions = useMemo(() => {
+    if (!rawSixMonthsTransactions) return [];
+    if (selectedProfessionals.length === 0) return rawSixMonthsTransactions;
+
+    const profId = String(selectedProfessionals[0]).trim();
+    return rawSixMonthsTransactions.filter((t: any) => {
+      const tProfId = String(t.professionalId || t.professional_id || '').trim();
+      if (tProfId) {
+        return tProfId === profId;
+      }
+      return false;
+    });
+  }, [rawSixMonthsTransactions, selectedProfessionals]);
+
+  const monthlyComparisonData = useMemo(() => {
+    if (!filteredSixMonthsTransactions || filteredSixMonthsTransactions.length === 0) return [];
+
+    // Group transactions by year-month
+    const monthlyIncome: { [key: string]: number } = {};
+    
+    // We want to cover the last 6 months including the current month
+    const last6Months = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = subMonths(new Date(), i);
+      const key = format(d, 'yyyy-MM');
+      monthlyIncome[key] = 0;
+      last6Months.push({
+        key,
+        name: format(d, 'MMM/yy', { locale: pt }),
+        monthDate: d
+      });
+    }
+
+    // Also we need the month before the first of the last 6 months to compare the first month
+    const firstMonthDate = last6Months[0].monthDate;
+    const compareFirstKey = format(subMonths(firstMonthDate, 1), 'yyyy-MM');
+    monthlyIncome[compareFirstKey] = 0;
+
+    filteredSixMonthsTransactions.forEach(t => {
+      if (t.type === 'income' || t.type === 'receita') {
+        const tDate = typeof t.date === 'string' ? parseISO(t.date) : new Date(t.date);
+        const key = format(tDate, 'yyyy-MM');
+        if (monthlyIncome[key] !== undefined) {
+          monthlyIncome[key] += Number(t.amount || 0);
+        } else if (key === compareFirstKey) {
+          monthlyIncome[compareFirstKey] += Number(t.amount || 0);
+        }
+      }
+    });
+
+    // Build the final Recharts data
+    return last6Months.map((m, idx) => {
+      const currentVal = monthlyIncome[m.key] || 0;
+      let prevVal: number;
+      if (idx === 0) {
+        prevVal = monthlyIncome[compareFirstKey] || 0;
+      } else {
+        prevVal = monthlyIncome[last6Months[idx - 1].key] || 0;
+      }
+
+      const difference = currentVal - prevVal;
+      const percentChange = prevVal > 0 ? (difference / prevVal) * 100 : 0;
+
+      return {
+        name: m.name,
+        'Deste Mês': Number(currentVal.toFixed(2)),
+        'Mês Anterior': Number(prevVal.toFixed(2)),
+        'Crescimento': Number(percentChange.toFixed(1)),
+        'Diferenca': Number(difference.toFixed(2))
+      };
+    });
+  }, [filteredSixMonthsTransactions]);
 
   // --- Export Functions ---
 
@@ -1585,6 +1662,97 @@ const RelatoriosView: React.FC = () => {
             </ResponsiveContainer>
           </div>
         </div>
+      </div>
+
+      {/* Seção Nova: Performance Mensal Comparativa */}
+      <div className="bg-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 md:mb-8">
+          <div>
+            <h3 className="text-base md:text-lg font-black text-slate-800 uppercase tracking-tighter flex items-center gap-2">
+              <BarChart3 className="text-orange-500" size={20} />
+              Performance Mensal de Vendas
+            </h3>
+            <p className="text-[10px] md:text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">
+              Comparativo detalhado de faturamento dos últimos 6 meses em relação ao mês anterior
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[9px] md:text-[10px] font-black uppercase flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" /> Deste Mês
+            </span>
+            <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-[9px] md:text-[10px] font-black uppercase flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-slate-400" /> Mês Anterior
+            </span>
+          </div>
+        </div>
+
+        {monthlyComparisonData && monthlyComparisonData.length > 0 ? (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Chart Area */}
+            <div className="lg:col-span-2 h-72 md:h-96">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyComparisonData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false} />
+                  <YAxis 
+                    stroke="#94a3b8" 
+                    fontSize={10} 
+                    fontWeight="bold" 
+                    tickLine={false} 
+                    axisLine={false}
+                    tickFormatter={(value) => `R$ ${value.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`}
+                  />
+                  <Tooltip 
+                    formatter={(value: any, name: any) => [
+                      `R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+                      name
+                    ]}
+                    contentStyle={{ borderRadius: '20px', border: '1px solid #f1f5f9', fontWeight: 'bold', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.05)' }}
+                  />
+                  <Bar dataKey="Deste Mês" fill="#10b981" radius={[8, 8, 0, 0]} maxBarSize={45} />
+                  <Bar dataKey="Mês Anterior" fill="#cbd5e1" radius={[8, 8, 0, 0]} maxBarSize={45} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* List and growth comparison */}
+            <div className="space-y-4 flex flex-col justify-center">
+              <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider">Histórico de Crescimento</h4>
+              <div className="divide-y divide-slate-100 bg-slate-50/50 rounded-2xl p-4 border border-slate-100">
+                {monthlyComparisonData.map((item) => {
+                  const isPositive = item.Crescimento >= 0;
+                  return (
+                    <div key={item.name} className="py-3 flex items-center justify-between text-xs font-bold text-slate-600 first:pt-0 last:pb-0">
+                      <div>
+                        <span className="text-slate-800 font-black">{item.name}</span>
+                        <div className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
+                          R$ {item['Deste Mês'].toLocaleString('pt-BR')} vs R$ {item['Mês Anterior'].toLocaleString('pt-BR')}
+                        </div>
+                      </div>
+                      <div className="text-right flex items-center gap-3">
+                        <div className="text-right">
+                          <span className={`text-xs font-black ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {isPositive ? '+' : ''}{item.Crescimento.toFixed(1)}%
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-bold block">
+                            {isPositive ? 'Cresceu' : 'Caiu'} R$ {Math.abs(item.Diferenca).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                          </span>
+                        </div>
+                        <div className={`p-1.5 rounded-lg ${isPositive ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                          {isPositive ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="h-64 flex items-center justify-center">
+            <EmptyState message="Sem transações suficientes para gerar histórico mensal." />
+          </div>
+        )}
       </div>
     </div>
   );

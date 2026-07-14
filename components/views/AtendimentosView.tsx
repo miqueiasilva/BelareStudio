@@ -1745,7 +1745,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     </div>
                     <div className="relative">
                         <button 
-                            onClick={() => dateInputRef.current?.showPicker()} 
+                            onClick={() => {
+                                try {
+                                    dateInputRef.current?.showPicker();
+                                } catch (err) {
+                                    console.warn("showPicker() não é suportado ou foi bloqueado pelo iframe cross-origin:", err);
+                                    // Fallback seguro para evitar travamento da aplicação
+                                    try {
+                                        dateInputRef.current?.focus();
+                                        dateInputRef.current?.click();
+                                    } catch (innerErr) {
+                                        console.error("Fallback do seletor de data falhou:", innerErr);
+                                    }
+                                }
+                            }} 
                             className="text-slate-750 hover:text-slate-900 font-extrabold text-base capitalize tracking-tight flex items-center gap-1.5 hover:bg-slate-50 px-3 py-1.5 rounded-2xl transition-all active:scale-95 cursor-pointer select-none"
                             title="Escolher outra data"
                         >
