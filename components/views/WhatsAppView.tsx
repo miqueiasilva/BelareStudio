@@ -4,7 +4,8 @@ import {
     MessageSquare, Bell, Calendar, Heart, Star, Clock, Zap, 
     Link as LinkIcon, Smartphone, Wifi, WifiOff, LogOut, ChevronLeft, 
     ArrowLeft, CheckCircle2, User, Camera, Shield, Signal, Battery,
-    QrCode, RefreshCw, Info, Settings, ShieldCheck, KeyRound, Globe, Phone
+    QrCode, RefreshCw, Info, Settings, ShieldCheck, KeyRound, Globe, Phone,
+    Megaphone, Copy, Sparkles, Users, AlertTriangle, HelpCircle
 } from 'lucide-react';
 import { mockConversations } from '../../data/mockData';
 import { ChatConversation, ChatMessage } from '../../types';
@@ -169,13 +170,27 @@ const ChevronDown = ({ size, strokeWidth, className }: any) => (
 
 const WhatsAppView: React.FC = () => {
     const { activeStudioId } = useStudio();
-    const [activeTab, setActiveTab] = useState<'chats' | 'automations' | 'connection'>('chats');
+    const [activeTab, setActiveTab] = useState<'chats' | 'automations' | 'campaigns' | 'connection'>('chats');
     const [conversations, setConversations] = useState<ChatConversation[]>(mockConversations);
     const [selectedChatId, setSelectedChatId] = useState<number | null>(null);
     const [messageInput, setMessageInput] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [activePreview, setActivePreview] = useState<'confirmation' | 'reminder' | 'feedback' | 'birthday'>('confirmation');
+
+    // --- State: Campanhas & Modelos ---
+    const [campaignSubTab, setCampaignSubTab] = useState<'templates' | 'disparo'>('templates');
+    const [allClientsForCampaign, setAllClientsForCampaign] = useState<any[]>([]);
+    const [loadingCampaignClients, setLoadingCampaignClients] = useState(false);
+    const [campaignAppointments, setCampaignAppointments] = useState<any[]>([]);
+    const [promoDiscount, setPromoDiscount] = useState('15% de Desconto');
+    const [promoLink, setPromoLink] = useState('');
+    const [selectedSegment, setSelectedSegment] = useState<'all' | 'ativo' | 'ausente' | 'esquecido' | 'sem_atendimento'>('all');
+    
+    // For bulk broadcasting progress
+    const [isBroadcasting, setIsBroadcasting] = useState(false);
+    const [broadcastProgress, setBroadcastProgress] = useState({ total: 0, current: 0, success: 0, failed: 0 });
+    const [broadcastLogs, setBroadcastLogs] = useState<any[]>([]);
 
     const activeChat = conversations.find(c => c.id === selectedChatId);
 
@@ -215,6 +230,7 @@ const WhatsAppView: React.FC = () => {
     const [isSavingSettings, setIsSavingSettings] = useState(false);
     const [testPhone, setTestPhone] = useState('');
     const [isSendingTest, setIsSendingTest] = useState(false);
+    const [metaTemplateError, setMetaTemplateError] = useState<{ code?: number; message: string; templateName: string; language: string; variablesCount: number } | null>(null);
 
     useEffect(() => {
         if (!activeStudioId) return;
@@ -260,6 +276,251 @@ const WhatsAppView: React.FC = () => {
         };
         loadSettings();
     }, [activeStudioId]);
+
+    // --- Fetch Campaign Clients and Appointments ---
+    useEffect(() => {
+        if (!activeStudioId) return;
+        const fetchClientsAndAppointments = async () => {
+            setLoadingCampaignClients(true);
+            try {
+                const { data: clientsData, error: clientsErr } = await supabase
+                    .from('clients')
+                    .select('id, nome, whatsapp, telefone')
+                    .eq('studio_id', activeStudioId);
+                if (clientsErr) throw clientsErr;
+                setAllClientsForCampaign(clientsData || []);
+
+                const { data: appData, error: appErr } = await supabase
+                    .from('appointments')
+                    .select('client_id, date, status')
+                    .eq('studio_id', activeStudioId)
+                    .neq('status', 'cancelado');
+                if (!appErr && appData) {
+                    setCampaignAppointments(appData);
+                }
+            } catch (err) {
+                console.error("Erro ao carregar dados de campanha:", err);
+            } finally {
+                setLoadingCampaignClients(false);
+            }
+        };
+        fetchClientsAndAppointments();
+    }, [activeStudioId, activeTab]); // Reload when tab changes too
+
+    const campaignClientsWithStatus = useMemo(() => {
+        const visitMap: Record<number, string> = {};
+        campaignAppointments.forEach(app => {
+            if (!app.client_id) return;
+            const isRealVisit = ['concluido', 'chegou', 'confirmado', 'confirmado_whatsapp', 'em_atendimento'].includes(app.status);
+            if (!isRealVisit) return;
+            const existing = visitMap[app.client_id];
+            if (!existing || new Date(app.date) > new Date(existing)) {
+                visitMap[app.client_id] = app.date;
+            }
+        });
+
+        return allClientsForCampaign.map(c => {
+            const lastVisit = visitMap[c.id];
+            if (!lastVisit) {
+                return { ...c, status: 'sem_atendimento', days: null };
+            }
+            const diffTime = Math.abs(new Date().getTime() - new Date(lastVisit).getTime());
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            if (diffDays < 20) {
+                return { ...c, status: 'ativo', days: diffDays };
+            } else if (diffDays >= 20 && diffDays <= 30) {
+                return { ...c, status: 'ausente', days: diffDays };
+            } else {
+                return { ...c, status: 'esquecido', days: diffDays };
+            }
+        });
+    }, [allClientsForCampaign, campaignAppointments]);
+
+    const filteredCampaignClients = useMemo(() => {
+        return campaignClientsWithStatus.filter(c => {
+            if (selectedSegment === 'all') return true;
+            return c.status === selectedSegment;
+        });
+    }, [campaignClientsWithStatus, selectedSegment]);
+
+    const handleAutoConfigureTemplate = async (templateName: string, isMarketing = false) => {
+        const paramsValue = isMarketing 
+            ? 'Nome do Cliente, Cupom/Desconto, Link de Agendamento' 
+            : 'Nome do Cliente, Procedimento, Profissional, Data, Hora, Link de Confirmação';
+        
+        const updated = {
+            ...metaSettings,
+            meta_whatsapp_template_name: templateName,
+            meta_whatsapp_template_params: paramsValue
+        };
+        
+        setMetaSettings(updated);
+        
+        if (!activeStudioId) return;
+        setIsSavingSettings(true);
+        try {
+            const localPayload = {
+                meta_whatsapp_token: updated.meta_whatsapp_token.trim(),
+                meta_whatsapp_phone_number_id: updated.meta_whatsapp_phone_number_id.trim(),
+                meta_whatsapp_business_account_id: updated.meta_whatsapp_business_account_id.trim(),
+                meta_whatsapp_template_name: templateName,
+                meta_whatsapp_language: updated.meta_whatsapp_language,
+                meta_whatsapp_active: updated.connectionType === 'meta_api',
+                meta_whatsapp_template_params: paramsValue,
+            };
+
+            window.safeLocalStorage?.setItem(
+                `meta_whatsapp_settings_${activeStudioId}`,
+                JSON.stringify(localPayload)
+            );
+
+            const fullPayload = {
+                id: activeStudioId,
+                studio_id: activeStudioId,
+                ...localPayload,
+                updated_at: new Date().toISOString()
+            };
+
+            await supabase
+                .from('business_settings')
+                .upsert(fullPayload, { onConflict: 'studio_id' });
+
+            showToast(`Modelo '${templateName}' configurado e ativado como padrão!`, "success");
+        } catch (err: any) {
+            console.error("Erro ao salvar configuração automática:", err);
+            showToast(`Erro ao salvar: ${err.message}`, "error");
+        } finally {
+            setIsSavingSettings(false);
+        }
+    };
+
+    const handleStartCampaignBroadcast = async () => {
+        if (filteredCampaignClients.length === 0) {
+            showToast("Nenhum cliente elegível encontrado para este segmento.", "info");
+            return;
+        }
+
+        const isMetaActive = metaSettings.connectionType === 'meta_api' && !!metaSettings.meta_whatsapp_token && !!metaSettings.meta_whatsapp_phone_number_id;
+
+        setIsBroadcasting(true);
+        setBroadcastProgress({
+            total: filteredCampaignClients.length,
+            current: 0,
+            success: 0,
+            failed: 0
+        });
+        setBroadcastLogs([]);
+
+        for (let i = 0; i < filteredCampaignClients.length; i++) {
+            const client = filteredCampaignClients[i];
+            const clientName = client.nome;
+            const phone = client.whatsapp || client.telefone || '';
+            const cleanPhone = phone.replace(/\D/g, '');
+
+            const logId = Date.now() + '-' + i;
+            setBroadcastLogs(prev => [
+                { id: logId, clientName, phone: phone || 'Sem número', status: 'sending' },
+                ...prev
+            ]);
+
+            let success = false;
+            let errorMsg = '';
+
+            if (isMetaActive && cleanPhone) {
+                try {
+                    let recipientPhone = cleanPhone;
+                    if (recipientPhone.length === 10 || recipientPhone.length === 11) {
+                        recipientPhone = '55' + recipientPhone;
+                    }
+
+                    const url = `https://graph.facebook.com/v21.0/${metaSettings.meta_whatsapp_phone_number_id.trim()}/messages`;
+                    const fallbackLink = `${window.location.origin}/#/public-preview?sid=${activeStudioId}`;
+                    
+                    const body = {
+                        messaging_product: "whatsapp",
+                        to: recipientPhone,
+                        type: "template",
+                        template: {
+                            name: metaSettings.meta_whatsapp_template_name || 'promocao_especial',
+                            language: {
+                                code: metaSettings.meta_whatsapp_language || 'pt_BR'
+                            },
+                            components: [
+                                {
+                                    type: "body",
+                                    parameters: [
+                                        { type: "text", text: clientName },
+                                        { type: "text", text: promoDiscount },
+                                        { type: "text", text: promoLink || fallbackLink }
+                                    ]
+                                }
+                            ]
+                        }
+                    };
+
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${metaSettings.meta_whatsapp_token.trim()}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(body)
+                    });
+
+                    const resData = await response.json();
+                    if (response.ok) {
+                        success = true;
+                    } else {
+                        errorMsg = resData?.error?.message || "Erro na API da Meta.";
+                    }
+                } catch (err: any) {
+                    errorMsg = err.message || "Erro de rede.";
+                }
+            } else {
+                // Simulation mode
+                await new Promise(resolve => setTimeout(resolve, 800));
+                if (!cleanPhone) {
+                    errorMsg = "Sem telefone de contato.";
+                } else {
+                    success = true;
+                }
+            }
+
+            setBroadcastProgress(prev => ({
+                ...prev,
+                current: i + 1,
+                success: prev.success + (success ? 1 : 0),
+                failed: prev.failed + (success ? 0 : 1)
+            }));
+
+            setBroadcastLogs(prev => prev.map(log => {
+                if (log.id === logId) {
+                    return {
+                        ...log,
+                        status: success ? 'success' : 'failed',
+                        error: errorMsg
+                    };
+                }
+                return log;
+            }));
+
+            if (success && activeStudioId) {
+                try {
+                    await supabase.from('whatsapp_reminders_log').insert([{
+                        studio_id: activeStudioId,
+                        client_name: clientName,
+                        phone: cleanPhone,
+                        sender: isMetaActive ? 'API Oficial Meta - Campanha' : 'Campanha Simulada'
+                    }]);
+                } catch (logErr) {
+                    console.error("Erro ao gravar log da campanha:", logErr);
+                }
+            }
+        }
+
+        setIsBroadcasting(false);
+        showToast("Disparo em massa de campanha finalizado!", "success");
+    };
 
     const handleSaveSettings = async () => {
         if (!activeStudioId) {
@@ -404,11 +665,26 @@ const WhatsAppView: React.FC = () => {
             if (!response.ok) {
                 let errMsg = resData?.error?.message || "Erro desconhecido na API da Meta.";
                 if (resData?.error?.code === 132001 || errMsg.includes("132001") || errMsg.includes("does not exist in the translation")) {
+                    setMetaTemplateError({
+                        code: 132001,
+                        message: resData?.error?.message || errMsg,
+                        templateName: templateNameClean,
+                        language: metaSettings.meta_whatsapp_language,
+                        variablesCount: parameterList.length
+                    });
                     errMsg = `Erro (#132001): O modelo '${templateNameClean}' não existe, não está aprovado ou o idioma '${metaSettings.meta_whatsapp_language}' não corresponde ao cadastrado no painel da Meta. Verifique se o nome do modelo está idêntico e tente idiomas como 'pt' ou 'pt_BR'. Além disso, certifique-se de que o número de variáveis enviadas (${parameterList.length}) corresponde ao seu modelo no Facebook. (Retorno original da Meta: ${resData?.error?.message || errMsg})`;
+                } else {
+                    setMetaTemplateError({
+                        message: resData?.error?.message || errMsg,
+                        templateName: templateNameClean,
+                        language: metaSettings.meta_whatsapp_language,
+                        variablesCount: parameterList.length
+                    });
                 }
                 throw new Error(errMsg);
             }
 
+            setMetaTemplateError(null);
             showToast("Mensagem de teste enviada com sucesso!", "success");
 
             try {
@@ -432,6 +708,39 @@ const WhatsAppView: React.FC = () => {
 
     // --- Handlers ---
     const showToast = (message: string, type: ToastType = 'success') => setToast({ message, type });
+
+    const copyToClipboard = (text: string) => {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text)
+                .then(() => {
+                    showToast("Texto do modelo copiado com sucesso!", "success");
+                })
+                .catch(err => {
+                    console.error("Erro ao copiar texto:", err);
+                    showToast("Erro ao copiar texto. Por favor, selecione e copie manualmente.", "error");
+                });
+        } else {
+            // Fallback for older browsers or iframe constraints
+            try {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                textArea.style.position = "fixed";  // avoid scrolling to bottom
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                const successful = document.execCommand('copy');
+                document.body.removeChild(textArea);
+                if (successful) {
+                    showToast("Texto do modelo copiado com sucesso!", "success");
+                } else {
+                    showToast("Erro ao copiar texto. Por favor, selecione e copie manualmente.", "error");
+                }
+            } catch (err) {
+                console.error("Fallback: Erro ao copiar texto:", err);
+                showToast("Erro ao copiar texto. Por favor, selecione e copie manualmente.", "error");
+            }
+        }
+    };
 
     const handleSendMessage = (e?: React.FormEvent) => {
         e?.preventDefault();
@@ -477,9 +786,10 @@ const WhatsAppView: React.FC = () => {
                         <h2 className="font-black text-slate-700 tracking-tight">WhatsApp</h2>
                     </div>
                     <div className="flex gap-1">
-                        <button onClick={() => setActiveTab('chats')} className={`p-2 rounded-lg transition-all ${activeTab === 'chats' ? 'bg-orange-50 text-orange-600' : 'text-slate-400 hover:bg-slate-50'}`}><MessageSquare size={18} /></button>
-                        <button onClick={() => setActiveTab('automations')} className={`p-2 rounded-lg transition-all ${activeTab === 'automations' ? 'bg-orange-50 text-orange-600' : 'text-slate-400 hover:bg-slate-50'}`}><Zap size={18} /></button>
-                        <button onClick={() => setActiveTab('connection')} className={`p-2 rounded-lg transition-all ${activeTab === 'connection' ? 'bg-orange-50 text-orange-600' : 'text-slate-400 hover:bg-slate-50'}`}><LinkIcon size={18} /></button>
+                        <button onClick={() => setActiveTab('chats')} className={`p-2 rounded-lg transition-all ${activeTab === 'chats' ? 'bg-orange-50 text-orange-600' : 'text-slate-400 hover:bg-slate-50'}`} title="Conversas"><MessageSquare size={18} /></button>
+                        <button onClick={() => setActiveTab('automations')} className={`p-2 rounded-lg transition-all ${activeTab === 'automations' ? 'bg-orange-50 text-orange-600' : 'text-slate-400 hover:bg-slate-50'}`} title="Automações"><Zap size={18} /></button>
+                        <button onClick={() => setActiveTab('campaigns')} className={`p-2 rounded-lg transition-all ${activeTab === 'campaigns' ? 'bg-orange-50 text-orange-600' : 'text-slate-400 hover:bg-slate-50'}`} title="Campanhas"><Megaphone size={18} /></button>
+                        <button onClick={() => setActiveTab('connection')} className={`p-2 rounded-lg transition-all ${activeTab === 'connection' ? 'bg-orange-50 text-orange-600' : 'text-slate-400 hover:bg-slate-50'}`} title="Conexão"><LinkIcon size={18} /></button>
                     </div>
                 </div>
 
@@ -582,6 +892,57 @@ const WhatsAppView: React.FC = () => {
                                 onPreview={() => setActivePreview('birthday')}
                                 onToggle={() => updateAutomation('birthday', 'active', !automations.birthday.active)}
                             />
+                        </div>
+                    )}
+
+                    {activeTab === 'campaigns' && (
+                        <div className="p-4 space-y-4">
+                            <header className="mb-4">
+                                <h2 className="text-sm font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Campanhas</h2>
+                                <p className="text-[10px] text-slate-500 mt-1 ml-1">Homologue modelos e realize disparos em massa.</p>
+                            </header>
+
+                            <div className="space-y-3">
+                                {/* Subtab 1: Modelos Prontos */}
+                                <button 
+                                    onClick={() => setCampaignSubTab('templates')}
+                                    className={`w-full text-left p-4 rounded-2xl border transition-all ${
+                                        campaignSubTab === 'templates'
+                                            ? 'bg-white border-orange-500 shadow-md shadow-orange-100'
+                                            : 'bg-slate-50 border-slate-100 opacity-70 hover:opacity-100'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2 rounded-xl ${campaignSubTab === 'templates' ? 'bg-orange-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                                            <Zap size={18} />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-black text-slate-800">Modelos de Mensagem</p>
+                                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Cadastro & Homologação</p>
+                                        </div>
+                                    </div>
+                                </button>
+
+                                {/* Subtab 2: Disparo em Massa */}
+                                <button 
+                                    onClick={() => setCampaignSubTab('disparo')}
+                                    className={`w-full text-left p-4 rounded-2xl border transition-all ${
+                                        campaignSubTab === 'disparo'
+                                            ? 'bg-white border-orange-500 shadow-md shadow-orange-100'
+                                            : 'bg-slate-50 border-slate-100 opacity-70 hover:opacity-100'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2 rounded-xl ${campaignSubTab === 'disparo' ? 'bg-orange-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                                            <Megaphone size={18} />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-black text-slate-800">Disparo em Massa</p>
+                                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Ação Promocional</p>
+                                        </div>
+                                    </div>
+                                </button>
+                            </div>
                         </div>
                     )}
 
@@ -735,6 +1096,286 @@ const WhatsAppView: React.FC = () => {
                                 active={activePreview === 'confirmation' ? automations.confirmation.active : activePreview === 'reminder' ? automations.reminder.active : activePreview === 'feedback' ? automations.feedback.active : automations.birthday.active}
                             />
                         </div>
+                    </div>
+                )}
+
+                {/* State: Campanhas & Modelos */}
+                {activeTab === 'campaigns' && (
+                    <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-50 text-left">
+                        {campaignSubTab === 'templates' ? (
+                            <div className="max-w-4xl mx-auto space-y-6">
+                                <div className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200/60 shadow-xl shadow-slate-100/50">
+                                    <div className="flex items-center gap-3 border-b border-slate-100 pb-5 mb-6">
+                                        <div className="p-3 bg-orange-500 text-white rounded-2xl">
+                                            <Sparkles size={22} />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-xl font-black text-slate-800 leading-none">Modelos Recomendados para Aprovação na Meta</h3>
+                                            <p className="text-xs text-slate-400 mt-1.5 font-bold uppercase tracking-wide">Copie o texto exato abaixo e cole na sua conta da Meta (Facebook Business) para aprovação instantânea.</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {/* Modelo 1: Lembrete de Agendamento */}
+                                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 flex flex-col justify-between">
+                                            <div>
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <span className="text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full">Lembrete de Agendamento</span>
+                                                    <span className="text-[10px] font-bold text-slate-400">Categoria: UTILITY</span>
+                                                </div>
+                                                <h4 className="text-sm font-black text-slate-800 mb-2">Nome do Modelo: <code className="bg-white px-2 py-0.5 rounded border text-orange-600">lembrete_agendamento</code></h4>
+                                                
+                                                <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-4 mb-2">Texto para Cadastro:</p>
+                                                <div className="bg-white p-4 rounded-xl border border-slate-100 text-xs text-slate-600 font-medium leading-relaxed select-all">
+                                                    Olá, {'{{1}}'}! Passando para lembrar do seu agendamento de {'{{2}}'} com o profissional {'{{3}}'} no dia {'{{4}}'} às {'{{5}}'}. Confirme clicando em: {'{{6}}'}
+                                                </div>
+                                                
+                                                <div className="mt-4 space-y-2">
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Variáveis do Sistema:</p>
+                                                    <ul className="text-[10px] text-slate-500 space-y-1 font-medium list-disc list-inside">
+                                                        <li><b>{'{1}'}</b>: Nome do Cliente</li>
+                                                        <li><b>{'{2}'}</b>: Serviço / Procedimento</li>
+                                                        <li><b>{'{3}'}</b>: Nome do Profissional</li>
+                                                        <li><b>{'{4}'}</b>: Data Agendada</li>
+                                                        <li><b>{'{5}'}</b>: Horário do Agendamento</li>
+                                                        <li><b>{'{6}'}</b>: Link de Confirmação do Cliente</li>
+                                                    </ul>
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-6 pt-4 border-t border-slate-200/50 flex flex-col gap-2">
+                                                <button 
+                                                    onClick={() => copyToClipboard("Olá, {{1}}! Passando para lembrar do seu agendamento de {{2}} com o profissional {{3}} no dia {{4}} às {{5}}. Confirme clicando em: {{6}}")}
+                                                    className="w-full flex items-center justify-center gap-2 bg-white hover:bg-slate-100 text-slate-700 text-xs font-black py-2.5 px-4 rounded-xl border border-slate-200 transition-all active:scale-[0.98]"
+                                                >
+                                                    <Copy size={14} /> Copiar Corpo do Modelo
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleAutoConfigureTemplate("lembrete_agendamento", false)}
+                                                    className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-black py-2.5 px-4 rounded-xl transition-all active:scale-[0.98] shadow-md shadow-orange-100"
+                                                >
+                                                    <Zap size={14} /> Ativar no BelareStudio
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Modelo 2: Campanha / Disparo em Massa */}
+                                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 flex flex-col justify-between">
+                                            <div>
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <span className="text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-700 px-2.5 py-1 rounded-full">Disparo em Massa</span>
+                                                    <span className="text-[10px] font-bold text-slate-400">Categoria: MARKETING</span>
+                                                </div>
+                                                <h4 className="text-sm font-black text-slate-800 mb-2">Nome do Modelo: <code className="bg-white px-2 py-0.5 rounded border text-orange-600">promocao_especial</code></h4>
+                                                
+                                                <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-4 mb-2">Texto para Cadastro:</p>
+                                                <div className="bg-white p-4 rounded-xl border border-slate-100 text-xs text-slate-600 font-medium leading-relaxed select-all">
+                                                    Olá, {'{{1}}'}! Temos uma novidade incrível para você no Belare Studio. Aproveite nosso desconto especial de {'{{2}}'} em sua próxima visita! Digite "Quero" ou agende pelo link: {'{{3}}'}
+                                                </div>
+                                                
+                                                <div className="mt-4 space-y-2">
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Variáveis do Sistema:</p>
+                                                    <ul className="text-[10px] text-slate-500 space-y-1 font-medium list-disc list-inside">
+                                                        <li><b>{'{1}'}</b>: Nome do Cliente</li>
+                                                        <li><b>{'{2}'}</b>: Valor ou Cupom de Desconto (Ex: 15% OFF)</li>
+                                                        <li><b>{'{3}'}</b>: Link Direto para Agendamento</li>
+                                                    </ul>
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-6 pt-4 border-t border-slate-200/50 flex flex-col gap-2">
+                                                <button 
+                                                    onClick={() => copyToClipboard("Olá, {{1}}! Temos uma novidade incrível para você no Belare Studio. Aproveite nosso desconto especial de {{2}} em sua próxima visita! Digite \"Quero\" ou agende pelo link: {{3}}")}
+                                                    className="w-full flex items-center justify-center gap-2 bg-white hover:bg-slate-100 text-slate-700 text-xs font-black py-2.5 px-4 rounded-xl border border-slate-200 transition-all active:scale-[0.98]"
+                                                >
+                                                    <Copy size={14} /> Copiar Corpo do Modelo
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleAutoConfigureTemplate("promocao_especial", true)}
+                                                    className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-black py-2.5 px-4 rounded-xl transition-all active:scale-[0.98] shadow-md shadow-orange-100"
+                                                >
+                                                    <Megaphone size={14} /> Ativar no BelareStudio
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-blue-50 border border-blue-100 p-5 rounded-2xl flex gap-3">
+                                    <Info className="text-blue-600 flex-shrink-0" size={20} />
+                                    <div className="text-xs text-blue-800 leading-relaxed">
+                                        <p className="font-bold">Como funciona a aprovação na Meta?</p>
+                                        <p className="mt-1">Ao cadastrar esses modelos no painel do Facebook Business, o robô da Meta analisa a estrutura de variáveis. Geralmente a aprovação ocorre de forma imediata (em menos de 2 minutos). Certifique-se de configurar o idioma como <b>Português (Brasil) / pt_BR</b> no momento do cadastro.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="max-w-4xl mx-auto space-y-6">
+                                <div className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200/60 shadow-xl shadow-slate-100/50">
+                                    <div className="flex items-center gap-3 border-b border-slate-100 pb-5 mb-6">
+                                        <div className="p-3 bg-orange-500 text-white rounded-2xl">
+                                            <Megaphone size={22} />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-xl font-black text-slate-800 leading-none">Motor de Disparo em Massa (Marketing)</h3>
+                                            <p className="text-xs text-slate-400 mt-1.5 font-bold uppercase tracking-wide">Crie campanhas segmentadas e envie notificações para os seus clientes com alta precisão.</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        {/* Inputs de Configuração da Campanha */}
+                                        <div className="md:col-span-2 space-y-4 text-xs font-bold text-slate-500">
+                                            <div>
+                                                <label className="block text-slate-700 mb-1.5 font-bold">1. Segmento de Clientes Alvo</label>
+                                                <select 
+                                                    value={selectedSegment} 
+                                                    onChange={(e) => setSelectedSegment(e.target.value as any)}
+                                                    className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-slate-800 focus:bg-white focus:border-orange-500 outline-none transition-all font-medium"
+                                                >
+                                                    <option value="all">Todos os Clientes ({campaignClientsWithStatus.length})</option>
+                                                    <option value="ativo">Clientes Ativos (Frequência &lt; 20 dias - {campaignClientsWithStatus.filter(c => c.status === 'ativo').length})</option>
+                                                    <option value="ausente">Clientes Ausentes (Entre 20 e 30 dias - {campaignClientsWithStatus.filter(c => c.status === 'ausente').length})</option>
+                                                    <option value="esquecido">Clientes Esquecidos (&gt; 30 dias - {campaignClientsWithStatus.filter(c => c.status === 'esquecido').length})</option>
+                                                    <option value="sem_atendimento">Sem Atendimento Cadastrado ({campaignClientsWithStatus.filter(c => c.status === 'sem_atendimento').length})</option>
+                                                </select>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-slate-700 mb-1.5 font-bold">2. Cupom ou Desconto {'{{2}}'}</label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={promoDiscount} 
+                                                        onChange={(e) => setPromoDiscount(e.target.value)}
+                                                        placeholder="Ex: 15% de Desconto" 
+                                                        className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-slate-800 focus:bg-white focus:border-orange-500 outline-none transition-all font-medium"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-slate-700 mb-1.5 font-bold">3. Link de Agendamento {'{{3}}'}</label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={promoLink} 
+                                                        onChange={(e) => setPromoLink(e.target.value)}
+                                                        placeholder="Opcional (Usa agendamento do estúdio por padrão)" 
+                                                        className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-slate-800 focus:bg-white focus:border-orange-500 outline-none transition-all font-medium text-[11px]"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Pré-visualização da Mensagem Selecionada:</p>
+                                                <div className="bg-white p-3.5 rounded-xl border border-slate-100 text-xs text-slate-600 font-medium leading-relaxed">
+                                                    Olá, <span className="text-orange-600 font-bold">{'[Nome do Cliente]'}</span>! Temos uma novidade incrível para você no Belare Studio. Aproveite nosso desconto especial de <span className="text-orange-600 font-bold">{promoDiscount || "..."}</span> em sua próxima visita! Digite "Quero" ou agende pelo link: <span className="text-orange-600 font-bold text-[10px]">{promoLink || `${window.location.origin}/#/public-preview?sid=${activeStudioId}`}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Status / Ação do Disparo */}
+                                        <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 flex flex-col justify-between">
+                                            <div>
+                                                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider mb-3">Resumo do Público</h4>
+                                                <div className="space-y-2 mb-4">
+                                                    <div className="flex justify-between items-center text-xs">
+                                                        <span className="text-slate-500 font-bold">Público Alvo:</span>
+                                                        <span className="font-black text-slate-800">{filteredCampaignClients.length} Clientes</span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center text-xs">
+                                                        <span className="text-slate-500 font-bold">Método de Envio:</span>
+                                                        <span className="font-black text-orange-600 uppercase text-[10px]">
+                                                            {metaSettings.connectionType === 'meta_api' && metaSettings.meta_whatsapp_token ? 'API Oficial da Meta' : 'Modo Simulação / Teste'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {isBroadcasting && (
+                                                    <div className="space-y-2.5 my-4">
+                                                        <div className="flex justify-between items-center text-[10px] font-black text-slate-500">
+                                                            <span>PROGRESSO: {Math.round((broadcastProgress.current / (broadcastProgress.total || 1)) * 100)}%</span>
+                                                            <span>{broadcastProgress.current}/{broadcastProgress.total}</span>
+                                                        </div>
+                                                        <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                                                            <div 
+                                                                className="bg-orange-500 h-full transition-all duration-300" 
+                                                                style={{ width: `${(broadcastProgress.current / (broadcastProgress.total || 1)) * 100}%` }}
+                                                            />
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-center mt-2">
+                                                            <div className="bg-green-50 text-green-700 p-1.5 rounded-lg border border-green-100">
+                                                                {broadcastProgress.success} Sucesso
+                                                            </div>
+                                                            <div className="bg-red-50 text-red-700 p-1.5 rounded-lg border border-red-100">
+                                                                {broadcastProgress.failed} Falhas
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <button 
+                                                onClick={handleStartCampaignBroadcast}
+                                                disabled={isBroadcasting || loadingCampaignClients}
+                                                className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-black text-white text-xs transition-all active:scale-[0.98] ${
+                                                    isBroadcasting 
+                                                        ? 'bg-slate-400 cursor-not-allowed' 
+                                                        : 'bg-orange-500 hover:bg-orange-600 shadow-md shadow-orange-100'
+                                                }`}
+                                            >
+                                                {isBroadcasting ? (
+                                                    <>
+                                                        <RefreshCw className="animate-spin" size={14} /> Enviando...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Megaphone size={14} /> Iniciar Disparo em Massa
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Feed de Logs do Disparo */}
+                                {(broadcastLogs.length > 0 || isBroadcasting) && (
+                                    <div className="bg-white p-6 rounded-[32px] border border-slate-200/60 shadow-xl shadow-slate-100/50">
+                                        <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+                                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Histórico de Disparos em Tempo Real</h4>
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Lista de Contatos Recentes</span>
+                                        </div>
+
+                                        <div className="max-h-60 overflow-y-auto custom-scrollbar space-y-2 text-xs">
+                                            {broadcastLogs.map((log) => (
+                                                <div key={log.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                                    <div className="flex items-center gap-2.5">
+                                                        <Users size={14} className="text-slate-400" />
+                                                        <div>
+                                                            <span className="font-black text-slate-800">{log.clientName}</span>
+                                                            <span className="text-[10px] text-slate-400 ml-2 font-medium">({log.phone})</span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div>
+                                                        {log.status === 'sending' && (
+                                                            <span className="text-[10px] font-black uppercase text-blue-600 animate-pulse bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">Enviando...</span>
+                                                        )}
+                                                        {log.status === 'success' && (
+                                                            <span className="text-[10px] font-black uppercase text-green-700 bg-green-50 px-2.5 py-1 rounded-full border border-green-100 flex items-center gap-1">
+                                                                <Check size={12} /> Enviado
+                                                            </span>
+                                                        )}
+                                                        {log.status === 'failed' && (
+                                                            <span className="text-[10px] font-black uppercase text-red-700 bg-red-50 px-2.5 py-1 rounded-full border border-red-100" title={log.error}>
+                                                                Falha: {log.error || 'Erro'}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -961,6 +1602,112 @@ const WhatsAppView: React.FC = () => {
                                         </div>
                                     </div>
                                 </div>
+
+                                {metaTemplateError && (
+                                    <div className="bg-amber-50 border border-amber-200 rounded-[32px] p-6 space-y-4 animate-in fade-in duration-300">
+                                        <div className="flex gap-3">
+                                            <AlertTriangle className="text-amber-600 flex-shrink-0 mt-0.5" size={24} />
+                                            <div>
+                                                <h4 className="text-sm font-black text-amber-900 leading-tight">
+                                                    Diagnóstico de Erro da Meta (#132001 - Modelo Inexistente)
+                                                </h4>
+                                                <p className="text-xs text-amber-700 mt-1.5 font-bold leading-relaxed">
+                                                    A API oficial da Meta retornou que o modelo <code className="bg-amber-100 px-1.5 py-0.5 rounded text-amber-900 font-bold font-mono">'{metaTemplateError.templateName}'</code> com idioma <code className="bg-amber-100 px-1.5 py-0.5 rounded text-amber-900 font-bold font-mono">'{metaTemplateError.language}'</code> não foi encontrado ou ainda não está aprovado na sua conta do Facebook Business.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white rounded-2xl p-5 border border-amber-100 text-xs space-y-4 text-left">
+                                            <p className="font-bold text-slate-800">Siga estes passos simples para corrigir imediatamente:</p>
+                                            
+                                            <div className="space-y-4">
+                                                <div className="flex gap-2 items-start">
+                                                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100 text-amber-800 font-black text-[10px] mt-0.5 flex-shrink-0">1</span>
+                                                    <div className="flex-1">
+                                                        <p className="font-bold text-slate-800">Incompatibilidade de Idioma (Erro mais comum!)</p>
+                                                        <p className="text-slate-500 mt-0.5 leading-relaxed">Muitas vezes você cadastrou o modelo no Facebook como <b className="text-slate-700">Português (Geral) - código "pt"</b>, mas o sistema está tentando enviar como <b className="text-slate-700">Português (Brasil) - código "pt_BR"</b>.</p>
+                                                        
+                                                        <button
+                                                            onClick={async () => {
+                                                                const currentLang = metaSettings.meta_whatsapp_language;
+                                                                const nextLang = currentLang === 'pt_BR' ? 'pt' : 'pt_BR';
+                                                                
+                                                                const updated = {
+                                                                    ...metaSettings,
+                                                                    meta_whatsapp_language: nextLang
+                                                                };
+                                                                setMetaSettings(updated);
+                                                                
+                                                                if (activeStudioId) {
+                                                                    try {
+                                                                        const localPayload = {
+                                                                            meta_whatsapp_token: updated.meta_whatsapp_token.trim(),
+                                                                            meta_whatsapp_phone_number_id: updated.meta_whatsapp_phone_number_id.trim(),
+                                                                            meta_whatsapp_business_account_id: updated.meta_whatsapp_business_account_id.trim(),
+                                                                            meta_whatsapp_template_name: updated.meta_whatsapp_template_name.trim(),
+                                                                            meta_whatsapp_language: nextLang,
+                                                                            meta_whatsapp_active: updated.connectionType === 'meta_api',
+                                                                            meta_whatsapp_template_params: updated.meta_whatsapp_template_params,
+                                                                        };
+
+                                                                        window.safeLocalStorage?.setItem(
+                                                                            `meta_whatsapp_settings_${activeStudioId}`,
+                                                                            JSON.stringify(localPayload)
+                                                                        );
+
+                                                                        await supabase
+                                                                            .from('business_settings')
+                                                                            .upsert({
+                                                                                id: activeStudioId,
+                                                                                studio_id: activeStudioId,
+                                                                                ...localPayload,
+                                                                                updated_at: new Date().toISOString()
+                                                                            }, { onConflict: 'studio_id' });
+                                                                            
+                                                                        showToast(`Idioma alterado com sucesso para '${nextLang}'! Tentando enviar novamente...`, "success");
+                                                                        
+                                                                        setTimeout(() => {
+                                                                            handleSendTestMessage();
+                                                                        }, 1000);
+                                                                    } catch (err) {
+                                                                        console.error("Erro ao reconfigurar idioma:", err);
+                                                                    }
+                                                                }
+                                                            }}
+                                                            className="mt-2.5 inline-flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-black text-[10px] uppercase tracking-wider py-2 px-3 rounded-xl transition-all shadow-md shadow-amber-200"
+                                                        >
+                                                            <Globe size={11} /> Corrigir: Mudar Idioma para "{metaSettings.meta_whatsapp_language === 'pt_BR' ? 'pt' : 'pt_BR'}" e Reenviar
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex gap-2 items-start pt-3 border-t border-slate-100">
+                                                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100 text-amber-800 font-black text-[10px] mt-0.5 flex-shrink-0">2</span>
+                                                    <div className="flex-1">
+                                                        <p className="font-bold text-slate-800">Diferença de Nome Exato</p>
+                                                        <p className="text-slate-500 mt-0.5 leading-relaxed">O nome do modelo no painel da Meta deve ser exatamente minúsculo com sublinha: <code className="bg-slate-100 px-1 rounded text-orange-600 font-bold font-mono">lembrete_agendamento</code>. Se estiver escrito com traço (<code className="bg-slate-100 px-1 rounded text-slate-600 font-mono">lembrete-agendamento</code>) ou letras maiúsculas, dê um duplo clique no campo "Nome do Modelo" e ajuste aqui.</p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex gap-2 items-start pt-3 border-t border-slate-100">
+                                                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100 text-amber-800 font-black text-[10px] mt-0.5 flex-shrink-0">3</span>
+                                                    <div className="flex-1">
+                                                        <p className="font-bold text-slate-800">Número de Variáveis Incompatível</p>
+                                                        <p className="text-slate-500 mt-0.5 leading-relaxed">O Belare Studio envia <b className="text-slate-700">{metaTemplateError.variablesCount} parâmetros</b>. No seu painel da Meta, o seu modelo deve ter exatamente a quantidade de placeholders configurada (Ex: de <code className="bg-slate-100 px-1 rounded text-slate-600 font-mono">{"{{1}}"}</code> até <code className="bg-slate-100 px-1 rounded text-slate-600 font-mono">{"{{6}}"}</code>). Se o seu modelo possuir menos, ajuste o campo "Variáveis do Template" acima.</p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex gap-2 items-start pt-3 border-t border-slate-100">
+                                                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100 text-amber-800 font-black text-[10px] mt-0.5 flex-shrink-0">4</span>
+                                                    <div className="flex-1">
+                                                        <p className="font-bold text-slate-800">Aprovação Pendente no Facebook</p>
+                                                        <p className="text-slate-500 mt-0.5 leading-relaxed">Certifique-se de que o modelo foi aprovado no Facebook (tem uma bolinha verde no painel da Meta). Se estiver reprovado ou em análise, aguarde ou cadastre outro modelo com nome diferente.</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
