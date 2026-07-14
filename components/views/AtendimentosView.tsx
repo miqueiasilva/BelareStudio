@@ -15,6 +15,11 @@ import {
 } from 'date-fns';
 import { ptBR as pt } from 'date-fns/locale/pt-BR';
 
+import DatePicker, { registerLocale } from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+
+registerLocale('pt-BR', pt);
+
 import { LegacyAppointment, AppointmentStatus, FinancialTransaction, LegacyProfessional } from '../../types';
 import AppointmentModal from '../modals/AppointmentModal';
 import BlockTimeModal from '../modals/BlockTimeModal';
@@ -267,6 +272,32 @@ const TimelineIndicator = ({ timeSlot }: { timeSlot: number }) => {
         </div>
     );
 };
+
+interface CustomDateButtonProps {
+    value?: string;
+    onClick?: () => void;
+    periodType: string;
+    currentDate: Date;
+}
+
+const CustomDateButton = React.forwardRef<HTMLButtonElement, CustomDateButtonProps>(
+    ({ onClick, periodType, currentDate }, ref) => (
+        <button
+            type="button"
+            onClick={onClick}
+            ref={ref}
+            className="text-slate-750 hover:text-slate-900 font-extrabold text-base capitalize tracking-tight flex items-center gap-1.5 hover:bg-slate-50 px-3 py-1.5 rounded-2xl transition-all select-none cursor-pointer"
+            title="Escolher outra data"
+        >
+            <span>
+                {['Mês', 'Lista'].includes(periodType) 
+                    ? format(currentDate, "MMMM 'de' yyyy", { locale: pt }) 
+                    : format(currentDate, "EEE, dd 'de' MMMM", { locale: pt })}
+            </span>
+        </button>
+    )
+);
+CustomDateButton.displayName = 'CustomDateButton';
 
 interface AtendimentosViewProps {
     onAddTransaction: (t: FinancialTransaction) => void;
@@ -1743,42 +1774,31 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         <button onClick={() => handleDateChange(-1)} className="p-1.5 hover:bg-white active:scale-95 transition-all rounded-xl text-slate-600"><ChevronLeft size={18} /></button>
                         <button onClick={() => handleDateChange(1)} className="p-1.5 hover:bg-white active:scale-95 transition-all rounded-xl text-slate-600"><ChevronRight size={18} /></button>
                     </div>
-                    <div className="relative">
-                        <button 
-                            onClick={() => {
-                                try {
-                                    dateInputRef.current?.showPicker();
-                                } catch (err) {
-                                    console.warn("showPicker() não é suportado ou foi bloqueado pelo iframe cross-origin:", err);
-                                    // Fallback seguro para evitar travamento da aplicação
-                                    try {
-                                        dateInputRef.current?.focus();
-                                        dateInputRef.current?.click();
-                                    } catch (innerErr) {
-                                        console.error("Fallback do seletor de data falhou:", innerErr);
-                                    }
-                                }
-                            }} 
-                            className="text-slate-750 hover:text-slate-900 font-extrabold text-base capitalize tracking-tight flex items-center gap-1.5 hover:bg-slate-50 px-3 py-1.5 rounded-2xl transition-all active:scale-95 cursor-pointer select-none"
-                            title="Escolher outra data"
-                        >
-                            <span>
-                                {['Mês', 'Lista'].includes(periodType) 
-                                    ? format(currentDate, "MMMM 'de' yyyy", { locale: pt }) 
-                                    : format(currentDate, "EEE, dd 'de' MMMM", { locale: pt })}
-                            </span>
-                        </button>
-                        <input
-                            type="date"
-                            ref={dateInputRef}
-                            className="absolute opacity-0 pointer-events-none w-0 h-0"
-                            value={format(currentDate, 'yyyy-MM-dd')}
-                            onChange={(e) => {
-                                if (e.target.value) {
-                                    const [year, month, day] = e.target.value.split('-').map(Number);
-                                    setCurrentDate(new Date(year, month - 1, day));
+                    <div className="relative z-[60]">
+                        <DatePicker
+                            selected={currentDate}
+                            onChange={(date: Date | null) => {
+                                if (date) {
+                                    setCurrentDate(date);
                                 }
                             }}
+                            locale="pt-BR"
+                            dateFormat="dd/MM/yyyy"
+                            customInput={
+                                <CustomDateButton 
+                                    periodType={periodType} 
+                                    currentDate={currentDate} 
+                                />
+                            }
+                            popperPlacement="bottom-start"
+                            popperModifiers={[
+                                {
+                                    name: "preventOverflow",
+                                    options: {
+                                        boundary: "viewport"
+                                    }
+                                }
+                            ]}
                         />
                     </div>
 
