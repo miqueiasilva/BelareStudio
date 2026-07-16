@@ -32,6 +32,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useStudio } from '../../contexts/StudioContext';
 import { useConfirm } from '../../utils/useConfirm';
 import toast from 'react-hot-toast';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // FIX: Manual replacement for startOfDay as it's missing from date-fns
 const getStartOfDay = (d: Date) => {
