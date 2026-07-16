@@ -319,6 +319,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [isJaciBotOpen, setIsJaciBotOpen] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, time: Date, professional: LegacyProfessional } | null>(null);
+    const [appointmentToCancel, setAppointmentToCancel] = useState<LegacyAppointment | null>(null);
+    const [isCancelling, setIsCancelling] = useState(false);
+    const [cancelError, setCancelError] = useState<string | null>(null);
+    const [cancelSuccess, setCancelSuccess] = useState<boolean>(false);
 
     const [pendingConflict, setPendingConflict] = useState<{ newApp: LegacyAppointment, conflictWith: any } | null>(null);
     const [viewMode, setViewMode] = useState<'profissional' | 'andamento' | 'pagamento'>('profissional');
@@ -1234,8 +1238,117 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         }
     };
 
+    const executeCancellation = async (id: number) => {
+        const appointment = appointments.find(a => a.id === id);
+        if (!appointment) {
+            throw new Error("Agendamento não encontrado no estado local.");
+        }
+
+        const isFinished = appointment.status === 'concluido';
+
+        // 1. Buscar comandas vinculadas via itens
+        console.log("🔍 Passo 1: Buscando comandas vinculadas...");
+        const { data: items, error: fetchItemsError } = await supabase
+            .from('command_items')
+            .select('command_id')
+            .eq('appointment_id', id);
+        
+        if (fetchItemsError) {
+            console.warn("Aviso ao buscar itens de comanda:", fetchItemsError);
+        }
+        const commandIds = Array.from(new Set(items?.map(i => i.command_id).filter(Boolean) || []));
+        console.log("Comandas encontradas:", commandIds);
+
+        // 2. Deletar Transações Financeiras (Cascade Step 1)
+        console.log("🗑️ Passo 2: Removendo transações financeiras...");
+        // Deletamos por appointment_id E por command_id para garantir limpeza total
+        const { error: finError } = await supabase
+            .from('financial_transactions')
+            .delete()
+            .or(`appointment_id.eq.${id}${commandIds.length > 0 ? `,command_id.in.(${commandIds.join(',')})` : ''}`);
+        
+        if (finError) {
+            console.error("Erro ao deletar transações:", finError);
+            throw new Error(`Falha ao remover transações financeiras vinculadas: ${finError.message}`);
+        }
+
+        // 3. Deletar Itens de Comanda (Cascade Step 2)
+        console.log("🗑️ Passo 3: Removendo itens de comanda...");
+        const { error: itemError } = await supabase
+            .from('command_items')
+            .delete()
+            .eq('appointment_id', id);
+        
+        if (itemError) {
+            console.error("Erro ao deletar itens:", itemError);
+            throw new Error(`Falha ao remover itens de comanda: ${itemError.message}`);
+        }
+
+        // 4. Deletar Comandas (Cascade Step 3)
+        if (commandIds.length > 0) {
+            console.log("🗑️ Passo 4: Removendo comandas vazias...");
+            const { error: cmdError } = await supabase
+                .from('commands')
+                .delete()
+                .in('id', commandIds);
+            if (cmdError) {
+                console.error("Erro ao deletar comandas:", cmdError);
+                throw new Error(`Falha ao remover comandas associadas vazias: ${cmdError.message}`);
+            }
+        }
+
+        // 5. Deletar Agendamento (Final Step)
+        console.log(`🗑️ Passo 5: Removendo agendamento principal (ID: ${id})...`);
+        const { error: apptError } = await supabase
+            .from('appointments')
+            .delete()
+            .eq('id', id);
+
+        if (apptError) {
+            console.error("❌ ERRO NO SUPABASE AO DELETAR AGENDAMENTO:", apptError);
+            
+            if (apptError.code === '42501') {
+                console.warn("⚠️ Política RLS detectada: Exclusão física não permitida para este usuário.");
+            }
+
+            // TENTATIVA DE SOFT DELETE SE O DELETE FÍSICO FALHAR (RLS ou FK)
+            console.log("🔄 Iniciando Fallback (Soft Delete)...");
+            const { error: softError } = await supabase
+                .from('appointments')
+                .update({ 
+                    status: 'cancelado',
+                    notes: (appointment.notas || '') + `\n[SISTEMA: Tentativa de exclusão física falhou em ${new Date().toLocaleString()}. Motivo: ${apptError.message}]`
+                })
+                .eq('id', id);
+
+            if (softError) {
+                throw new Error(`Erro na exclusão física do servidor: ${apptError.message}. Fallback (soft delete) também falhou: ${softError.message}`);
+            } else {
+                setToast({ message: 'Registro cancelado (exclusão física não permitida).', type: 'warning' });
+            }
+        } else {
+            // Log de Auditoria apenas se a exclusão física funcionou
+            if (isFinished) {
+                const { error: auditError } = await supabase.from('audit_logs').insert([{
+                    actor_id: user?.id,
+                    actor_name: user?.nome,
+                    action_type: 'DELETE_FULL',
+                    entity: 'appointments',
+                    entity_id: String(id),
+                    old_value: { client: appointment.client?.nome, service: appointment.service.name }
+                }]);
+                if (auditError) console.warn("Erro ao inserir log de auditoria:", auditError);
+            }
+            setToast({ message: 'Registro e vínculos removidos com sucesso.', type: 'info' });
+        }
+
+        // Atualizar UI
+        setAppointments(prev => prev.filter(p => p.id !== id));
+        setActiveAppointmentDetail(null);
+    };
+
     const handleDeleteAppointmentFull = async (id: number) => {
-        console.log("🚀 INICIANDO FLUXO DE EXCLUSÃO COMPLETA");
+        console.log("🚀 INICIANDO FLUXO DE EXCLUSÃO COMPLETA VIA MODAL");
         console.log("ID do Agendamento:", id);
         
         const appointment = appointments.find(a => a.id === id);
@@ -1261,120 +1374,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             return;
         }
 
-        const isConfirmed = await confirm({
-            title: 'Excluir Agendamento',
-            message: isFinished 
-                ? "⚠️ ATENÇÃO: Este agendamento está CONCLUÍDO. A exclusão removerá permanentemente o registro, a comanda vinculada e as transações financeiras. Deseja continuar?"
-                : "Deseja realmente apagar este agendamento?",
-            confirmText: 'Sim, Excluir Tudo',
-            cancelText: 'Cancelar',
-            type: 'danger'
-        });
-
-        if (!isConfirmed) return;
-        
-        setIsLoadingData(true);
-        try {
-            // 1. Buscar comandas vinculadas via itens
-            console.log("🔍 Passo 1: Buscando comandas vinculadas...");
-            const { data: items, error: fetchItemsError } = await supabase
-                .from('command_items')
-                .select('command_id')
-                .eq('appointment_id', id);
-            
-            if (fetchItemsError) console.warn("Aviso ao buscar itens de comanda:", fetchItemsError);
-            const commandIds = Array.from(new Set(items?.map(i => i.command_id).filter(Boolean) || []));
-            console.log("Comandas encontradas:", commandIds);
-
-            // 2. Deletar Transações Financeiras (Cascade Step 1)
-            console.log("🗑️ Passo 2: Removendo transações financeiras...");
-            // Deletamos por appointment_id E por command_id para garantir limpeza total
-            const { error: finError } = await supabase
-                .from('financial_transactions')
-                .delete()
-                .or(`appointment_id.eq.${id}${commandIds.length > 0 ? `,command_id.in.(${commandIds.join(',')})` : ''}`);
-            
-            if (finError) {
-                console.error("Erro ao deletar transações:", finError);
-                // Não paramos aqui, tentamos continuar
-            }
-
-            // 3. Deletar Itens de Comanda (Cascade Step 2)
-            console.log("🗑️ Passo 3: Removendo itens de comanda...");
-            const { error: itemError } = await supabase
-                .from('command_items')
-                .delete()
-                .eq('appointment_id', id);
-            
-            if (itemError) console.error("Erro ao deletar itens:", itemError);
-
-            // 4. Deletar Comandas (Cascade Step 3)
-            if (commandIds.length > 0) {
-                console.log("🗑️ Passo 4: Removendo comandas vazias...");
-                const { error: cmdError } = await supabase
-                    .from('commands')
-                    .delete()
-                    .in('id', commandIds);
-                if (cmdError) console.error("Erro ao deletar comandas:", cmdError);
-            }
-
-            // 5. Deletar Agendamento (Final Step)
-            console.log(`🗑️ Passo 5: Removendo agendamento principal (ID: ${id})...`);
-            const { error: apptError } = await supabase
-                .from('appointments')
-                .delete()
-                .eq('id', id);
-
-            if (apptError) {
-                console.error("❌ ERRO NO SUPABASE AO DELETAR AGENDAMENTO:", apptError);
-                
-                if (apptError.code === '42501') {
-                    console.warn("⚠️ Política RLS detectada: Exclusão física não permitida para este usuário.");
-                }
-
-                // TENTATIVA DE SOFT DELETE SE O DELETE FÍSICO FALHAR (RLS ou FK)
-                console.log("🔄 Iniciando Fallback (Soft Delete)...");
-                const { error: softError } = await supabase
-                    .from('appointments')
-                    .update({ 
-                        status: 'cancelado',
-                        notes: (appointment.notas || '') + `\n[SISTEMA: Tentativa de exclusão física falhou em ${new Date().toLocaleString()}. Motivo: ${apptError.message}]`
-                    })
-                    .eq('id', id);
-
-                if (softError) {
-                    throw new Error(`Erro Supabase: ${apptError.message}. Fallback também falhou: ${softError.message}`);
-                } else {
-                    setToast({ message: 'Registro cancelado (exclusão física não permitida).', type: 'warning' });
-                }
-            } else {
-                // Log de Auditoria apenas se a exclusão física funcionou
-                if (isFinished) {
-                    await supabase.from('audit_logs').insert([{
-                        actor_id: user?.id,
-                        actor_name: user?.nome,
-                        action_type: 'DELETE_FULL',
-                        entity: 'appointments',
-                        entity_id: String(id),
-                        old_value: { client: appointment.client?.nome, service: appointment.service.name }
-                    }]);
-                }
-                setToast({ message: 'Registro e vínculos removidos com sucesso.', type: 'info' });
-            }
-
-            // Atualizar UI
-            setAppointments(prev => prev.filter(p => p.id !== id));
-            setActiveAppointmentDetail(null);
-            
-        } catch (e: any) {
-            console.error("💥 FALHA CATASTRÓFICA:", e);
-            setToast({ 
-                message: `Erro: ${e.message || 'Falha na comunicação com o banco'}`, 
-                type: 'error' 
-            });
-        } finally {
-            setIsLoadingData(false);
-        }
+        // Abre o novo modal de confirmação explícita customizado
+        setAppointmentToCancel(appointment);
+        setCancelError(null);
+        setCancelSuccess(false);
     };
 
     const handleDateChange = (direction: number) => {
@@ -2918,6 +2921,209 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             )}
             {modalState?.type === 'sale' && <NewTransactionModal type="receita" onClose={() => setModalState(null)} onSave={(t) => { onAddTransaction(t); setModalState(null); setToast({ message: 'Venda registrada!', type: 'success' }); }} />}
             {pendingConflict && <ConflictAlertModal newApp={pendingConflict.newApp} conflictApp={pendingConflict.conflictWith} onConfirm={() => handleSaveAppointment(pendingConflict.newApp, true)} onCancel={() => setPendingConflict(null)} />}
+            
+            {/* Modal de Confirmação de Cancelamento de Agendamento */}
+            <AnimatePresence>
+                {appointmentToCancel && (
+                    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
+                        {/* Background Backdrop */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => {
+                                if (!isCancelling) {
+                                    setAppointmentToCancel(null);
+                                    setCancelError(null);
+                                    setCancelSuccess(false);
+                                }
+                            }}
+                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+                        />
+                        
+                        {/* Modal Box */}
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            className="relative w-full max-w-md bg-white rounded-[32px] shadow-2xl overflow-hidden border border-slate-100 z-10"
+                        >
+                            {/* Header */}
+                            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="p-2 bg-rose-100 text-rose-600 rounded-xl">
+                                        <AlertTriangle size={20} />
+                                    </div>
+                                    <h3 className="text-lg font-black text-slate-800 leading-tight">
+                                        {cancelSuccess ? 'Cancelamento Concluído' : 'Confirmar Cancelamento'}
+                                    </h3>
+                                </div>
+                                {!isCancelling && (
+                                    <button 
+                                        onClick={() => {
+                                            setAppointmentToCancel(null);
+                                            setCancelError(null);
+                                            setCancelSuccess(false);
+                                        }}
+                                        className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all"
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Content */}
+                            <div className="p-6 space-y-4">
+                                {cancelSuccess ? (
+                                    <div className="flex flex-col items-center justify-center text-center py-6 space-y-3">
+                                        <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
+                                            <CheckCircle2 size={36} className="animate-bounce" />
+                                        </div>
+                                        <h4 className="text-lg font-bold text-slate-800">Sucesso absoluto!</h4>
+                                        <p className="text-sm text-slate-500 font-medium max-w-xs">
+                                            O agendamento foi cancelado com sucesso no servidor e os registros locais foram atualizados.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <p className="text-sm text-slate-500 font-semibold leading-relaxed">
+                                            Você está cancelando o seguinte agendamento. Esta ação removerá os vínculos e atualizará o status.
+                                        </p>
+
+                                        {/* Details Panel */}
+                                        <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 space-y-3.5 text-sm">
+                                            <div className="flex items-start gap-3">
+                                                <User size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                                                <div>
+                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cliente</div>
+                                                    <div className="font-extrabold text-slate-800">
+                                                        {appointmentToCancel.client?.nome || 'Cliente não informado'}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-start gap-3">
+                                                <CalendarDays size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                                                <div>
+                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Data & Horário</div>
+                                                    <div className="font-extrabold text-slate-800">
+                                                        {format(new Date(appointmentToCancel.start), "EEEE, dd 'de' MMMM 'às' HH:mm", { locale: pt })}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-start gap-3">
+                                                <Scissors size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                                                <div>
+                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Serviço</div>
+                                                    <div className="font-extrabold text-slate-800">
+                                                        {appointmentToCancel.service?.name || 'Serviço não informado'}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-start gap-3">
+                                                <User size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                                                <div>
+                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Profissional</div>
+                                                    <div className="font-extrabold text-slate-800">
+                                                        {appointmentToCancel.professional?.name || 'Profissional não informado'}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-start gap-3">
+                                                <DollarSign size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                                                <div>
+                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Valor</div>
+                                                    <div className="font-extrabold text-slate-800">
+                                                        R$ {Number(appointmentToCancel.value || appointmentToCancel.service?.price || 0).toFixed(2)}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {appointmentToCancel.status === 'concluido' && (
+                                            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-xs font-semibold flex items-start gap-2">
+                                                <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                                                <span>
+                                                    Atenção: Este agendamento está CONCLUÍDO. O cancelamento estornará lançamentos financeiros associados.
+                                                </span>
+                                            </div>
+                                        )}
+
+                                        {/* Error Alert inside Modal */}
+                                        {cancelError && (
+                                            <div className="p-3.5 bg-rose-50 border border-rose-150 rounded-2xl text-rose-700 text-xs font-semibold flex items-start gap-2.5">
+                                                <ShieldAlert size={18} className="text-rose-500 flex-shrink-0 mt-0.5 animate-pulse" />
+                                                <div className="space-y-1">
+                                                    <div className="font-black">Erro no Servidor:</div>
+                                                    <p className="leading-relaxed text-rose-600 font-medium">{cancelError}</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+
+                            {/* Footer Actions */}
+                            <div className="p-5 bg-slate-50 border-t border-slate-100 flex gap-3">
+                                {cancelSuccess ? (
+                                    <button
+                                        onClick={() => {
+                                            setAppointmentToCancel(null);
+                                            setCancelSuccess(false);
+                                            setCancelError(null);
+                                        }}
+                                        className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 text-center"
+                                    >
+                                        Fechar e Concluir
+                                    </button>
+                                ) : (
+                                    <>
+                                        <button
+                                            disabled={isCancelling}
+                                            onClick={() => {
+                                                setAppointmentToCancel(null);
+                                                setCancelError(null);
+                                            }}
+                                            className="flex-1 py-3.5 rounded-2xl text-slate-400 font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50"
+                                        >
+                                            Voltar
+                                        </button>
+                                        <button
+                                            disabled={isCancelling}
+                                            onClick={async () => {
+                                                setIsCancelling(true);
+                                                setCancelError(null);
+                                                try {
+                                                    await executeCancellation(appointmentToCancel.id);
+                                                    setCancelSuccess(true);
+                                                } catch (err: any) {
+                                                    console.error("Cancellation failed:", err);
+                                                    setCancelError(err.message || "Não foi possível completar o cancelamento no servidor.");
+                                                } finally {
+                                                    setIsCancelling(false);
+                                                }
+                                            }}
+                                            className="flex-[2] py-3.5 bg-rose-500 hover:bg-rose-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                                        >
+                                            {isCancelling ? (
+                                                <>
+                                                    <RefreshCw size={14} className="animate-spin text-white" />
+                                                    <span>Cancelando...</span>
+                                                </>
+                                            ) : (
+                                                <span>Confirmar Cancelamento</span>
+                                            )}
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
             
             {isNotifOpen && (
                 <>
