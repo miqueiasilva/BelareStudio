@@ -286,10 +286,10 @@ const CustomDateButton = React.forwardRef<HTMLButtonElement, CustomDateButtonPro
             type="button"
             onClick={onClick}
             ref={ref}
-            className="text-slate-750 hover:text-slate-900 font-extrabold text-base capitalize tracking-tight flex items-center gap-1.5 hover:bg-slate-50 px-3 py-1.5 rounded-2xl transition-all select-none cursor-pointer"
+            className="text-slate-750 hover:text-slate-900 font-extrabold text-xs sm:text-base capitalize tracking-tight flex items-center gap-1.5 hover:bg-slate-50 px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-2xl transition-all select-none cursor-pointer border border-slate-150 md:border-none bg-slate-50/50 md:bg-transparent shadow-sm md:shadow-none"
             title="Escolher outra data"
         >
-            <span>
+            <span className="truncate max-w-[130px] sm:max-w-none inline-block">
                 {['Mês', 'Lista'].includes(periodType) 
                     ? format(currentDate, "MMMM 'de' yyyy", { locale: pt }) 
                     : format(currentDate, "EEE, dd 'de' MMMM", { locale: pt })}
@@ -365,6 +365,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [colWidth, setColWidth] = useState(220);
     const [isAutoWidth, setIsAutoWidth] = useState(false);
+    const effectiveIsAutoWidth = isMobile || isAutoWidth;
     const [timeSlot, setTimeSlot] = useState(30);
     const [notificationCount, setNotificationCount] = useState(0);
     const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -1726,29 +1727,29 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             )}
 
             <div className="flex-1 flex flex-col h-full overflow-hidden">
-                <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-[70] shadow-sm">
-                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4">
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-3">
-                            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <header className="flex-shrink-0 bg-white border-b border-slate-200 px-4 py-3 sm:px-6 sm:py-4 z-[70] shadow-sm">
+                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 sm:gap-4 mb-3 sm:mb-4">
+                    <div className="flex items-center justify-between w-full lg:w-auto gap-2">
+                        <div className="flex items-center gap-2">
+                            <h2 className="text-lg md:text-xl font-bold text-slate-800 flex items-center gap-1.5 truncate">
                                 Atendimentos {isLoadingData && <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />}
                             </h2>
-                            <button onClick={handleCopyBookingLink} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Compartilhar">
-                                <Share2 size={18} />
+                            <button onClick={handleCopyBookingLink} className="p-1.5 md:p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Compartilhar">
+                                <Share2 size={16} />
                             </button>
-                            <button onClick={() => { console.log('🔔 Abrindo painel de notificações...'); setIsNotifOpen(true); }} className="relative p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Notificações">
-                                <Bell size={18} />
+                            <button onClick={() => { console.log('🔔 Abrindo painel de notificações...'); setIsNotifOpen(true); }} className="relative p-1.5 md:p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Notificações">
+                                <Bell size={16} />
                                 {notificationCount > 0 && (
-                                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center">
+                                    <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
                                         {notificationCount}
                                     </span>
                                 )}
                             </button>
-                            <button onClick={() => setIsConfigModalOpen(true)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Configurações de Grade">
-                                <SettingsIcon size={18} />
+                            <button onClick={() => setIsConfigModalOpen(true)} className="p-1.5 md:p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Configurações de Grade">
+                                <SettingsIcon size={16} />
                             </button>
-                            <button onClick={fetchAppointments} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Atualizar">
-                                <RefreshCw size={18} className={isLoadingData ? 'animate-spin' : ''} />
+                            <button onClick={fetchAppointments} className="p-1.5 md:p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Atualizar">
+                                <RefreshCw size={16} className={isLoadingData ? 'animate-spin' : ''} />
                             </button>
                         </div>
                         <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
@@ -1757,71 +1758,120 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                             <button onClick={() => setViewMode('pagamento')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'pagamento' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:bg-slate-200'}`}><CreditCard size={14} /> Pagamento</button>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
-                        <button onClick={() => setIsSidebarOpen(prev => !prev)} className="p-2 rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-50 transition-all" title="Alternar Painel de Filtros"><SlidersHorizontal size={20} /></button>
-                        <button onClick={() => setIsPeriodModalOpen(true)} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50">{periodType} <ChevronDown size={16} /></button>
-                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all active:scale-95">Agendar</button>
+                    <div className="flex items-center gap-2 w-full lg:w-auto justify-between lg:justify-end">
+                        <div className="flex items-center gap-2 flex-1 lg:flex-initial">
+                            <button onClick={() => setIsSidebarOpen(prev => !prev)} className="p-2.5 rounded-xl border border-slate-300 bg-white text-slate-500 hover:bg-slate-50 transition-all shadow-sm" title="Alternar Painel de Filtros">
+                                <SlidersHorizontal size={18} />
+                            </button>
+                            <button onClick={() => setIsPeriodModalOpen(true)} className="flex-1 lg:flex-initial flex items-center justify-between gap-2 px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-sm min-w-[90px]">
+                                <span>{periodType}</span>
+                                <ChevronDown size={14} className="text-slate-400" />
+                            </button>
+                        </div>
+                        <button onClick={() => setModalState({ type: 'appointment', data: { start: currentDate } })} className="flex-1 lg:flex-initial bg-orange-500 hover:bg-orange-600 text-white font-extrabold py-2.5 px-6 rounded-xl shadow-md transition-all active:scale-95 text-xs text-center">
+                            Agendar
+                        </button>
                     </div>
                 </div>
-                <div className="flex items-center gap-4">
+
+                {/* Mobile View Mode Switcher (Sempre visível em mobile para excelente experiência) */}
+                <div className="flex md:hidden items-center bg-slate-100 p-1 rounded-2xl border border-slate-200 w-full mb-3 shadow-inner">
                     <button 
-                        onClick={() => setCurrentDate(new Date())} 
-                        className="p-2 hover:bg-slate-100 rounded-xl text-slate-600 transition-colors cursor-pointer"
-                        title="Ir para Hoje"
+                        onClick={() => setViewMode('profissional')} 
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-black transition-all ${
+                            viewMode === 'profissional' 
+                                ? 'bg-white shadow text-orange-600 scale-[1.01]' 
+                                : 'text-slate-500 hover:bg-slate-200/55'
+                        }`}
                     >
-                        <CalendarIcon size={22} className="text-slate-600" />
+                        <LayoutGrid size={13} />
+                        <span>Equipe</span>
                     </button>
-                    <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-2xl p-1 shadow-sm">
-                        <button onClick={() => handleDateChange(-1)} className="p-1.5 hover:bg-white active:scale-95 transition-all rounded-xl text-slate-600"><ChevronLeft size={18} /></button>
-                        <button onClick={() => handleDateChange(1)} className="p-1.5 hover:bg-white active:scale-95 transition-all rounded-xl text-slate-600"><ChevronRight size={18} /></button>
-                    </div>
-                    <div className="relative z-[60]">
-                        <DatePicker
-                            selected={currentDate}
-                            onChange={(date: Date | null) => {
-                                if (date) {
-                                    setCurrentDate(date);
-                                }
-                            }}
-                            locale="pt-BR"
-                            dateFormat="dd/MM/yyyy"
-                            customInput={
-                                <CustomDateButton 
-                                    periodType={periodType} 
-                                    currentDate={currentDate} 
-                                />
-                            }
-                            popperPlacement="bottom-start"
-                            popperModifiers={[
-                                {
-                                    name: "preventOverflow",
-                                    options: {
-                                        boundary: "viewport"
+                    <button 
+                        onClick={() => setViewMode('andamento')} 
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-black transition-all ${
+                            viewMode === 'andamento' 
+                                ? 'bg-white shadow text-orange-600 scale-[1.01]' 
+                                : 'text-slate-500 hover:bg-slate-200/55'
+                        }`}
+                    >
+                        <PlayCircle size={13} />
+                        <span>Andamento</span>
+                    </button>
+                    <button 
+                        onClick={() => setViewMode('pagamento')} 
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-black transition-all ${
+                            viewMode === 'pagamento' 
+                                ? 'bg-white shadow text-orange-600 scale-[1.01]' 
+                                : 'text-slate-500 hover:bg-slate-200/55'
+                        }`}
+                    >
+                        <CreditCard size={13} />
+                        <span>Pagamento</span>
+                    </button>
+                </div>
+
+                <div className="flex items-center justify-between w-full gap-2 md:gap-4 flex-wrap sm:flex-nowrap">
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={() => setCurrentDate(new Date())} 
+                            className="p-2 hover:bg-slate-100 rounded-xl text-slate-600 transition-colors cursor-pointer flex-shrink-0"
+                            title="Ir para Hoje"
+                        >
+                            <CalendarIcon size={22} className="text-slate-600" />
+                        </button>
+                        <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-2xl p-1 shadow-sm flex-shrink-0">
+                            <button onClick={() => handleDateChange(-1)} className="p-1.5 hover:bg-white active:scale-95 transition-all rounded-xl text-slate-600"><ChevronLeft size={18} /></button>
+                            <button onClick={() => handleDateChange(1)} className="p-1.5 hover:bg-white active:scale-95 transition-all rounded-xl text-slate-600"><ChevronRight size={18} /></button>
+                        </div>
+                        <div className="relative z-[60] min-w-0">
+                            <DatePicker
+                                selected={currentDate}
+                                onChange={(date: Date | null) => {
+                                    if (date) {
+                                        setCurrentDate(date);
                                     }
+                                }}
+                                locale="pt-BR"
+                                dateFormat="dd/MM/yyyy"
+                                customInput={
+                                    <CustomDateButton 
+                                        periodType={periodType} 
+                                        currentDate={currentDate} 
+                                    />
                                 }
-                            ]}
-                        />
+                                popperPlacement="bottom-start"
+                                popperModifiers={[
+                                    {
+                                        name: "preventOverflow",
+                                        options: {
+                                            boundary: "viewport"
+                                        }
+                                    }
+                                ]}
+                            />
+                        </div>
                     </div>
 
                     {/* Professional selector dropdown exactly matching screenshot */}
-                    <div className="relative">
+                    <div className="relative flex-shrink-0">
                         <button 
                             onClick={() => setIsProfessionalDropdownOpen(prev => !prev)} 
-                            className="text-slate-800 hover:text-orange-600 font-bold text-base tracking-tight flex items-center gap-1 py-1.5 px-3 hover:bg-slate-50 rounded-2xl cursor-pointer select-none transition-colors"
+                            className="text-slate-800 hover:text-orange-600 font-extrabold text-xs sm:text-base tracking-tight flex items-center gap-1 py-1.5 px-3 hover:bg-slate-50 rounded-2xl cursor-pointer select-none transition-colors border border-slate-150 md:border-none bg-slate-50/50 md:bg-transparent shadow-sm md:shadow-none"
                         >
-                            <span>
+                            <span className="max-w-[130px] sm:max-w-none truncate inline-block">
                                 {selectedProfessional === 'all' 
                                     ? 'Todos os Profissionais' 
                                     : (resources.find(r => String(r.id) === String(selectedProfessional))?.name || 'Profissional')
                                 }
                             </span>
-                            <ChevronDown size={14} className="text-slate-400" />
+                            <ChevronDown size={14} className="text-slate-400 flex-shrink-0" />
                         </button>
                         
                         {isProfessionalDropdownOpen && (
                             <>
                                 <div className="fixed inset-0 z-40" onClick={() => setIsProfessionalDropdownOpen(false)}></div>
-                                <div className="absolute left-0 mt-2 w-64 bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden py-3 z-50 animate-in fade-in slide-in-from-top-3 duration-150">
+                                <div className="absolute right-0 sm:left-0 mt-2 w-64 bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden py-3 z-50 animate-in fade-in slide-in-from-top-3 duration-150">
                                     <div className="px-5 py-2 text-[11px] font-extrabold uppercase tracking-widest text-slate-400 border-b border-slate-50 mb-1">
                                         Visualização da agenda
                                     </div>
@@ -1857,7 +1907,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             >
                 {(periodType === 'Dia' || periodType === 'Semana') ? (
                     <div className="min-w-fit animate-in fade-in duration-200">
-                        <div className="grid sticky top-0 z-[50] border-b border-slate-200 bg-white shadow-sm" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
+                        <div className="grid sticky top-0 z-[50] border-b border-slate-200 bg-white shadow-sm" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${effectiveIsAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                             <div className="sticky left-0 z-[60] bg-white border-r border-slate-200 h-24 min-w-[60px] flex items-center justify-center shadow-[4px_0_24px_rgba(0,0,0,0.05)]"><Maximize2 size={16} className="text-slate-300" /></div>
                             {columns.map((col, idx) => (
                                 <div key={col.id} className="flex flex-col items-center justify-center p-2 border-r border-slate-100 h-24 bg-white relative group transition-colors hover:bg-slate-50">
@@ -1888,7 +1938,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                             ))}
                         </div>
 
-                        <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${isAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
+                        <div className="grid relative" style={{ gridTemplateColumns: `60px repeat(${columns.length}, minmax(${effectiveIsAutoWidth ? '180px' : colWidth + 'px'}, 1fr))` }}>
                             
                             <div className="sticky left-0 z-[50] bg-white border-r border-slate-200 min-w-[60px] shadow-[4px_0_24px_rgba(0,0,0,0.05)]">
                                 {timeSlotsLabels.map(time => (
@@ -2739,7 +2789,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                         Largura das colunas
                                     </label>
                                     <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200/50 font-mono">
-                                        {isAutoWidth ? 'Auto' : `${colWidth}px`}
+                                        {effectiveIsAutoWidth ? 'Auto' : `${colWidth}px`}
                                     </span>
                                 </div>
                                 <div className="flex flex-col gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-150">
@@ -2749,7 +2799,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                             min="150" 
                                             max="450" 
                                             step="10" 
-                                            disabled={isAutoWidth}
+                                            disabled={effectiveIsAutoWidth}
                                             value={colWidth} 
                                             onChange={e => setColWidth(Number(e.target.value))} 
                                             className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-500 disabled:opacity-30 disabled:cursor-not-allowed" 
@@ -2757,11 +2807,14 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                         <label className="flex items-center gap-2 cursor-pointer select-none border-l border-slate-200 pl-4">
                                             <input 
                                                 type="checkbox" 
-                                                checked={isAutoWidth} 
-                                                onChange={e => setIsAutoWidth(e.target.checked)}
-                                                className="w-4.5 h-4.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500 cursor-pointer"
+                                                checked={effectiveIsAutoWidth} 
+                                                onChange={e => !isMobile && setIsAutoWidth(e.target.checked)}
+                                                disabled={isMobile}
+                                                className="w-4.5 h-4.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                             />
-                                            <span className="text-xs font-black text-slate-600 uppercase tracking-wide">Auto</span>
+                                            <span className="text-xs font-black text-slate-600 uppercase tracking-wide">
+                                                Auto {isMobile && <span className="text-[9px] text-orange-500 lowercase font-bold">(mobile)</span>}
+                                            </span>
                                         </label>
                                     </div>
                                 </div>
