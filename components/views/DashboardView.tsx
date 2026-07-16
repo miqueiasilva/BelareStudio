@@ -17,7 +17,6 @@ import { ViewState } from '../../types';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
 import toast from 'react-hot-toast';
-import { motion } from 'framer-motion';
 
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -82,8 +81,7 @@ const itemVariants = {
 };
 
 const StatCard = ({ title, value, icon: Icon, colorClass, subtext, trend }: any) => (
-    <motion.div 
-        variants={itemVariants}
+    <div 
         className="bg-white p-5 rounded-[32px] border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-[0_20px_50px_rgba(0,0,0,0.05)] transition-all hover:-translate-y-1 text-left h-full group"
     >
         <div className="flex items-start justify-between mb-4">
@@ -102,12 +100,11 @@ const StatCard = ({ title, value, icon: Icon, colorClass, subtext, trend }: any)
             <h3 className="text-2xl font-black text-slate-800 tracking-tighter truncate">{value}</h3>
             {subtext && <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase truncate opacity-60 tracking-wider">{subtext}</p>}
         </div>
-    </motion.div>
+    </div>
 );
 
 const QuickAction = ({ icon: Icon, label, color, onClick }: any) => (
-    <motion.button 
-        variants={itemVariants}
+    <button 
         onClick={onClick}
         className="flex flex-col items-center justify-center p-5 rounded-[32px] border border-slate-100 bg-white hover:border-orange-200 hover:bg-orange-50/30 transition-all group active:scale-95 w-full shadow-sm hover:shadow-md"
     >
@@ -115,7 +112,7 @@ const QuickAction = ({ icon: Icon, label, color, onClick }: any) => (
             <Icon className="w-6 h-6 text-white" />
         </div>
         <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-orange-700">{label}</span>
-    </motion.button>
+    </button>
 );
 
 const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNavigate }) => {
@@ -705,10 +702,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 </div>
             </header>
 
-            <motion.div 
-                variants={containerVariants}
-                initial="hidden"
-                animate="show"
+            <div 
                 className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4 lg:gap-6 mb-10"
             >
                 <StatCard title="Faturamento" value={formatCurrency(kpis.revenue)} icon={DollarSign} colorClass="bg-emerald-500" subtext={dateRange.label} trend={12} />
@@ -718,8 +712,7 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                 <StatCard title="Lembretes Jaci IA" value={`${last24hReminders} ${last24hReminders === 1 ? 'disparo' : 'disparos'}`} icon={Sparkles} colorClass="bg-orange-500" subtext="Últimas 24 horas" />
                 
                 {/* Visual Widget: Month commissions with link to Remuneracoes module */}
-                <motion.div 
-                    variants={itemVariants}
+                <div 
                     onClick={() => onNavigate('remuneracoes')}
                     className="bg-white p-5 rounded-[32px] border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-[0_20px_50px_rgba(249,115,22,0.08)] hover:border-orange-200 transition-all hover:-translate-y-1 cursor-pointer text-left h-full group relative overflow-hidden"
                     title="Ver detalhamento de remunerações"
@@ -742,10 +735,9 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                             Remunerações →
                         </p>
                     </div>
-                </motion.div>
+                </div>
 
-                <motion.div 
-                    variants={itemVariants}
+                <div 
                     onClick={() => { setTempGoal(financialGoal ? financialGoal.toString() : ''); setIsGoalModalOpen(true); }}
                     className="bg-slate-900 p-6 rounded-[32px] text-white flex flex-col justify-between shadow-2xl relative overflow-hidden group h-full cursor-pointer hover:bg-slate-800 transition-all active:scale-98 border border-white/5"
                     title="Clique para editar a meta mensal"
@@ -769,15 +761,12 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         </div>
                         <p className="text-[8px] text-slate-500 font-bold uppercase mt-1 tracking-wider text-right">Toque para configurar</p>
                     </div>
-                </motion.div>
-            </motion.div>
+                </div>
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-2 space-y-8">
-                    <motion.div 
-                        variants={containerVariants}
-                        initial="hidden"
-                        animate="show"
+                    <div 
                         className="grid grid-cols-2 sm:grid-cols-5 gap-4"
                     >
                         <QuickAction icon={UserCircle} label="Clientes" color="bg-blue-600" onClick={() => onNavigate('clientes')} />
@@ -785,11 +774,10 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         <QuickAction icon={ShoppingBag} label="PDV" color="bg-emerald-600" onClick={() => onNavigate('vendas')} />
                         <QuickAction icon={BarChart3} label="DRE" color="bg-slate-800" onClick={() => onNavigate('relatorios')} />
                         <QuickAction icon={Calendar} label="Agenda" color="bg-orange-600" onClick={() => onNavigate('agenda')} />
-                    </motion.div>
+                    </div>
 
                     {/* Seção de Meta Diária de Faturamento */}
-                    <motion.div 
-                        variants={itemVariants}
+                    <div 
                         className="bg-white rounded-[32px] p-6 sm:p-8 border border-slate-100 shadow-sm text-left relative overflow-hidden"
                     >
                         <div className="absolute top-0 right-0 p-8 opacity-[0.03] text-orange-500 pointer-events-none">
@@ -857,19 +845,17 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                                 <span className="font-bold text-slate-400">{dailyGoalMetrics.displayRevenue} / {dailyGoalMetrics.display}</span>
                             </div>
                             <div className="w-full h-4 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200 shadow-inner">
-                                <motion.div 
-                                    initial={{ width: 0 }}
-                                    animate={{ width: `${dailyGoalMetrics.visual}%` }}
-                                    transition={{ type: 'spring', stiffness: 60, damping: 15 }}
+                                <div 
                                     className={`h-full rounded-full transition-all duration-500 shadow-sm ${
                                         dailyGoalMetrics.isAchieved 
                                             ? 'bg-gradient-to-r from-emerald-500 to-teal-400 shadow-[0_0_12px_rgba(16,185,129,0.4)]' 
                                             : 'bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_0_12px_rgba(249,115,22,0.4)]'
                                     }`}
+                                    style={{ width: `${dailyGoalMetrics.visual}%` }}
                                 />
                             </div>
                         </div>
-                    </motion.div>
+                    </div>
                     
                     <div className="bg-white rounded-[40px] p-2 border border-slate-100 shadow-sm overflow-hidden">
                         <JaciBotAssistant fetchInsight={getDashboardInsight} />

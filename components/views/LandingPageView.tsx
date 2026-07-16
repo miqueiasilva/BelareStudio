@@ -15,7 +15,6 @@ import {
   Sparkles,
   DollarSign
 } from 'lucide-react';
-import { motion } from 'framer-motion';
 import { usePWA } from '../../hooks/usePWA';
 
 interface LandingPageViewProps {
@@ -157,10 +156,7 @@ const LandingPageView: React.FC<LandingPageViewProps> = ({ onLogin }) => {
       {/* Hero Section */}
       <main className="pt-32 pb-20 px-6 overflow-hidden bg-gradient-to-b from-white to-slate-50/50">
         <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-20 items-center">
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
+          <div 
             className="space-y-8"
           >
             <div className="inline-flex items-center gap-2 bg-orange-50 text-orange-600 px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest border border-orange-100">
@@ -192,14 +188,9 @@ const LandingPageView: React.FC<LandingPageViewProps> = ({ onLogin }) => {
                 Junte-se a <span className="text-slate-900 underline decoration-emerald-400">+500 estúdios</span> de alto padrão.
               </p>
             </div>
-          </motion.div>
+          </div>
 
-          <motion.div 
-            initial={{ opacity: 0, x: 50 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-            className="relative"
-          >
+          <div className="relative">
             <div className="relative z-10 bg-slate-900 rounded-[60px] p-6 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] border-8 border-slate-800 rotate-1">
               <div className="bg-white h-full w-full rounded-[40px] overflow-hidden p-6 flex flex-col gap-6">
                  {/* Preview "Real" do Dashboard */}
@@ -239,11 +230,10 @@ const LandingPageView: React.FC<LandingPageViewProps> = ({ onLogin }) => {
             </div>
             
             <div className="absolute -z-10 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[140%] aspect-square bg-gradient-to-tr from-orange-100 via-white to-blue-100 rounded-full blur-[100px] opacity-40"></div>
-          </motion.div>
+          </div>
         </div>
       </main>
 
-      {/* Pain Section */}
       <section className="py-32 px-6 bg-slate-900 text-white relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-full opacity-5 pointer-events-none">
             <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-orange-500 rounded-full blur-[150px]"></div>
