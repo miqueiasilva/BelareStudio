@@ -6,7 +6,7 @@ import {
     LayoutGrid, PlayCircle, CreditCard, Check, SlidersHorizontal, X, Clock,
     AlertTriangle, ArrowRight, CalendarDays, Globe, User, ThumbsUp, MapPin, 
     CheckCircle2, Scissors, ShieldAlert, Trash2, DollarSign, CheckCircle, CheckCheck,
-    Share2, Bell
+    Share2, Bell, Users
 } from 'lucide-react';
 import { 
     format, addDays, addWeeks, addMonths, eachDayOfInterval, 
@@ -1856,7 +1856,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     {/* Professional selector dropdown exactly matching screenshot */}
                     <div className="relative flex-shrink-0">
                         <button 
-                            onClick={() => setIsProfessionalDropdownOpen(prev => !prev)} 
+                            onClick={() => {
+                                console.log('Toggling professional dropdown');
+                                setIsProfessionalDropdownOpen(prev => !prev);
+                            }} 
                             className="text-slate-800 hover:text-orange-600 font-extrabold text-xs sm:text-base tracking-tight flex items-center gap-1 py-1.5 px-3 hover:bg-slate-50 rounded-2xl cursor-pointer select-none transition-colors border border-slate-150 md:border-none bg-slate-50/50 md:bg-transparent shadow-sm md:shadow-none"
                         >
                             <span className="max-w-[130px] sm:max-w-none truncate inline-block">
@@ -1871,27 +1874,47 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                         {isProfessionalDropdownOpen && (
                             <>
                                 <div className="fixed inset-0 z-40" onClick={() => setIsProfessionalDropdownOpen(false)}></div>
-                                <div className="absolute right-0 sm:left-0 mt-2 w-64 bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden py-3 z-50 animate-in fade-in slide-in-from-top-3 duration-150">
+                                <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-64 bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden py-3 z-50 animate-in fade-in slide-in-from-top-3 duration-150">
                                     <div className="px-5 py-2 text-[11px] font-extrabold uppercase tracking-widest text-slate-400 border-b border-slate-50 mb-1">
                                         Visualização da agenda
                                     </div>
                                     
                                     <button 
                                         onClick={() => { setSelectedProfessional('all'); setIsProfessionalDropdownOpen(false); }} 
-                                        className="w-full flex items-center justify-between px-5 py-2.5 text-sm font-bold text-slate-700 hover:bg-orange-50/50 hover:text-orange-600 transition-colors text-left"
+                                        className={`w-full flex items-center justify-between px-5 py-2.5 text-sm font-bold transition-colors text-left ${
+                                            selectedProfessional === 'all'
+                                                ? 'bg-orange-50/60 text-orange-600'
+                                                : 'text-slate-700 hover:bg-slate-50 hover:text-orange-600'
+                                        }`}
                                     >
-                                        <span>Todos os Profissionais</span>
-                                        {selectedProfessional === 'all' && <Check size={16} className="text-orange-600" strokeWidth={3} />}
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="w-6 h-6 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 flex-shrink-0">
+                                                <Users size={12} strokeWidth={3} />
+                                            </div>
+                                            <span>Todos os Profissionais</span>
+                                        </div>
+                                        {selectedProfessional === 'all' && <Check size={16} className="text-orange-600 flex-shrink-0" strokeWidth={3} />}
                                     </button>
                                     
                                     {resources.map(p => (
                                         <button 
                                             key={p.id}
                                             onClick={() => { setSelectedProfessional(p.id); setIsProfessionalDropdownOpen(false); }} 
-                                            className="w-full flex items-center justify-between px-5 py-2.5 text-sm font-bold text-slate-700 hover:bg-orange-50/50 hover:text-orange-600 transition-colors text-left"
+                                            className={`w-full flex items-center justify-between px-5 py-2.5 text-sm font-bold transition-colors text-left ${
+                                                String(selectedProfessional) === String(p.id)
+                                                    ? 'bg-orange-50/60 text-orange-600'
+                                                    : 'text-slate-700 hover:bg-slate-50 hover:text-orange-600'
+                                            }`}
                                         >
-                                            <span className="truncate">{p.name}</span>
-                                            {String(selectedProfessional) === String(p.id) && <Check size={16} className="text-orange-600" strokeWidth={3} />}
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                <img 
+                                                    src={p.avatarUrl} 
+                                                    alt={p.name} 
+                                                    className="w-6 h-6 rounded-full object-cover border border-slate-200 flex-shrink-0" 
+                                                />
+                                                <span className="truncate">{p.name}</span>
+                                            </div>
+                                            {String(selectedProfessional) === String(p.id) && <Check size={16} className="text-orange-600 flex-shrink-0" strokeWidth={3} />}
                                         </button>
                                     ))}
                                 </div>
