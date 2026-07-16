@@ -32,7 +32,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useStudio } from '../../contexts/StudioContext';
 import { useConfirm } from '../../utils/useConfirm';
 import toast from 'react-hot-toast';
-import { motion, AnimatePresence } from 'framer-motion';
 
 // FIX: Manual replacement for startOfDay as it's missing from date-fns
 const getStartOfDay = (d: Date) => {
@@ -369,8 +368,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
 
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [colWidth, setColWidth] = useState(220);
-    const [isAutoWidth, setIsAutoWidth] = useState(false);
-    const effectiveIsAutoWidth = isMobile || isAutoWidth;
+    const [isAutoWidth, setIsAutoWidth] = useState(true);
+    const effectiveIsAutoWidth = isAutoWidth;
     const [timeSlot, setTimeSlot] = useState(30);
     const [notificationCount, setNotificationCount] = useState(0);
     const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -2835,12 +2834,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                             <input 
                                                 type="checkbox" 
                                                 checked={effectiveIsAutoWidth} 
-                                                onChange={e => !isMobile && setIsAutoWidth(e.target.checked)}
-                                                disabled={isMobile}
-                                                className="w-4.5 h-4.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                                onChange={e => setIsAutoWidth(e.target.checked)}
+                                                className="w-4.5 h-4.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500 cursor-pointer"
                                             />
                                             <span className="text-xs font-black text-slate-600 uppercase tracking-wide">
-                                                Auto {isMobile && <span className="text-[9px] text-orange-500 lowercase font-bold">(mobile)</span>}
+                                                Auto
                                             </span>
                                         </label>
                                     </div>
@@ -2924,207 +2922,199 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             {pendingConflict && <ConflictAlertModal newApp={pendingConflict.newApp} conflictApp={pendingConflict.conflictWith} onConfirm={() => handleSaveAppointment(pendingConflict.newApp, true)} onCancel={() => setPendingConflict(null)} />}
             
             {/* Modal de Confirmação de Cancelamento de Agendamento */}
-            <AnimatePresence>
-                {appointmentToCancel && (
-                    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
-                        {/* Background Backdrop */}
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            onClick={() => {
-                                if (!isCancelling) {
-                                    setAppointmentToCancel(null);
-                                    setCancelError(null);
-                                    setCancelSuccess(false);
-                                }
-                            }}
-                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-                        />
-                        
-                        {/* Modal Box */}
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                            className="relative w-full max-w-md bg-white rounded-[32px] shadow-2xl overflow-hidden border border-slate-100 z-10"
-                        >
-                            {/* Header */}
-                            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                                <div className="flex items-center gap-2.5">
-                                    <div className="p-2 bg-rose-100 text-rose-600 rounded-xl">
-                                        <AlertTriangle size={20} />
-                                    </div>
-                                    <h3 className="text-lg font-black text-slate-800 leading-tight">
-                                        {cancelSuccess ? 'Cancelamento Concluído' : 'Confirmar Cancelamento'}
-                                    </h3>
+            {appointmentToCancel && (
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
+                    {/* Background Backdrop */}
+                    <div
+                        onClick={() => {
+                            if (!isCancelling) {
+                                setAppointmentToCancel(null);
+                                setCancelError(null);
+                                setCancelSuccess(false);
+                            }
+                        }}
+                        className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity duration-300"
+                    />
+                    
+                    {/* Modal Box */}
+                    <div
+                        className="relative w-full max-w-md bg-white rounded-[32px] shadow-2xl overflow-hidden border border-slate-100 z-10 transition-all duration-300 transform scale-100"
+                    >
+                        {/* Header */}
+                        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-2 bg-rose-100 text-rose-600 rounded-xl">
+                                    <AlertTriangle size={20} />
                                 </div>
-                                {!isCancelling && (
-                                    <button 
-                                        onClick={() => {
-                                            setAppointmentToCancel(null);
-                                            setCancelError(null);
-                                            setCancelSuccess(false);
-                                        }}
-                                        className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all"
-                                    >
-                                        <X size={20} />
-                                    </button>
-                                )}
+                                <h3 className="text-lg font-black text-slate-800 leading-tight">
+                                    {cancelSuccess ? 'Cancelamento Concluído' : 'Confirmar Cancelamento'}
+                                </h3>
                             </div>
+                            {!isCancelling && (
+                                <button 
+                                    onClick={() => {
+                                        setAppointmentToCancel(null);
+                                        setCancelError(null);
+                                        setCancelSuccess(false);
+                                    }}
+                                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all"
+                                >
+                                    <X size={20} />
+                                </button>
+                            )}
+                        </div>
 
-                            {/* Content */}
-                            <div className="p-6 space-y-4">
-                                {cancelSuccess ? (
-                                    <div className="flex flex-col items-center justify-center text-center py-6 space-y-3">
-                                        <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
-                                            <CheckCircle2 size={36} className="animate-bounce" />
-                                        </div>
-                                        <h4 className="text-lg font-bold text-slate-800">Sucesso absoluto!</h4>
-                                        <p className="text-sm text-slate-500 font-medium max-w-xs">
-                                            O agendamento foi cancelado com sucesso no servidor e os registros locais foram atualizados.
-                                        </p>
+                        {/* Content */}
+                        <div className="p-6 space-y-4">
+                            {cancelSuccess ? (
+                                <div className="flex flex-col items-center justify-center text-center py-6 space-y-3">
+                                    <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
+                                        <CheckCircle2 size={36} className="animate-bounce" />
                                     </div>
-                                ) : (
-                                    <>
-                                        <p className="text-sm text-slate-500 font-semibold leading-relaxed">
-                                            Você está cancelando o seguinte agendamento. Esta ação removerá os vínculos e atualizará o status.
-                                        </p>
+                                    <h4 className="text-lg font-bold text-slate-800">Sucesso absoluto!</h4>
+                                    <p className="text-sm text-slate-500 font-medium max-w-xs">
+                                        O agendamento foi cancelado com sucesso no servidor e os registros locais foram atualizados.
+                                    </p>
+                                </div>
+                            ) : (
+                                <>
+                                    <p className="text-sm text-slate-500 font-semibold leading-relaxed">
+                                        Você está cancelando o seguinte agendamento. Esta ação removerá os vínculos e atualizará o status.
+                                    </p>
 
-                                        {/* Details Panel */}
-                                        <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 space-y-3.5 text-sm">
-                                            <div className="flex items-start gap-3">
-                                                <User size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
-                                                <div>
-                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cliente</div>
-                                                    <div className="font-extrabold text-slate-800">
-                                                        {appointmentToCancel.client?.nome || 'Cliente não informado'}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="flex items-start gap-3">
-                                                <CalendarDays size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
-                                                <div>
-                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Data & Horário</div>
-                                                    <div className="font-extrabold text-slate-800">
-                                                        {format(new Date(appointmentToCancel.start), "EEEE, dd 'de' MMMM 'às' HH:mm", { locale: pt })}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="flex items-start gap-3">
-                                                <Scissors size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
-                                                <div>
-                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Serviço</div>
-                                                    <div className="font-extrabold text-slate-800">
-                                                        {appointmentToCancel.service?.name || 'Serviço não informado'}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="flex items-start gap-3">
-                                                <User size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
-                                                <div>
-                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Profissional</div>
-                                                    <div className="font-extrabold text-slate-800">
-                                                        {appointmentToCancel.professional?.name || 'Profissional não informado'}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="flex items-start gap-3">
-                                                <DollarSign size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
-                                                <div>
-                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Valor</div>
-                                                    <div className="font-extrabold text-slate-800">
-                                                        R$ {Number(appointmentToCancel.value || appointmentToCancel.service?.price || 0).toFixed(2)}
-                                                    </div>
+                                    {/* Details Panel */}
+                                    <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 space-y-3.5 text-sm">
+                                        <div className="flex items-start gap-3">
+                                            <User size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                                            <div>
+                                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cliente</div>
+                                                <div className="font-extrabold text-slate-800">
+                                                    {appointmentToCancel.client?.nome || 'Cliente não informado'}
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {appointmentToCancel.status === 'concluido' && (
-                                            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-xs font-semibold flex items-start gap-2">
-                                                <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                                                <span>
-                                                    Atenção: Este agendamento está CONCLUÍDO. O cancelamento estornará lançamentos financeiros associados.
-                                                </span>
-                                            </div>
-                                        )}
-
-                                        {/* Error Alert inside Modal */}
-                                        {cancelError && (
-                                            <div className="p-3.5 bg-rose-50 border border-rose-150 rounded-2xl text-rose-700 text-xs font-semibold flex items-start gap-2.5">
-                                                <ShieldAlert size={18} className="text-rose-500 flex-shrink-0 mt-0.5 animate-pulse" />
-                                                <div className="space-y-1">
-                                                    <div className="font-black">Erro no Servidor:</div>
-                                                    <p className="leading-relaxed text-rose-600 font-medium">{cancelError}</p>
+                                        <div className="flex items-start gap-3">
+                                            <CalendarDays size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                                            <div>
+                                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Data & Horário</div>
+                                                <div className="font-extrabold text-slate-800">
+                                                    {format(new Date(appointmentToCancel.start), "EEEE, dd 'de' MMMM 'às' HH:mm", { locale: pt })}
                                                 </div>
                                             </div>
-                                        )}
-                                    </>
-                                )}
-                            </div>
+                                        </div>
 
-                            {/* Footer Actions */}
-                            <div className="p-5 bg-slate-50 border-t border-slate-100 flex gap-3">
-                                {cancelSuccess ? (
+                                        <div className="flex items-start gap-3">
+                                            <Scissors size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                                            <div>
+                                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Serviço</div>
+                                                <div className="font-extrabold text-slate-800">
+                                                    {appointmentToCancel.service?.name || 'Serviço não informado'}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-start gap-3">
+                                            <User size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                                            <div>
+                                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Profissional</div>
+                                                <div className="font-extrabold text-slate-800">
+                                                    {appointmentToCancel.professional?.name || 'Profissional não informado'}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-start gap-3">
+                                            <DollarSign size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                                            <div>
+                                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Valor</div>
+                                                <div className="font-extrabold text-slate-800">
+                                                    R$ {Number(appointmentToCancel.value || appointmentToCancel.service?.price || 0).toFixed(2)}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {appointmentToCancel.status === 'concluido' && (
+                                        <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-xs font-semibold flex items-start gap-2">
+                                            <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                                            <span>
+                                                Atenção: Este agendamento está CONCLUÍDO. O cancelamento estornará lançamentos financeiros associados.
+                                            </span>
+                                        </div>
+                                    )}
+
+                                    {/* Error Alert inside Modal */}
+                                    {cancelError && (
+                                        <div className="p-3.5 bg-rose-50 border border-rose-150 rounded-2xl text-rose-700 text-xs font-semibold flex items-start gap-2.5">
+                                            <ShieldAlert size={18} className="text-rose-500 flex-shrink-0 mt-0.5 animate-pulse" />
+                                            <div className="space-y-1">
+                                                <div className="font-black">Erro no Servidor:</div>
+                                                <p className="leading-relaxed text-rose-600 font-medium">{cancelError}</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+
+                        {/* Footer Actions */}
+                        <div className="p-5 bg-slate-50 border-t border-slate-100 flex gap-3">
+                            {cancelSuccess ? (
+                                <button
+                                    onClick={() => {
+                                        setAppointmentToCancel(null);
+                                        setCancelSuccess(false);
+                                        setCancelError(null);
+                                    }}
+                                    className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 text-center"
+                                >
+                                    Fechar e Concluir
+                                </button>
+                            ) : (
+                                <>
                                     <button
+                                        disabled={isCancelling}
                                         onClick={() => {
                                             setAppointmentToCancel(null);
-                                            setCancelSuccess(false);
                                             setCancelError(null);
                                         }}
-                                        className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 text-center"
+                                        className="flex-1 py-3.5 rounded-2xl text-slate-400 font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50"
                                     >
-                                        Fechar e Concluir
+                                        Voltar
                                     </button>
-                                ) : (
-                                    <>
-                                        <button
-                                            disabled={isCancelling}
-                                            onClick={() => {
-                                                setAppointmentToCancel(null);
-                                                setCancelError(null);
-                                            }}
-                                            className="flex-1 py-3.5 rounded-2xl text-slate-400 font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50"
-                                        >
-                                            Voltar
-                                        </button>
-                                        <button
-                                            disabled={isCancelling}
-                                            onClick={async () => {
-                                                setIsCancelling(true);
-                                                setCancelError(null);
-                                                try {
-                                                    await executeCancellation(appointmentToCancel.id);
-                                                    setCancelSuccess(true);
-                                                } catch (err: any) {
-                                                    console.error("Cancellation failed:", err);
-                                                    setCancelError(err.message || "Não foi possível completar o cancelamento no servidor.");
-                                                } finally {
-                                                    setIsCancelling(false);
-                                                }
-                                            }}
-                                            className="flex-[2] py-3.5 bg-rose-500 hover:bg-rose-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
-                                        >
-                                            {isCancelling ? (
-                                                <>
-                                                    <RefreshCw size={14} className="animate-spin text-white" />
-                                                    <span>Cancelando...</span>
-                                                </>
-                                            ) : (
-                                                <span>Confirmar Cancelamento</span>
-                                            )}
-                                        </button>
-                                    </>
-                                )}
-                            </div>
-                        </motion.div>
+                                    <button
+                                        disabled={isCancelling}
+                                        onClick={async () => {
+                                            setIsCancelling(true);
+                                            setCancelError(null);
+                                            try {
+                                                await executeCancellation(appointmentToCancel.id);
+                                                setCancelSuccess(true);
+                                            } catch (err: any) {
+                                                console.error("Cancellation failed:", err);
+                                                setCancelError(err.message || "Não foi possível completar o cancelamento no servidor.");
+                                            } finally {
+                                                setIsCancelling(false);
+                                            }
+                                        }}
+                                        className="flex-[2] py-3.5 bg-rose-500 hover:bg-rose-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                                    >
+                                        {isCancelling ? (
+                                            <>
+                                                <RefreshCw size={14} className="animate-spin text-white" />
+                                                <span>Cancelando...</span>
+                                            </>
+                                        ) : (
+                                            <span>Confirmar Cancelamento</span>
+                                        )}
+                                    </button>
+                                </>
+                            )}
+                        </div>
                     </div>
-                )}
-            </AnimatePresence>
+                </div>
+            )}
             
             {isNotifOpen && (
                 <>
