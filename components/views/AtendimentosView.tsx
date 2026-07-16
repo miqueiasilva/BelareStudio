@@ -1726,7 +1726,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             )}
 
             <div className="flex-1 flex flex-col h-full overflow-hidden">
-                <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-30 shadow-sm">
+                <header className="flex-shrink-0 bg-white border-b border-slate-200 px-6 py-4 z-[70] shadow-sm">
                 <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4">
                     <div className="flex items-center gap-4">
                         <div className="flex items-center gap-3">
