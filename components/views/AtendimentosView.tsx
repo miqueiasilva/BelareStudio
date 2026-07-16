@@ -884,6 +884,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 professional_id: app.professional.id ? String(app.professional.id) : null, 
                 client_id: app.client?.id ? app.client.id : null,
                 client_name: app.client?.nome || 'Cliente', 
+                client_whatsapp: app.client?.whatsapp || app.client?.telefone || null,
                 professional_name: app.professional.name, 
                 service_id: app.service?.id || null,
                 service_name: app.service.name, 

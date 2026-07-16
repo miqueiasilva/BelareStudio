@@ -4,7 +4,7 @@ import Card from '../shared/Card';
 import JaciBotAssistant from '../shared/JaciBotAssistant';
 import TodayScheduleWidget from '../dashboard/TodayScheduleWidget';
 import { getDashboardInsight } from '../../services/geminiService';
-import { DollarSign, Calendar, Users, TrendingUp, TrendingDown, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3, Zap, UserCircle, Sparkles, Pencil, Wallet } from 'lucide-react';
+import { DollarSign, Calendar, Users, TrendingUp, TrendingDown, PlusCircle, UserPlus, ShoppingBag, Clock, Globe, Loader2, BarChart3, Zap, UserCircle, Sparkles, Pencil, Wallet, Target, Award, CheckCircle2 } from 'lucide-react';
 // FIX: Grouping date-fns imports and removing problematic members startOfDay, subDays, startOfMonth.
 import { 
     format, addDays, endOfDay, endOfMonth, eachDayOfInterval, parseISO
@@ -128,6 +128,48 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
     const [tempGoal, setTempGoal] = useState('');
     const [isSavingGoal, setIsSavingGoal] = useState(false);
     const [activeTab, setActiveTab] = useState<'faturamento' | 'ocupacao'>('faturamento');
+    const [dailyGoal, setDailyGoal] = useState(500);
+    const [todayRevenue, setTodayRevenue] = useState(0);
+    const [isDailyGoalModalOpen, setIsDailyGoalModalOpen] = useState(false);
+    const [tempDailyGoal, setTempDailyGoal] = useState('');
+    const [isSavingDailyGoal, setIsSavingDailyGoal] = useState(false);
+
+    const handleSaveDailyGoal = async (val: number) => {
+        if (!activeStudioId) return;
+        setIsSavingDailyGoal(true);
+        try {
+            try {
+                window.safeLocalStorage?.setItem(`daily_revenue_goal_${activeStudioId}`, String(val));
+            } catch (storageErr) {
+                console.warn("Falha ao salvar meta diária no safeLocalStorage:", storageErr);
+            }
+
+            try {
+                const { error } = await supabase
+                    .from('studio_settings')
+                    .upsert({
+                        studio_id: activeStudioId,
+                        daily_revenue_goal: val,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: 'studio_id' });
+
+                if (error) {
+                    console.warn("Aviso ao persistir meta diária no Supabase (coluna 'daily_revenue_goal' pode estar ausente):", error);
+                }
+            } catch (dbErr) {
+                console.warn("Erro ao tentar persistir meta diária no banco:", dbErr);
+            }
+
+            setDailyGoal(val);
+            toast.success("Meta faturamento diária atualizada com sucesso!");
+            setIsDailyGoalModalOpen(false);
+        } catch (err: any) {
+            console.warn("Erro ao salvar meta financeira diária:", err);
+            toast.error("Erro ao salvar meta financeira diária: " + (err.message || 'tente novamente'));
+        } finally {
+            setIsSavingDailyGoal(false);
+        }
+    };
 
     const handleSaveGoal = async (val: number) => {
         if (!activeStudioId) return;
@@ -312,6 +354,32 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                     console.warn("Erro ao buscar faturamento mensal no dashboard (pode ser offline ou Failed to fetch):", monthErr?.message || monthErr);
                 }
 
+                // Fetch today's completed appointments for real-time daily goal progress
+                try {
+                    const todayStart = new Date();
+                    todayStart.setHours(0, 0, 0, 0);
+                    const todayEnd = new Date();
+                    todayEnd.setHours(23, 59, 59, 999);
+
+                    const { data: todayData, error: todayError } = await supabase
+                        .from('appointments')
+                        .select('*')
+                        .eq('studio_id', activeStudioId)
+                        .eq('status', 'concluido')
+                        .gte('date', todayStart.toISOString())
+                        .lte('date', todayEnd.toISOString());
+
+                    if (todayError) {
+                        console.warn("Erro ao buscar faturamento diário:", todayError);
+                        throw todayError;
+                    }
+
+                    const totalTodayRev = todayData?.reduce((acc, curr) => acc + (Number(curr.value || curr.price || 0) || 0), 0) || 0;
+                    if (mounted) setTodayRevenue(totalTodayRev);
+                } catch (todayErr: any) {
+                    console.warn("Erro ao buscar faturamento diário no dashboard:", todayErr?.message || todayErr);
+                }
+
                 // Fetch and calculate total commissions for the current month
                 try {
                     const [teamRes, commandsRes] = await Promise.all([
@@ -362,19 +430,25 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
 
                 // Busca de meta de faturamento com fallback seguro
                 let dbGoal = 5000;
+                let dbDailyGoal = 500;
                 try {
                     const { data: settings, error: settingsError } = await supabase
                         .from('studio_settings')
-                        .select('revenue_goal')
+                        .select('revenue_goal, daily_revenue_goal')
                         .eq('studio_id', activeStudioId)
                         .maybeSingle();
                     
                     if (settingsError) throw settingsError;
-                    if (settings && 'revenue_goal' in settings) {
-                        dbGoal = (settings as any).revenue_goal || 5000;
+                    if (settings) {
+                        if ('revenue_goal' in settings) {
+                            dbGoal = (settings as any).revenue_goal || 5000;
+                        }
+                        if ('daily_revenue_goal' in settings) {
+                            dbDailyGoal = (settings as any).daily_revenue_goal || 500;
+                        }
                     }
                 } catch (settingsError) {
-                    console.warn("Erro ao buscar revenue_goal do banco, usando fallback local:", settingsError);
+                    console.warn("Erro ao buscar metas do banco, usando fallback local:", settingsError);
                 }
 
                 if (mounted) {
@@ -390,6 +464,19 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         localGoal = dbGoal;
                     }
                     setFinancialGoal(localGoal);
+
+                    let localDailyGoal = 500;
+                    try {
+                        const savedDaily = window.safeLocalStorage?.getItem(`daily_revenue_goal_${activeStudioId}`);
+                        if (savedDaily) {
+                            localDailyGoal = Number(savedDaily) || 500;
+                        } else {
+                            localDailyGoal = dbDailyGoal;
+                        }
+                    } catch (err) {
+                        localDailyGoal = dbDailyGoal;
+                    }
+                    setDailyGoal(localDailyGoal);
                 }
 
                 // Busca dinâmica de disparos de lembrete da Jaci IA nas últimas 24h
@@ -469,6 +556,23 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
             visual: Math.min(goalProgress, 100)
         };
     }, [monthRevenueTotal, financialGoal]);
+
+    // Lógica de Meta Financeira Diária
+    const dailyGoalMetrics = useMemo(() => {
+        const goalProgress = dailyGoal > 0 ? (todayRevenue / dailyGoal) * 100 : 0;
+        const displayGoal = dailyGoal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        const displayRevenue = todayRevenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        const remaining = Math.max(0, dailyGoal - todayRevenue);
+        const displayRemaining = remaining.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        return {
+            progress: goalProgress,
+            display: displayGoal,
+            displayRevenue,
+            displayRemaining,
+            isAchieved: todayRevenue >= dailyGoal,
+            visual: Math.min(goalProgress, 100)
+        };
+    }, [todayRevenue, dailyGoal]);
 
     // Dados de Faturamento Diário e Ocupação da Agenda para os Gráficos
     const chartData = useMemo(() => {
@@ -682,6 +786,90 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                         <QuickAction icon={BarChart3} label="DRE" color="bg-slate-800" onClick={() => onNavigate('relatorios')} />
                         <QuickAction icon={Calendar} label="Agenda" color="bg-orange-600" onClick={() => onNavigate('agenda')} />
                     </motion.div>
+
+                    {/* Seção de Meta Diária de Faturamento */}
+                    <motion.div 
+                        variants={itemVariants}
+                        className="bg-white rounded-[32px] p-6 sm:p-8 border border-slate-100 shadow-sm text-left relative overflow-hidden"
+                    >
+                        <div className="absolute top-0 right-0 p-8 opacity-[0.03] text-orange-500 pointer-events-none">
+                            <Target size={150} />
+                        </div>
+                        
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                            <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <div className="p-1.5 rounded-lg bg-orange-100 text-orange-600">
+                                        <Target size={18} />
+                                    </div>
+                                    <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider">Meta Diária de Faturamento</h2>
+                                </div>
+                                <p className="text-xs text-slate-400 font-medium">Acompanhe e configure a meta de faturamento para o dia de hoje</p>
+                            </div>
+                            <button 
+                                onClick={() => { 
+                                    setTempDailyGoal(dailyGoal ? dailyGoal.toString() : ''); 
+                                    setIsDailyGoalModalOpen(true); 
+                                }}
+                                className="px-4 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                            >
+                                <Pencil size={12} /> Definir Meta
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+                            <div className="space-y-1">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Realizado Hoje</span>
+                                <div className="flex items-baseline gap-1.5">
+                                    <span className="text-3xl font-black text-slate-800 tracking-tight">{dailyGoalMetrics.displayRevenue}</span>
+                                    {dailyGoalMetrics.isAchieved && (
+                                        <span className="text-emerald-500 font-black text-xs flex items-center gap-1 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-100 uppercase tracking-wider animate-bounce">
+                                            <Award size={12} /> Batida!
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Meta Diária</span>
+                                <p className="text-2xl font-black text-slate-600 tracking-tight">{dailyGoalMetrics.display}</p>
+                            </div>
+
+                            <div className="space-y-1">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status / Restante</span>
+                                {dailyGoalMetrics.isAchieved ? (
+                                    <div className="flex items-center gap-1.5 text-emerald-600 font-bold text-sm">
+                                        <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+                                        <span>Meta superada por {((todayRevenue - dailyGoal) > 0 ? (todayRevenue - dailyGoal) : 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}! 🎉</span>
+                                    </div>
+                                ) : (
+                                    <p className="text-sm font-bold text-orange-600">
+                                        Faltam <span className="font-black text-base">{dailyGoalMetrics.displayRemaining}</span> para atingir o objetivo
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Barra de Progresso Real-time */}
+                        <div className="mt-6 space-y-2">
+                            <div className="flex justify-between items-center text-xs">
+                                <span className="font-black text-slate-500 uppercase tracking-wider">{dailyGoalMetrics.progress.toFixed(1)}% Concluído</span>
+                                <span className="font-bold text-slate-400">{dailyGoalMetrics.displayRevenue} / {dailyGoalMetrics.display}</span>
+                            </div>
+                            <div className="w-full h-4 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200 shadow-inner">
+                                <motion.div 
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${dailyGoalMetrics.visual}%` }}
+                                    transition={{ type: 'spring', stiffness: 60, damping: 15 }}
+                                    className={`h-full rounded-full transition-all duration-500 shadow-sm ${
+                                        dailyGoalMetrics.isAchieved 
+                                            ? 'bg-gradient-to-r from-emerald-500 to-teal-400 shadow-[0_0_12px_rgba(16,185,129,0.4)]' 
+                                            : 'bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_0_12px_rgba(249,115,22,0.4)]'
+                                    }`}
+                                />
+                            </div>
+                        </div>
+                    </motion.div>
                     
                     <div className="bg-white rounded-[40px] p-2 border border-slate-100 shadow-sm overflow-hidden">
                         <JaciBotAssistant fetchInsight={getDashboardInsight} />
@@ -856,6 +1044,58 @@ const DashboardView: React.FC<{onNavigate: (view: ViewState) => void}> = ({ onNa
                                 className="flex-1 py-4 bg-slate-800 hover:bg-slate-900 text-white font-black rounded-2xl text-[10px] uppercase tracking-widest transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
                             >
                                 {isSavingGoal ? <Loader2 size={16} className="animate-spin text-white" /> : 'Salvar Meta'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {isDailyGoalModalOpen && (
+                <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div 
+                        className="bg-white rounded-[32px] p-8 max-w-sm w-full border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.15)] animate-in zoom-in-95 duration-200 relative overflow-hidden text-center"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="w-12 h-12 rounded-2xl bg-orange-500/10 text-orange-500 flex items-center justify-center mx-auto mb-4 border border-orange-500/5">
+                            <Target size={22} className="animate-pulse" />
+                        </div>
+                        <h3 className="font-black text-slate-800 uppercase tracking-tighter text-lg leading-tight">Meta Diária de Faturamento</h3>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1 mb-6">Defina o objetivo financeiro diário do estúdio</p>
+                        
+                        <div className="relative mb-6">
+                            <span className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 font-black text-sm">R$</span>
+                            <input 
+                                type="number" 
+                                value={tempDailyGoal} 
+                                onChange={e => {
+                                    const val = e.target.value;
+                                    if (val === '' || parseFloat(val) >= 0) {
+                                        setTempDailyGoal(val);
+                                    }
+                                }}
+                                placeholder="500"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-5 py-4 font-black text-slate-700 text-lg outline-none focus:ring-4 focus:ring-orange-100 focus:border-orange-500/30 transition-all shadow-inner text-left"
+                                autoFocus
+                            />
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => setIsDailyGoalModalOpen(false)} 
+                                disabled={isSavingDailyGoal}
+                                className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold rounded-2xl text-[10px] uppercase tracking-widest transition-all active:scale-95"
+                            >
+                                Cancelar
+                            </button>
+                            <button 
+                                onClick={async () => {
+                                    const val = parseFloat(tempDailyGoal) || 0;
+                                    await handleSaveDailyGoal(val);
+                                }} 
+                                disabled={isSavingDailyGoal}
+                                className="flex-1 py-4 bg-slate-800 hover:bg-slate-900 text-white font-black rounded-2xl text-[10px] uppercase tracking-widest transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
+                            >
+                                {isSavingDailyGoal ? <Loader2 size={16} className="animate-spin text-white" /> : 'Salvar Meta'}
                             </button>
                         </div>
                     </div>
