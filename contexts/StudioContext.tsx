@@ -84,12 +84,15 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
 
       // Prioridade Admin - Verificamos tanto o papel no AppUser quanto metadados do Supabase
       const userRoleMetadata = (user.app_metadata?.role || user.user_metadata?.role || '').toLowerCase();
+      const normalizedEmail = (user.email || '').trim().toLowerCase();
       const isAdmin = (user as any).papel === 'admin' || 
                       (user as any).papel === 'gestor' || 
                       userRoleMetadata === 'admin' || 
                       userRoleMetadata === 'gestor' || 
-                      user.email === 'admin@belarestudio.com' ||
-                      user.email === 'mykeias@gmail.com';
+                      normalizedEmail === 'admin@belarestudio.com' ||
+                      normalizedEmail === 'mykeias@gmail.com' ||
+                      normalizedEmail === 'jacylenefelix@gmail.com' ||
+                      normalizedEmail === 'jacilenefelix@gmail.com';
 
       let mappedStudios: Studio[] = [];
 

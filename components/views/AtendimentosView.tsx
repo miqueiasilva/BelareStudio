@@ -2825,10 +2825,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                             min="150" 
                                             max="450" 
                                             step="10" 
-                                            disabled={effectiveIsAutoWidth}
                                             value={colWidth} 
-                                            onChange={e => setColWidth(Number(e.target.value))} 
-                                            className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-500 disabled:opacity-30 disabled:cursor-not-allowed" 
+                                            onChange={e => {
+                                                setColWidth(Number(e.target.value));
+                                                setIsAutoWidth(false);
+                                            }} 
+                                            className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-500" 
                                         />
                                         <label className="flex items-center gap-2 cursor-pointer select-none border-l border-slate-200 pl-4">
                                             <input 

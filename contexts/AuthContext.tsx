@@ -30,13 +30,19 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
 
   const fetchProfile = React.useCallback(async (authUser: SupabaseUser): Promise<AppUser> => {
     try {
-      const emailQuery = (authUser.email || '').trim();
-      const queryPromise = supabase
-        .from('team_members')
-        .select('access_level, role, photo_url, name, permissions')
-        .ilike('email', emailQuery)
-        .maybeSingle()
-        .catch(err => ({ data: null, error: err }));
+      let emailQuery = (authUser.email || '').trim().toLowerCase();
+      // Normalização para Jacilene Félix: no banco está cadastrada com 'y' (jacylenefelix@gmail.com)
+      if (emailQuery === 'jacilenefelix@gmail.com' || emailQuery === 'jacylenefelix@gmail.com') {
+        emailQuery = 'jacylenefelix@gmail.com';
+      }
+
+      const queryPromise = Promise.resolve(
+        supabase
+          .from('team_members')
+          .select('access_level, role, photo_url, name, permissions')
+          .ilike('email', emailQuery)
+          .maybeSingle()
+      ).catch(err => ({ data: null, error: err }));
 
       const timeoutPromise = new Promise<{ data: any; error: any }>((resolve) => 
         setTimeout(() => resolve({ data: null, error: new Error("Timeout de 2.5 segundos na consulta ao banco") }), 2500)
@@ -47,20 +53,39 @@ export function AuthProvider({ children }: { children?: React.ReactNode }) {
         console.warn("[AUTH_DEBUG] Erro ao buscar team_members (ou timeout):", error);
       }
 
+      const isUserAdminEmail = (email: string) => {
+        const normalized = (email || '').trim().toLowerCase();
+        return normalized === 'mykeias@gmail.com' || 
+               normalized === 'jacylenefelix@gmail.com' || 
+               normalized === 'jacilenefelix@gmail.com' || 
+               normalized === 'admin@belarestudio.com';
+      };
+
+      const fallbackRole = isUserAdminEmail(authUser.email || '') ? 'admin' : 'profissional';
+      const papel = (profData?.access_level || fallbackRole).toLowerCase();
+
       return {
         ...authUser,
-        papel: (profData?.access_level || (authUser.email === 'mykeias@gmail.com' ? 'admin' : 'profissional')).toLowerCase(),
+        papel,
         nome: profData?.name || authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
         avatar_url: profData?.photo_url || authUser.user_metadata?.avatar_url,
-        permissions: profData?.permissions || {}
+        permissions: (papel === 'admin' || papel === 'gestor') ? { '*': true } : (profData?.permissions || {})
       };
     } catch (e) {
       console.warn("[AUTH_DEBUG] fetchProfile falhou, aplicando fallback de emergência:", e);
+      const isUserAdminEmail = (email: string) => {
+        const normalized = (email || '').trim().toLowerCase();
+        return normalized === 'mykeias@gmail.com' || 
+               normalized === 'jacylenefelix@gmail.com' || 
+               normalized === 'jacilenefelix@gmail.com' || 
+               normalized === 'admin@belarestudio.com';
+      };
+      const papel = isUserAdminEmail(authUser.email || '') ? 'admin' : 'profissional';
       return { 
         ...authUser, 
-        papel: (authUser.email === 'mykeias@gmail.com' ? 'admin' : 'profissional').toLowerCase(), 
+        papel, 
         nome: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Usuário',
-        permissions: {}
+        permissions: (papel === 'admin') ? { '*': true } : {}
       };
     }
   }, []);
