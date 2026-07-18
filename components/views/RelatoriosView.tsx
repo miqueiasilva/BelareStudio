@@ -255,7 +255,14 @@ const RelatoriosView: React.FC = () => {
       return false;
     });
 
-    const income = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
+    const completedRevenue = appointments.filter(a => a.status === 'concluido').reduce((acc, a) => {
+      const resolved = getServicesForAppointment(a, services);
+      const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
+      return acc + (a.value || a.price || valFromServices || 0);
+    }, 0);
+
+    const rawIncome = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
+    const income = completedRevenue > 0 ? completedRevenue : rawIncome;
     const expense = transactions.filter(t => t.type === 'expense' || t.type === 'despesa').reduce((acc, t) => acc + Number(t.amount || 0), 0);
     const totalAppts = appointments.length;
     const completedAppts = appointments.filter(a => a.status === 'concluido').length;
@@ -315,7 +322,14 @@ const RelatoriosView: React.FC = () => {
       return false;
     });
 
-    const income = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
+    const completedRevenue = appointments.filter(a => a.status === 'concluido').reduce((acc, a) => {
+      const resolved = getServicesForAppointment(a, services);
+      const valFromServices = resolved.reduce((sum: number, s: any) => sum + (s.preco || 0), 0);
+      return acc + (a.value || a.price || valFromServices || 0);
+    }, 0);
+
+    const rawIncome = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
+    const income = completedRevenue > 0 ? completedRevenue : rawIncome;
     const expense = transactions.filter(t => t.type === 'expense' || t.type === 'despesa').reduce((acc, t) => acc + Number(t.amount || 0), 0);
     const totalAppts = appointments.length;
     const completedAppts = appointments.filter(a => a.status === 'concluido').length;
@@ -493,6 +507,7 @@ const RelatoriosView: React.FC = () => {
       
       setRawUpcomingData(upcomingAppts || []);
       setRawSixMonthsTransactions(sixMonthsTransRes.data || []);
+
       
     } catch (err) {
       console.error("Erro ao buscar dados do BI:", err);
@@ -796,7 +811,7 @@ const RelatoriosView: React.FC = () => {
       XLSX.utils.book_append_sheet(wb, wsClients, "Ranking LTV Clientes");
 
     } else if (tabName === 'equipe') {
-      const teamData = teamStats.map((p: any, index: number) => ({
+      const teamData = filteredTeamStats.map((p: any, index: number) => ({
         'Rank': index + 1,
         'Colaborador': p.name,
         'E-mail': p.email || 'Não informado',
@@ -1077,7 +1092,7 @@ const RelatoriosView: React.FC = () => {
       doc.setTextColor(30, 41, 59);
       doc.text("Performance por Colaborador", 14, 46);
 
-      const teamRows = teamStats.map((p: any, index: number) => [
+      const teamRows = filteredTeamStats.map((p: any, index: number) => [
         `#${index + 1}`,
         p.name,
         String(p.count),
@@ -1151,7 +1166,7 @@ const RelatoriosView: React.FC = () => {
       // Support transactional income directly mapped to this professional (direct product sales, etc.)
       const transRevenue = pTrans.reduce((acc: number, t: any) => acc + Number(t.amount || 0), 0);
       
-      const revenue = Math.max(completedRevenue, transRevenue);
+      const revenue = completedRevenue > 0 ? completedRevenue : transRevenue;
       
       // Calculate projected revenue for this professional based on their appointments
       const projectedRevenue = pAppts.filter((a: any) => {
@@ -1178,6 +1193,13 @@ const RelatoriosView: React.FC = () => {
       };
     }).sort((a: any, b: any) => b.revenue - a.revenue);
   }, [data, availableProfessionals, services]);
+
+  const filteredTeamStats = useMemo(() => {
+    if (!teamStats) return [];
+    if (selectedProfessionals.length === 0) return teamStats;
+    const selectedProfId = String(selectedProfessionals[0]).trim();
+    return teamStats.filter(p => String(p.id).trim() === selectedProfId);
+  }, [teamStats, selectedProfessionals]);
 
   const serviceStats = useMemo(() => {
     if (!data?.appointments || !services) {
@@ -2609,8 +2631,8 @@ const RelatoriosView: React.FC = () => {
           <BarChart4 className="text-indigo-500" size={20} />
         </div>
         <div className="h-80 w-full">
-          {teamStats && teamStats.length > 0 ? (
-            <D3TeamPerformanceChart data={teamStats} />
+          {filteredTeamStats && filteredTeamStats.length > 0 ? (
+            <D3TeamPerformanceChart data={filteredTeamStats} />
           ) : (
             <div className="h-full flex items-center justify-center">
               <EmptyState message="Sem dados de desempenho para o período." />
@@ -2629,7 +2651,7 @@ const RelatoriosView: React.FC = () => {
 
         {/* Mobile: cards */}
         <div className="md:hidden divide-y divide-slate-50">
-          {teamStats.map(p => (
+          {filteredTeamStats.map(p => (
             <div 
               key={p.id} 
               className="p-4 hover:bg-orange-50/10 active:bg-orange-50/20 transition-all cursor-pointer"
@@ -2679,7 +2701,7 @@ const RelatoriosView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {teamStats.map(p => (
+              {filteredTeamStats.map(p => (
                 <tr 
                   key={p.id} 
                   className="hover:bg-orange-50/10 transition-colors cursor-pointer"

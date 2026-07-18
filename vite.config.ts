@@ -1,12 +1,33 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import fs from 'fs';
 
 // https://vitejs.dev/config/
 export default defineConfig({
   base: './',
   plugins: [
     react(),
+    {
+      name: 'api-debug',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url === '/api/debug' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => {
+              body += chunk;
+            });
+            req.on('end', () => {
+              fs.writeFileSync('debug_data.json', body);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ status: 'ok' }));
+            });
+          } else {
+            next();
+          }
+        });
+      }
+    },
     VitePWA({
       registerType: 'autoUpdate',
       devOptions: {
