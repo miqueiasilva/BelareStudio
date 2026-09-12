@@ -22,13 +22,20 @@ const StudioContext = createContext<StudioContextValue | null>(null);
 const STORAGE_KEY = "belaapp.activeStudioId";
 const SYNC_COOLDOWN_MS = 60000; // 1 minuto de intervalo mínimo entre syncs automáticos
 
+export const DEFAULT_FALLBACK_STUDIO_ID = "558b07c9-5e8f-4315-81e5-0446547d36df";
+
 export function StudioProvider({ children }: { children?: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [studios, setStudios] = useState<Studio[]>([]);
   const [activeStudioId, setActiveStudioIdState] = useState<string | null>(() => {
     try {
-      return localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved === 'default-studio') {
+        localStorage.setItem(STORAGE_KEY, DEFAULT_FALLBACK_STUDIO_ID);
+        return DEFAULT_FALLBACK_STUDIO_ID;
+      }
+      return saved;
     } catch (e) {
       console.warn("[StudioContext] Failed to read activeStudioId from localStorage:", e);
       return null;
@@ -106,7 +113,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
 
         const { data: allStudios } = await Promise.race([
           queryStudios,
-          timeoutPromise(2500, "studios query")
+          timeoutPromise(6000, "studios query")
         ]).catch(err => {
           console.warn("[StudioProvider] Falha ao carregar lista de estúdios (timeout/erro):", err);
           return { data: null };
@@ -114,7 +121,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
 
         const { data: allSettings } = await Promise.race([
           querySettings,
-          timeoutPromise(2500, "studio_settings query")
+          timeoutPromise(6000, "studio_settings query")
         ]).catch(err => {
           console.warn("[StudioProvider] Falha ao carregar configurações de estúdio (timeout/erro):", err);
           return { data: null };
@@ -146,7 +153,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
 
         const { data: memberships } = await Promise.race([
           membershipsPromise,
-          timeoutPromise(2500, "user_studios query")
+          timeoutPromise(6000, "user_studios query")
         ]).catch(err => {
           console.warn("[StudioProvider] Falha ao consultar user_studios:", err);
           return { data: null };
@@ -154,7 +161,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
 
         const { data: teamMemberships } = await Promise.race([
           teamMembershipsPromise,
-          timeoutPromise(2500, "team_memberships query")
+          timeoutPromise(6000, "team_memberships query")
         ]).catch(err => {
           console.warn("[StudioProvider] Falha ao consultar team_members:", err);
           return { data: null };
@@ -191,7 +198,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
 
           const { data: studiosData } = await Promise.race([
             studiosDataPromise,
-            timeoutPromise(2500, "studios details query")
+            timeoutPromise(6000, "studios details query")
           ]).catch(err => {
             console.warn("[StudioProvider] Falha ao carregar detalhes dos estúdios:", err);
             return { data: null };
@@ -199,7 +206,7 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
 
           const { data: allSettings } = await Promise.race([
             settingsPromise,
-            timeoutPromise(2500, "studio_settings details query")
+            timeoutPromise(6000, "studio_settings details query")
           ]).catch(err => {
             console.warn("[StudioProvider] Falha ao carregar configurações detalhadas dos estúdios:", err);
             return { data: null };
@@ -223,8 +230,8 @@ export function StudioProvider({ children }: { children?: React.ReactNode }) {
       if (mappedStudios.length === 0) {
         console.warn("[StudioProvider] Nenhum estúdio encontrado na nuvem (ou erro de Timeout). Criando estúdio local de fallback...");
         mappedStudios = [{
-          id: "default-studio",
-          name: isAdmin ? "BelareStudio (Principal - Local)" : "BelareStudio Colaborador (Local)",
+          id: DEFAULT_FALLBACK_STUDIO_ID,
+          name: isAdmin ? "Studio Jacilene Félix" : "Studio Jacilene Félix (Colaborador)",
           role: isAdmin ? "admin" : "profissional",
           theme_color: "#f97316",
           discount_rules: []

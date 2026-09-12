@@ -108,8 +108,12 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
         return;
     }
 
+    const studioIdToUse = (activeStudioId && activeStudioId !== 'default-studio') 
+      ? activeStudioId 
+      : '558b07c9-5e8f-4315-81e5-0446547d36df';
+
     // Checking for duplicates (skip if checking an edit)
-    if (!client?.id && activeStudioId) {
+    if (!client?.id && studioIdToUse) {
         setIsSaving(true);
         try {
             const cleanPhone = formData.whatsapp ? String(formData.whatsapp).replace(/\D/g, '') : '';
@@ -118,7 +122,7 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
             const { data: nameMatches } = await supabase
                 .from('clients')
                 .select('*')
-                .eq('studio_id', activeStudioId)
+                .eq('studio_id', studioIdToUse)
                 .ilike('nome', formData.nome.trim());
 
             if (nameMatches && nameMatches.length > 0) {
@@ -133,7 +137,7 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, onClose, onSave }) =>
                 const { data: clients } = await supabase
                     .from('clients')
                     .select('*')
-                    .eq('studio_id', activeStudioId);
+                    .eq('studio_id', studioIdToUse);
                 
                 if (clients) {
                     const formatForCompare = (p: string) => {

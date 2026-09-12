@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+import toast from 'react-hot-toast';
 import { LegacyAppointment, Client, LegacyProfessional, LegacyService } from '../../types';
 import { ChevronLeft, User, Calendar, Tag, Clock, DollarSign, Info, PlusCircle, Repeat, X, Loader2, AlertCircle, Briefcase, CheckSquare, Mail, Trash2, Edit2 } from 'lucide-react';
 import { format, addMinutes } from 'date-fns';
@@ -66,8 +67,8 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
         const mapped: LegacyService[] = data.map((s: any) => ({
           id: s.id,
           name: s.nome || 'Serviço sem nome',
-          duration: s.duracao_min || 30,
-          price: s.preco || 0,
+          duration: s.duracao_min != null ? Number(s.duracao_min) : 30,
+          price: s.preco != null ? Number(s.preco) : 0,
           color: s.cor_hex || '#3b82f6',
           category: s.categoria
         }));
@@ -140,6 +141,23 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           ? appointment.services.map(s => ({ ...s }))
           : (appointment?.service ? [{ ...appointment.service }] : []);
 
+      // Sincronizar dados do serviço com o cadastro oficial (duracao_min cadastrada)
+      if (dbServices && dbServices.length > 0) {
+          initialServices = initialServices.map(s => {
+              const match = dbServices.find(d => String(d.id) === String(s.id) || (d.name && s.name && d.name.trim().toLowerCase() === s.name.trim().toLowerCase()));
+              if (match) {
+                  return {
+                      ...s,
+                      id: match.id || s.id,
+                      duration: match.duration,
+                      color: match.color || s.color,
+                      category: match.category || s.category
+                  };
+              }
+              return s;
+          });
+      }
+
       if (apptPrice !== undefined && !isNaN(apptPrice)) {
           if (initialServices.length === 1) {
               initialServices = [{ ...initialServices[0], price: apptPrice }];
@@ -164,13 +182,20 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
           setManualPrice(0);
       }
 
-      const dur = appointment?.service?.duration || (appointment?.end && appointment?.start ? Math.round((new Date(appointment.end).getTime() - new Date(appointment.start).getTime()) / 60000) : (initialServices.reduce((acc, s) => acc + (Number(s.duration) || 0), 0) || 30));
+      // Duração: calcula a soma exata dos serviços selecionados de acordo com o cadastro
+      let dur = 0;
+      if (initialServices.length > 0) {
+          dur = initialServices.reduce((acc, s) => acc + (Number(s.duration) || 0), 0);
+      } else if (appointment?.id) {
+          dur = Number(appointment.service?.duration) || (appointment.end && appointment.start ? Math.round((new Date(appointment.end).getTime() - new Date(appointment.start).getTime()) / 60000) : 0);
+      }
+
       setHours(Math.floor(dur / 60));
       setMinutes(dur % 60);
 
       setClientEmail(appointment?.client?.email || '');
       setError(null);
-  }, [appointment]);
+  }, [appointment, dbServices]);
 
   useEffect(() => {
     if (selectedServices.length > 0) {
@@ -303,8 +328,13 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             duration: manualDuration
         };
 
+        const start = new Date(formData.start || new Date());
+        const end = addMinutes(start, Math.max(5, manualDuration));
+
         const finalAppointment = {
             ...formData,
+            start,
+            end,
             client: { ...formData.client, email: clientEmail },
             service: compositeService,
             services: finalServices,
@@ -335,9 +365,12 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   };
 
   const handlePersistAndSelectClient = async (clientData: Client) => {
-    if (!activeStudioId) return;
     setIsSaving(true);
     try {
+        const studioIdToUse = (activeStudioId && activeStudioId !== 'default-studio') 
+            ? activeStudioId 
+            : '558b07c9-5e8f-4315-81e5-0446547d36df';
+
         // Limpa o whatsapp/telefone (apenas números)
         const sanitizedPhone = clientData.whatsapp ? String(clientData.whatsapp).replace(/\D/g, '') : null;
         
@@ -347,25 +380,61 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
             return acc;
         }, {});
 
-        const { data, error } = await supabase
-            .from('clients')
-            .insert([{ 
-                ...cleanedData, 
-                whatsapp: sanitizedPhone, 
-                telefone: sanitizedPhone,
-                referral_source: (clientData as any).origem || 'Outros',
-                studio_id: activeStudioId 
-            }])
-            .select()
-            .single();
+        // NUNCA passar id: null para o Postgres ao inserir cliente novo pois 'id' é serial/identity NOT NULL
+        const { id, ...dataWithoutId } = cleanedData;
+
+        let resultClient: any = null;
+
+        if (clientData.id) {
+            const { data, error } = await supabase
+                .from('clients')
+                .update({ 
+                    ...dataWithoutId, 
+                    nome: clientData.nome,
+                    name: clientData.nome,
+                    apelido: clientData.apelido || clientData.nome,
+                    whatsapp: sanitizedPhone, 
+                    telefone: sanitizedPhone,
+                    referral_source: (clientData as any).origem || (clientData as any).referral_source || 'Outros',
+                    studio_id: studioIdToUse 
+                })
+                .eq('id', clientData.id)
+                .select()
+                .single();
+            
+            if (error) throw error;
+            resultClient = data;
+            toast.success("Cliente atualizado com sucesso!");
+        } else {
+            const { data, error } = await supabase
+                .from('clients')
+                .insert([{ 
+                    ...dataWithoutId, 
+                    nome: clientData.nome,
+                    name: clientData.nome,
+                    apelido: clientData.apelido || clientData.nome,
+                    whatsapp: sanitizedPhone, 
+                    telefone: sanitizedPhone,
+                    referral_source: (clientData as any).origem || (clientData as any).referral_source || 'Outros',
+                    studio_id: studioIdToUse 
+                }])
+                .select()
+                .single();
+            
+            if (error) throw error;
+            resultClient = data;
+            toast.success("Cliente cadastrado com sucesso!");
+        }
         
-        if (error) throw error;
-        handleSelectClient(data);
+        handleSelectClient(resultClient);
         setIsClientModalOpen(false);
+        setError(null);
     } catch (err: any) {
         console.error("Erro ao cadastrar cliente:", err);
-        // Use toast info instead of alert if possible, or a clearer message
-        setError("Erro ao cadastrar cliente: " + (err.message || "Tente novamente"));
+        const errMsg = err.message || "Tente novamente";
+        toast.error("Erro ao cadastrar cliente: " + errMsg);
+        setError("Erro ao cadastrar cliente: " + errMsg);
+        throw err;
     } finally {
         setIsSaving(false);
     }
@@ -374,11 +443,11 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
   const handleAddService = (service: LegacyService) => {
     setSelectedServices(prev => {
         const next = [...prev, service];
-        const newTotal = (manualPrice === '' ? 0 : Number(manualPrice)) + Number(service.price || 0);
+        const newTotal = next.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
         setManualPrice(newTotal);
-        const curDur = manualDuration + Number(service.duration || 0);
-        setHours(Math.floor(curDur / 60));
-        setMinutes(curDur % 60);
+        const totalDuration = next.reduce((acc, s) => acc + (Number(s.duration) || 0), 0);
+        setHours(Math.floor(totalDuration / 60));
+        setMinutes(totalDuration % 60);
         return next;
     });
     setSelectionModal(null);
@@ -386,13 +455,12 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
 
   const handleRemoveService = (index: number) => {
     setSelectedServices(prev => {
-        const removed = prev[index];
         const next = prev.filter((_, i) => i !== index);
-        const newTotal = Math.max(0, (manualPrice === '' ? 0 : Number(manualPrice)) - Number(removed?.price || 0));
+        const newTotal = next.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
         setManualPrice(newTotal);
-        const curDur = Math.max(0, manualDuration - Number(removed?.duration || 0));
-        setHours(Math.floor(curDur / 60));
-        setMinutes(curDur % 60);
+        const totalDuration = next.reduce((acc, s) => acc + (Number(s.duration) || 0), 0);
+        setHours(Math.floor(totalDuration / 60));
+        setMinutes(totalDuration % 60);
         return next;
     });
   };

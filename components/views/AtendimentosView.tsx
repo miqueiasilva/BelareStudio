@@ -812,7 +812,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         });
         
         try {
-            const duration = Number(app.service.duration) || 30;
+            const duration = Number(app.service?.duration) || (app.services && app.services.length > 0 ? app.services.reduce((acc: number, s: any) => acc + (Number(s.duration) || 0), 0) : 30);
             const start = new Date(app.start);
             const end = addMinutes(start, duration);
 

@@ -94,7 +94,22 @@ const SelectionModal: React.FC<SelectionModalProps> = ({
                 }}
                 className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-slate-50 border-b transition-colors active:bg-slate-100"
               >
-                <span className="font-medium">{item.name}</span>
+                <div className="flex flex-col">
+                  <span className="font-medium text-slate-800">{item.name}</span>
+                  {((item as any).duration !== undefined || (item as any).price !== undefined) && (
+                    <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500 font-medium">
+                      {(item as any).duration !== undefined && (
+                        <span className="text-orange-600 font-semibold">{(item as any).duration} min</span>
+                      )}
+                      {(item as any).duration !== undefined && (item as any).price !== undefined && (
+                        <span>•</span>
+                      )}
+                      {(item as any).price !== undefined && (
+                        <span>R$ {Number((item as any).price).toFixed(2)}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
                  <div className="flex items-center gap-2 text-orange-500">
                     {renderItemIcon()}
                     <ChevronRight size={20} />
