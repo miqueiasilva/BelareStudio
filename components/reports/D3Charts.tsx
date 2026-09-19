@@ -14,7 +14,11 @@ interface RevenueData {
     valor: number;
 }
 
-export const D3RevenueEvolutionChart: React.FC<{ data: RevenueData[] }> = ({ data }) => {
+export const D3RevenueEvolutionChart: React.FC<{ 
+    data: RevenueData[]; 
+    isPresentationMode?: boolean; 
+    dailyGoal?: number | null;
+}> = ({ data, isPresentationMode = false, dailyGoal = null }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
     const [dimensions, setDimensions] = useState({ width: 500, height: 320 });
@@ -169,7 +173,16 @@ export const D3RevenueEvolutionChart: React.FC<{ data: RevenueData[] }> = ({ dat
         // Y Axis
         const yAxis = d3.axisLeft(yScale)
             .ticks(5)
-            .tickFormat(d => `R$ ${d3.format('.0f')(d as number)}`);
+            .tickFormat(d => {
+                const val = d as number;
+                if (isPresentationMode) {
+                    if (dailyGoal && dailyGoal > 0) {
+                        return `${Math.round((val / dailyGoal) * 100)}%`;
+                    }
+                    return '***';
+                }
+                return `R$ ${d3.format('.0f')(val)}`;
+            });
 
         g.append('g')
             .attr('class', 'y-axis')
@@ -239,12 +252,20 @@ export const D3RevenueEvolutionChart: React.FC<{ data: RevenueData[] }> = ({ dat
                 // Tooltip location inside component wrapper
                 const rect = containerRef.current?.getBoundingClientRect();
                 if (rect) {
+                    let formattedValue = formatCurrency(d.valor);
+                    if (isPresentationMode) {
+                        if (dailyGoal && dailyGoal > 0) {
+                            formattedValue = `${(((d.valor) / dailyGoal) * 100).toFixed(1)}% da meta diária`;
+                        } else {
+                            formattedValue = 'Protegido (Modo Apresentação)';
+                        }
+                    }
                     setTooltip({
                         x: xPos + margin.left,
                         y: yPos + margin.top,
                         visible: true,
                         title: `Dia ${d.name}`,
-                        value: formatCurrency(d.valor)
+                        value: formattedValue
                     });
                 }
             })
@@ -254,7 +275,7 @@ export const D3RevenueEvolutionChart: React.FC<{ data: RevenueData[] }> = ({ dat
                 setTooltip(prev => prev ? { ...prev, visible: false } : null);
             });
 
-    }, [data, dimensions]);
+    }, [data, dimensions, isPresentationMode, dailyGoal]);
 
     return (
         <div ref={containerRef} className="w-full h-full relative">

@@ -10,7 +10,8 @@ import {
     ArrowRight, ChevronLeft, ChevronRight, Printer, CalendarDays,
     Banknote, CreditCard, Smartphone, RefreshCw, Package, AlertOctagon,
     Layers, Coins, CheckSquare, Square, BarChart4, Tags, ShoppingBag,
-    ArrowUp, ArrowDown, Receipt, HardDrive, Archive, Cake, Gauge, FileDown, Sheet, RotateCcw, Globe, User
+    ArrowUp, ArrowDown, Receipt, HardDrive, Archive, Cake, Gauge, FileDown, Sheet, RotateCcw, Globe, User,
+    ShieldCheck, Presentation, Eye, EyeOff
 } from 'lucide-react';
 import { 
     format, endOfMonth, differenceInDays, isSameDay, endOfDay,
@@ -161,26 +162,53 @@ const getAppointmentValue = (a: any, servicesList: any[] = []): number => {
   return getEffectiveAppointmentValue(a, servicesList);
 };
 
-const KPICard = ({ title, value, subtext, icon: Icon, color, trend, loading }: any) => {
+const KPICard = ({ title, value, subtext, icon: Icon, color, trend, loading, progress, badge, onClick }: any) => {
   if (loading) return <Skeleton className="h-32" />;
   
   const isPositive = trend >= 0;
   
   return (
-    <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+    <div 
+      onClick={onClick}
+      className={`bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all ${onClick ? 'cursor-pointer' : ''}`}
+    >
       <div className="flex justify-between items-start mb-4">
         <div className={`p-3 rounded-2xl ${color} text-white shadow-lg`}>
           <Icon size={20} />
         </div>
-        {trend !== undefined && (
-          <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-black ${isPositive ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-            {isPositive ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-            {Math.abs(trend).toFixed(1)}%
-          </div>
-        )}
+        <div className="flex items-center gap-1.5">
+          {badge && (
+            <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
+              {badge}
+            </span>
+          )}
+          {trend !== undefined && (
+            <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-black ${isPositive ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+              {isPositive ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+              {Math.abs(trend).toFixed(1)}%
+            </div>
+          )}
+        </div>
       </div>
       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{title}</p>
       <h3 className="text-2xl font-black text-slate-800 mt-1">{value}</h3>
+      
+      {progress !== undefined && progress !== null && (
+        <div className="mt-3 space-y-1">
+          <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+            <div 
+              className={`h-full transition-all duration-700 rounded-full ${typeof progress === 'number' && progress >= 100 ? 'bg-emerald-500' : 'bg-indigo-600'}`}
+              style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-[9px] font-bold text-slate-400">
+            <span>0%</span>
+            <span>{typeof progress === 'number' ? `${Math.min(100, Math.max(0, progress)).toFixed(0)}%` : '0%'}</span>
+            <span>100%</span>
+          </div>
+        </div>
+      )}
+
       {subtext && <p className="text-[10px] text-slate-400 font-bold mt-2 uppercase">{subtext}</p>}
     </div>
   );
@@ -237,6 +265,14 @@ const RelatoriosView: React.FC = () => {
   const [availableProfessionals, setAvailableProfessionals] = useState<any[]>([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const [services, setServices] = useState<any[]>([]);
+
+  // Modo Apresentação & Metas States
+  const [presentationMode, setPresentationMode] = useState<boolean>(false);
+  const [studioGoal, setStudioGoal] = useState<number | null>(null);
+  const [dailyGoal, setDailyGoal] = useState<number | null>(null);
+  const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
+  const [tempGoalInput, setTempGoalInput] = useState('');
+  const [isSavingGoal, setIsSavingGoal] = useState(false);
 
   // Derived filtered data states based on selected professional filter
   const displayData = useMemo(() => {
@@ -576,6 +612,49 @@ const RelatoriosView: React.FC = () => {
       setRawUpcomingData(upcomingAppts || []);
       setRawSixMonthsTransactions(sixMonthsTransRes.data || []);
 
+      // Fetch studio revenue goal from studio_settings
+      let fetchedGoal: number | null = null;
+      let fetchedDailyGoal: number | null = null;
+
+      try {
+        const { data: settingsData } = await supabase
+          .from('studio_settings')
+          .select('revenue_goal, monthly_revenue_goal, daily_revenue_goal')
+          .eq('studio_id', activeStudioId)
+          .maybeSingle();
+
+        if (settingsData) {
+          const g = Number(settingsData.monthly_revenue_goal || settingsData.revenue_goal || 0);
+          if (g > 0) fetchedGoal = g;
+          const dg = Number(settingsData.daily_revenue_goal || 0);
+          if (dg > 0) fetchedDailyGoal = dg;
+        }
+      } catch (err) {
+        console.warn("Aviso ao buscar metas do estúdio:", err);
+      }
+
+      // Safe Local Storage fallback
+      if (!fetchedGoal) {
+        try {
+          const localGoal = Number(window.safeLocalStorage?.getItem(`revenue_goal_${activeStudioId}`) || 0);
+          if (localGoal > 0) fetchedGoal = localGoal;
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      if (!fetchedDailyGoal) {
+        try {
+          const localDaily = Number(window.safeLocalStorage?.getItem(`daily_revenue_goal_${activeStudioId}`) || 0);
+          if (localDaily > 0) fetchedDailyGoal = localDaily;
+          else if (fetchedGoal && fetchedGoal > 0) fetchedDailyGoal = Math.round(fetchedGoal / 30);
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      setStudioGoal(fetchedGoal);
+      setDailyGoal(fetchedDailyGoal);
       
     } catch (err) {
       console.error("Erro ao buscar dados do BI:", err);
@@ -588,6 +667,113 @@ const RelatoriosView: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Handle saving goal
+  const handleSaveGoal = async (val: number) => {
+    if (!activeStudioId) return;
+    setIsSavingGoal(true);
+    try {
+      // 1. Save in safeLocalStorage
+      try {
+        window.safeLocalStorage?.setItem(`revenue_goal_${activeStudioId}`, String(val));
+        window.safeLocalStorage?.setItem(`daily_revenue_goal_${activeStudioId}`, String(Math.round(val / 30)));
+      } catch (storageErr) {
+        console.warn("Falha ao salvar meta no safeLocalStorage:", storageErr);
+      }
+
+      // 2. Persist in Supabase
+      try {
+        const { error } = await supabase
+          .from('studio_settings')
+          .upsert({
+            studio_id: activeStudioId,
+            revenue_goal: val,
+            monthly_revenue_goal: val,
+            daily_revenue_goal: Math.round(val / 30),
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'studio_id' });
+
+        if (error) {
+          console.warn("Aviso ao persistir meta no Supabase:", error);
+        }
+      } catch (dbErr) {
+        console.warn("Erro ao tentar persistir meta no banco:", dbErr);
+      }
+
+      setStudioGoal(val > 0 ? val : null);
+      setDailyGoal(val > 0 ? Math.round(val / 30) : null);
+      toast.success("Meta financeira atualizada com sucesso!");
+      setIsGoalModalOpen(false);
+    } catch (err: any) {
+      console.warn("Erro ao salvar meta financeira:", err);
+      toast.error("Erro ao salvar meta financeira: " + (err.message || 'tente novamente'));
+    } finally {
+      setIsSavingGoal(false);
+    }
+  };
+
+  // Dynamic Goal and Presentation calculations
+  const presentationMetrics = useMemo(() => {
+    // 1. Check if a positive monthly goal is defined
+    const monthlyGoal = (studioGoal && studioGoal > 0) ? studioGoal : null;
+    if (!monthlyGoal) {
+      return {
+        hasGoal: false,
+        periodTargetGoal: 0,
+        upcomingTargetGoal: 0,
+        realizedPercent: null as number | null,
+        projectedPercent: null as number | null,
+        futurePercent: null as number | null,
+        daysInPeriod: 1,
+        activeProfsCount: 1,
+        isFilteredByProf: false,
+        monthlyGoal: null
+      };
+    }
+
+    // 2. Calculate period length in days
+    const { start, end } = getDates();
+    const daysInPeriod = Math.max(1, differenceInDays(end, start) + 1);
+
+    // Period base goal
+    const periodBaseGoal = period === 'today'
+      ? ((dailyGoal && dailyGoal > 0) ? dailyGoal : (monthlyGoal / 30))
+      : (period === '30d' ? monthlyGoal : ((monthlyGoal / 30) * daysInPeriod));
+
+    // Upcoming 30-day base goal (the reference for next 30 days is the 30-day monthly goal)
+    const upcomingBaseGoal = monthlyGoal;
+
+    // 3. Adjust for professional filter
+    // If a specific professional is filtered, their proportional share of the studio goal:
+    const activeProfs = availableProfessionals.filter(p => p.active !== false);
+    const activeProfsCount = Math.max(1, activeProfs.length || 1);
+    const isFilteredByProf = selectedProfessionals.length > 0 && selectedProfessionals[0] !== 'all';
+
+    const periodTargetGoal = isFilteredByProf ? (periodBaseGoal / activeProfsCount) : periodBaseGoal;
+    const upcomingTargetGoal = isFilteredByProf ? (upcomingBaseGoal / activeProfsCount) : upcomingBaseGoal;
+
+    // 4. Calculate percentages
+    const realizedVal = Number(data?.income || 0);
+    const projectedVal = Number(data?.potentialIncome || 0);
+    const futureVal = Number(upcomingData?.projectedIncome || 0);
+
+    const realizedPercent = periodTargetGoal > 0 ? (realizedVal / periodTargetGoal) * 100 : 0;
+    const projectedPercent = periodTargetGoal > 0 ? (projectedVal / periodTargetGoal) * 100 : 0;
+    const futurePercent = upcomingTargetGoal > 0 ? (futureVal / upcomingTargetGoal) * 100 : 0;
+
+    return {
+      hasGoal: true,
+      periodTargetGoal,
+      upcomingTargetGoal,
+      realizedPercent,
+      projectedPercent,
+      futurePercent,
+      daysInPeriod,
+      isFilteredByProf,
+      activeProfsCount,
+      monthlyGoal
+    };
+  }, [studioGoal, dailyGoal, period, getDates, availableProfessionals, selectedProfessionals, data?.income, data?.potentialIncome, upcomingData?.projectedIncome]);
 
   // --- Calculations ---
 
@@ -1738,21 +1924,183 @@ const RelatoriosView: React.FC = () => {
               )}
             </h2>
             <p className="text-slate-400 font-medium max-w-xl text-sm md:text-base">
-              {data?.completedAppts > 0
-                ? `A Jaci identificou ${data?.completedAppts} atendimentos concluídos, gerando R$ ${data?.income.toLocaleString('pt-BR')} com ticket médio de R$ ${data?.ticketMedio.toFixed(2)}.`
-                : `A Jaci identificou ${data?.totalAppts || 0} agendamentos no período com potencial de R$ ${(data?.potentialIncome || 0).toLocaleString('pt-BR')}.`}
+              {presentationMode ? (
+                presentationMetrics.hasGoal ? (
+                  `A Jaci identificou ${data?.completedAppts || 0} atendimentos concluídos, atingindo ${presentationMetrics.realizedPercent?.toFixed(1)}% da meta do período, com projeção total de ${presentationMetrics.projectedPercent?.toFixed(1)}% pela agenda.`
+                ) : (
+                  `A Jaci identificou ${data?.completedAppts || 0} atendimentos concluídos e ${data?.totalAppts || 0} agendamentos no período (Meta mensal não cadastrada).`
+                )
+              ) : (
+                data?.completedAppts > 0
+                  ? `A Jaci identificou ${data?.completedAppts} atendimentos concluídos, gerando R$ ${data?.income.toLocaleString('pt-BR')} com ticket médio de R$ ${data?.ticketMedio.toFixed(2)}.`
+                  : `A Jaci identificou ${data?.totalAppts || 0} agendamentos no período com potencial de R$ ${(data?.potentialIncome || 0).toLocaleString('pt-BR')}.`
+              )}
             </p>
           </div>
           <div className="flex gap-4">
-            <button className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-orange-500/20">Ver Estratégia</button>
+            <button 
+              onClick={() => {
+                setTempGoalInput(studioGoal ? String(studioGoal) : '');
+                setIsGoalModalOpen(true);
+              }}
+              className="bg-orange-500 hover:bg-orange-600 text-white px-6 md:px-8 py-3.5 md:py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-orange-500/20 flex items-center gap-2"
+            >
+              <Target size={16} />
+              {presentationMetrics.hasGoal ? 'Ajustar Meta' : 'Definir Meta'}
+            </button>
           </div>
         </div>
       </div>
 
+      {/* Opção Modo Apresentação vs Valores R$ */}
+      <div className="bg-white p-4 md:p-5 rounded-[28px] border border-slate-100 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className={`p-3 rounded-2xl transition-colors ${presentationMode ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-100 text-slate-700'}`}>
+            {presentationMode ? <Presentation size={22} /> : <Banknote size={22} />}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs md:text-sm font-black uppercase tracking-wider text-slate-800">
+                {presentationMode ? "Modo Apresentação Ativo (%)" : "Visualização Financeira (R$)"}
+              </h3>
+              {presentationMode && (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1">
+                  <ShieldCheck size={12} /> Seguro p/ Reuniões
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] font-bold text-slate-400 mt-0.5">
+              {presentationMode 
+                ? (presentationMetrics.hasGoal 
+                    ? `Faturamento monetário protegido. Exibindo percentuais baseados na meta do período${presentationMetrics.isFilteredByProf ? ' (ajustada para o profissional)' : ''}.` 
+                    : "Modo Apresentação ativado. Nenhuma meta cadastrada para este estúdio.")
+                : "Exibindo faturamento e projeções em valores monetários integrais (R$)."}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Alternador de Modo: Valores R$ vs Modo Apresentação (%) */}
+          <div className="inline-flex p-1 bg-slate-100/90 rounded-2xl border border-slate-200/80 w-full sm:w-auto">
+            <button
+              onClick={() => setPresentationMode(false)}
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                !presentationMode 
+                  ? 'bg-white text-slate-800 shadow-sm' 
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Banknote size={14} />
+              Valores R$
+            </button>
+            <button
+              onClick={() => setPresentationMode(true)}
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                presentationMode 
+                  ? 'bg-indigo-600 text-white shadow-sm' 
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Presentation size={14} />
+              Modo Apresentação (%)
+            </button>
+          </div>
+
+          {/* Botão de Ajustar Meta */}
+          <button
+            onClick={() => {
+              setTempGoalInput(studioGoal ? String(studioGoal) : '');
+              setIsGoalModalOpen(true);
+            }}
+            className="flex items-center justify-center gap-2 px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all"
+            title="Definir ou alterar meta de faturamento"
+          >
+            <Target size={14} className="text-orange-500" />
+            {presentationMetrics.hasGoal ? (
+              presentationMode ? "Ajustar Meta" : `Meta: R$ ${presentationMetrics.monthlyGoal?.toLocaleString('pt-BR')}`
+            ) : (
+              <span className="text-amber-600 font-black">Definir Meta</span>
+            )}
+          </button>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
-        <KPICard title="Faturamento Realizado (Pago)" value={`R$ ${data?.income.toLocaleString('pt-BR')}`} trend={metrics?.incomeTrend} color="bg-emerald-500" icon={DollarSign} loading={isLoading} />
-        <KPICard title="Faturamento Projetado (Agenda)" value={`R$ ${data?.potentialIncome.toLocaleString('pt-BR')}`} color="bg-blue-600" icon={Target} subtext="Total da agenda no período" loading={isLoading} />
-        <KPICard title="Projeção Futura (30 dias)" value={`R$ ${upcomingData?.projectedIncome.toLocaleString('pt-BR') || '0'}`} color="bg-indigo-600" icon={TrendingUp} subtext={`${upcomingData?.count || 0} agendamentos futuros`} loading={isLoading} />
+        {/* 1. Faturamento Realizado */}
+        <KPICard 
+          title={presentationMode ? "Faturamento Realizado" : "Faturamento Realizado (Pago)"} 
+          value={
+            presentationMode 
+              ? (presentationMetrics.hasGoal 
+                  ? `${presentationMetrics.realizedPercent!.toFixed(1)}%` 
+                  : "Meta não definida")
+              : `R$ ${data?.income.toLocaleString('pt-BR')}`
+          } 
+          progress={presentationMode && presentationMetrics.hasGoal ? Math.min(100, Math.max(0, presentationMetrics.realizedPercent!)) : undefined}
+          trend={metrics?.incomeTrend} 
+          color="bg-emerald-500" 
+          icon={DollarSign} 
+          subtext={
+            presentationMode 
+              ? (presentationMetrics.hasGoal 
+                  ? (presentationMetrics.realizedPercent! >= 100 ? "Meta atingida!" : "da meta do período") 
+                  : "Cadastre a meta do estúdio")
+              : undefined
+          }
+          badge={presentationMode && presentationMetrics.hasGoal ? "Meta %" : undefined}
+          loading={isLoading} 
+          onClick={presentationMode && !presentationMetrics.hasGoal ? () => { setTempGoalInput(''); setIsGoalModalOpen(true); } : undefined}
+        />
+
+        {/* 2. Faturamento Projetado */}
+        <KPICard 
+          title={presentationMode ? "Faturamento Projetado" : "Faturamento Projetado (Agenda)"} 
+          value={
+            presentationMode 
+              ? (presentationMetrics.hasGoal 
+                  ? `${presentationMetrics.projectedPercent!.toFixed(1)}%` 
+                  : "Meta não definida")
+              : `R$ ${data?.potentialIncome.toLocaleString('pt-BR')}`
+          } 
+          progress={presentationMode && presentationMetrics.hasGoal ? Math.min(100, Math.max(0, presentationMetrics.projectedPercent!)) : undefined}
+          color="bg-blue-600" 
+          icon={Target} 
+          subtext={
+            presentationMode 
+              ? (presentationMetrics.hasGoal ? "Projeção da agenda vs meta" : "Total da agenda no período")
+              : "Total da agenda no período"
+          }
+          badge={presentationMode && presentationMetrics.hasGoal ? "Meta %" : undefined}
+          loading={isLoading} 
+          onClick={presentationMode && !presentationMetrics.hasGoal ? () => { setTempGoalInput(''); setIsGoalModalOpen(true); } : undefined}
+        />
+
+        {/* 3. Projeção Futura (30 dias) */}
+        <KPICard 
+          title="Projeção Futura (30 dias)" 
+          value={
+            presentationMode 
+              ? (presentationMetrics.hasGoal 
+                  ? `${presentationMetrics.futurePercent!.toFixed(1)}%` 
+                  : "Meta não definida")
+              : `R$ ${upcomingData?.projectedIncome.toLocaleString('pt-BR') || '0'}`
+          } 
+          progress={presentationMode && presentationMetrics.hasGoal ? Math.min(100, Math.max(0, presentationMetrics.futurePercent!)) : undefined}
+          color="bg-indigo-600" 
+          icon={TrendingUp} 
+          subtext={
+            presentationMode 
+              ? (presentationMetrics.hasGoal 
+                  ? `${upcomingData?.count || 0} agendamentos futuros (${presentationMetrics.futurePercent!.toFixed(1)}% da meta)` 
+                  : `${upcomingData?.count || 0} agendamentos futuros`)
+              : `${upcomingData?.count || 0} agendamentos futuros`
+          }
+          badge={presentationMode && presentationMetrics.hasGoal ? "Meta %" : undefined}
+          loading={isLoading} 
+          onClick={presentationMode && !presentationMetrics.hasGoal ? () => { setTempGoalInput(''); setIsGoalModalOpen(true); } : undefined}
+        />
+
+        {/* 4. Ticket Médio (Não Alterar) */}
         <KPICard 
           title="Ticket Médio" 
           value={`R$ ${data?.ticketMedio.toFixed(2)}`} 
@@ -1762,9 +2110,17 @@ const RelatoriosView: React.FC = () => {
           icon={Layers} 
           loading={isLoading} 
         />
+
+        {/* 5. Atendimentos Total (Não Alterar) */}
         <KPICard title="Atendimentos Total" value={data?.totalAppts} trend={metrics?.apptsTrend} color="bg-orange-500" icon={Calendar} loading={isLoading} />
+
+        {/* 6. Taxa Ocupação (Não Alterar) */}
         <KPICard title="Taxa Ocupação" value={`${(data?.occupancyRate || 0).toFixed(1)}%`} subtext="Capacidade da agenda" color="bg-slate-800" icon={Target} loading={isLoading} />
+
+        {/* 7. Novos Clientes (Não Alterar) */}
         <KPICard title="Novos Clientes" value={newClientsData.current} trend={newClientsData.trend} subtext="Cadastrados no período" color="bg-cyan-500" icon={UserPlus} loading={isLoading} />
+
+        {/* 8. Margem de Lucro */}
         <KPICard title="Margem de Lucro" value={`${data?.margin.toFixed(1)}%`} color="bg-rose-500" icon={Percent} loading={isLoading} />
       </div>
 
@@ -1776,7 +2132,11 @@ const RelatoriosView: React.FC = () => {
           </div>
           <div className="h-64 md:h-80">
             {metrics?.evolution && metrics.evolution.length > 0 ? (
-              <D3RevenueEvolutionChart data={metrics.evolution} />
+              <D3RevenueEvolutionChart 
+                data={metrics.evolution} 
+                isPresentationMode={presentationMode}
+                dailyGoal={dailyGoal}
+              />
             ) : (
               <div className="h-full flex items-center justify-center">
                 <EmptyState />
@@ -1842,11 +2202,23 @@ const RelatoriosView: React.FC = () => {
                     fontWeight="bold" 
                     tickLine={false} 
                     axisLine={false}
-                    tickFormatter={(value) => `R$ ${value.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`}
+                    tickFormatter={(value) => {
+                      if (presentationMode) {
+                        if (studioGoal && studioGoal > 0) {
+                          return `${Math.round((value / studioGoal) * 100)}%`;
+                        }
+                        return '***';
+                      }
+                      return `R$ ${value.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`;
+                    }}
                   />
                   <Tooltip 
                     formatter={(value: any, name: any) => [
-                      `R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+                      presentationMode 
+                        ? (studioGoal && studioGoal > 0 
+                            ? `${((Number(value) / studioGoal) * 100).toFixed(1)}% da meta mensal` 
+                            : 'Valor Protegido')
+                        : `R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
                       name
                     ]}
                     contentStyle={{ borderRadius: '20px', border: '1px solid #f1f5f9', fontWeight: 'bold', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.05)' }}
@@ -1868,7 +2240,11 @@ const RelatoriosView: React.FC = () => {
                       <div>
                         <span className="text-slate-800 font-black">{item.name}</span>
                         <div className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
-                          R$ {item['Deste Mês'].toLocaleString('pt-BR')} vs R$ {item['Mês Anterior'].toLocaleString('pt-BR')}
+                          {presentationMode 
+                            ? (studioGoal && studioGoal > 0
+                                ? `${((item['Deste Mês'] / studioGoal) * 100).toFixed(1)}% vs ${((item['Mês Anterior'] / studioGoal) * 100).toFixed(1)}% da meta`
+                                : `Variação de ${isPositive ? '+' : ''}${item.Crescimento.toFixed(1)}%`)
+                            : `R$ ${item['Deste Mês'].toLocaleString('pt-BR')} vs R$ ${item['Mês Anterior'].toLocaleString('pt-BR')}`}
                         </div>
                       </div>
                       <div className="text-right flex items-center gap-3">
@@ -1877,7 +2253,9 @@ const RelatoriosView: React.FC = () => {
                             {isPositive ? '+' : ''}{item.Crescimento.toFixed(1)}%
                           </span>
                           <span className="text-[10px] text-slate-400 font-bold block">
-                            {isPositive ? 'Cresceu' : 'Caiu'} R$ {Math.abs(item.Diferenca).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                            {presentationMode 
+                              ? (isPositive ? 'Evolução positiva' : 'Redução no período')
+                              : `${isPositive ? 'Cresceu' : 'Caiu'} R$ ${Math.abs(item.Diferenca).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`}
                           </span>
                         </div>
                         <div className={`p-1.5 rounded-lg ${isPositive ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
@@ -2918,6 +3296,87 @@ const RelatoriosView: React.FC = () => {
     </div>
   );
 
+  const renderGoalModal = () => {
+    if (!isGoalModalOpen) return null;
+
+    return (
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
+        <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 font-sans text-left">
+          <div className="p-6 md:p-8 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-100">
+                <Target size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">Meta de Faturamento</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Usada no Modo Apresentação</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setIsGoalModalOpen(false)}
+              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 rounded-xl transition-all"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="p-6 md:p-8 space-y-6">
+            <div>
+              <label className="block text-xs font-black uppercase text-slate-600 mb-2">
+                Meta Mensal do Estúdio (R$)
+              </label>
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">R$</span>
+                <input 
+                  type="number"
+                  placeholder="Ex: 30000"
+                  value={tempGoalInput}
+                  onChange={(e) => setTempGoalInput(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3.5 pl-12 pr-4 text-slate-800 font-bold text-base outline-none focus:border-indigo-500 focus:bg-white transition-all"
+                  autoFocus
+                />
+              </div>
+              <p className="text-[10px] text-slate-400 font-medium mt-2">
+                Essa meta é utilizada como base para calcular os percentuais atingidos no Modo Apresentação e no gráfico de evolução.
+              </p>
+            </div>
+
+            {tempGoalInput && Number(tempGoalInput) > 0 && (
+              <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/60 space-y-1">
+                <p className="text-[10px] font-black uppercase tracking-wider text-indigo-700">Simulação de Metas Derivadas:</p>
+                <div className="flex justify-between text-xs text-indigo-950 font-bold">
+                  <span>Meta Diária (~30 dias):</span>
+                  <span>R$ {(Number(tempGoalInput) / 30).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}/dia</span>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsGoalModalOpen(false)}
+                className="flex-1 py-3.5 rounded-2xl border border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-wider hover:bg-slate-50 transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isSavingGoal}
+                onClick={() => {
+                  const val = Number(tempGoalInput);
+                  handleSaveGoal(val);
+                }}
+                className="flex-1 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-indigo-200 active:scale-95 transition-all disabled:opacity-50"
+              >
+                {isSavingGoal ? 'Salvando...' : 'Salvar Meta'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans text-left">
       <header className="bg-white border-b border-slate-200 px-4 py-4 md:px-8 md:py-6 flex flex-col lg:flex-row justify-between items-center gap-4 md:gap-6 z-30 shadow-sm">
@@ -2987,6 +3446,9 @@ const RelatoriosView: React.FC = () => {
 
       {/* Detail Modal for selected professional appointments */}
       {renderDetailModal()}
+
+      {/* Goal Modal for presentation mode */}
+      {renderGoalModal()}
     </div>
   );
 };
