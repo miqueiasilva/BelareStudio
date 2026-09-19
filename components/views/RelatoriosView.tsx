@@ -252,6 +252,45 @@ const RelatoriosView: React.FC = () => {
   const [customStartDate, setCustomStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   
+  const getDates = useCallback(() => {
+    let start = new Date();
+    let end = new Date();
+    
+    switch (period) {
+      case 'today':
+        start = startOfDay(new Date());
+        break;
+      case '7d':
+        start = subDays(new Date(), 7);
+        break;
+      case '15d':
+        start = subDays(new Date(), 15);
+        break;
+      case '30d':
+        start = subDays(new Date(), 30);
+        break;
+      case '3m':
+        start = subMonths(new Date(), 3);
+        break;
+      case '6m':
+        start = subMonths(new Date(), 6);
+        break;
+      case '12m':
+        start = subMonths(new Date(), 12);
+        break;
+      case 'custom':
+        start = startOfDay(parseISO(customStartDate));
+        end = endOfDay(parseISO(customEndDate));
+        break;
+    }
+    
+    const diff = differenceInDays(end, start) + 1;
+    const prevStart = subDays(start, diff);
+    const prevEnd = subDays(end, diff);
+    
+    return { start, end, prevStart, prevEnd };
+  }, [period, customStartDate, customEndDate]);
+  
   // Data States
   const [rawReceivedData, setRawReceivedData] = useState<any>(null);
   const [rawPreviousData, setRawPreviousData] = useState<any>(null);
@@ -469,44 +508,6 @@ const RelatoriosView: React.FC = () => {
 
   // --- Data Fetching ---
 
-  const getDates = useCallback(() => {
-    let start = new Date();
-    let end = new Date();
-    
-    switch (period) {
-      case 'today':
-        start = startOfDay(new Date());
-        break;
-      case '7d':
-        start = subDays(new Date(), 7);
-        break;
-      case '15d':
-        start = subDays(new Date(), 15);
-        break;
-      case '30d':
-        start = subDays(new Date(), 30);
-        break;
-      case '3m':
-        start = subMonths(new Date(), 3);
-        break;
-      case '6m':
-        start = subMonths(new Date(), 6);
-        break;
-      case '12m':
-        start = subMonths(new Date(), 12);
-        break;
-      case 'custom':
-        start = startOfDay(parseISO(customStartDate));
-        end = endOfDay(parseISO(customEndDate));
-        break;
-    }
-    
-    const diff = differenceInDays(end, start) + 1;
-    const prevStart = subDays(start, diff);
-    const prevEnd = subDays(end, diff);
-    
-    return { start, end, prevStart, prevEnd };
-  }, [period, customStartDate, customEndDate]);
 
   const fetchData = useCallback(async () => {
     if (!activeStudioId) return;
