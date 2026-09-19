@@ -229,6 +229,7 @@ const RelatoriosView: React.FC = () => {
   const [rawPreviousData, setRawPreviousData] = useState<any>(null);
   const [rawUpcomingData, setRawUpcomingData] = useState<any[]>([]);
   const [rawSixMonthsTransactions, setRawSixMonthsTransactions] = useState<any[]>([]);
+  const [newClientsData, setNewClientsData] = useState<{ current: number; previous: number; trend: number }>({ current: 0, previous: 0, trend: 0 });
   
   // Filters
   const [selectedProfessionals, setSelectedProfessionals] = useState<string[]>([]);
@@ -268,18 +269,35 @@ const RelatoriosView: React.FC = () => {
       return acc + getAppointmentValue(a, services);
     }, 0);
 
+    const standaloneTransIncome = transactions
+      .filter(t => (t.type === 'income' || t.type === 'receita') && !t.appointment_id)
+      .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
     const rawIncome = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
-    const income = completedRevenue > 0 ? completedRevenue : rawIncome;
+    const income = completedRevenue > 0 
+      ? completedRevenue + (standaloneTransIncome > 0 ? standaloneTransIncome : 0)
+      : rawIncome;
     const expense = transactions.filter(t => t.type === 'expense' || t.type === 'despesa').reduce((acc, t) => acc + Number(t.amount || 0), 0);
     const totalAppts = appointments.length;
     const completedAppts = appointments.filter(a => a.status === 'concluido').length;
-    const ticketMedio = completedAppts > 0 ? income / completedAppts : 0;
-    const profit = income - expense;
-    const margin = income > 0 ? (profit / income) * 100 : 0;
     
     const potentialIncome = appointments.filter(a => a.status !== 'cancelado').reduce((acc, a) => {
       return acc + getAppointmentValue(a, services);
     }, 0);
+
+    const validScheduledAppts = appointments.filter(a => a.status !== 'cancelado' && a.type !== 'block').length;
+    const ticketMedio = completedAppts > 0 
+      ? income / completedAppts 
+      : (validScheduledAppts > 0 ? potentialIncome / validScheduledAppts : 0);
+
+    const profit = income - expense;
+    const margin = income > 0 ? (profit / income) * 100 : 0;
+    
+    // Taxa de ocupação real da equipe ou do profissional selecionado
+    const profsCount = selectedProfessionals.length > 0 ? 1 : Math.max(1, availableProfessionals.filter(p => p.active !== false).length || 1);
+    const numDays = Math.max(1, differenceInDays(getDates().end, getDates().start) + 1);
+    const occupiedMinutes = appointments.filter(a => a.status !== 'cancelado').reduce((acc, a) => acc + (Number(a.duration) || 30), 0);
+    const occupancyRate = Math.min(100, Math.max(0, (occupiedMinutes / (numDays * profsCount * 480)) * 100));
 
     const onlineAppts = appointments.filter(a => (a.origin === 'online' || a.origin === 'link') && a.status !== 'cancelado').length;
     const onlineRate = totalAppts > 0 ? (onlineAppts / totalAppts) * 100 : 0;
@@ -293,13 +311,14 @@ const RelatoriosView: React.FC = () => {
       ticketMedio,
       profit,
       margin,
+      occupancyRate,
       onlineAppts,
       onlineRate,
       transactions,
       appointments,
       potentialIncome
     };
-  }, [rawReceivedData, selectedProfessionals, services]);
+  }, [rawReceivedData, selectedProfessionals, services, availableProfessionals, getDates]);
 
   const displayPreviousData = useMemo(() => {
     if (!rawPreviousData) return null;
@@ -331,18 +350,34 @@ const RelatoriosView: React.FC = () => {
       return acc + getAppointmentValue(a, services);
     }, 0);
 
+    const standaloneTransIncome = transactions
+      .filter(t => (t.type === 'income' || t.type === 'receita') && !t.appointment_id)
+      .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
     const rawIncome = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
-    const income = completedRevenue > 0 ? completedRevenue : rawIncome;
+    const income = completedRevenue > 0 
+      ? completedRevenue + (standaloneTransIncome > 0 ? standaloneTransIncome : 0)
+      : rawIncome;
     const expense = transactions.filter(t => t.type === 'expense' || t.type === 'despesa').reduce((acc, t) => acc + Number(t.amount || 0), 0);
     const totalAppts = appointments.length;
     const completedAppts = appointments.filter(a => a.status === 'concluido').length;
-    const ticketMedio = completedAppts > 0 ? income / completedAppts : 0;
-    const profit = income - expense;
-    const margin = income > 0 ? (profit / income) * 100 : 0;
     
     const potentialIncome = appointments.filter(a => a.status !== 'cancelado').reduce((acc, a) => {
       return acc + getAppointmentValue(a, services);
     }, 0);
+
+    const validScheduledAppts = appointments.filter(a => a.status !== 'cancelado' && a.type !== 'block').length;
+    const ticketMedio = completedAppts > 0 
+      ? income / completedAppts 
+      : (validScheduledAppts > 0 ? potentialIncome / validScheduledAppts : 0);
+
+    const profit = income - expense;
+    const margin = income > 0 ? (profit / income) * 100 : 0;
+
+    const profsCount = selectedProfessionals.length > 0 ? 1 : Math.max(1, availableProfessionals.filter(p => p.active !== false).length || 1);
+    const numDays = Math.max(1, differenceInDays(getDates().prevEnd, getDates().prevStart) + 1);
+    const occupiedMinutes = appointments.filter(a => a.status !== 'cancelado').reduce((acc, a) => acc + (Number(a.duration) || 30), 0);
+    const occupancyRate = Math.min(100, Math.max(0, (occupiedMinutes / (numDays * profsCount * 480)) * 100));
 
     const onlineAppts = appointments.filter(a => (a.origin === 'online' || a.origin === 'link') && a.status !== 'cancelado').length;
     const onlineRate = totalAppts > 0 ? (onlineAppts / totalAppts) * 100 : 0;
@@ -356,13 +391,14 @@ const RelatoriosView: React.FC = () => {
       ticketMedio,
       profit,
       margin,
+      occupancyRate,
       onlineAppts,
       onlineRate,
       transactions,
       appointments,
       potentialIncome
     };
-  }, [rawPreviousData, selectedProfessionals, services]);
+  }, [rawPreviousData, selectedProfessionals, services, availableProfessionals, getDates]);
 
   const upcomingData = useMemo(() => {
     if (!rawUpcomingData) return { projectedIncome: 0, count: 0 };
@@ -444,15 +480,22 @@ const RelatoriosView: React.FC = () => {
       const { start, end, prevStart, prevEnd } = getDates();
       const sixMonthsAgo = startOfMonth(subMonths(new Date(), 6));
       
-      // Fetch current period and historical six months
-      const [transRes, apptsRes, teamRes, categoriesRes, servicesRes, sixMonthsTransRes] = await Promise.all([
+      // Fetch current period, historical six months, and new clients
+      const [transRes, apptsRes, teamRes, categoriesRes, servicesRes, sixMonthsTransRes, newClientsRes, prevNewClientsRes] = await Promise.all([
         supabase.from('financial_transactions').select('*').eq('studio_id', activeStudioId).gte('date', start.toISOString()).lte('date', end.toISOString()),
         supabase.from('appointments').select('*').eq('studio_id', activeStudioId).gte('date', start.toISOString()).lte('date', end.toISOString()),
         supabase.from('team_members').select('*').eq('studio_id', activeStudioId),
         supabase.from('financial_categories').select('name').eq('studio_id', activeStudioId).eq('active', true),
         supabase.from('services').select('id, preco, nome, categoria').eq('studio_id', activeStudioId),
-        supabase.from('financial_transactions').select('*').eq('studio_id', activeStudioId).gte('date', sixMonthsAgo.toISOString()).lte('date', new Date().toISOString())
+        supabase.from('financial_transactions').select('*').eq('studio_id', activeStudioId).gte('date', sixMonthsAgo.toISOString()).lte('date', new Date().toISOString()),
+        supabase.from('clients').select('id, created_at').eq('studio_id', activeStudioId).gte('created_at', start.toISOString()).lte('created_at', end.toISOString()),
+        supabase.from('clients').select('id, created_at').eq('studio_id', activeStudioId).gte('created_at', prevStart.toISOString()).lte('created_at', prevEnd.toISOString())
       ]);
+
+      const curNew = newClientsRes.data?.length || 0;
+      const prvNew = prevNewClientsRes.data?.length || 0;
+      const newTrend = prvNew > 0 ? ((curNew - prvNew) / prvNew) * 100 : (curNew > 0 ? 100 : 0);
+      setNewClientsData({ current: curNew, previous: prvNew, trend: newTrend });
 
       // Fetch upcoming appointments for projection (next 30 days)
       const upcomingStart = endOfMonth(new Date() > end ? new Date() : end);
@@ -479,28 +522,56 @@ const RelatoriosView: React.FC = () => {
       setServices(servicesRes.data || []);
 
       // Process Data
-      const process = (transactions: any[], appointments: any[]) => {
-        const income = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
+      const process = (transactions: any[], appointments: any[], isCurrent = true) => {
+        const completedRevenue = appointments.filter(a => a.status === 'concluido').reduce((acc, a) => {
+          return acc + getAppointmentValue(a, servicesRes.data || []);
+        }, 0);
+
+        const standaloneTransIncome = transactions
+          .filter(t => (t.type === 'income' || t.type === 'receita') && !t.appointment_id)
+          .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+        const rawIncome = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        
+        // Faturamento realizado real: atendimentos concluídos + transações avulsas
+        // Se completedRevenue for 0 mas houver transações (ex: fechamento/pagamentos avulsos), usa rawIncome
+        const income = completedRevenue > 0 
+          ? completedRevenue + (standaloneTransIncome > 0 ? standaloneTransIncome : 0)
+          : rawIncome;
+
         const expense = transactions.filter(t => t.type === 'expense' || t.type === 'despesa').reduce((acc, t) => acc + Number(t.amount || 0), 0);
         const totalAppts = appointments.length;
         const completedAppts = appointments.filter(a => a.status === 'concluido').length;
-        const ticketMedio = completedAppts > 0 ? income / completedAppts : 0;
-        const profit = income - expense;
-        const margin = income > 0 ? (profit / income) * 100 : 0;
         
-        // potential value calculation
+        // Potential value calculation
         const potentialIncome = appointments.filter(a => a.status !== 'cancelado').reduce((acc, a) => {
             return acc + getAppointmentValue(a, servicesRes.data || []);
         }, 0);
 
+        const validScheduledAppts = appointments.filter(a => a.status !== 'cancelado' && a.type !== 'block').length;
+        const ticketMedio = completedAppts > 0 
+          ? income / completedAppts 
+          : (validScheduledAppts > 0 ? potentialIncome / validScheduledAppts : 0);
+
+        const profit = income - expense;
+        const margin = income > 0 ? (profit / income) * 100 : 0;
+
+        // Occupancy calculation
+        const occupiedMinutes = appointments.filter(a => a.status !== 'cancelado').reduce((acc, a) => acc + (Number(a.duration) || 30), 0);
+        const profsCount = Math.max(1, (teamRes.data || []).filter((p: any) => p.active !== false).length || 1);
+        const pStart = isCurrent ? start : prevStart;
+        const pEnd = isCurrent ? end : prevEnd;
+        const numDays = Math.max(1, differenceInDays(pEnd, pStart) + 1);
+        const occupancyRate = Math.min(100, Math.max(0, (occupiedMinutes / (numDays * profsCount * 480)) * 100));
+
         const onlineAppts = appointments.filter(a => (a.origin === 'online' || a.origin === 'link') && a.status !== 'cancelado').length;
         const onlineRate = totalAppts > 0 ? (onlineAppts / totalAppts) * 100 : 0;
         
-        return { income, expense, totalAppts, completedAppts, ticketMedio, profit, margin, onlineAppts, onlineRate, transactions, appointments, potentialIncome };
+        return { income, expense, totalAppts, completedAppts, ticketMedio, profit, margin, occupancyRate, onlineAppts, onlineRate, transactions, appointments, potentialIncome };
       };
 
-      setRawReceivedData(process(transRes.data || [], apptsRes.data || []));
-      setRawPreviousData(process(prevTransRes.data || [], prevApptsRes.data || []));
+      setRawReceivedData(process(transRes.data || [], apptsRes.data || [], true));
+      setRawPreviousData(process(prevTransRes.data || [], prevApptsRes.data || [], false));
       
       setRawUpcomingData(upcomingAppts || []);
       setRawSixMonthsTransactions(sixMonthsTransRes.data || []);
@@ -534,10 +605,52 @@ const RelatoriosView: React.FC = () => {
     
     // Revenue Evolution
     const days = eachDayOfInterval({ start: getDates().start, end: getDates().end });
+    const hasCompletedInPeriod = (data.completedAppts || 0) > 0;
+
     const evolution = days.map(day => {
       const dStr = format(day, 'yyyy-MM-dd');
-      const dayIncome = data.transactions.filter((t: any) => format(parseISO(t.date), 'yyyy-MM-dd') === dStr && (t.type === 'income' || t.type === 'receita')).reduce((acc: number, t: any) => acc + Number(t.amount || 0), 0);
-      return { name: format(day, 'dd/MM'), valor: dayIncome };
+      
+      // Atendimentos concluídos no dia
+      const dayApptsIncome = (data.appointments || [])
+        .filter((a: any) => {
+          if (!a.date || a.status !== 'concluido') return false;
+          const aDateStr = typeof a.date === 'string' ? a.date.slice(0, 10) : format(new Date(a.date), 'yyyy-MM-dd');
+          return aDateStr === dStr;
+        })
+        .reduce((acc: number, a: any) => acc + getAppointmentValue(a, services), 0);
+
+      // Transações financeiras avulsas no dia (não atreladas a agendamento)
+      const dayUnlinkedTrans = (data.transactions || [])
+        .filter((t: any) => {
+          if (!t.date || (t.type !== 'income' && t.type !== 'receita')) return false;
+          const tDateStr = typeof t.date === 'string' ? t.date.slice(0, 10) : format(new Date(t.date), 'yyyy-MM-dd');
+          return tDateStr === dStr && !t.appointment_id;
+        })
+        .reduce((acc: number, t: any) => acc + Number(t.amount || 0), 0);
+
+      // Todas as transações do dia
+      const dayAllTrans = (data.transactions || [])
+        .filter((t: any) => {
+          if (!t.date || (t.type !== 'income' && t.type !== 'receita')) return false;
+          const tDateStr = typeof t.date === 'string' ? t.date.slice(0, 10) : format(new Date(t.date), 'yyyy-MM-dd');
+          return tDateStr === dStr;
+        })
+        .reduce((acc: number, t: any) => acc + Number(t.amount || 0), 0);
+
+      // Agendamentos futuros no dia (para visualização de agenda futura)
+      const dayProjected = (data.appointments || [])
+        .filter((a: any) => {
+          if (!a.date || a.status === 'cancelado' || a.type === 'block') return false;
+          const aDateStr = typeof a.date === 'string' ? a.date.slice(0, 10) : format(new Date(a.date), 'yyyy-MM-dd');
+          return aDateStr === dStr;
+        })
+        .reduce((acc: number, a: any) => acc + getAppointmentValue(a, services), 0);
+
+      const valor = hasCompletedInPeriod
+        ? dayApptsIncome + (dayUnlinkedTrans > 0 ? dayUnlinkedTrans : 0)
+        : (dayAllTrans > 0 ? dayAllTrans : dayProjected);
+
+      return { name: format(day, 'dd/MM'), valor: Number(valor.toFixed(2)) };
     });
 
     // Revenue by Category (Service Categories)
@@ -1618,10 +1731,16 @@ const RelatoriosView: React.FC = () => {
               <Sparkles size={14} fill="currentColor" /> Monitoramento de Saúde do Negócio
             </div>
             <h2 className="text-3xl md:text-5xl font-black tracking-tighter leading-none">
-              Seu estúdio está <span className="text-emerald-400">crescendo 12%</span> acima da média.
+              {metrics?.incomeTrend !== undefined && metrics.incomeTrend > 0 ? (
+                <>Seu estúdio está <span className="text-emerald-400">crescendo {metrics.incomeTrend.toFixed(1)}%</span> no período.</>
+              ) : (
+                <>Visão estratégica do <span className="text-orange-400">faturamento</span> e da agenda.</>
+              )}
             </h2>
             <p className="text-slate-400 font-medium max-w-xl text-sm md:text-base">
-              A Jaci detectou que sua retenção de clientes aumentou 5.4% este mês. <br className="hidden md:block" /> Recomendo focar no Ticket Médio nas próximas duas semanas.
+              {data?.completedAppts > 0
+                ? `A Jaci identificou ${data?.completedAppts} atendimentos concluídos, gerando R$ ${data?.income.toLocaleString('pt-BR')} com ticket médio de R$ ${data?.ticketMedio.toFixed(2)}.`
+                : `A Jaci identificou ${data?.totalAppts || 0} agendamentos no período com potencial de R$ ${(data?.potentialIncome || 0).toLocaleString('pt-BR')}.`}
             </p>
           </div>
           <div className="flex gap-4">
@@ -1634,10 +1753,18 @@ const RelatoriosView: React.FC = () => {
         <KPICard title="Faturamento Realizado (Pago)" value={`R$ ${data?.income.toLocaleString('pt-BR')}`} trend={metrics?.incomeTrend} color="bg-emerald-500" icon={DollarSign} loading={isLoading} />
         <KPICard title="Faturamento Projetado (Agenda)" value={`R$ ${data?.potentialIncome.toLocaleString('pt-BR')}`} color="bg-blue-600" icon={Target} subtext="Total da agenda no período" loading={isLoading} />
         <KPICard title="Projeção Futura (30 dias)" value={`R$ ${upcomingData?.projectedIncome.toLocaleString('pt-BR') || '0'}`} color="bg-indigo-600" icon={TrendingUp} subtext={`${upcomingData?.count || 0} agendamentos futuros`} loading={isLoading} />
-        <KPICard title="Ticket Médio" value={`R$ ${data?.ticketMedio.toFixed(2)}`} trend={metrics?.ticketTrend} color="bg-slate-700" icon={Layers} loading={isLoading} />
+        <KPICard 
+          title="Ticket Médio" 
+          value={`R$ ${data?.ticketMedio.toFixed(2)}`} 
+          subtext={data?.completedAppts === 0 && data?.totalAppts > 0 ? "Ticket Médio Projetado" : undefined}
+          trend={metrics?.ticketTrend} 
+          color="bg-slate-700" 
+          icon={Layers} 
+          loading={isLoading} 
+        />
         <KPICard title="Atendimentos Total" value={data?.totalAppts} trend={metrics?.apptsTrend} color="bg-orange-500" icon={Calendar} loading={isLoading} />
-        <KPICard title="Taxa Ocupação" value={`${data?.margin.toFixed(1)}%`} color="bg-slate-800" icon={Target} loading={isLoading} />
-        <KPICard title="Novos Clientes" value="12" trend={15} color="bg-cyan-500" icon={UserPlus} loading={isLoading} />
+        <KPICard title="Taxa Ocupação" value={`${(data?.occupancyRate || 0).toFixed(1)}%`} subtext="Capacidade da agenda" color="bg-slate-800" icon={Target} loading={isLoading} />
+        <KPICard title="Novos Clientes" value={newClientsData.current} trend={newClientsData.trend} subtext="Cadastrados no período" color="bg-cyan-500" icon={UserPlus} loading={isLoading} />
         <KPICard title="Margem de Lucro" value={`${data?.margin.toFixed(1)}%`} color="bg-rose-500" icon={Percent} loading={isLoading} />
       </div>
 
@@ -1878,13 +2005,17 @@ const RelatoriosView: React.FC = () => {
       return { name: format(day, 'dd/MM'), online, manual };
     }).filter(d => d.online > 0 || d.manual > 0);
 
+    const avgDuration = data?.appointments && data.appointments.length > 0 
+      ? Math.round(data.appointments.reduce((acc: number, a: any) => acc + (Number(a.duration) || 30), 0) / data.appointments.length) 
+      : 45;
+
     return (
       <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
           <KPICard title="Total Atendimentos" value={data?.totalAppts} color="bg-orange-500" icon={Calendar} loading={isLoading} />
           <KPICard title="Agendamentos Online" value={data?.onlineAppts} color="bg-purple-500" icon={Globe} loading={isLoading} />
-          <KPICard title="Taxa de Ocupação" value={`${data?.margin.toFixed(1)}%`} color="bg-indigo-500" icon={Target} loading={isLoading} />
-          <KPICard title="Tempo Médio" value="45 min" color="bg-slate-800" icon={Clock} loading={isLoading} />
+          <KPICard title="Taxa de Ocupação" value={`${(data?.occupancyRate || 0).toFixed(1)}%`} subtext="Capacidade da agenda" color="bg-indigo-500" icon={Target} loading={isLoading} />
+          <KPICard title="Tempo Médio" value={`${avgDuration} min`} color="bg-slate-800" icon={Clock} loading={isLoading} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
@@ -1937,9 +2068,10 @@ const RelatoriosView: React.FC = () => {
     const clientsWithOrigin = data?.appointments.reduce((acc: any[], app: any) => {
       if (!app.client_id) return acc;
       const existing = acc.find(c => c.id === app.client_id);
+      const appValue = getAppointmentValue(app, services);
       if (existing) {
         existing.visits += 1;
-        existing.totalSpent += Number(app.value || 0);
+        existing.totalSpent += appValue;
         if (app.origin === 'online' || app.origin === 'link') {
           existing.isOnline = true;
         }
@@ -1948,7 +2080,7 @@ const RelatoriosView: React.FC = () => {
           id: app.client_id,
           name: app.client_name,
           visits: 1,
-          totalSpent: Number(app.value || 0),
+          totalSpent: appValue,
           lastVisit: app.date,
           isOnline: app.origin === 'online' || app.origin === 'link'
         });
@@ -1956,12 +2088,16 @@ const RelatoriosView: React.FC = () => {
       return acc;
     }, []).sort((a: any, b: any) => b.totalSpent - a.totalSpent).slice(0, 10);
 
+    const uniqueClientsCount = new Set((data?.appointments || []).map((a: any) => a.client_id).filter(Boolean)).size;
+    const clientsWithMultipleVisits = (clientsWithOrigin || []).filter((c: any) => c.visits > 1).length;
+    const returnRate = uniqueClientsCount > 0 ? ((clientsWithMultipleVisits / uniqueClientsCount) * 100).toFixed(1) : '0.0';
+
     return (
       <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-          <KPICard title="Clientes Ativos" value="450" color="bg-orange-500" icon={Users} loading={isLoading} />
-          <KPICard title="Novos Clientes" value="28" color="bg-emerald-500" icon={UserPlus} loading={isLoading} />
-          <KPICard title="Taxa de Retorno" value="72%" color="bg-indigo-500" icon={RotateCcw} loading={isLoading} />
+          <KPICard title="Clientes Ativos" value={uniqueClientsCount} subtext="Com agendamentos no período" color="bg-orange-500" icon={Users} loading={isLoading} />
+          <KPICard title="Novos Clientes" value={newClientsData.current} trend={newClientsData.trend} subtext="Cadastrados no período" color="bg-emerald-500" icon={UserPlus} loading={isLoading} />
+          <KPICard title="Taxa de Retorno" value={`${returnRate}%`} subtext="Com mais de 1 atendimento" color="bg-indigo-500" icon={RotateCcw} loading={isLoading} />
         </div>
 
         <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
@@ -2634,7 +2770,14 @@ const RelatoriosView: React.FC = () => {
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
         <KPICard title="Faturamento Realizado (Equipe)" value={`R$ ${data?.income.toLocaleString('pt-BR')}`} color="bg-emerald-500" icon={DollarSign} loading={isLoading} />
         <KPICard title="Projeção Equipe (Agenda)" value={`R$ ${data?.potentialIncome.toLocaleString('pt-BR')}`} color="bg-blue-500" icon={Target} loading={isLoading} />
-        <KPICard title="Ticket Médio Geral" value={`R$ ${data?.ticketMedio.toFixed(2)}`} color="bg-orange-500" icon={Star} loading={isLoading} />
+        <KPICard 
+          title="Ticket Médio Geral" 
+          value={`R$ ${data?.ticketMedio.toFixed(2)}`} 
+          subtext={data?.completedAppts === 0 && data?.totalAppts > 0 ? "Ticket Médio Projetado" : undefined}
+          color="bg-orange-500" 
+          icon={Star} 
+          loading={isLoading} 
+        />
       </div>
 
       {/* D3 Team Performance Chart */}
