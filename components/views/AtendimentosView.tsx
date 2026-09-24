@@ -1545,6 +1545,30 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             }
         }
 
+        // Verificar se está fora do expediente regular do profissional
+        if (professional?.work_schedule && !bypassScheduleCheck) {
+            const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][targetDate.getDay()];
+            const config = professional.work_schedule[dayKey];
+            if (config && (config.active ?? config.open)) {
+                const [startH, startM] = (config.start || '08:00').split(':').map(Number);
+                const [endH, endM] = (config.end || '18:00').split(':').map(Number);
+                const clickTime = targetDate.getHours() * 60 + targetDate.getMinutes();
+                const workStart = startH * 60 + startM;
+                const workEnd = endH * 60 + endM;
+
+                if (clickTime < workStart || clickTime >= workEnd) {
+                    const isConfirmed = await confirm({
+                        title: 'Horário Fora do Expediente',
+                        message: `Este horário está fora do expediente regular de ${professional.name} (${config.start || '08:00'} às ${config.end || '18:00'}). Deseja abrir uma exceção e realizar o agendamento mesmo assim?`,
+                        confirmText: 'Sim, Abrir Exceção',
+                        cancelText: 'Voltar',
+                        type: 'warning'
+                    });
+                    if (!isConfirmed) return;
+                }
+            }
+        }
+
         // Verificar se está no intervalo do profissional
         if (professional?.work_schedule) {
             const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][targetDate.getDay()];
@@ -2090,6 +2114,59 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                             );
                                         }
                                         
+                                        const overlays = [];
+                                        const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
+
+                                        // 1. Horário antes do expediente regular
+                                        if (config && (config.active ?? config.open)) {
+                                            const [wStartH, wStartM] = (config.start || '08:00').split(':').map(Number);
+                                            const workStartMin = (wStartH * 60 + wStartM) - (START_HOUR * 60);
+                                            if (workStartMin > 0) {
+                                                overlays.push(
+                                                    <div 
+                                                        key="before-shift-overlay"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setToast({ message: `⚠️ Horário antes do expediente de ${prof.name} (${config.start}).`, type: 'warning' });
+                                                        }}
+                                                        className="absolute w-full left-0 z-[4] bg-slate-100/60 border-b border-slate-200/40 flex flex-col items-center justify-center cursor-pointer overflow-hidden group/before"
+                                                        style={{ 
+                                                            top: 0, 
+                                                            height: `${workStartMin * pixelsPerMinute}px`,
+                                                            backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(148, 163, 184, 0.05) 10px, rgba(148, 163, 184, 0.05) 20px)'
+                                                        }}
+                                                    >
+                                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter opacity-70 group-hover/before:opacity-100">Antes do Início ({config.start})</span>
+                                                    </div>
+                                                );
+                                            }
+
+                                            // 2. Horário após o término do expediente regular
+                                            const [wEndH, wEndM] = (config.end || '18:00').split(':').map(Number);
+                                            const workEndMin = (wEndH * 60 + wEndM) - (START_HOUR * 60);
+                                            const afterDuration = (END_HOUR * 60) - (wEndH * 60 + wEndM);
+                                            if (afterDuration > 0) {
+                                                overlays.push(
+                                                    <div 
+                                                        key="after-shift-overlay"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setToast({ message: `⚠️ Horário após o término do expediente de ${prof.name} (${config.end}).`, type: 'warning' });
+                                                        }}
+                                                        className="absolute w-full left-0 z-[4] bg-slate-100/60 border-t border-slate-200/40 flex flex-col items-center justify-center cursor-pointer overflow-hidden group/after"
+                                                        style={{ 
+                                                            top: `${workEndMin * pixelsPerMinute}px`, 
+                                                            height: `${afterDuration * pixelsPerMinute}px`,
+                                                            backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(148, 163, 184, 0.05) 10px, rgba(148, 163, 184, 0.05) 20px)'
+                                                        }}
+                                                    >
+                                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter opacity-70 group-hover/after:opacity-100">Fora do Expediente ({config.end})</span>
+                                                    </div>
+                                                );
+                                            }
+                                        }
+
+                                        // 3. Intervalo / Almoço
                                         if (config && config.active && config.break_active) {
                                             const bS = config.break_start || '12:00';
                                             const bE = config.break_end || '13:00';
@@ -2102,11 +2179,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                             const duration = endMinutes - startMinutes;
                                             
                                             if (duration > 0) {
-                                                const pixelsPerMinute = SLOT_PX_HEIGHT / timeSlot;
                                                 const top = startMinutes * pixelsPerMinute;
                                                 const height = duration * pixelsPerMinute;
                                                 
-                                                return (
+                                                overlays.push(
                                                     <div 
                                                         key="break-overlay"
                                                         onClick={(e) => {
@@ -2129,7 +2205,8 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                 );
                                             }
                                         }
-                                        return null;
+
+                                        return overlays.length > 0 ? overlays : null;
                                     })()}
 
                                     {(() => {

@@ -295,6 +295,27 @@ const AppointmentModal: React.FC<AppointmentModalProps> = ({ appointment, onClos
         }
     }
 
+    // Validar horário de expediente (fora de início ou término do turno)
+    if (prof.work_schedule && !showDayOffConfirm) {
+        const start = new Date(formData.start!);
+        const end = addMinutes(start, manualDuration);
+        const dayKey = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][start.getDay()];
+        const config = prof.work_schedule[dayKey];
+        if (config && (config.active ?? config.open)) {
+            const [sH, sM] = (config.start || '08:00').split(':').map(Number);
+            const [eH, eM] = (config.end || '18:00').split(':').map(Number);
+            const expStart = new Date(start);
+            expStart.setHours(sH, sM, 0, 0);
+            const expEnd = new Date(start);
+            expEnd.setHours(eH, eM, 0, 0);
+
+            if (start < expStart || end > expEnd) {
+                setShowDayOffConfirm(true);
+                return setError(`⚠️ Horário fora do expediente regular do profissional (${config.start || '08:00'} às ${config.end || '18:00'}). Deseja abrir uma exceção e agendar mesmo assim?`);
+            }
+        }
+    }
+
     setIsSaving(true);
     try {
         const finalPrice = manualPrice === '' ? 0 : Math.max(0, Number(manualPrice));

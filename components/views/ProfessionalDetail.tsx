@@ -128,6 +128,45 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
         if (!prof || !activeStudioId) return;
         setIsLoading(true);
         try {
+            // Sanitiza e valida o work_schedule para garantir consistência
+            const sanitizedSchedule: Record<string, any> = {};
+            for (const day of DAYS_ORDER) {
+                const dayConf = prof.work_schedule?.[day.key] || { active: false, start: '08:00', end: '18:00' };
+                if (dayConf.active) {
+                    const start = dayConf.start || '08:00';
+                    const end = dayConf.end || '18:00';
+                    if (start >= end) {
+                        throw new Error(`No dia ${day.label}, o horário de início (${start}) deve ser menor que o de término (${end}).`);
+                    }
+                    const bActive = !!dayConf.break_active;
+                    const bStart = dayConf.break_start || '12:00';
+                    const bEnd = dayConf.break_end || '13:00';
+                    if (bActive) {
+                        if (bStart >= bEnd) {
+                            throw new Error(`No dia ${day.label}, o início do intervalo (${bStart}) deve ser menor que o término (${bEnd}).`);
+                        }
+                        if (bStart < start || bEnd > end) {
+                            throw new Error(`No dia ${day.label}, o intervalo (${bStart} - ${bEnd}) deve estar dentro do horário de trabalho (${start} - ${end}).`);
+                        }
+                    }
+                    sanitizedSchedule[day.key] = {
+                        active: true,
+                        start,
+                        end,
+                        break_active: bActive,
+                        break_start: bStart,
+                        break_end: bEnd
+                    };
+                } else {
+                    sanitizedSchedule[day.key] = {
+                        active: false,
+                        start: dayConf.start || '08:00',
+                        end: dayConf.end || '18:00',
+                        break_active: false
+                    };
+                }
+            }
+
             const payload = {
                 name: prof.name || 'Sem nome',
                 role: prof.role || 'Profissional',
@@ -144,7 +183,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
                 access_level: prof.access_level || 'profissional',
                 permissions: prof.permissions,
                 services_enabled: prof.services_enabled,
-                work_schedule: prof.work_schedule,
+                work_schedule: sanitizedSchedule,
                 photo_url: prof.photo_url,
                 online_booking_enabled: !!prof.online_booking_enabled, 
                 show_in_calendar: !!prof.show_in_calendar,
@@ -154,6 +193,7 @@ const ProfessionalDetail: React.FC<ProfessionalDetailProps> = ({ professional: i
             const { error } = await supabase.from('team_members').update(payload).eq('id', prof.id).eq('studio_id', activeStudioId);
             if (error) throw error;
             toast.success("Dados salvos com sucesso! ✅");
+            setProf(prev => ({ ...prev, work_schedule: sanitizedSchedule }));
             onSave();
         } catch (error: any) {
             toast.error(`Erro ao salvar: ${error.message}`);

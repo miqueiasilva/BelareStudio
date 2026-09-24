@@ -433,16 +433,29 @@ const PublicBookingPreview: React.FC = () => {
         try {
             const dayKey = weekdayMap[getDay(date)];
             
-            // Prioriza o horário individual do profissional, se existir
-            const hasWorkSchedule = professional.work_schedule && Object.keys(professional.work_schedule).length > 0;
-            const config = hasWorkSchedule 
-                ? professional.work_schedule[dayKey] 
-                : studio.business_hours?.[dayKey];
+            // Validação unificada: estúdio e profissional
+            const studioDayConfig = studio?.business_hours?.[dayKey];
+            const isStudioOpen = studioDayConfig ? (studioDayConfig.active ?? studioDayConfig.open ?? false) : true;
 
-            if (!config || !config.active) {
+            const hasWorkSchedule = professional?.work_schedule && Object.keys(professional.work_schedule).length > 0;
+            const profDayConfig = hasWorkSchedule ? professional.work_schedule[dayKey] : null;
+            const isProfActive = profDayConfig ? (profDayConfig.active ?? profDayConfig.open ?? false) : isStudioOpen;
+
+            // Se o dia estiver fechado para o estúdio ou para o profissional, não há vagas
+            if (!isProfActive || !isStudioOpen) {
                 setAvailableSlots([]);
                 return;
             }
+
+            // Horários definidos
+            const pStart = profDayConfig?.start || studioDayConfig?.start || '08:00';
+            const pEnd = profDayConfig?.end || studioDayConfig?.end || '18:00';
+            const sStart = studioDayConfig?.start || '08:00';
+            const sEnd = studioDayConfig?.end || '18:00';
+
+            // Limite efetivo: nunca antes do estúdio abrir, nem depois do estúdio fechar
+            const effectiveStart = pStart > sStart ? pStart : sStart;
+            const effectiveEnd = pEnd < sEnd ? pEnd : sEnd;
 
             const totalDuration = selectedServices.reduce((acc, s) => acc + s.duracao_min, 0);
             const now = new Date();
@@ -481,8 +494,8 @@ const PublicBookingPreview: React.FC = () => {
             const profIdStr = String(professional?.id || '');
 
             const slots: string[] = [];
-            const [startH, startM] = config.start.split(':').map(Number);
-            const [endH, endM] = config.end.split(':').map(Number);
+            const [startH, startM] = effectiveStart.split(':').map(Number);
+            const [endH, endM] = effectiveEnd.split(':').map(Number);
             
             let currentPointer = new Date(date);
             currentPointer.setHours(startH, startM, 0, 0);
@@ -494,9 +507,10 @@ const PublicBookingPreview: React.FC = () => {
             let breakStart: Date | null = null;
             let breakEnd: Date | null = null;
             
-            if (config.break_active) {
-                const bS = config.break_start || '12:00';
-                const bE = config.break_end || '13:00';
+            const breakActive = profDayConfig?.break_active ?? studioDayConfig?.break?.active ?? false;
+            if (breakActive) {
+                const bS = profDayConfig?.break_start || studioDayConfig?.break?.start || '12:00';
+                const bE = profDayConfig?.break_end || studioDayConfig?.break?.end || '13:00';
                 
                 breakStart = new Date(date);
                 const [bSH, bSM] = bS.split(':').map(Number);
@@ -507,7 +521,8 @@ const PublicBookingPreview: React.FC = () => {
                 breakEnd.setHours(bEH, bEM, 0, 0);
             }
 
-            while (isBefore(addMinutes(currentPointer, totalDuration), endLimit)) {
+            // O agendamento DEVE se encerrar impreterivelmente dentro do expediente (<= endLimit)
+            while (addMinutes(currentPointer, totalDuration) <= endLimit) {
                 if (isSameDay(date, now)) {
                     if (isBefore(currentPointer, minTimeLimit)) {
                         currentPointer = addMinutes(currentPointer, 30);
@@ -643,6 +658,56 @@ const PublicBookingPreview: React.FC = () => {
             const serviceNames = selectedServices.map(s => s.nome || s.name).join(' + ');
 
             const endDateTime = addMinutes(appointmentDate, totalDuration);
+
+            // --- AUDIT & RIGOROUS WORKING HOURS VALIDATION ---
+            const bookingDayKey = weekdayMap[getDay(appointmentDate)];
+            const studioDayConfig = studio?.business_hours?.[bookingDayKey];
+            const isStudioOpen = studioDayConfig ? (studioDayConfig.active ?? studioDayConfig.open ?? false) : true;
+
+            const hasWorkSchedule = selectedProfessional?.work_schedule && Object.keys(selectedProfessional.work_schedule).length > 0;
+            const profDayConfig = hasWorkSchedule ? selectedProfessional.work_schedule[bookingDayKey] : null;
+            const isProfOpen = profDayConfig ? (profDayConfig.active ?? profDayConfig.open ?? false) : isStudioOpen;
+
+            if (!isProfOpen || !isStudioOpen) {
+                throw new Error("O profissional ou estúdio não atende na data selecionada.");
+            }
+
+            const pStart = profDayConfig?.start || studioDayConfig?.start || '08:00';
+            const pEnd = profDayConfig?.end || studioDayConfig?.end || '18:00';
+            const sStart = studioDayConfig?.start || '08:00';
+            const sEnd = studioDayConfig?.end || '18:00';
+
+            const effectiveStartStr = pStart > sStart ? pStart : sStart;
+            const effectiveEndStr = pEnd < sEnd ? pEnd : sEnd;
+
+            const [effStartH, effStartM] = effectiveStartStr.split(':').map(Number);
+            const [effEndH, effEndM] = effectiveEndStr.split(':').map(Number);
+
+            const limitStart = new Date(appointmentDate);
+            limitStart.setHours(effStartH, effStartM, 0, 0);
+
+            const limitEnd = new Date(appointmentDate);
+            limitEnd.setHours(effEndH, effEndM, 0, 0);
+
+            if (appointmentDate < limitStart || endDateTime > limitEnd) {
+                throw new Error(`Horário indisponível ou fora do expediente permitido (${effectiveStartStr} às ${effectiveEndStr}). O atendimento se encerraria às ${format(endDateTime, 'HH:mm')}. Por favor, selecione outro horário.`);
+            }
+
+            const breakIsActive = profDayConfig?.break_active ?? studioDayConfig?.break?.active ?? false;
+            if (breakIsActive) {
+                const bS = profDayConfig?.break_start || studioDayConfig?.break?.start || '12:00';
+                const bE = profDayConfig?.break_end || studioDayConfig?.break?.end || '13:00';
+                const [bSH, bSM] = bS.split(':').map(Number);
+                const [bEH, bEM] = bE.split(':').map(Number);
+                const bStartDate = new Date(appointmentDate);
+                bStartDate.setHours(bSH, bSM, 0, 0);
+                const bEndDate = new Date(appointmentDate);
+                bEndDate.setHours(bEH, bEM, 0, 0);
+
+                if (appointmentDate < bEndDate && endDateTime > bStartDate) {
+                    throw new Error(`O horário escolhido coincide com o intervalo de descanso do profissional (${bS} às ${bE}). Por favor, escolha outro horário.`);
+                }
+            }
 
             // --- AUDIT & VALIDATION TO PREVENT DOUBLE BOOKINGS AND BLOCKED SLOTS ---
             const startOfDayStr = getStartOfDay(appointmentDate).toISOString();
@@ -1367,11 +1432,15 @@ const PublicBookingPreview: React.FC = () => {
                                                         const dayKey = weekdayMap[getDay(day)];
                                                         
                                                         // Verifica se o profissional (ou estúdio) está aberto
+                                                        const studioDayConfig = studio?.business_hours?.[dayKey];
+                                                        const isStudioOpen = studioDayConfig ? (studioDayConfig.active ?? studioDayConfig.open ?? false) : true;
+
                                                         const hasWorkSchedule = selectedProfessional?.work_schedule && Object.keys(selectedProfessional.work_schedule).length > 0;
                                                         const activeConfig = hasWorkSchedule 
                                                             ? selectedProfessional.work_schedule[dayKey] 
-                                                            : studio?.business_hours?.[dayKey];
-                                                        const isClosed = !activeConfig || !activeConfig.active;
+                                                            : null;
+                                                        const isProfOpen = activeConfig ? (activeConfig.active ?? activeConfig.open ?? false) : isStudioOpen;
+                                                        const isClosed = !isProfOpen || !isStudioOpen;
                                                         
                                                         const isDisabled = isPast || isOverLimit || isClosed;
 
