@@ -464,6 +464,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
     const dateInputRef = useRef<HTMLInputElement>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
     const lastRequestId = useRef(0);
+    const realtimeDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
     const fetchAppointments = async () => {
         if (!isMounted.current || authLoading || !user || !activeStudioId) {
@@ -617,11 +618,20 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         fetchResources();
         fetchNotifications();
         
-        const channel = supabase.channel('agenda-live')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, (payload: any) => { 
+        const triggerDebouncedFetch = () => {
+            if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
+            realtimeDebounceRef.current = setTimeout(() => {
                 if (isMounted.current) {
                     fetchAppointments();
                     fetchNotifications();
+                }
+            }, 300);
+        };
+
+        const channel = supabase.channel('agenda-live')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, (payload: any) => { 
+                if (isMounted.current) {
+                    triggerDebouncedFetch();
 
                     // Check if it's an update where status was recently confirmed via whatsapp/link
                     if (payload.eventType === 'UPDATE' && payload.new && payload.new.status === 'confirmado_whatsapp') {
@@ -682,11 +692,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 } 
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, () => { if (isMounted.current) fetchResources(); })
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'schedule_blocks' }, () => { if (isMounted.current) fetchAppointments(); })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'schedule_blocks' }, () => { if (isMounted.current) triggerDebouncedFetch(); })
             .subscribe();
 
         return () => {
             isMounted.current = false;
+            if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
             if (abortControllerRef.current) abortControllerRef.current.abort();
             supabase.removeChannel(channel).catch(console.error);
         };
