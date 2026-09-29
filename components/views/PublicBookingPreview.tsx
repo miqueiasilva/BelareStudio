@@ -209,6 +209,42 @@ const PublicBookingPreview: React.FC = () => {
         0: 'sunday', 1: 'monday', 2: 'tuesday', 3: 'wednesday', 4: 'thursday', 5: 'friday', 6: 'saturday'
     };
 
+    const isProfessionalWorkingOnDay = (prof: any, studioObj: any, dayKey: string): { isWorking: boolean; profDayConfig: any; studioDayConfig: any } => {
+        const studioDayConfig = studioObj?.business_hours?.[dayKey];
+        const isStudioOpen = studioDayConfig ? Boolean(studioDayConfig.active ?? studioDayConfig.open ?? false) : true;
+
+        if (!isStudioOpen) {
+            return { isWorking: false, profDayConfig: null, studioDayConfig };
+        }
+
+        const hasWorkSchedule = prof?.work_schedule && typeof prof.work_schedule === 'object' && Object.keys(prof.work_schedule).length > 0;
+
+        if (hasWorkSchedule) {
+            const profDayConfig = prof.work_schedule[dayKey];
+            // REGRA DE SEGURANÇA: Se o profissional possui expediente customizado, ele SÓ atende nos dias expressamente configurados com active/open: true!
+            // Se o dia não existe no work_schedule ou está marcado como inativo, é FOLGA estrita e NÃO pode receber agendamentos.
+            const isProfActive = profDayConfig ? Boolean(profDayConfig.active ?? profDayConfig.open ?? false) : false;
+            return { isWorking: isProfActive, profDayConfig, studioDayConfig };
+        }
+
+        // Se o profissional não possui escala individual configurada, segue os horários do estúdio
+        return { isWorking: isStudioOpen, profDayConfig: null, studioDayConfig };
+    };
+
+    const findNextWorkingDay = (prof: any, studioObj: any, fromDate: Date = new Date()): Date => {
+        let checkDay = getStartOfDay(fromDate);
+        const startOfToday = getStartOfDay(new Date());
+        for (let i = 0; i < 30; i++) {
+            const dKey = weekdayMap[getDay(checkDay)];
+            const { isWorking } = isProfessionalWorkingOnDay(prof, studioObj, dKey);
+            if (isWorking && !isBefore(checkDay, startOfToday)) {
+                return checkDay;
+            }
+            checkDay = addDays(checkDay, 1);
+        }
+        return getStartOfDay(fromDate);
+    };
+
     useEffect(() => {
         const fetchRulesAndData = async () => {
             setLoading(true);
@@ -433,16 +469,11 @@ const PublicBookingPreview: React.FC = () => {
         try {
             const dayKey = weekdayMap[getDay(date)];
             
-            // Validação unificada: estúdio e profissional
-            const studioDayConfig = studio?.business_hours?.[dayKey];
-            const isStudioOpen = studioDayConfig ? (studioDayConfig.active ?? studioDayConfig.open ?? false) : true;
+            // Validação unificada e estrita: estúdio e profissional
+            const { isWorking, profDayConfig, studioDayConfig } = isProfessionalWorkingOnDay(professional, studio, dayKey);
 
-            const hasWorkSchedule = professional?.work_schedule && Object.keys(professional.work_schedule).length > 0;
-            const profDayConfig = hasWorkSchedule ? professional.work_schedule[dayKey] : null;
-            const isProfActive = profDayConfig ? (profDayConfig.active ?? profDayConfig.open ?? false) : isStudioOpen;
-
-            // Se o dia estiver fechado para o estúdio ou para o profissional, não há vagas
-            if (!isProfActive || !isStudioOpen) {
+            // Se o dia for folga do profissional ou fechado no estúdio, não há vagas
+            if (!isWorking) {
                 setAvailableSlots([]);
                 return;
             }
@@ -661,15 +692,10 @@ const PublicBookingPreview: React.FC = () => {
 
             // --- AUDIT & RIGOROUS WORKING HOURS VALIDATION ---
             const bookingDayKey = weekdayMap[getDay(appointmentDate)];
-            const studioDayConfig = studio?.business_hours?.[bookingDayKey];
-            const isStudioOpen = studioDayConfig ? (studioDayConfig.active ?? studioDayConfig.open ?? false) : true;
+            const { isWorking, profDayConfig, studioDayConfig } = isProfessionalWorkingOnDay(selectedProfessional, studio, bookingDayKey);
 
-            const hasWorkSchedule = selectedProfessional?.work_schedule && Object.keys(selectedProfessional.work_schedule).length > 0;
-            const profDayConfig = hasWorkSchedule ? selectedProfessional.work_schedule[bookingDayKey] : null;
-            const isProfOpen = profDayConfig ? (profDayConfig.active ?? profDayConfig.open ?? false) : isStudioOpen;
-
-            if (!isProfOpen || !isStudioOpen) {
-                throw new Error("O profissional ou estúdio não atende na data selecionada.");
+            if (!isWorking) {
+                throw new Error(`O(a) profissional ${selectedProfessional?.name || ''} não atende no dia selecionado (${format(appointmentDate, 'dd/MM/yyyy')}). Por favor, escolha outra data.`);
             }
 
             const pStart = profDayConfig?.start || studioDayConfig?.start || '08:00';
@@ -1375,7 +1401,16 @@ const PublicBookingPreview: React.FC = () => {
                                                 })
                                                 .map(p => (
                                                 <button 
-                                                    key={p.id} onClick={() => { setSelectedProfessional(p); setBookingStep(2); }}
+                                                    key={p.id} onClick={() => {
+                                                        setSelectedProfessional(p);
+                                                        const curKey = weekdayMap[getDay(selectedDate)];
+                                                        const { isWorking } = isProfessionalWorkingOnDay(p, studio, curKey);
+                                                        if (!isWorking) {
+                                                            const nextDay = findNextWorkingDay(p, studio, new Date());
+                                                            setSelectedDate(nextDay);
+                                                        }
+                                                        setBookingStep(2);
+                                                    }}
                                                     className={`w-full p-5 flex items-center gap-4 border-2 rounded-3xl transition-all text-left bg-white ${selectedProfessional?.id === p.id ? 'border-orange-500 bg-orange-50/30' : 'border-slate-100 hover:border-orange-200'}`}
                                                 >
                                                     <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-md bg-slate-100 flex items-center justify-center">
@@ -1432,15 +1467,8 @@ const PublicBookingPreview: React.FC = () => {
                                                         const dayKey = weekdayMap[getDay(day)];
                                                         
                                                         // Verifica se o profissional (ou estúdio) está aberto
-                                                        const studioDayConfig = studio?.business_hours?.[dayKey];
-                                                        const isStudioOpen = studioDayConfig ? (studioDayConfig.active ?? studioDayConfig.open ?? false) : true;
-
-                                                        const hasWorkSchedule = selectedProfessional?.work_schedule && Object.keys(selectedProfessional.work_schedule).length > 0;
-                                                        const activeConfig = hasWorkSchedule 
-                                                            ? selectedProfessional.work_schedule[dayKey] 
-                                                            : null;
-                                                        const isProfOpen = activeConfig ? (activeConfig.active ?? activeConfig.open ?? false) : isStudioOpen;
-                                                        const isClosed = !isProfOpen || !isStudioOpen;
+                                                        const { isWorking } = isProfessionalWorkingOnDay(selectedProfessional, studio, dayKey);
+                                                        const isClosed = !isWorking;
                                                         
                                                         const isDisabled = isPast || isOverLimit || isClosed;
 
