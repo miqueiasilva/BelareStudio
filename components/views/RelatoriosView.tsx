@@ -162,6 +162,27 @@ const getAppointmentValue = (a: any, servicesList: any[] = []): number => {
   return getEffectiveAppointmentValue(a, servicesList);
 };
 
+const isStandaloneIncome = (t: any): boolean => {
+  if (!t) return false;
+  const type = String(t.type || '').toLowerCase();
+  if (type !== 'income' && type !== 'receita') return false;
+  // Se estiver explicitamente vinculado a um atendimento ou comanda, já é contabilizado via appointments
+  if (t.appointment_id || t.command_id) return false;
+  
+  const desc = String(t.description || '').toLowerCase();
+  const cat = String(t.category || '').toLowerCase();
+  
+  // Evitar duplicar recebimentos de comandas/atendimentos registrados no caixa
+  if (desc.includes('atendimento') || desc.includes('comanda') || desc.includes('serviço') || desc.includes('servico')) {
+    return false;
+  }
+  if (cat === 'atendimentos' || cat === 'serviços' || cat === 'servicos') {
+    return false;
+  }
+  
+  return true;
+};
+
 const KPICard = ({ title, value, subtext, icon: Icon, color, trend, loading, progress, badge, onClick }: any) => {
   if (loading) return <Skeleton className="h-32" />;
   
@@ -345,7 +366,7 @@ const RelatoriosView: React.FC = () => {
     }, 0);
 
     const standaloneTransIncome = transactions
-      .filter(t => (t.type === 'income' || t.type === 'receita') && !t.appointment_id)
+      .filter(isStandaloneIncome)
       .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
     const rawIncome = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -426,7 +447,7 @@ const RelatoriosView: React.FC = () => {
     }, 0);
 
     const standaloneTransIncome = transactions
-      .filter(t => (t.type === 'income' || t.type === 'receita') && !t.appointment_id)
+      .filter(isStandaloneIncome)
       .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
     const rawIncome = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -565,7 +586,7 @@ const RelatoriosView: React.FC = () => {
         }, 0);
 
         const standaloneTransIncome = transactions
-          .filter(t => (t.type === 'income' || t.type === 'receita') && !t.appointment_id)
+          .filter(isStandaloneIncome)
           .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
         const rawIncome = transactions.filter(t => t.type === 'income' || t.type === 'receita').reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -3144,20 +3165,26 @@ const RelatoriosView: React.FC = () => {
     );
   };
 
-  const renderEquipe = () => (
-    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-        <KPICard title="Faturamento Realizado (Equipe)" value={`R$ ${data?.income.toLocaleString('pt-BR')}`} color="bg-emerald-500" icon={DollarSign} loading={isLoading} />
-        <KPICard title="Projeção Equipe (Agenda)" value={`R$ ${data?.potentialIncome.toLocaleString('pt-BR')}`} color="bg-blue-500" icon={Target} loading={isLoading} />
-        <KPICard 
-          title="Ticket Médio Geral" 
-          value={`R$ ${data?.ticketMedio.toFixed(2)}`} 
-          subtext={data?.completedAppts === 0 && data?.totalAppts > 0 ? "Ticket Médio Projetado" : undefined}
-          color="bg-orange-500" 
-          icon={Star} 
-          loading={isLoading} 
-        />
-      </div>
+  const renderEquipe = () => {
+    const teamTotalRevenue = filteredTeamStats.reduce((acc: number, p: any) => acc + (p.revenue || 0), 0);
+    const teamTotalProjected = filteredTeamStats.reduce((acc: number, p: any) => acc + (p.projectedRevenue || 0), 0);
+    const teamTotalCount = filteredTeamStats.reduce((acc: number, p: any) => acc + (p.count || 0), 0);
+    const teamAverageTicket = teamTotalCount > 0 ? teamTotalRevenue / teamTotalCount : (data?.ticketMedio || 0);
+
+    return (
+      <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+          <KPICard title="Faturamento Realizado (Equipe)" value={`R$ ${teamTotalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} color="bg-emerald-500" icon={DollarSign} loading={isLoading} />
+          <KPICard title="Projeção Equipe (Agenda)" value={`R$ ${teamTotalProjected.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} color="bg-blue-500" icon={Target} loading={isLoading} />
+          <KPICard 
+            title="Ticket Médio Geral" 
+            value={`R$ ${teamAverageTicket.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} 
+            subtext={teamTotalCount === 0 ? "Ticket Médio Projetado" : undefined}
+            color="bg-orange-500" 
+            icon={Star} 
+            loading={isLoading} 
+          />
+        </div>
 
       {/* D3 Team Performance Chart */}
       <div className="bg-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-sm">
@@ -3271,7 +3298,8 @@ const RelatoriosView: React.FC = () => {
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   const renderMarketing = () => (
     <div className="space-y-8 animate-in fade-in duration-500">
