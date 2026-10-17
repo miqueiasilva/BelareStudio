@@ -334,8 +334,8 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         setInstallments(1);
         const dbType = type === 'money' ? 'dinheiro' : type;
         if (dbType === 'pix' || dbType === 'dinheiro') {
-            const config = availableConfigs.find(c => c.type === dbType);
-            setSelectedConfig(config || { type: dbType, name: dbType.toUpperCase(), rate_cash: 0 });
+            const config = availableConfigs.find(c => c.type === dbType || (dbType === 'dinheiro' && (c.type === 'money' || (c as any).method_type === 'money' || (c as any).method_type === 'dinheiro')));
+            setSelectedConfig(config || { type: dbType, name: dbType === 'dinheiro' ? 'Dinheiro' : 'PIX', rate_cash: 0 });
             // Preenche automaticamente com o saldo restante
             const remaining = totals.remaining > 0 ? totals.remaining : totals.total;
             setAmountToPay(String(remaining.toFixed(2)));

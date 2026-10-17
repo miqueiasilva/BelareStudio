@@ -17,7 +17,7 @@ const formatCurrency = (value: number) => {
 };
 
 interface DBPaymentMethod {
-    id: string; 
+    id: string | number; 
     name: string;
     type: 'credit' | 'debit' | 'pix' | 'money';
     rate_cash: number;
@@ -25,6 +25,45 @@ interface DBPaymentMethod {
     max_installments: number;
     installment_rates: Record<string, number>;
 }
+
+const DEFAULT_PAYMENT_METHODS: Record<string, DBPaymentMethod> = {
+    money: {
+        id: 'default_money',
+        name: 'Dinheiro em Espécie',
+        type: 'money',
+        rate_cash: 0,
+        allow_installments: false,
+        max_installments: 1,
+        installment_rates: {}
+    },
+    pix: {
+        id: 'default_pix',
+        name: 'Pix',
+        type: 'pix',
+        rate_cash: 0,
+        allow_installments: false,
+        max_installments: 1,
+        installment_rates: {}
+    },
+    debit: {
+        id: 'default_debit',
+        name: 'Cartão de Débito',
+        type: 'debit',
+        rate_cash: 0,
+        allow_installments: false,
+        max_installments: 1,
+        installment_rates: {}
+    },
+    credit: {
+        id: 'default_credit',
+        name: 'Cartão de Crédito',
+        type: 'credit',
+        rate_cash: 0,
+        allow_installments: true,
+        max_installments: 12,
+        installment_rates: {}
+    }
+};
 
 interface CheckoutModalProps {
     isOpen: boolean;
@@ -42,6 +81,16 @@ interface CheckoutModalProps {
         remaining_amount?: number;
         notes?: string;
     };
+    consolidatedAppointments?: Array<{
+        id: number;
+        client_id?: number | string;
+        client_name: string;
+        service_name: string;
+        price: number;
+        professional_id?: number | string; 
+        professional_name: string;
+        notes?: string;
+    }>;
     initialMode?: 'full' | 'partial';
     onSuccess: (info?: { isPartial?: boolean; amountPaid?: number; remaining?: number }) => void;
 }
@@ -50,6 +99,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     isOpen, 
     onClose, 
     appointment, 
+    consolidatedAppointments,
     initialMode = 'full',
     onSuccess 
 }) => {
@@ -155,8 +205,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 if (firstPix) setSelectedMethodId(firstPix.id);
             }
 
-            // Buscar histórico de pagamentos já vinculados a este agendamento
-            if (appointment?.id) {
+            // Buscar histórico de pagamentos já vinculados a este agendamento (somente se não for quitação consolidada)
+            if (appointment?.id && (!consolidatedAppointments || consolidatedAppointments.length <= 1)) {
                 let foundPayments: any[] = [];
                 
                 // 1. Verificar em transactions
@@ -201,7 +251,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         } catch (_err: any) {
             setToast({ message: "Erro ao sincronizar dados.", type: 'error' });
         }
-    }, [appointment?.id, appointment?.payments, appointment?.notes]);
+    }, [appointment?.id, appointment?.payments, appointment?.notes, consolidatedAppointments]);
 
     useEffect(() => {
         if (isOpen) loadSystemData();
@@ -222,29 +272,54 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }, [isOpen, appointment, dbProfessionals, selectedProfessionalId]);
 
     const filteredMethods = useMemo(() => {
-        return dbPaymentMethods.filter(m => m.type === selectedCategory);
+        const found = dbPaymentMethods.filter(m => {
+            if (selectedCategory === 'money') {
+                return m.type === 'money' || (m.type as any) === 'dinheiro' || (m as any).method_type === 'money' || (m as any).method_type === 'dinheiro';
+            }
+            return m.type === selectedCategory || (m as any).method_type === selectedCategory;
+        });
+
+        if (found.length > 0) return found;
+
+        // Fallback garantido se não houver método cadastrado no estúdio para esta categoria
+        const fallback = DEFAULT_PAYMENT_METHODS[selectedCategory];
+        return fallback ? [fallback] : [];
     }, [dbPaymentMethods, selectedCategory]);
 
     useEffect(() => {
         if (filteredMethods.length > 0) {
-            setSelectedMethodId(filteredMethods[0].id);
+            if (!filteredMethods.some(m => String(m.id) === String(selectedMethodId))) {
+                setSelectedMethodId(String(filteredMethods[0].id));
+            }
             setInstallments(1);
-        } else setSelectedMethodId('');
-    }, [selectedCategory, filteredMethods]);
+        } else {
+            const fallback = DEFAULT_PAYMENT_METHODS[selectedCategory];
+            setSelectedMethodId(fallback ? String(fallback.id) : '');
+            setInstallments(1);
+        }
+    }, [selectedCategory, filteredMethods, selectedMethodId]);
 
     const currentMethod = useMemo(() => {
-        return dbPaymentMethods.find(m => m.id === selectedMethodId);
-    }, [dbPaymentMethods, selectedMethodId]);
+        const found = dbPaymentMethods.find(m => String(m.id) === String(selectedMethodId));
+        if (found) return found;
+        const fallback = DEFAULT_PAYMENT_METHODS[selectedCategory];
+        if (fallback && (String(selectedMethodId) === String(fallback.id) || !selectedMethodId)) {
+            return fallback;
+        }
+        return filteredMethods[0] || fallback;
+    }, [dbPaymentMethods, selectedMethodId, selectedCategory, filteredMethods]);
 
     const financialMetrics = useMemo(() => {
-        if (!currentMethod) return { rate: 0, netValue: amountToPay };
-        const rate = installments === 1 ? Number(currentMethod.rate_cash || 0) : Number(currentMethod.installment_rates[installments.toString()] || 0);
+        const effective = currentMethod || DEFAULT_PAYMENT_METHODS[selectedCategory];
+        if (!effective) return { rate: 0, netValue: amountToPay };
+        const rate = installments === 1 ? Number(effective.rate_cash || 0) : Number(effective.installment_rates?.[installments.toString()] || 0);
         const discount = (amountToPay * rate) / 100;
         return { rate, netValue: amountToPay - discount };
-    }, [currentMethod, installments, amountToPay]);
+    }, [currentMethod, selectedCategory, installments, amountToPay]);
 
     const handleConfirmPayment = async () => {
-        if (!currentMethod || isLoading) return;
+        const effectiveMethod = currentMethod || DEFAULT_PAYMENT_METHODS[selectedCategory];
+        if (!effectiveMethod || isLoading) return;
 
         if (amountToPay <= 0) {
             setToast({ message: "Informe um valor válido para o recebimento.", type: 'error' });
@@ -261,13 +336,18 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         try {
             const profId = isSafeUUID(selectedProfessionalId) ? selectedProfessionalId : null;
             const isPartialPayment = !isCompleting;
+            const isConsolidated = !!(consolidatedAppointments && consolidatedAppointments.length > 1);
+            const isCash = selectedCategory === 'money' || effectiveMethod.type === 'money' || (effectiveMethod.type as any) === 'dinheiro';
+            const dbPaymentMethod = isCash ? 'dinheiro' : (selectedCategory || 'pix');
             
             // Descrição rica com detalhamento contábil
-            const description = isPartialPayment
-                ? `Baixa Parcial (${formatCurrency(amountToPay)}) - ${appointment.client_name} - ${appointment.service_name} (Restante: ${formatCurrency(newRemaining)})${paymentNotes ? ` - Obs: ${paymentNotes.trim()}` : ''}`
-                : (alreadyPaid > 0 
-                    ? `Quitação Final (${formatCurrency(amountToPay)}) - ${appointment.client_name} - ${appointment.service_name}${paymentNotes ? ` - Obs: ${paymentNotes.trim()}` : ''}`
-                    : `Atendimento - ${appointment.client_name} - ${appointment.service_name}${paymentNotes ? ` - Obs: ${paymentNotes.trim()}` : ''}`);
+            const description = isConsolidated
+                ? `Quitação Consolidada (${consolidatedAppointments.length} atendimentos: ${appointment.service_name}) - ${appointment.client_name}${paymentNotes ? ` - Obs: ${paymentNotes.trim()}` : ''}`
+                : (isPartialPayment
+                    ? `Baixa Parcial (${formatCurrency(amountToPay)}) - ${appointment.client_name} - ${appointment.service_name} (Restante: ${formatCurrency(newRemaining)})${paymentNotes ? ` - Obs: ${paymentNotes.trim()}` : ''}`
+                    : (alreadyPaid > 0 
+                        ? `Quitação Final (${formatCurrency(amountToPay)}) - ${appointment.client_name} - ${appointment.service_name}${paymentNotes ? ` - Obs: ${paymentNotes.trim()}` : ''}`
+                        : `Atendimento - ${appointment.client_name} - ${appointment.service_name}${paymentNotes ? ` - Obs: ${paymentNotes.trim()}` : ''}`));
 
             // 1. REGISTRO DO PAGAMENTO NO FINANCEIRO (RPC)
             const { data: transaction, error: rpcError } = await supabase.rpc('register_payment_transaction', {
@@ -275,7 +355,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 p_professional_id: profId,
                 p_description: description,
                 p_amount: Number(amountToPay),
-                p_method: selectedCategory || 'pix',
+                p_method: dbPaymentMethod,
                 p_installments: Number(installments || 1),
                 p_appointment_id: appointment.id,
                 p_tax_rate: Number(financialMetrics.rate || 0),
@@ -313,9 +393,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     total_amount: Number(appointment.price || 0),
                     closed_at: isCompleting ? finalDateISO : null,
                     paid_at: finalDateISO,
-                    payment_method: selectedCategory,
+                    payment_method: dbPaymentMethod,
                     payment_data: {
-                        payment_method: selectedCategory,
+                        payment_method: dbPaymentMethod,
                         tax_rate: Number(financialMetrics.rate || 0),
                         gross_value: Number(amountToPay),
                         net_value: Number(financialMetrics.netValue || amountToPay),
@@ -326,7 +406,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         total_paid_so_far: alreadyPaid + amountToPay,
                         remaining_balance: newRemaining,
                         payment_notes: paymentNotes || null,
-                        brand: null
+                        brand: effectiveMethod.name || null,
+                        is_consolidated: isConsolidated,
+                        consolidated_count: isConsolidated ? consolidatedAppointments.length : 1
                     }
                 }])
                 .select('id')
@@ -338,66 +420,92 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     .update({ command_id: command.id })
                     .eq('id', transactionId);
 
-                await supabase.from('command_items').insert([{
-                    command_id: command.id,
-                    appointment_id: appointment.id,
-                    studio_id: activeStudioId || null,
-                    title: isPartialPayment ? `${appointment.service_name} (Baixa Parcial)` : appointment.service_name,
-                    price: amountToPay,
-                    quantity: 1,
-                    professional_id: profId
-                }]);
-            }
-
-            // 3. ATUALIZAÇÃO DO AGENDAMENTO COM HISTÓRICO COMPLETO DE PAGAMENTOS
-            const { data: freshAppt } = await supabase
-                .from('appointments')
-                .select('notes, status')
-                .eq('id', appointment.id)
-                .maybeSingle();
-
-            let rawNotes = freshAppt?.notes || appointment.notes || '';
-            const pIdx = rawNotes.indexOf('---PAYMENTS_JSON---');
-            if (pIdx !== -1) {
-                const pEnd = rawNotes.indexOf('---END_PAYMENTS_JSON---');
-                if (pEnd !== -1) {
-                    rawNotes = (rawNotes.substring(0, pIdx) + rawNotes.substring(pEnd + '---END_PAYMENTS_JSON---'.length)).trim();
+                if (isConsolidated) {
+                    const itemsToInsert = consolidatedAppointments.map(app => {
+                        const rawPId = app.professional_id || profId;
+                        const safePId = isSafeUUID(rawPId) ? String(rawPId) : profId;
+                        return {
+                            command_id: command.id,
+                            appointment_id: app.id,
+                            studio_id: activeStudioId || null,
+                            title: app.service_name || 'Procedimento',
+                            price: Number(app.price || 0),
+                            quantity: 1,
+                            professional_id: safePId
+                        };
+                    });
+                    await supabase.from('command_items').insert(itemsToInsert);
                 } else {
-                    rawNotes = rawNotes.substring(0, pIdx).trim();
+                    await supabase.from('command_items').insert([{
+                        command_id: command.id,
+                        appointment_id: appointment.id,
+                        studio_id: activeStudioId || null,
+                        title: isPartialPayment ? `${appointment.service_name} (Baixa Parcial)` : appointment.service_name,
+                        price: amountToPay,
+                        quantity: 1,
+                        professional_id: profId
+                    }]);
                 }
             }
 
-            const newPaymentEntry = {
-                id: transactionId || String(Date.now()),
-                date: finalDateISO,
-                amount: Number(amountToPay),
-                method: selectedCategory,
-                installments: Number(installments || 1),
-                notes: paymentNotes.trim() || (isPartialPayment ? 'Baixa Parcial / Antecipação' : 'Quitação Integral'),
-                remaining: newRemaining,
-                net_value: Number(financialMetrics.netValue || amountToPay),
-                tax_rate: Number(financialMetrics.rate || 0)
-            };
+            // 3. ATUALIZAÇÃO DO AGENDAMENTO (OU DE TODOS OS AGENDAMENTOS SE CONSOLIDADO)
+            const apptsToUpdate = isConsolidated ? consolidatedAppointments : [appointment];
 
-            const updatedAllPayments = [...existingPayments, newPaymentEntry];
-            const paymentsMetadata = `\n---PAYMENTS_JSON---\n${JSON.stringify(updatedAllPayments)}\n---END_PAYMENTS_JSON---`;
-            const finalNotes = (rawNotes ? rawNotes + '\n' : '') + paymentsMetadata;
+            for (const item of apptsToUpdate) {
+                const { data: freshAppt } = await supabase
+                    .from('appointments')
+                    .select('notes, status')
+                    .eq('id', item.id)
+                    .maybeSingle();
 
-            // Se quitou totalmente, status vira 'concluido'. Se foi parcial, mantém o status original (ex: agendado/confirmado)
-            const targetStatus = isCompleting ? 'concluido' : (freshAppt?.status || 'agendado');
+                let rawNotes = freshAppt?.notes || (item as any).notes || '';
+                const pIdx = rawNotes.indexOf('---PAYMENTS_JSON---');
+                if (pIdx !== -1) {
+                    const pEnd = rawNotes.indexOf('---END_PAYMENTS_JSON---');
+                    if (pEnd !== -1) {
+                        rawNotes = (rawNotes.substring(0, pIdx) + rawNotes.substring(pEnd + '---END_PAYMENTS_JSON---'.length)).trim();
+                    } else {
+                        rawNotes = rawNotes.substring(0, pIdx).trim();
+                    }
+                }
 
-            const { error: apptError } = await supabase
-                .from('appointments')
-                .update({ 
-                    status: targetStatus,
-                    value: Number(appointment.price || 0),
-                    notes: finalNotes
-                })
-                .eq('id', appointment.id);
-            
-            if (apptError) throw apptError;
+                const itemAmount = isConsolidated ? Number(item.price || 0) : Number(amountToPay);
+                const newPaymentEntry = {
+                    id: transactionId || String(Date.now()),
+                    date: finalDateISO,
+                    amount: itemAmount,
+                    method: dbPaymentMethod,
+                    installments: Number(installments || 1),
+                    notes: isConsolidated 
+                        ? `Quitação Consolidada (${consolidatedAppointments.length} atendimentos)` 
+                        : (paymentNotes.trim() || (isPartialPayment ? 'Baixa Parcial / Antecipação' : 'Quitação Integral')),
+                    remaining: isConsolidated ? 0 : newRemaining,
+                    net_value: itemAmount,
+                    tax_rate: Number(financialMetrics.rate || 0)
+                };
 
-            if (isPartialPayment) {
+                const itemExistingPayments = (!isConsolidated && item.id === appointment.id) ? existingPayments : [];
+                const updatedAllPayments = [...itemExistingPayments, newPaymentEntry];
+                const paymentsMetadata = `\n---PAYMENTS_JSON---\n${JSON.stringify(updatedAllPayments)}\n---END_PAYMENTS_JSON---`;
+                const finalNotes = (rawNotes ? rawNotes + '\n' : '') + paymentsMetadata;
+
+                const targetStatus = isCompleting ? 'concluido' : (freshAppt?.status || 'agendado');
+
+                const { error: apptError } = await supabase
+                    .from('appointments')
+                    .update({ 
+                        status: targetStatus,
+                        value: Number(item.price || 0),
+                        notes: finalNotes
+                    })
+                    .eq('id', item.id);
+                
+                if (apptError) throw apptError;
+            }
+
+            if (isConsolidated) {
+                setToast({ message: `Todos os ${consolidatedAppointments.length} atendimentos foram quitados com sucesso! ✅`, type: 'success' });
+            } else if (isPartialPayment) {
                 setToast({ 
                     message: `Baixa parcial de ${formatCurrency(amountToPay)} recebida! Saldo restante: ${formatCurrency(newRemaining)}`, 
                     type: 'success' 
@@ -504,11 +612,15 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{appointment.service_name}</p>
                                 <p className="text-xs text-slate-300 font-bold mt-0.5">Valor Total: {formatCurrency(totalPrice)}</p>
                             </div>
-                            {alreadyPaid > 0 && (
+                            {consolidatedAppointments && consolidatedAppointments.length > 1 ? (
+                                <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
+                                    ✨ {consolidatedAppointments.length} Atendimentos Juntos
+                                </span>
+                            ) : alreadyPaid > 0 ? (
                                 <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
                                     Já Pago: {formatCurrency(alreadyPaid)}
                                 </span>
-                            )}
+                            ) : null}
                         </div>
 
                         {/* Valor que será pago agora */}
@@ -697,15 +809,32 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     {/* Seleção de Maquininha / Configuração & Parcelas */}
                     {filteredMethods.length > 0 && (
                         <div className="space-y-3">
-                            <select 
-                                value={selectedMethodId}
-                                onChange={(e) => setSelectedMethodId(e.target.value)}
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-700 outline-none text-xs"
-                            >
-                                {filteredMethods.map(m => (
-                                    <option key={m.id} value={m.id}>{m.name}</option>
-                                ))}
-                            </select>
+                            {filteredMethods.length > 1 ? (
+                                <div>
+                                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1 block">
+                                        Selecione a maquininha / configuração
+                                    </label>
+                                    <select 
+                                        value={selectedMethodId}
+                                        onChange={(e) => setSelectedMethodId(e.target.value)}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-700 outline-none text-xs"
+                                    >
+                                        {filteredMethods.map(m => (
+                                            <option key={m.id} value={m.id}>{m.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            ) : (
+                                <div className="flex items-center justify-between px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                                        <CheckCircle size={14} className="text-emerald-600" />
+                                        {filteredMethods[0].name}
+                                    </span>
+                                    <span className="text-[10px] font-black uppercase text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-100">
+                                        {Number(filteredMethods[0].rate_cash || 0) > 0 ? `Taxa ${filteredMethods[0].rate_cash}%` : 'Taxa 0% (Sem desconto)'}
+                                    </span>
+                                </div>
+                            )}
 
                             {currentMethod?.type === 'credit' && currentMethod.allow_installments && (
                                 <select 
@@ -734,7 +863,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     
                     <button
                         onClick={handleConfirmPayment}
-                        disabled={isLoading || !currentMethod || amountToPay <= 0}
+                        disabled={isLoading || amountToPay <= 0}
                         className={`flex-[2] py-3.5 px-4 rounded-2xl font-black text-xs uppercase tracking-wider text-white shadow-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
                             isLoading || amountToPay <= 0 
                                 ? 'bg-slate-300 cursor-not-allowed' 

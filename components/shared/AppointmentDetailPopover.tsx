@@ -57,6 +57,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const [statusTarget, setStatusTarget] = useState<HTMLElement | null>(null);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutInitialMode, setCheckoutInitialMode] = useState<'full' | 'partial'>('full');
+  const [checkoutIsConsolidated, setCheckoutIsConsolidated] = useState<boolean>(false);
   const [paymentsHistory, setPaymentsHistory] = useState<any[]>(appointment.payments || []);
   const [showPaymentsBreakdown, setShowPaymentsBreakdown] = useState<boolean>(false);
   const [clientPhone, setClientPhone] = useState<string | null>(null);
@@ -70,6 +71,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     setPrevId(appointment.id);
     setIsReminderSent(!!appointment.reminder_sent);
     setPaymentsHistory(appointment.payments || []);
+    setCheckoutIsConsolidated(false);
   }
 
   const { activeStudioId } = useStudio();
@@ -1094,44 +1096,68 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
           {canCheckout && (
             pendingSameDay.length > 1 ? (
               <div className="flex flex-col gap-2 pt-0.5">
+                {/* Botão Principal: Quitar Todos Juntos DIRETO na tela de atendimento */}
                 <button
                   disabled={isProcessing}
-                  onClick={handleFinalizeAllTogether}
-                  className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider py-3.5 px-4 rounded-2xl shadow-lg shadow-amber-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  onClick={() => {
+                    setCheckoutIsConsolidated(true);
+                    setCheckoutInitialMode('full');
+                    setIsCheckoutOpen(true);
+                  }}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider py-3.5 px-4 rounded-2xl shadow-lg shadow-emerald-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  title="Dar baixa e quitar todos os atendimentos pendentes deste cliente diretamente nesta tela"
                 >
-                  {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Receipt size={16} />}
-                  <span>{isProcessing ? 'Processando...' : `Finalizar Todos Juntos (R$ ${pendingTotalValue.toFixed(2)})`}</span>
+                  <Receipt size={16} />
+                  <span>Quitar Todos Aqui Direto (R$ {pendingTotalValue.toFixed(2)})</span>
                 </button>
+
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
                     disabled={isProcessing}
                     onClick={() => {
+                      setCheckoutIsConsolidated(false);
                       setCheckoutInitialMode('full');
                       setIsCheckoutOpen(true);
                     }}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-[10px] uppercase tracking-wider py-2.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                    className="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-black text-[10px] uppercase tracking-wider py-2.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer shadow-2xs"
+                    title="Dar baixa apenas neste procedimento"
                   >
-                    <CheckCircle2 size={13} />
-                    <span>Quitar Este</span>
+                    <CheckCircle2 size={13} className="text-emerald-600" />
+                    <span>Quitar Apenas Este</span>
                   </button>
                   <button
                     disabled={isProcessing}
                     onClick={() => {
+                      setCheckoutIsConsolidated(false);
                       setCheckoutInitialMode('partial');
                       setIsCheckoutOpen(true);
                     }}
                     className="w-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 font-black text-[10px] uppercase tracking-wider py-2.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                    title="Registrar baixa parcial ou sinal"
                   >
                     <Split size={13} className="text-amber-600" />
                     <span>Baixa Parcial</span>
                   </button>
                 </div>
+
+                {/* Opção secundária: Se desejar abrir na tela de Comandas para lançar produtos antes de fechar */}
+                <button
+                  type="button"
+                  disabled={isProcessing}
+                  onClick={handleFinalizeAllTogether}
+                  className="w-full text-slate-500 hover:text-slate-800 text-[10px] font-bold py-1 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  title="Gerar comanda para adicionar produtos antes de liquidar"
+                >
+                  {isProcessing ? <Loader2 size={12} className="animate-spin text-amber-600" /> : <Receipt size={12} className="text-slate-400" />}
+                  <span>{isProcessing ? 'Gerando comanda...' : 'Ou enviar para Comanda (adicionar produtos)'}</span>
+                </button>
               </div>
             ) : hasPartialPayments ? (
               <div className="flex flex-col gap-2 pt-0.5">
                 <button
                   disabled={isProcessing}
                   onClick={() => {
+                    setCheckoutIsConsolidated(false);
                     setCheckoutInitialMode('full');
                     setIsCheckoutOpen(true);
                   }}
@@ -1143,6 +1169,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                 <button
                   disabled={isProcessing}
                   onClick={() => {
+                    setCheckoutIsConsolidated(false);
                     setCheckoutInitialMode('partial');
                     setIsCheckoutOpen(true);
                   }}
@@ -1157,6 +1184,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                 <button
                   disabled={isProcessing}
                   onClick={() => {
+                    setCheckoutIsConsolidated(false);
                     setCheckoutInitialMode('full');
                     setIsCheckoutOpen(true);
                   }}
@@ -1168,6 +1196,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                 <button
                   disabled={isProcessing}
                   onClick={() => {
+                    setCheckoutIsConsolidated(false);
                     setCheckoutInitialMode('partial');
                     setIsCheckoutOpen(true);
                   }}
@@ -1202,22 +1231,63 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
         <CheckoutModal
           isOpen={isCheckoutOpen}
           initialMode={checkoutInitialMode}
-          onClose={() => setIsCheckoutOpen(false)}
-          appointment={{
-            id: appointment.id,
-            client_id: appointment.client?.id,
-            client_name: appointment.client?.nome || 'Cliente',
-            service_name: appointment.service?.name || 'Serviço',
-            price: appointmentTotalValue,
-            professional_id: appointment.professional?.id,
-            professional_name: appointment.professional?.name,
-            payments: paymentsHistory,
-            paid_amount: alreadyPaidTotal,
-            remaining_amount: remainingValue,
-            notes: (appointment as any).notes || appointment.notas
+          onClose={() => {
+            setIsCheckoutOpen(false);
+            setCheckoutIsConsolidated(false);
           }}
+          appointment={
+            checkoutIsConsolidated
+              ? {
+                  id: appointment.id,
+                  client_id: appointment.client?.id,
+                  client_name: appointment.client?.nome || appointment.client_name || 'Cliente',
+                  service_name: pendingSameDay.map(p => p.service_name || p.service?.name || 'Serviço').join(' + '),
+                  price: pendingTotalValue,
+                  professional_id: appointment.professional?.id,
+                  professional_name: appointment.professional?.name || '',
+                  payments: [],
+                  paid_amount: 0,
+                  remaining_amount: pendingTotalValue,
+                  notes: (appointment as any).notes || appointment.notas
+                }
+              : {
+                  id: appointment.id,
+                  client_id: appointment.client?.id,
+                  client_name: appointment.client?.nome || 'Cliente',
+                  service_name: appointment.services && appointment.services.length > 0
+                    ? appointment.services.map(s => s.name).join(' + ')
+                    : (appointment.service?.name || 'Serviço'),
+                  price: appointmentTotalValue,
+                  professional_id: appointment.professional?.id,
+                  professional_name: appointment.professional?.name,
+                  payments: paymentsHistory,
+                  paid_amount: alreadyPaidTotal,
+                  remaining_amount: remainingValue,
+                  notes: (appointment as any).notes || appointment.notas
+                }
+          }
+          consolidatedAppointments={
+            checkoutIsConsolidated
+              ? pendingSameDay.map(p => ({
+                  id: p.id,
+                  client_id: p.client?.id || appointment.client?.id,
+                  client_name: p.client?.nome || appointment.client?.nome || 'Cliente',
+                  service_name: p.service_name || p.service?.name || 'Serviço',
+                  price: Number(p.service?.price ?? p.value ?? 0),
+                  professional_id: p.professional?.id || (p as any).professional_id,
+                  professional_name: p.professional?.name || (p as any).professional_name || '',
+                  notes: (p as any).notes || p.notas
+                }))
+              : undefined
+          }
           onSuccess={(info) => {
-            if (info?.isPartial) {
+            if (checkoutIsConsolidated) {
+              pendingSameDay.forEach(p => onUpdateStatus(p.id, 'concluido'));
+              if (onRefresh) onRefresh();
+              setIsCheckoutOpen(false);
+              setCheckoutIsConsolidated(false);
+              onClose();
+            } else if (info?.isPartial) {
               if (onRefresh) onRefresh();
               setIsCheckoutOpen(false);
               onClose();
