@@ -3,7 +3,7 @@ import { LegacyAppointment, AppointmentStatus } from '../../types';
 import { 
     Calendar, DollarSign, Edit, Trash2, 
     User, MoreVertical, X, CheckCircle2, Receipt, MessageCircle, AlignLeft, CheckCheck, Loader2,
-    Split, ChevronDown
+    Split, ChevronDown, RotateCcw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -580,6 +580,124 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     }
   };
 
+  const [isDeletingPayment, setIsDeletingPayment] = useState<boolean>(false);
+
+  const handleEstornarPayment = async (targetPayment: any) => {
+    const paymentAmount = Number(targetPayment.amount || 0);
+    const confirmMsg = `Deseja realmente estornar/remover esta baixa parcial de R$ ${paymentAmount.toFixed(2)}?\n\n` +
+      `Isso irá:\n` +
+      `• Remover o registro desta baixa parcial do atendimento.\n` +
+      `• Restaurar o saldo a pagar para o valor total.\n` +
+      `• Excluir o lançamento financeiro caso ainda conste no caixa.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsDeletingPayment(true);
+    try {
+      if (targetPayment.id) {
+        await supabase
+          .from('financial_transactions')
+          .delete()
+          .eq('id', targetPayment.id);
+      }
+
+      const updatedPayments = paymentsHistory.filter(p => (p.id ? p.id !== targetPayment.id : p !== targetPayment));
+
+      const { data: apptData } = await supabase
+        .from('appointments')
+        .select('notes, status')
+        .eq('id', appointment.id)
+        .maybeSingle();
+
+      let currentNotes = apptData?.notes || appointment.notas || '';
+      const pIdx = currentNotes.indexOf('---PAYMENTS_JSON---');
+      if (pIdx !== -1) {
+        const pEnd = currentNotes.indexOf('---END_PAYMENTS_JSON---');
+        if (pEnd !== -1) {
+          currentNotes = (currentNotes.substring(0, pIdx) + currentNotes.substring(pEnd + '---END_PAYMENTS_JSON---'.length)).trim();
+        } else {
+          currentNotes = currentNotes.substring(0, pIdx).trim();
+        }
+      }
+
+      const paymentsMetadata = updatedPayments.length > 0
+        ? `\n---PAYMENTS_JSON---\n${JSON.stringify(updatedPayments)}\n---END_PAYMENTS_JSON---`
+        : '';
+
+      const finalNotes = (currentNotes ? currentNotes + '\n' : '') + paymentsMetadata;
+
+      const { error: updateError } = await supabase
+        .from('appointments')
+        .update({
+          notes: finalNotes.trim(),
+          status: appointment.status === 'concluido' ? 'agendado' : appointment.status
+        })
+        .eq('id', appointment.id);
+
+      if (updateError) throw updateError;
+
+      setPaymentsHistory(updatedPayments);
+      toast.success(`Baixa parcial de R$ ${paymentAmount.toFixed(2)} estornada com sucesso!`);
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      console.error("Erro ao estornar pagamento:", err);
+      toast.error("Erro ao estornar pagamento: " + (err.message || 'Tente novamente'));
+    } finally {
+      setIsDeletingPayment(false);
+    }
+  };
+
+  const handleEstornarTodosPayments = async () => {
+    const confirmMsg = `Deseja realmente estornar TODAS as baixas parciais deste atendimento (R$ ${alreadyPaidTotal.toFixed(2)})?\n\n` +
+      `Isso irá zerar as antecipações salvas e restaurar o valor integral de R$ ${appointmentTotalValue.toFixed(2)} a pagar.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsDeletingPayment(true);
+    try {
+      await supabase
+        .from('financial_transactions')
+        .delete()
+        .eq('appointment_id', appointment.id);
+
+      const { data: apptData } = await supabase
+        .from('appointments')
+        .select('notes')
+        .eq('id', appointment.id)
+        .maybeSingle();
+
+      let currentNotes = apptData?.notes || appointment.notas || '';
+      const pIdx = currentNotes.indexOf('---PAYMENTS_JSON---');
+      if (pIdx !== -1) {
+        const pEnd = currentNotes.indexOf('---END_PAYMENTS_JSON---');
+        if (pEnd !== -1) {
+          currentNotes = (currentNotes.substring(0, pIdx) + currentNotes.substring(pEnd + '---END_PAYMENTS_JSON---'.length)).trim();
+        } else {
+          currentNotes = currentNotes.substring(0, pIdx).trim();
+        }
+      }
+
+      const { error: updateError } = await supabase
+        .from('appointments')
+        .update({
+          notes: currentNotes.trim(),
+          status: appointment.status === 'concluido' ? 'agendado' : appointment.status
+        })
+        .eq('id', appointment.id);
+
+      if (updateError) throw updateError;
+
+      setPaymentsHistory([]);
+      toast.success("Baixas parciais estornadas! O valor total voltou a ficar pendente.");
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      console.error("Erro ao estornar pagamentos:", err);
+      toast.error("Erro ao estornar pagamentos: " + (err.message || 'Tente novamente'));
+    } finally {
+      setIsDeletingPayment(false);
+    }
+  };
+
   return (
     <>
       {/* Backdrop suave para sobrepor a agenda inteira com foco no card */}
@@ -876,20 +994,50 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                     {/* Histórico das Baixas */}
                     {paymentsHistory.length > 0 && (
                       <div className="pt-0.5">
-                        <button
-                          type="button"
-                          onClick={() => setShowPaymentsBreakdown(!showPaymentsBreakdown)}
-                          className="text-[9.5px] font-black text-slate-500 hover:text-slate-800 uppercase flex items-center gap-1 transition-all"
-                        >
-                          <span>Histórico ({paymentsHistory.length} baixa{paymentsHistory.length > 1 ? 's' : ''})</span>
-                          <ChevronDown size={11} className={`transition-transform ${showPaymentsBreakdown ? 'rotate-180' : ''}`} />
-                        </button>
+                        <div className="flex items-center justify-between">
+                          <button
+                            type="button"
+                            onClick={() => setShowPaymentsBreakdown(!showPaymentsBreakdown)}
+                            className="text-[9.5px] font-black text-slate-500 hover:text-slate-800 uppercase flex items-center gap-1 transition-all"
+                          >
+                            <span>Histórico ({paymentsHistory.length} baixa{paymentsHistory.length > 1 ? 's' : ''})</span>
+                            <ChevronDown size={11} className={`transition-transform ${showPaymentsBreakdown ? 'rotate-180' : ''}`} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isDeletingPayment}
+                            onClick={handleEstornarTodosPayments}
+                            className="text-[9px] font-extrabold text-rose-500 hover:text-rose-700 hover:underline uppercase flex items-center gap-1 transition-all disabled:opacity-50"
+                            title="Estornar todas as baixas e cobrar valor integral"
+                          >
+                            {isDeletingPayment ? <Loader2 size={10} className="animate-spin" /> : <RotateCcw size={10} />}
+                            <span>Zerar / Estornar</span>
+                          </button>
+                        </div>
                         {showPaymentsBreakdown && (
-                          <div className="mt-1 space-y-1 pt-1 border-t border-slate-200/60 max-h-28 overflow-y-auto custom-scrollbar">
+                          <div className="mt-1 space-y-1.5 pt-1 border-t border-slate-200/60 max-h-36 overflow-y-auto custom-scrollbar">
                             {paymentsHistory.map((p, idx) => (
-                              <div key={p.id || idx} className="text-[9px] flex items-center justify-between text-slate-600 font-medium">
-                                <span>{p.date ? format(new Date(p.date), 'dd/MM') : 'Data'} • {p.method?.toUpperCase()}</span>
-                                <span className="font-bold text-emerald-600 font-mono">+R$ {Number(p.amount || 0).toFixed(2)}</span>
+                              <div key={p.id || idx} className="text-[9.5px] flex items-center justify-between text-slate-600 font-medium bg-white p-2 rounded-xl border border-slate-200/70 shadow-2xs">
+                                <div className="min-w-0 pr-1">
+                                  <div className="font-bold text-slate-800">
+                                    {p.date ? format(new Date(p.date), 'dd/MM/yyyy HH:mm') : 'Data não informada'}
+                                  </div>
+                                  <div className="text-[8.5px] text-slate-400 uppercase font-semibold">
+                                    {p.method?.toUpperCase()} • {p.notes || 'Baixa Parcial'}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="font-extrabold text-emerald-600 font-mono text-xs">+R$ {Number(p.amount || 0).toFixed(2)}</span>
+                                  <button
+                                    type="button"
+                                    disabled={isDeletingPayment}
+                                    onClick={() => handleEstornarPayment(p)}
+                                    className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                    title="Estornar esta baixa"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>

@@ -2333,12 +2333,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                     <span>Confirmado pelo Cliente</span>
                                                                 </div>
                                                             )}
-                                                            {app.paid_amount && app.paid_amount > 0 && app.remaining_amount && app.remaining_amount > 0 && !isShort && (
-                                                                <div className="mt-1 inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200 px-1 py-0.5 rounded text-[8px] font-black uppercase tracking-wide leading-none" title={`Baixa Parcial: R$ ${app.paid_amount.toFixed(2)} pago • Resta: R$ ${app.remaining_amount.toFixed(2)}`}>
+                                                            {(app.paid_amount || 0) > 0 && (app.remaining_amount || 0) > 0 && !isShort ? (
+                                                                <div className="mt-1 inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200 px-1 py-0.5 rounded text-[8px] font-black uppercase tracking-wide leading-none" title={`Baixa Parcial: R$ ${app.paid_amount?.toFixed(2)} pago • Resta: R$ ${app.remaining_amount?.toFixed(2)}`}>
                                                                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                                                                    <span>Sinal R$ {Math.round(app.paid_amount)} • Resta R$ {Math.round(app.remaining_amount)}</span>
+                                                                    <span>Sinal R$ {Math.round(app.paid_amount || 0)} • Resta R$ {Math.round(app.remaining_amount || 0)}</span>
                                                                 </div>
-                                                            )}
+                                                            ) : null}
                                                         </div>
                                                         {!isShort && (
                                                             <div className="mt-auto opacity-90 leading-none">
@@ -2781,11 +2781,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                 R$ {Number(app.value || app.service?.price || 0).toFixed(2)}
                                                             </span>
                                                         )}
-                                                        {!isBlocked && app.paid_amount && app.paid_amount > 0 && app.remaining_amount && app.remaining_amount > 0 && (
+                                                        {!isBlocked && (app.paid_amount || 0) > 0 && (app.remaining_amount || 0) > 0 ? (
                                                             <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
-                                                                Sinal: R$ {app.paid_amount.toFixed(0)} • Resta: R$ {app.remaining_amount.toFixed(0)}
+                                                                Sinal: R$ {app.paid_amount?.toFixed(0)} • Resta: R$ {app.remaining_amount?.toFixed(0)}
                                                             </span>
-                                                        )}
+                                                        ) : null}
                                                         {!isBlocked && (
                                                             <span className={`text-[8.5px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg leading-none inline-flex items-center gap-1 ${
                                                                 app.status === 'concluido' ? 'bg-emerald-50 text-emerald-600 border border-emerald-110' :

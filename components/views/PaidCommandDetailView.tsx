@@ -45,13 +45,33 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
                 console.error("Erro ao excluir transação financeira:", errorDelFT);
             }
 
-            // 2. Reverter status do agendamento se houver
-            const appointmentId = items.find(i => i.appointment_id)?.appointment_id;
-            if (appointmentId) {
+            // 2. Reverter status e limpar histórico de pagamentos do agendamento se houver
+            const appointmentIds = Array.from(new Set(items.map(i => i.appointment_id).filter(Boolean)));
+            for (const apptId of appointmentIds) {
+                const { data: apptData } = await supabase
+                    .from('appointments')
+                    .select('notes')
+                    .eq('id', apptId)
+                    .maybeSingle();
+
+                let currentNotes = apptData?.notes || '';
+                const pIdx = currentNotes.indexOf('---PAYMENTS_JSON---');
+                if (pIdx !== -1) {
+                    const pEnd = currentNotes.indexOf('---END_PAYMENTS_JSON---');
+                    if (pEnd !== -1) {
+                        currentNotes = (currentNotes.substring(0, pIdx) + currentNotes.substring(pEnd + '---END_PAYMENTS_JSON---'.length)).trim();
+                    } else {
+                        currentNotes = currentNotes.substring(0, pIdx).trim();
+                    }
+                }
+
                 const { error: errorAppt } = await supabase
                     .from('appointments')
-                    .update({ status: 'confirmado' })
-                    .eq('id', appointmentId);
+                    .update({ 
+                        status: 'agendado',
+                        notes: currentNotes
+                    })
+                    .eq('id', apptId);
                 
                 if (errorAppt) {
                     console.error("Erro ao reverter status do agendamento:", errorAppt);

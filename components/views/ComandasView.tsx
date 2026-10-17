@@ -114,6 +114,38 @@ const ComandasView: React.FC<any> = ({ onNavigateToCommand, onOpenPaidSummary })
 
         if (!isConfirmed) return;
         try {
+            // Se houver agendamentos vinculados a esta comanda cancelada, limpa eventuais resquícios de baixa parcial
+            const { data: cmdItems } = await supabase
+                .from('command_items')
+                .select('appointment_id')
+                .eq('command_id', commandId);
+
+            if (cmdItems && cmdItems.length > 0) {
+                const apptIds = Array.from(new Set(cmdItems.map(i => i.appointment_id).filter(Boolean)));
+                for (const apptId of apptIds) {
+                    const { data: apptData } = await supabase
+                        .from('appointments')
+                        .select('notes')
+                        .eq('id', apptId)
+                        .maybeSingle();
+
+                    let currentNotes = apptData?.notes || '';
+                    const pIdx = currentNotes.indexOf('---PAYMENTS_JSON---');
+                    if (pIdx !== -1) {
+                        const pEnd = currentNotes.indexOf('---END_PAYMENTS_JSON---');
+                        if (pEnd !== -1) {
+                            currentNotes = (currentNotes.substring(0, pIdx) + currentNotes.substring(pEnd + '---END_PAYMENTS_JSON---'.length)).trim();
+                        } else {
+                            currentNotes = currentNotes.substring(0, pIdx).trim();
+                        }
+                        await supabase
+                            .from('appointments')
+                            .update({ notes: currentNotes, status: 'agendado' })
+                            .eq('id', apptId);
+                    }
+                }
+            }
+
             const { error } = await supabase.from('commands').update({ deleted_at: new Date().toISOString(), status: 'canceled' }).eq('id', commandId);
             if (error) throw error;
             setTabs(prev => prev.filter(t => t.id !== commandId));

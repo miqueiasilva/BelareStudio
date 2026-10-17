@@ -1099,11 +1099,11 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client, onClose, onSave }
                                                             </span>
                                                             <h4 className="font-black text-slate-800 text-base mt-2 flex items-center gap-2">
                                                                 {app.service_name}
-                                                                {app.value && (
+                                                                {app.value && parseFloat(app.value) > 0 ? (
                                                                     <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
                                                                         R$ {parseFloat(app.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                                                     </span>
-                                                                )}
+                                                                ) : null}
                                                             </h4>
                                                             <p className="text-xs text-slate-500 font-bold uppercase mt-1">
                                                                 Profissional: <span className="text-slate-600">{app.professional_name || 'Não informado'}</span>
