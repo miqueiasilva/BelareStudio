@@ -4,7 +4,7 @@ import {
     Loader2, CheckCircle,
     ShoppingCart, X,
     CreditCard as CardIcon,
-    Tag, Percent, Calendar
+    Tag, Percent, Calendar, Split
 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { useStudio } from '../../contexts/StudioContext';
@@ -252,6 +252,78 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
         } catch (e: any) {
             console.error('[FATAL_CHECKOUT]', e);
             setToast({ message: `Erro: ${e.message || 'Falha na comunicação'}`, type: 'error' });
+            isProcessingRef.current = false;
+            setIsFinishing(false);
+        }
+    };
+
+    const handleRegisterPartialPayment = async () => {
+        if (isProcessingRef.current || isLocked || addedPayments.length === 0) return;
+        isProcessingRef.current = true;
+        setIsFinishing(true);
+
+        try {
+            const clName = command?.client_name || 'Consumidor Final';
+            const itTitles = command?.command_items?.map((i: any) => i.title).join(', ') || 'Procedimentos/Itens';
+            
+            // Determinar a data da baixa retroativa ou atual
+            const targetDate = new Date(paymentDate);
+            const nowTime = new Date();
+            targetDate.setHours(nowTime.getHours(), nowTime.getMinutes(), nowTime.getSeconds(), nowTime.getMilliseconds());
+            const finalDateISO = targetDate.toISOString();
+
+            for (const p of addedPayments) {
+                const dbMethod = p.payment_method === 'money' ? 'dinheiro' : p.payment_method;
+                const desc = `Baixa Parcial Comanda #${commandId.slice(0, 8)} - ${clName} - R$ ${p.amount.toFixed(2)} (Restante: R$ ${totals.remaining.toFixed(2)})`;
+                
+                const { data: transaction, error: rpcError } = await supabase.rpc('register_payment_transaction', {
+                    p_studio_id: activeStudioId || null,
+                    p_professional_id: (command.professional_id && command.professional_id.length > 10) ? command.professional_id : null,
+                    p_appointment_id: null,
+                    p_description: desc,
+                    p_amount: Number(p.amount || 0),
+                    p_method: dbMethod || 'pix',
+                    p_installments: Number(p.installments || 1),
+                    p_tax_rate: Number(p.rate || 0),
+                    p_net_value: Number(p.netAmount || p.amount || 0)
+                });
+
+                if (!rpcError && transaction) {
+                    const transactionId = (transaction as any)?.id;
+                    if (transactionId) {
+                        await supabase
+                            .from('financial_transactions')
+                            .update({ 
+                                command_id: commandId,
+                                description: desc,
+                                date: finalDateISO
+                            })
+                            .eq('id', transactionId);
+                    }
+                }
+            }
+
+            // Atualiza a comanda mantendo status 'open' mas gravando os pagamentos parciais
+            await supabase
+                .from('commands')
+                .update({ 
+                    paid_at: finalDateISO,
+                    payment_data: {
+                        is_partial: true,
+                        total_amount: totals.total,
+                        remaining_balance: totals.remaining,
+                        last_partial_date: finalDateISO
+                    }
+                })
+                .eq('id', commandId);
+
+            setToast({ message: `Baixa parcial de R$ ${totals.paid.toFixed(2)} registrada! Restante: R$ ${totals.remaining.toFixed(2)}`, type: 'success' });
+            setAddedPayments([]);
+            await fetchContext();
+        } catch (e: any) {
+            console.error('[PARTIAL_CHECKOUT_ERROR]', e);
+            setToast({ message: `Erro ao registrar baixa parcial: ${e.message}`, type: 'error' });
+        } finally {
             isProcessingRef.current = false;
             setIsFinishing(false);
         }
@@ -632,13 +704,27 @@ const CommandDetailView: React.FC<{ commandId: string; onBack: () => void }> = (
                                     )}
                                 </div>
 
-                                <button 
-                                    onClick={handleFinishCheckout} 
-                                    disabled={isFinishing || totals.remaining > 0 || (totals.total > 0 && addedPayments.length === 0)} 
-                                    className={`w-full py-5 rounded-[24px] font-black text-lg uppercase transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 ${(totals.remaining === 0 && (totals.total === 0 || addedPayments.length > 0)) && !isFinishing ? 'bg-emerald-600 text-white shadow-emerald-100' : 'bg-slate-100 text-slate-300'}`}
-                                >
-                                    {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> LIQUIDAR CONTA</>}
-                                </button>
+                                {totals.remaining === 0 ? (
+                                    <button 
+                                        onClick={handleFinishCheckout} 
+                                        disabled={isFinishing || (totals.total > 0 && addedPayments.length === 0)} 
+                                        className={`w-full py-5 rounded-[24px] font-black text-lg uppercase transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 ${(totals.total === 0 || addedPayments.length > 0) && !isFinishing ? 'bg-emerald-600 text-white shadow-emerald-100' : 'bg-slate-100 text-slate-300'}`}
+                                    >
+                                        {isFinishing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle size={24} /> LIQUIDAR CONTA TOTAL</>}
+                                    </button>
+                                ) : addedPayments.length > 0 ? (
+                                    <button 
+                                        onClick={handleRegisterPartialPayment} 
+                                        disabled={isFinishing} 
+                                        className="w-full py-5 rounded-[24px] font-black text-sm uppercase transition-all shadow-xl active:scale-95 flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-amber-500/20"
+                                    >
+                                        {isFinishing ? <Loader2 size={20} className="animate-spin" /> : <><Split size={20} /> REGISTRAR BAIXA PARCIAL (R$ {totals.paid.toFixed(2)})</>}
+                                    </button>
+                                ) : (
+                                    <div className="w-full py-4 px-4 rounded-[20px] bg-slate-100 border border-slate-200 text-slate-400 font-bold text-xs uppercase text-center flex items-center justify-center gap-2">
+                                        <span>Selecione uma forma de pagamento para liquidar ou dar baixa parcial</span>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

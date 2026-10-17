@@ -2,7 +2,8 @@ import React, { useRef, useEffect, useState } from 'react';
 import { LegacyAppointment, AppointmentStatus } from '../../types';
 import { 
     Calendar, DollarSign, Edit, Trash2, 
-    User, MoreVertical, X, CheckCircle2, Receipt, MessageCircle, AlignLeft, CheckCheck, Loader2
+    User, MoreVertical, X, CheckCircle2, Receipt, MessageCircle, AlignLeft, CheckCheck, Loader2,
+    Split, ChevronDown
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -22,6 +23,7 @@ interface AppointmentDetailPopoverProps {
   onUpdateStatus: (appointmentId: number, newStatus: AppointmentStatus) => void;
   onConvertToCommand?: (appointment: LegacyAppointment, sameDayApptIds?: number[]) => void;
   onSendReminder?: (appointmentId: number) => void;
+  onRefresh?: () => void;
 }
 
 const statusLabels: { [key in AppointmentStatus]: string } = {
@@ -45,7 +47,8 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   onDelete,
   onUpdateStatus,
   onConvertToCommand,
-  onSendReminder
+  onSendReminder,
+  onRefresh
 }) => {
   const popoverRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLButtonElement>(null);
@@ -53,6 +56,9 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   const [isStatusPopoverOpen, setIsStatusPopoverOpen] = useState(false);
   const [statusTarget, setStatusTarget] = useState<HTMLElement | null>(null);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [checkoutInitialMode, setCheckoutInitialMode] = useState<'full' | 'partial'>('full');
+  const [paymentsHistory, setPaymentsHistory] = useState<any[]>(appointment.payments || []);
+  const [showPaymentsBreakdown, setShowPaymentsBreakdown] = useState<boolean>(false);
   const [clientPhone, setClientPhone] = useState<string | null>(null);
   const [sameDayAppointments, setSameDayAppointments] = useState<any[]>([]);
   const [sendAllTogether, setSendAllTogether] = useState<boolean>(true);
@@ -63,12 +69,52 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
   if (appointment.id !== prevId) {
     setPrevId(appointment.id);
     setIsReminderSent(!!appointment.reminder_sent);
+    setPaymentsHistory(appointment.payments || []);
   }
 
   const { activeStudioId } = useStudio();
   const [reminderTemplate, setReminderTemplate] = useState<string | null>(null);
   const [studioName, setStudioName] = useState<string>('Studio Jacilene Félix');
   const [studioSettings, setStudioSettings] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchPayments = async () => {
+      if (!appointment.id) return;
+      try {
+        const { data: trans } = await supabase
+          .from('financial_transactions')
+          .select('id, date, amount, payment_method, description, net_value, created_at')
+          .eq('appointment_id', appointment.id)
+          .neq('status', 'cancelado')
+          .order('date', { ascending: true });
+
+        if (trans && trans.length > 0) {
+          setPaymentsHistory(trans.map((t: any) => ({
+            id: t.id,
+            date: t.date || t.created_at,
+            amount: Number(t.amount || 0),
+            method: t.payment_method || 'pix',
+            notes: t.description || 'Pagamento',
+            net_value: Number(t.net_value || t.amount || 0)
+          })));
+        } else if (appointment.payments && appointment.payments.length > 0) {
+          setPaymentsHistory(appointment.payments);
+        } else if (appointment.notas) {
+          const payMatch = appointment.notas.match(/---PAYMENTS_JSON---[\r\n\s]*([\s\S]*?)[\r\n\s]*---END_PAYMENTS_JSON---/);
+          if (payMatch) {
+            try {
+              setPaymentsHistory(JSON.parse(payMatch[1]));
+            } catch (_e) {
+              console.warn("Falha ao analisar JSON de pagamentos:", _e);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Erro ao buscar histórico de pagamentos do agendamento:", err);
+      }
+    };
+    fetchPayments();
+  }, [appointment.id, appointment.payments, appointment.notas]);
 
   useEffect(() => {
     const fetchStudioSettings = async () => {
@@ -495,6 +541,10 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
         ? Number(appointment.value) 
         : (rawTotal > 0 ? rawTotal : servicesSum));
 
+  const alreadyPaidTotal = paymentsHistory.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
+  const remainingValue = Math.max(0, appointmentTotalValue - alreadyPaidTotal);
+  const hasPartialPayments = alreadyPaidTotal > 0 && remainingValue > 0.01;
+
   const handleFinalizeAllTogether = async () => {
     if (isProcessing) return;
     setIsProcessing(true);
@@ -794,14 +844,60 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
             )}
 
             {appointment.type !== 'block' && (
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600 shrink-0">
-                  <DollarSign size={15} />
+              <div className="flex flex-col gap-2 p-3 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider">Valor do Procedimento</span>
+                  <span className="text-slate-800 font-black text-sm">R$ {appointmentTotalValue.toFixed(2)}</span>
                 </div>
-                <div>
-                  <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider leading-none mb-0.5">Valor deste Agendamento</p>
-                  <span className="text-emerald-600 font-black text-base">R$ {appointmentTotalValue.toFixed(2)}</span>
-                </div>
+
+                {alreadyPaidTotal > 0 && (
+                  <>
+                    <div className="flex items-center justify-between text-emerald-600">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1">
+                        <CheckCircle2 size={12} />
+                        Já Pago (Antecipações)
+                      </span>
+                      <span className="font-black text-sm">R$ {alreadyPaidTotal.toFixed(2)}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-amber-600 border-t border-slate-200/60 pt-1.5">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider">Saldo Restante a Pagar</span>
+                      <span className="font-black text-base">R$ {remainingValue.toFixed(2)}</span>
+                    </div>
+
+                    {/* Barra de Progresso */}
+                    <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden mt-0.5">
+                      <div 
+                        className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                        style={{ width: `${Math.min(100, Math.round((alreadyPaidTotal / (appointmentTotalValue || 1)) * 100))}%` }}
+                      />
+                    </div>
+
+                    {/* Histórico das Baixas */}
+                    {paymentsHistory.length > 0 && (
+                      <div className="pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setShowPaymentsBreakdown(!showPaymentsBreakdown)}
+                          className="text-[9.5px] font-black text-slate-500 hover:text-slate-800 uppercase flex items-center gap-1 transition-all"
+                        >
+                          <span>Histórico ({paymentsHistory.length} baixa{paymentsHistory.length > 1 ? 's' : ''})</span>
+                          <ChevronDown size={11} className={`transition-transform ${showPaymentsBreakdown ? 'rotate-180' : ''}`} />
+                        </button>
+                        {showPaymentsBreakdown && (
+                          <div className="mt-1 space-y-1 pt-1 border-t border-slate-200/60 max-h-28 overflow-y-auto custom-scrollbar">
+                            {paymentsHistory.map((p, idx) => (
+                              <div key={p.id || idx} className="text-[9px] flex items-center justify-between text-slate-600 font-medium">
+                                <span>{p.date ? format(new Date(p.date), 'dd/MM') : 'Data'} • {p.method?.toUpperCase()}</span>
+                                <span className="font-bold text-emerald-600 font-mono">+R$ {Number(p.amount || 0).toFixed(2)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
 
@@ -831,7 +927,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
           </div>
         </main>
 
-        {/* Rodapé Fixo (NUNCA corta os botões de finalizar / comanda) */}
+        {/* Rodapé Fixo */}
         <footer className="p-3.5 sm:p-4 bg-slate-50/95 border-t border-slate-100 flex flex-col gap-2 shrink-0 rounded-b-3xl">
           {/* Seletor de Status */}
           <button
@@ -846,7 +942,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
             <MoreVertical size={14} className="text-slate-400 shrink-0" />
           </button>
 
-          {/* Ações de Comanda / Fechamento */}
+          {/* Ações de Comanda / Fechamento / Baixa Parcial */}
           {canCheckout && (
             pendingSameDay.length > 1 ? (
               <div className="flex flex-col gap-2 pt-0.5">
@@ -858,31 +954,88 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                   {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Receipt size={16} />}
                   <span>{isProcessing ? 'Processando...' : `Finalizar Todos Juntos (R$ ${pendingTotalValue.toFixed(2)})`}</span>
                 </button>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    disabled={isProcessing}
+                    onClick={() => {
+                      setCheckoutInitialMode('full');
+                      setIsCheckoutOpen(true);
+                    }}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-[10px] uppercase tracking-wider py-2.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <CheckCircle2 size={13} />
+                    <span>Quitar Este</span>
+                  </button>
+                  <button
+                    disabled={isProcessing}
+                    onClick={() => {
+                      setCheckoutInitialMode('partial');
+                      setIsCheckoutOpen(true);
+                    }}
+                    className="w-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 font-black text-[10px] uppercase tracking-wider py-2.5 px-2 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <Split size={13} className="text-amber-600" />
+                    <span>Baixa Parcial</span>
+                  </button>
+                </div>
+              </div>
+            ) : hasPartialPayments ? (
+              <div className="flex flex-col gap-2 pt-0.5">
                 <button
                   disabled={isProcessing}
-                  onClick={handleFinalizeSingle}
-                  className="w-full bg-white hover:bg-slate-100 disabled:opacity-50 text-slate-700 font-bold text-[10px] uppercase tracking-wider py-2 px-3 rounded-xl border border-slate-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  onClick={() => {
+                    setCheckoutInitialMode('full');
+                    setIsCheckoutOpen(true);
+                  }}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider py-3.5 px-4 rounded-2xl shadow-lg shadow-emerald-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  {isProcessing ? <Loader2 size={12} className="animate-spin" /> : null}
-                  <span>Finalizar Apenas Este (R$ {appointmentTotalValue.toFixed(2)})</span>
+                  <Receipt size={16} />
+                  <span>Quitar Restante (R$ {remainingValue.toFixed(2)})</span>
+                </button>
+                <button
+                  disabled={isProcessing}
+                  onClick={() => {
+                    setCheckoutInitialMode('partial');
+                    setIsCheckoutOpen(true);
+                  }}
+                  className="w-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 font-black text-xs uppercase tracking-wider py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Split size={14} className="text-amber-600" />
+                  <span>Nova Baixa Parcial / Sinal</span>
                 </button>
               </div>
             ) : (
-              <button
-                disabled={isProcessing}
-                onClick={handleFinalizeSingle}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider py-3.5 px-4 rounded-2xl shadow-lg shadow-emerald-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Receipt size={16} />}
-                <span>{isProcessing ? 'Processando...' : `Finalizar Atendimento (R$ ${appointmentTotalValue.toFixed(2)})`}</span>
-              </button>
+              <div className="flex flex-col gap-2 pt-0.5">
+                <button
+                  disabled={isProcessing}
+                  onClick={() => {
+                    setCheckoutInitialMode('full');
+                    setIsCheckoutOpen(true);
+                  }}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider py-3.5 px-4 rounded-2xl shadow-lg shadow-emerald-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Receipt size={16} />}
+                  <span>{isProcessing ? 'Processando...' : `Finalizar Atendimento (R$ ${appointmentTotalValue.toFixed(2)})`}</span>
+                </button>
+                <button
+                  disabled={isProcessing}
+                  onClick={() => {
+                    setCheckoutInitialMode('partial');
+                    setIsCheckoutOpen(true);
+                  }}
+                  className="w-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 font-black text-xs uppercase tracking-wider py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Split size={14} className="text-amber-600" />
+                  <span>Dar Baixa Parcial / Antecipação</span>
+                </button>
+              </div>
             )
           )}
 
           {appointment.status === 'concluido' && (
             <div className="flex items-center justify-center gap-2 py-2.5 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 font-black text-[11px] uppercase tracking-wider">
               <CheckCircle2 size={15} />
-              <span>Pagamento Recebido / Concluído</span>
+              <span>Procedimento Quitado / Concluído</span>
             </div>
           )}
         </footer>
@@ -900,6 +1053,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
       {isCheckoutOpen && (
         <CheckoutModal
           isOpen={isCheckoutOpen}
+          initialMode={checkoutInitialMode}
           onClose={() => setIsCheckoutOpen(false)}
           appointment={{
             id: appointment.id,
@@ -908,12 +1062,23 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
             service_name: appointment.service?.name || 'Serviço',
             price: appointmentTotalValue,
             professional_id: appointment.professional?.id,
-            professional_name: appointment.professional?.name
+            professional_name: appointment.professional?.name,
+            payments: paymentsHistory,
+            paid_amount: alreadyPaidTotal,
+            remaining_amount: remainingValue,
+            notes: (appointment as any).notes || appointment.notas
           }}
-          onSuccess={() => {
-            onUpdateStatus(appointment.id, 'concluido');
-            setIsCheckoutOpen(false);
-            onClose();
+          onSuccess={(info) => {
+            if (info?.isPartial) {
+              if (onRefresh) onRefresh();
+              setIsCheckoutOpen(false);
+              onClose();
+            } else {
+              onUpdateStatus(appointment.id, 'concluido');
+              if (onRefresh) onRefresh();
+              setIsCheckoutOpen(false);
+              onClose();
+            }
           }}
         />
       )}

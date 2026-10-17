@@ -766,6 +766,27 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
         }
         cleanNotes = cleanNotes.replace(/\[Serviços:.*?\]/g, '').trim();
 
+        // Extrair metadados de pagamentos parciais / antecipações
+        const paymentsMatch = notes.match(/---PAYMENTS_JSON---[\r\n\s]*([\s\S]*?)[\r\n\s]*---END_PAYMENTS_JSON---/);
+        let payments: any[] = [];
+        if (paymentsMatch) {
+            try {
+                payments = JSON.parse(paymentsMatch[1]);
+            } catch (e) {
+                console.error("Error parsing payments JSON:", e);
+            }
+        }
+
+        const payJsonIndex = cleanNotes.indexOf('---PAYMENTS_JSON---');
+        if (payJsonIndex !== -1) {
+            const payEndIndex = cleanNotes.indexOf('---END_PAYMENTS_JSON---');
+            if (payEndIndex !== -1) {
+                cleanNotes = (cleanNotes.substring(0, payJsonIndex) + cleanNotes.substring(payEndIndex + '---END_PAYMENTS_JSON---'.length)).trim();
+            } else {
+                cleanNotes = cleanNotes.substring(0, payJsonIndex).trim();
+            }
+        }
+
         // Sincronizar preços dos serviços com o valor total salvo (row.value)
         const rowValue = Number(row.value);
         if (!isNaN(rowValue) && services.length > 0) {
@@ -780,6 +801,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             }
         }
 
+        const totalApptPrice = !isNaN(rowValue) ? rowValue : (services.reduce((acc: number, s: any) => acc + (Number(s.price) || 0), 0) || 0);
+        const paidAmount = payments.reduce((acc: number, p: any) => acc + (Number(p.amount) || 0), 0);
+        const remainingAmount = Math.max(0, totalApptPrice - paidAmount);
+
         return {
             id: row.id, start, end: new Date(start.getTime() + dur * 60000), status: row.status as AppointmentStatus,
             notas: cleanNotes, origin: row.origin || 'interno',
@@ -787,6 +812,9 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
             originTable: row.type === 'block' ? 'appointments' : undefined,
             services: services.length > 0 ? services : undefined,
             reminder_sent: row.reminder_sent,
+            payments: payments.length > 0 ? payments : undefined,
+            paid_amount: paidAmount > 0 ? paidAmount : undefined,
+            remaining_amount: paidAmount > 0 ? remainingAmount : undefined,
             client: { 
                 id: row.client_id, 
                 nome: row.client_name || 'Cliente', 
@@ -928,6 +956,10 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 ? `\n---SERVICES_JSON---\n${JSON.stringify(updatedServicesList)}\n---END_SERVICES_JSON---` 
                 : '';
 
+            const paymentsMetadata = app.payments && app.payments.length > 0 
+                ? `\n---PAYMENTS_JSON---\n${JSON.stringify(app.payments)}\n---END_PAYMENTS_JSON---` 
+                : '';
+
             // Limpa metadados antigos de notas para não duplicar nem manter JSON antigo com valor desatualizado
             let cleanedNotas = app.notas || '';
             const oldJsonIndex = cleanedNotas.indexOf('---SERVICES_JSON---');
@@ -937,6 +969,15 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     cleanedNotas = (cleanedNotas.substring(0, oldJsonIndex) + cleanedNotas.substring(oldEndIndex + '---END_SERVICES_JSON---'.length)).trim();
                 } else {
                     cleanedNotas = cleanedNotas.substring(0, oldJsonIndex).trim();
+                }
+            }
+            const oldPayJsonIndex = cleanedNotas.indexOf('---PAYMENTS_JSON---');
+            if (oldPayJsonIndex !== -1) {
+                const oldPayEndIndex = cleanedNotas.indexOf('---END_PAYMENTS_JSON---');
+                if (oldPayEndIndex !== -1) {
+                    cleanedNotas = (cleanedNotas.substring(0, oldPayJsonIndex) + cleanedNotas.substring(oldPayEndIndex + '---END_PAYMENTS_JSON---'.length)).trim();
+                } else {
+                    cleanedNotas = cleanedNotas.substring(0, oldPayJsonIndex).trim();
                 }
             }
             cleanedNotas = cleanedNotas.replace(/\[Serviços:.*?\]/g, '').trim();
@@ -956,7 +997,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                 start_at: startStr,
                 end_at: endStr,
                 status: app.status || 'agendado', 
-                notes: (cleanedNotas ? cleanedNotas + '\n' : '') + servicesMetadata, 
+                notes: (cleanedNotas ? cleanedNotas + '\n' : '') + servicesMetadata + paymentsMetadata, 
                 service_color: app.service.color || '#3b82f6',
                 origin: 'interno'
             };
@@ -2292,6 +2333,12 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                     <span>Confirmado pelo Cliente</span>
                                                                 </div>
                                                             )}
+                                                            {app.paid_amount && app.paid_amount > 0 && app.remaining_amount && app.remaining_amount > 0 && !isShort && (
+                                                                <div className="mt-1 inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200 px-1 py-0.5 rounded text-[8px] font-black uppercase tracking-wide leading-none" title={`Baixa Parcial: R$ ${app.paid_amount.toFixed(2)} pago • Resta: R$ ${app.remaining_amount.toFixed(2)}`}>
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                                                    <span>Sinal R$ {Math.round(app.paid_amount)} • Resta R$ {Math.round(app.remaining_amount)}</span>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         {!isShort && (
                                                             <div className="mt-auto opacity-90 leading-none">
@@ -2734,6 +2781,11 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                                                                 R$ {Number(app.value || app.service?.price || 0).toFixed(2)}
                                                             </span>
                                                         )}
+                                                        {!isBlocked && app.paid_amount && app.paid_amount > 0 && app.remaining_amount && app.remaining_amount > 0 && (
+                                                            <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
+                                                                Sinal: R$ {app.paid_amount.toFixed(0)} • Resta: R$ {app.remaining_amount.toFixed(0)}
+                                                            </span>
+                                                        )}
                                                         {!isBlocked && (
                                                             <span className={`text-[8.5px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg leading-none inline-flex items-center gap-1 ${
                                                                 app.status === 'concluido' ? 'bg-emerald-50 text-emerald-600 border border-emerald-110' :
@@ -3045,6 +3097,7 @@ const AtendimentosView: React.FC<AtendimentosViewProps> = ({ onAddTransaction, o
                     onUpdateStatus={handleUpdateStatus}
                     onConvertToCommand={handleConvertToCommand}
                     onSendReminder={handleReminderSent}
+                    onRefresh={fetchAppointments}
                 />
             )}
             {modalState?.type === 'appointment' && <AppointmentModal appointment={modalState.data} onClose={() => setModalState(null)} onSave={handleSaveAppointment} />}

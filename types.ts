@@ -111,6 +111,18 @@ export interface Service {
   descricao?: string;
 }
 
+export interface AppointmentPayment {
+  id?: string;
+  date: string;
+  amount: number;
+  method: string;
+  notes?: string;
+  installments?: number;
+  remaining?: number;
+  net_value?: number;
+  tax_rate?: number;
+}
+
 export interface LegacyAppointment {
   id: number;
   client?: Client;
@@ -125,6 +137,10 @@ export interface LegacyAppointment {
   origin?: string;
   type?: 'appointment' | 'block';
   reminder_sent?: boolean;
+  payments?: AppointmentPayment[];
+  paid_amount?: number;
+  remaining_amount?: number;
+  [key: string]: any;
 }
 
 export interface FinancialTransaction {
