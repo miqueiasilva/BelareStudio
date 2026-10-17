@@ -168,6 +168,18 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
         return labels[method.toLowerCase()] || method.toUpperCase();
     };
 
+    const effectivePaidDate = useMemo(() => {
+        if (!command) return null;
+        if (command.paid_at) return new Date(command.paid_at);
+        if (command.closed_at) return new Date(command.closed_at);
+        if (payments && payments.length > 0) {
+            const validPayment = payments.find(p => p.date || p.created_at);
+            if (validPayment) return new Date(validPayment.date || validPayment.created_at);
+        }
+        if (command.created_at) return new Date(command.created_at);
+        return null;
+    }, [command, payments]);
+
     if (loading) return <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center"><Loader2 className="animate-spin text-white" size={40} /></div>;
     if (!command) return null;
 
@@ -184,11 +196,24 @@ const PaidCommandDetailView: React.FC<PaidCommandDetailViewProps> = ({ commandId
 
                 <div className="p-8 space-y-6 max-h-[80vh] overflow-y-auto custom-scrollbar text-left">
                     <div className="text-center pb-6 border-b border-dashed border-slate-200">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-full text-[10px] font-black uppercase mb-3 tracking-wider">
+                            <CheckCircle2 size={13} className="text-emerald-500" />
+                            Comanda Baixada & Quitada
+                        </span>
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Cliente</p>
                         <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight">{command.clients?.nome || command.client_name || 'Consumidor Final'}</h3>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">
-                            Finalizado em {command.paid_at ? format(new Date(command.paid_at), "dd/MM/yyyy 'às' HH:mm") : (command.closed_at ? format(new Date(command.closed_at), "dd/MM/yyyy 'às' HH:mm") : 'Data não registrada')}
-                        </p>
+                        
+                        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                            <div className="px-3 py-1.5 bg-emerald-50/70 border border-emerald-200/60 rounded-xl text-emerald-800 text-xs font-bold flex items-center gap-1.5 shadow-xs">
+                                <Clock size={14} className="text-emerald-600" />
+                                <span>Data da Baixa: <strong className="text-emerald-950 font-black">{effectivePaidDate ? format(effectivePaidDate, "dd/MM/yyyy 'às' HH:mm", { locale: pt }) : 'Não registrada'}</strong></span>
+                            </div>
+                            {command.created_at && (
+                                <div className="px-2.5 py-1.5 bg-slate-50 border border-slate-100 rounded-xl text-slate-500 text-[11px] font-medium">
+                                    Aberta em: {format(new Date(command.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: pt })}
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     <div className="space-y-4">

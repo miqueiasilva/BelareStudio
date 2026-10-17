@@ -537,11 +537,21 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
     ? appointment.services.reduce((sum, s) => sum + Number(s.price || 0), 0)
     : rawTotal;
 
-  const appointmentTotalValue = isPartner 
-    ? 0 
-    : (appointment.value !== undefined && appointment.value !== null 
-        ? Number(appointment.value) 
-        : (rawTotal > 0 ? rawTotal : servicesSum));
+  const realValue = appointment.value !== undefined && appointment.value !== null 
+    ? Number(appointment.value) 
+    : (rawTotal > 0 ? rawTotal : servicesSum);
+
+  const isExplicitZeroPartner = isPartner && (
+    realValue === 0 || 
+    appointment.payment_method === 'parceria' || 
+    appointment.payment_method === 'cortesia' ||
+    appointment.payment_method === 'parceiro_100' ||
+    String(appointment.notes || '').toLowerCase().includes('100%') ||
+    String(appointment.notes || '').toLowerCase().includes('cortesia') ||
+    String(appointment.notes || '').toLowerCase().includes('parceria')
+  );
+
+  const appointmentTotalValue = isExplicitZeroPartner ? 0 : realValue;
 
   const alreadyPaidTotal = paymentsHistory.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
   const remainingValue = Math.max(0, appointmentTotalValue - alreadyPaidTotal);
@@ -833,7 +843,7 @@ const AppointmentDetailPopover: React.FC<AppointmentDetailPopoverProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <p className="text-[9px] font-black uppercase tracking-wider text-orange-500">Procedimento</p>
-                    {isPartner && (
+                    {isExplicitZeroPartner && (
                       <span className="text-[9px] font-black uppercase bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
                         🌟 Parceiro 100%
                       </span>

@@ -19,14 +19,13 @@ export const isPartnerClientName = (name?: string | null): boolean => {
     n === 'juh' ||
     n.startsWith('juh ') ||
     n.endsWith(' juh') ||
-    n.includes(' juh ') ||
-    n === 'ju'
+    n.includes(' juh ')
   ) {
     return true;
   }
 
-  // Adrielle Alves / Adrielle
-  if (n.includes('adrielle') || n.includes('alves')) {
+  // Adrielle Alves especificamente (exige ambos adrielle E alves, jamais apenas 'alves' isolado!)
+  if (n.includes('adrielle') && n.includes('alves')) {
     return true;
   }
 

@@ -40,6 +40,9 @@ const ComandasView: React.FC<any> = ({ onNavigateToCommand, onOpenPaidSummary })
                     total_amount, 
                     created_at, 
                     closed_at, 
+                    paid_at,
+                    payment_method,
+                    payment_data,
                     client_name, 
                     clients:client_id (id, nome, name, photo_url), 
                     command_items(id, title, price, quantity)
@@ -47,7 +50,7 @@ const ComandasView: React.FC<any> = ({ onNavigateToCommand, onOpenPaidSummary })
                 .eq('studio_id', activeStudioId)
                 .eq('status', currentTab)
                 .is('deleted_at', null)
-                .order('created_at', { ascending: false });
+                .order(currentTab === 'pago' ? 'closed_at' : 'created_at', { ascending: false });
             
             if (error) throw error;
             setTabs(data || []);
@@ -209,9 +212,21 @@ const ComandasView: React.FC<any> = ({ onNavigateToCommand, onOpenPaidSummary })
                                         </div>
                                         <div className="min-w-0">
                                             <h3 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">{getClientDisplayName(tab)}</h3>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase">
-                                                Iniciada às {format(new Date(tab.created_at), 'HH:mm')}
-                                            </p>
+                                            {currentTab === 'pago' ? (
+                                                <div className="mt-0.5 space-y-0.5">
+                                                    <p className="text-[10px] font-black text-emerald-600 flex items-center gap-1">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                        Baixada: {format(new Date(tab.paid_at || tab.closed_at || tab.created_at), "dd/MM/yyyy 'às' HH:mm")}
+                                                    </p>
+                                                    <p className="text-[9px] font-medium text-slate-400">
+                                                        Iniciada às {format(new Date(tab.created_at), 'HH:mm')}
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase">
+                                                    Iniciada às {format(new Date(tab.created_at), 'HH:mm')}
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                     {tab.status === 'open' && (
@@ -237,7 +252,14 @@ const ComandasView: React.FC<any> = ({ onNavigateToCommand, onOpenPaidSummary })
                                 <div className="p-5 bg-slate-50/50 border-t border-slate-50">
                                     <div className="flex justify-between items-end">
                                         <div>
-                                            <p className="text-[9px] font-black uppercase text-slate-400 mb-1">Valor Total</p>
+                                            <div className="flex items-center gap-1.5 mb-1">
+                                                <p className="text-[9px] font-black uppercase text-slate-400">Valor Total</p>
+                                                {currentTab === 'pago' && (tab.payment_data?.brand || tab.payment_method) && (
+                                                    <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                                        {tab.payment_data?.brand || tab.payment_method}
+                                                    </span>
+                                                )}
+                                            </div>
                                             <p className="text-2xl font-black text-slate-800">R$ {Number(tab.total_amount || 0).toFixed(2)}</p>
                                         </div>
                                         <div className="bg-white p-3 rounded-2xl shadow-sm text-orange-500 border border-slate-100 group-hover:bg-orange-50 group-hover:text-white transition-all active:scale-95">
